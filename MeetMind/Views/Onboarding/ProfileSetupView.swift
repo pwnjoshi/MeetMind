@@ -84,9 +84,11 @@ public struct ProfileSetupView: View {
     private var actionButtons: some View {
         VStack(spacing: Spacing.sm) {
             PrimaryButton(title: "Save & Continue", icon: "arrow.right", isEnabled: viewModel.canProceedFromProfile) {
+                print("ProfileSave: Name=\(viewModel.name), Role=\(viewModel.role)")
                 viewModel.saveProfileAndContinue()
             }
             GhostButton(title: "Skip for Now") {
+                print("ProfileSkip: Proceeding to permissions")
                 viewModel.skipProfileSetup()
             }
         }
