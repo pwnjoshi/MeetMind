@@ -871,7 +871,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 1D0000062CEE000100000001 /* Build configuration list for PBXProject "MeetMind" */;
+			buildConfigurationList = 1D0000F02CEE000100000001 /* Build configuration list for PBXProject "MeetMind" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -1125,7 +1125,7 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		1D0000072CEE000100000001 /* Debug */ = {
+		1D0000F12CEE000100000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -1152,7 +1152,7 @@
 			};
 			name = Debug;
 		};
-		1D0000082CEE000100000001 /* Release */ = {
+		1D0000F22CEE000100000001 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -1260,11 +1260,11 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1D0000062CEE000100000001 /* Build configuration list for PBXProject "MeetMind" */ = {
+		1D0000F02CEE000100000001 /* Build configuration list for PBXProject "MeetMind" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				1D0000072CEE000100000001 /* Debug */,
-				1D0000082CEE000100000001 /* Release */,
+				1D0000F12CEE000100000001 /* Debug */,
+				1D0000F22CEE000100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
