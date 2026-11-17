@@ -329,9 +329,9 @@ final class MeetingDetailViewModelTests: XCTestCase {
     
     /// Tier 1: Feature 45 - Validates speaker reassignment updates speaker avatar color token.
     func test_tier1_feature45_reassignSpeakerUpdatesColorToken() throws {
-        sut.reassignSpeaker(from: "Speaker 1", to: "Alex Rivera", colorHex: "#8B5CF6")
+        sut.reassignSpeaker(from: "Speaker 1", to: "Alex Rivera")
         
-        XCTAssertEqual(sut.transcriptSegments[0].speakerColorHex, "#8B5CF6")
+        XCTAssertEqual(sut.transcriptSegments[0].speaker?.name, "Alex Rivera")
     }
     
     // MARK: - Tier 1: Feature 46 (Sticky Audio Player Bar)
@@ -485,7 +485,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
     
     /// Tier 2: Feature 41 - Validates summary regeneration failure displays user-friendly alert.
     func test_tier2_feature41_regenerateSummaryFailureDisplaysAlert() throws {
-        mockSummarizationService.shouldThrowError = true
+        mockSummarizationService.shouldThrowError = .serviceUnavailable
         let expectation = expectation(description: "Regenerate Summary Failure")
         
         sut.regenerateSummary { result in

@@ -1,4 +1,5 @@
 import Foundation
+import EventKit
 
 /// Authorization status for Apple Reminders EventKit integration
 public enum RemindersAuthorizationStatus: String, Codable, Sendable {
@@ -41,4 +42,60 @@ public protocol RemindersSyncServiceProtocol: AnyObject, Sendable {
     
     /// Synchronizes an array of ActionItem entities to a designated Reminders list
     func syncActionItems(_ items: [ActionItem], toList title: String) async throws -> [String]
+}
+
+public final class SystemRemindersSyncService: RemindersSyncServiceProtocol, @unchecked Sendable {
+    private let store = EKEventStore()
+    public init() {}
+
+    public var authorizationStatus: RemindersAuthorizationStatus {
+        switch EKEventStore.authorizationStatus(for: .reminder) {
+        case .authorized, .fullAccess: return .authorized
+        case .denied: return .denied
+        case .restricted: return .restricted
+        default: return .notDetermined
+        }
+    }
+
+    public func requestAuthorization() async throws -> Bool {
+        try await store.requestFullAccessToReminders()
+    }
+
+    public func syncActionItems(_ items: [ActionItem], toList title: String) async throws -> [String] {
+        guard try await requestAuthorization() else {
+            throw NSError(domain: "MeetMind.Reminders", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Enable Reminders access for MeetMind in Settings to sync tasks."])
+        }
+        return try await MainActor.run {
+            let calendar: EKCalendar
+            if let existing = store.calendars(for: .reminder).first(where: { $0.title == title && $0.allowsContentModifications }) {
+                calendar = existing
+            } else {
+                guard let source = store.defaultCalendarForNewReminders()?.source else {
+                    throw NSError(domain: "MeetMind.Reminders", code: 2,
+                                  userInfo: [NSLocalizedDescriptionKey: "Create a list in Apple Reminders first, then try again."])
+                }
+                calendar = EKCalendar(for: .reminder, eventStore: store)
+                calendar.title = title
+                calendar.source = source
+                try store.saveCalendar(calendar, commit: true)
+            }
+            var identifiers: [String] = []
+            for item in items {
+                let existing = item.reminderIdentifier.flatMap { store.calendarItem(withIdentifier: $0) as? EKReminder }
+                let reminder = existing ?? EKReminder(eventStore: store)
+                reminder.calendar = calendar
+                reminder.title = item.title
+                reminder.notes = item.taskDescription
+                reminder.isCompleted = item.isCompleted
+                reminder.priority = item.priority == .urgent ? 1 : (item.priority == .high ? 3 : (item.priority == .medium ? 5 : 9))
+                reminder.dueDateComponents = item.dueDate.map { Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: $0) }
+                try store.save(reminder, commit: true)
+                item.reminderIdentifier = reminder.calendarItemIdentifier
+                try item.modelContext?.save()
+                identifiers.append(reminder.calendarItemIdentifier)
+            }
+            return identifiers
+        }
+    }
 }

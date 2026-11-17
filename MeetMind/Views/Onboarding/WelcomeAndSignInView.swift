@@ -22,7 +22,7 @@ public struct WelcomeAndSignInView: View {
     
     private func topIllustrationView(height: CGFloat) -> some View {
         ZStack {
-            Image("illustration")
+            Image("MeetingIllustration")
                 .resizable()
                 .scaledToFill()
                 .frame(height: height)
@@ -46,12 +46,21 @@ public struct WelcomeAndSignInView: View {
             }
             .padding(.top, Spacing.lg)
             
-            SignInEmailInputField(emailText: $viewModel.enteredEmail)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your name (optional)").font(.caption).foregroundStyle(.secondary)
+                TextField("How should we call you?", text: $viewModel.name)
+                    .textContentType(.name)
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.continue)
+                    .onSubmit { viewModel.continueLocally() }
+            }
+            .padding(16)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
             
             Button {
-                viewModel.continueWithEmail()
+                viewModel.continueLocally()
             } label: {
-                Text("Continue with email")
+                Text("Continue on this iPhone")
                     .font(Typography.headline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -61,11 +70,10 @@ public struct WelcomeAndSignInView: View {
             }
             .padding(.top, Spacing.xs)
             
-            orDividerView
-            SocialAuthButtonsRow(
-                onGoogle: { viewModel.continueWithSocialAuth(provider: "Google") },
-                onApple: { viewModel.continueWithSocialAuth(provider: "Apple") }
-            )
+            Label("No account required", systemImage: "iphone")
+                .font(.subheadline).foregroundStyle(.secondary)
+            Text("Your meetings are saved on this iPhone. You choose what to share.")
+                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Spacer(minLength: Spacing.md)
         }
         .padding(.horizontal, Spacing.lg)
@@ -74,14 +82,4 @@ public struct WelcomeAndSignInView: View {
         .shadow(color: Color.black.opacity(0.04), radius: 10, y: -4)
     }
     
-    private var orDividerView: some View {
-        HStack(spacing: Spacing.md) {
-            Rectangle().fill(Color(hex: "#DCDDE4")).frame(height: 1)
-            Text("Or continue with")
-                .font(Typography.subheadline)
-                .foregroundStyle(Color(uiColor: .secondaryLabel))
-            Rectangle().fill(Color(hex: "#DCDDE4")).frame(height: 1)
-        }
-        .padding(.vertical, Spacing.xxs)
-    }
 }

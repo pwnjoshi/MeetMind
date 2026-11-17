@@ -3,6 +3,8 @@ import AVFoundation
 
 public final class AudioRecordingService: NSObject, AudioRecordingServiceProtocol, @unchecked Sendable {
     private let lock = NSLock()
+    private let bitRate: Int
+    private let noiseSuppression: Bool
     private var internalState: RecordingState = .idle
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
@@ -52,7 +54,9 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         }
     }
     
-    public override init() {
+    public init(bitRate: Int = 128_000, noiseSuppression: Bool = false) {
+        self.bitRate = bitRate
+        self.noiseSuppression = noiseSuppression
         super.init()
     }
     
@@ -99,6 +103,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         // 2. Configure AVAudioEngine and File
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+        if noiseSuppression { try inputNode.setVoiceProcessingEnabled(true) }
         let inputFormat = inputNode.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             lock.lock()
@@ -115,7 +120,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: hardwareSampleRate,
             AVNumberOfChannelsKey: channelCount,
-            AVEncoderBitRateKey: 64000,
+            AVEncoderBitRateKey: bitRate,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
         ]
         

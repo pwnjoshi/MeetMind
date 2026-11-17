@@ -32,8 +32,8 @@ public struct SettingsStorageAndCacheSection: View {
                 Text("This clears transient audio waveforms and cache without deleting saved meeting recordings or transcripts.")
             }
             
-            Toggle("iCloud Sync", isOn: $viewModel.isiCloudSyncEnabled)
-                .tint(Theme.Colors.primarySlate)
+            Label("Saved locally on this iPhone", systemImage: "iphone")
+                .foregroundStyle(.secondary)
         }
     }
 }

@@ -244,10 +244,13 @@ public final class ProcessingPipelineViewModel {
         }
     }
     
-    public func prepareForProduction(context: ModelContext) throws {
+    public func prepareForProduction(context: ModelContext, settings: SettingsViewModel? = nil) throws {
         modelContext = context
         if summarizationService == nil { summarizationService = NaturalLanguageSummarizationService() }
-        if transcriptionService == nil { transcriptionService = SpeechTranscriptionService() }
+        if transcriptionService == nil {
+            transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"),
+                                                               onDeviceOnly: settings?.isOnDeviceRecognitionOnly ?? true)
+        }
         if meeting == nil, let id = meetingId {
             var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
             descriptor.fetchLimit = 1

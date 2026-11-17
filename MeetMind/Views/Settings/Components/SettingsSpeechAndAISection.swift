@@ -38,13 +38,8 @@ public struct SettingsSpeechAndAISection: View {
                 Text("Detailed Analysis").tag(SummaryStyle.detailed)
             }
             
-            HStack {
-                Text("Custom AI API Key")
-                Spacer()
-                Text(viewModel.maskedAPIKey)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .font(Typography.timecode)
-            }
+            Text("Summaries are generated locally from your transcript.")
+                .font(.footnote).foregroundStyle(.secondary)
         }
     }
 }

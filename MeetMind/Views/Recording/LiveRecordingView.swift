@@ -6,6 +6,7 @@ public struct LiveRecordingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
+    @Environment(SettingsViewModel.self) private var settings
     @State private var viewModel: LiveRecordingViewModel
     @State private var isPhotoSheetPresented: Bool = false
     public let meetingId: UUID
@@ -82,7 +83,7 @@ public struct LiveRecordingView: View {
         } message: { Text(viewModel.errorMessage ?? "") }
         .task {
             do {
-                try viewModel.prepareSession(context: modelContext)
+                try viewModel.prepareSession(context: modelContext, settings: settings)
                 if viewModel.recordingState == .idle { viewModel.startSession() }
             } catch { viewModel.errorMessage = error.localizedDescription }
         }

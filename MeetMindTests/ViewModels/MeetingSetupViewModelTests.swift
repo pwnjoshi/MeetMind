@@ -704,7 +704,7 @@ final class MeetingSetupViewModelTests: XCTestCase {
         try Data("audio_content_valid".utf8).write(to: audioFileURL)
         sut.setSimulatedAudioDuration(120.0)
         
-        mockTranscription.mockSegments = [
+        mockTranscription.mockFileSegments = [
             LiveTranscriptSegment(text: "Hello everyone", startTime: 0.0, duration: 2.0),
             LiveTranscriptSegment(text: "Let's review the quarterly metrics", startTime: 2.5, duration: 3.5)
         ]

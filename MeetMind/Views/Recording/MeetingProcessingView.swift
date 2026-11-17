@@ -5,6 +5,7 @@ import SwiftData
 public struct MeetingProcessingView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
+    @Environment(SettingsViewModel.self) private var settings
     @Environment(\.dismiss) private var dismiss
     @State private var processingError: String?
     @State private var viewModel: ProcessingPipelineViewModel
@@ -72,7 +73,7 @@ public struct MeetingProcessingView: View {
         }
         .task {
             do {
-                try viewModel.prepareForProduction(context: modelContext)
+                try viewModel.prepareForProduction(context: modelContext, settings: settings)
                 try await viewModel.startPipeline()
             } catch {
                 processingError = error.localizedDescription

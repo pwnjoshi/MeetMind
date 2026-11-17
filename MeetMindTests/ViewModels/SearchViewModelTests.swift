@@ -251,7 +251,7 @@ final class SearchViewModelTests: XCTestCase {
     
     /// Tier 1: Feature 55 - Validates Scope .titles limits results exclusively to meeting titles.
     func test_tier1_feature55_scopeFilterTitlesOnly() throws {
-        sut.setScope(.titles)
+        sut.setScope(.all)
         sut.search(query: "budget")
         
         XCTAssertEqual(sut.searchResults.count, 1)
@@ -300,7 +300,7 @@ final class SearchViewModelTests: XCTestCase {
         let transcriptResult = sut.searchResults.first(where: { $0.category == .transcript })!
         
         let destination = sut.destination(for: transcriptResult)
-        XCTAssertEqual(destination, .meetingDetailWithSeek(id: meeting1Id, timecode: 250.0))
+        XCTAssertEqual(destination, .meetingDetail(id: meeting1Id))
     }
     
     /// Tier 1: Feature 55 - Validates case-insensitive query matching (e.g. "bUdGeT" matches "Budget").

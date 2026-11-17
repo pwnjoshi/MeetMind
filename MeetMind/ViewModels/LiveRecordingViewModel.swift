@@ -291,7 +291,7 @@ public final class LiveRecordingViewModel {
     }
 
     /// Bind the routed screen to its persisted meeting before starting hardware.
-    public func prepareSession(context: ModelContext) throws {
+    public func prepareSession(context: ModelContext, settings: SettingsViewModel? = nil) throws {
         modelContext = context
         if meeting == nil {
             let id = meetingId
@@ -303,8 +303,14 @@ public final class LiveRecordingViewModel {
             throw AudioRecordingError.invalidState("This meeting no longer exists.")
         }
         meetingTitle = meeting.title
-        if recordingService == nil { recordingService = AudioRecordingService() }
-        if transcriptionService == nil { transcriptionService = SpeechTranscriptionService() }
+        if recordingService == nil {
+            recordingService = AudioRecordingService(bitRate: settings?.audioQuality.bitRate ?? 128_000,
+                                                     noiseSuppression: settings?.isNoiseSuppressionEnabled ?? false)
+        }
+        if transcriptionService == nil {
+            transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"),
+                                                               onDeviceOnly: settings?.isOnDeviceRecognitionOnly ?? true)
+        }
     }
 
     public func leaveSession() {
@@ -325,12 +331,20 @@ public final class LiveRecordingViewModel {
     public func startRecording() {
         startSession()
     }
+
+    public func waitUntilRecordingStarted() async throws {
+        if let sessionTask { await sessionTask.value }
+        guard recordingState == .recording else {
+            throw AudioRecordingError.recordingFailed(errorMessage ?? "Recording did not start.")
+        }
+    }
     
     public func startSession(for targetMeeting: Meeting) async throws {
         self.meeting = targetMeeting
         self.meetingId = targetMeeting.id
         self.meetingTitle = targetMeeting.title
         startSession()
+        try await waitUntilRecordingStarted()
         targetMeeting.status = .recording
         try? modelContext?.save()
     }

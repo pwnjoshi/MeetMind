@@ -29,7 +29,7 @@ public struct MainTabView: View {
             .tag(TabIdentifier.home)
             
             NavigationStack(path: Bindable(router).actionItemsPath) {
-                ActionItemsConsoleView(viewModel: ActionItemsViewModel(modelContext: modelContext))
+                ActionItemsConsoleView(viewModel: ActionItemsViewModel(modelContext: modelContext, remindersService: SystemRemindersSyncService()))
                     .navigationDestination(for: NavigationDestination.self) { destinationView(for: $0) }
             }
             .tabItem { Label("Actions", systemImage: "flag.fill") }

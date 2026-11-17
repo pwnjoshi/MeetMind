@@ -58,8 +58,8 @@ public final class OnboardingViewModel {
     public var hasVoiceBaseline: Bool = false
     
     // MARK: - Sign In & Verification State
-    public var enteredEmail: String = "pawan@apple.com"
-    public var verificationDigits: [String] = ["8", "2", "4", "6", "1", "9"]
+    public var enteredEmail: String = ""
+    public var verificationDigits: [String] = Array(repeating: "", count: 6)
     public var isResendCodeConfirmationShown: Bool = false
     
     public func continueWithEmail() {
@@ -68,16 +68,18 @@ public final class OnboardingViewModel {
     }
     
     public func continueWithSocialAuth(provider: String) {
-        name = "Pawan Joshi"
-        email = "pawan@apple.com"
-        role = "Product Lead"
-        currentStage = .permissionsPrimer
+        continueLocally()
     }
     
     public func verifyCodeAndContinue() {
-        if name.isEmpty { name = "Pawan Joshi" }
-        if role.isEmpty { role = "Product Lead" }
-        email = enteredEmail
+        continueLocally()
+    }
+
+    public func continueLocally() {
+        name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
+        if name.isEmpty { name = "MeetMind User" }
+        email = ""
+        role = ""
         currentStage = .permissionsPrimer
     }
     
