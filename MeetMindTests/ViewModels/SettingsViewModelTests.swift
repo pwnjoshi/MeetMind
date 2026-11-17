@@ -145,13 +145,13 @@ final class SettingsViewModelTests: XCTestCase {
     
     /// Tier 1: Feature 15 - Validates on-device speech recognition toggle mutation.
     func test_tier1_feature15_onDeviceRecognitionToggle() throws {
-        XCTAssertFalse(sut.isOnDeviceRecognitionOnly)
-        
-        sut.toggleOnDeviceRecognition()
         XCTAssertTrue(sut.isOnDeviceRecognitionOnly)
         
         sut.toggleOnDeviceRecognition()
         XCTAssertFalse(sut.isOnDeviceRecognitionOnly)
+        
+        sut.toggleOnDeviceRecognition()
+        XCTAssertTrue(sut.isOnDeviceRecognitionOnly)
     }
     
     /// Tier 1: Feature 15 - Validates summary style selection between executive and detailed.

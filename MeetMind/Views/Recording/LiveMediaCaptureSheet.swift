@@ -33,7 +33,7 @@ public struct LiveMediaCaptureSheet: View {
                         .frame(height: 150)
                     VStack(spacing: 8) {
                         Image(systemName: "camera.viewfinder").font(.system(size: 40)).foregroundStyle(Theme.Colors.textSecondary)
-                        Text("Take Whiteboard or Slide Photo").font(Typography.subheadline).foregroundStyle(Theme.Colors.textSecondary)
+                        Text("Attach a Whiteboard or Slide Photo").font(Typography.subheadline).foregroundStyle(Theme.Colors.textSecondary)
                     }
                 }
                 .padding(.horizontal, Spacing.md)

@@ -5,6 +5,7 @@ import SwiftData
 public struct MeetingDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(NavigationRouter.self) private var router
     @State public var viewModel: MeetingDetailViewModel
     
     @State private var transcriptSearch: String = ""
@@ -17,6 +18,7 @@ public struct MeetingDetailView: View {
     @State private var showSpeakerReassign: TranscriptSegment? = nil
     @State private var showDeleteConfirmation = false
     @State private var deletionError: String?
+    @State private var showNoteSheet = false
     
     public init(viewModel: MeetingDetailViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -34,6 +36,20 @@ public struct MeetingDetailView: View {
                 onDelete: { showDeleteConfirmation = true }
             )
             MeetingDetailTabBarView(selectedTab: viewModel.selectedTab) { viewModel.selectTab($0) }
+            if let meeting = viewModel.meeting, meeting.status == .scheduled || meeting.status == .processing {
+                Button(meeting.status == .scheduled ? "Start recording" : "Process saved audio") {
+                    if meeting.status == .scheduled {
+                        meeting.status = .recording
+                        do {
+                            try modelContext.save()
+                            router.navigate(to: .liveRecording(id: meeting.id), in: .home)
+                        } catch { deletionError = error.localizedDescription }
+                    } else {
+                        router.navigate(to: .meetingProcessing(id: meeting.id), in: .home)
+                    }
+                }
+                .buttonStyle(.borderedProminent).padding(.vertical, 8)
+            }
             
             MeetingDetailTabContentView(
                 selectedTab: viewModel.selectedTab,
@@ -50,7 +66,7 @@ public struct MeetingDetailView: View {
                 onReassignSpeaker: { showSpeakerReassign = $0 },
                 onToggleAction: { viewModel.toggleActionItemCompletion($0) },
                 onAddAction: { showActionItemModal = true },
-                onAddNote: {},
+                onAddNote: { showNoteSheet = true },
                 onSelectPhoto: { showPhotoModal = $0 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -77,6 +93,35 @@ public struct MeetingDetailView: View {
             showRenameAlert: $showRenameAlert,
             renameText: $renameText
         ))
+        .sheet(isPresented: $showActionItemModal) {
+            ActionItemEditModal(onSave: { title, priority, dueDate, assignee in
+                if let meeting = viewModel.meeting {
+                    meeting.addActionItem(ActionItem(title: title, assigneeName: assignee, dueDate: dueDate, priority: priority))
+                    do { try modelContext.save() } catch { deletionError = error.localizedDescription }
+                }
+                showActionItemModal = false
+            }, onDismiss: { showActionItemModal = false })
+        }
+        .sheet(isPresented: $showNoteSheet) {
+            LiveNoteTakingSheet(timestamp: viewModel.currentPlayheadTime) { text in
+                if let meeting = viewModel.meeting {
+                    meeting.addNote(Note(content: text, timestamp: viewModel.currentPlayheadTime))
+                    do { try modelContext.save() } catch { deletionError = error.localizedDescription }
+                }
+                showNoteSheet = false
+            }
+        }
+        .sheet(item: $showSpeakerReassign) { segment in
+            SpeakerReassignSheet(availableSpeakers: viewModel.meeting?.participants ?? [], currentSpeaker: segment.speaker, onSelect: { speaker in
+                viewModel.reassignSpeaker(segment: segment, newSpeaker: speaker)
+                showSpeakerReassign = nil
+            }, onDismiss: { showSpeakerReassign = nil })
+        }
+        .sheet(isPresented: Binding(get: { showPhotoModal != nil }, set: { if !$0 { showPhotoModal = nil } })) {
+            if let path = showPhotoModal {
+                WhiteboardDetailModal(photoPath: path, onDismiss: { showPhotoModal = nil })
+            }
+        }
         .task {
             while !Task.isCancelled {
                 viewModel.refreshPlaybackPosition()

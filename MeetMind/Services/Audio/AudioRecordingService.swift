@@ -9,6 +9,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var destinationFileURL: URL?
+    private var writeFailure: String?
     
     private var recordingStartTime: Date?
     private var accumulatedDuration: TimeInterval = 0.0
@@ -80,6 +81,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             throw AudioRecordingError.invalidState("Cannot start recording in state: \(currentState)")
         }
         internalState = .preparing
+        writeFailure = nil
         self.destinationFileURL = destinationURL
         self.accumulatedDuration = 0.0
         lock.unlock()
@@ -202,6 +204,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         }
         let engine = self.audioEngine
         let url = self.destinationFileURL
+        let failure = self.writeFailure
         self.audioEngine = nil
         self.audioFile = nil
         self.internalState = .stopped
@@ -220,6 +223,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         guard let finalURL = url else {
             throw AudioRecordingError.recordingFailed("Destination URL was missing.")
         }
+        if let failure { throw AudioRecordingError.recordingFailed(failure) }
         return finalURL
     }
     
@@ -251,11 +255,18 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, targetFile: AVAudioFile) {
         lock.lock()
         let currentState = internalState
+        let meter = meterContinuation
         lock.unlock()
         guard currentState == .recording else { return }
         
         // Write audio frame
-        try? targetFile.write(from: buffer)
+        do { try targetFile.write(from: buffer) }
+        catch {
+            lock.lock()
+            writeFailure = error.localizedDescription
+            lock.unlock()
+            return
+        }
 
         // Audio engine owns and reuses tap buffers. Copy before asynchronous recognition.
         lock.lock()
@@ -294,17 +305,17 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             }
         }
         guard validSampleCount > 0 else {
-            meterContinuation?.yield(0.0)
+            meter?.yield(0.0)
             return
         }
         let rms = sqrt(sumSquares / Float(validSampleCount))
         guard rms.isFinite else {
-            meterContinuation?.yield(0.0)
+            meter?.yield(0.0)
             return
         }
         let db = 20.0 * log10(max(rms, 0.0001))
         guard db.isFinite else {
-            meterContinuation?.yield(0.0)
+            meter?.yield(0.0)
             return
         }
         
@@ -314,6 +325,6 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         let linearPower = (clampedDb - minDb) / (0.0 - minDb)
         let finalPower = linearPower.isFinite ? max(0.0, min(1.0, linearPower)) : 0.0
         
-        meterContinuation?.yield(finalPower)
+        meter?.yield(finalPower)
     }
 }

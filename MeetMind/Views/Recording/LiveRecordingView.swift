@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AVFoundation
 
 /// Master live recording console HUD coordinating waveforms, speech stream, and tool dock
 public struct LiveRecordingView: View {
@@ -88,6 +89,13 @@ public struct LiveRecordingView: View {
             } catch { viewModel.errorMessage = error.localizedDescription }
         }
         .onDisappear { viewModel.leaveSession() }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
+            guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            if type == .began, viewModel.isRecording {
+                viewModel.handleAudioSessionInterruption(began: true)
+            }
+        }
     }
     
     private func handleStop() {

@@ -12,7 +12,8 @@ import SwiftData
 
 public struct ActionItemValidationError: Error {}
 
-public final class MockRemindersSyncService: @unchecked Sendable {
+public final class MockRemindersSyncService: RemindersSyncServiceProtocol, @unchecked Sendable {
+    public var authorizationStatus: RemindersAuthorizationStatus { isAuthorized ? .authorized : .denied }
     public var isAuthorized: Bool = true
     public var isOnline: Bool = true
     public var dispatchedRemindersCount: Int = 0

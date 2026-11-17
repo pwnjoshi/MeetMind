@@ -549,9 +549,14 @@ public final class LiveRecordingViewModel {
     
     public func captureWhiteboardPhoto(data: Data) {
         let filename = "whiteboard_\(UUID().uuidString).jpg"
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-        try? data.write(to: tempURL)
-        attachPhoto(url: tempURL, originalSizeBytes: data.count)
+        do {
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Attachments", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent(filename)
+            try data.write(to: url, options: .atomic)
+            attachPhoto(url: url, originalSizeBytes: data.count)
+        } catch { errorMessage = error.localizedDescription }
     }
     
     public func snapWhiteboardPhoto(url: URL) {

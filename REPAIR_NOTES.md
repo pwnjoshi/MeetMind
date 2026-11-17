@@ -58,18 +58,24 @@ updating if retaining the installed app's data is required.
 
 Windows cannot execute Xcode, the iOS simulator, or Swift XCTest. The Python
 `run_unit_tests.py` script executes a separate simulation, not the Swift app.
-The actual Swift tests run in GitHub Actions. Passing a compile or simulation
+The actual Swift tests run in GitHub Actions. The previously noncompiling E2E
+suites referenced nonexistent APIs; they have been replaced with 14 concrete
+Swift integration tests, while unit suites were updated for actor isolation and
+asynchronous recording startup. Passing a compile or simulation
 does not establish physical microphone, background, or device launch behavior.
 
 The Figma home reference reviewed is file `Tar6q6zhuhMDIOBlSKzkdI`, node `161:777`.
 Rendered app comparison on iOS is still required; exact visual parity has not
 been certified.
 
-Existing email/Apple/Google onboarding is simulated and does not authenticate a
-user. Voice enrollment is also simulated. Calendar integration, iCloud sync,
-settings-to-engine wiring, and Apple Reminders production integration need further
-work. The app must not be represented as fully production-ready until these are
-implemented or removed from the promised feature set.
+Per the user's decision, onboarding is now local and account-free. The welcome
+artwork remains, with an optional name and a Continue on this iPhone action.
+Simulated authentication, voice-enrollment UI, and the unimplemented iCloud toggle
+are removed from the active flow. Speech locale, on-device mode, audio quality,
+and noise suppression now configure the recording/processing services. Reminders
+sync uses EventKit and displays errors. Physical-device verification remains
+required for these integrations. Calendar synchronization and automatic speaker
+diarization are not implemented; speaker attribution is manual.
 
 Physical-device acceptance should cover fresh install, onboarding with denied and
 granted permissions, repeated force-quit/relaunch, recording/pause/resume/stop,

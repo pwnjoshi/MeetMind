@@ -53,11 +53,16 @@ public struct MeetingNotesMediaTabView: View {
                 HStack(spacing: Spacing.sm) {
                     ForEach(photoNotes) { note in
                         if let path = note.imageAttachmentPath {
-                            RoundedRectangle(cornerRadius: Spacing.Radius.md)
-                                .fill(Theme.Colors.secondaryBackground)
-                                .frame(width: 120, height: 90)
-                                .overlay(Image(systemName: "photo").font(.system(size: 28)).foregroundStyle(Theme.Colors.liveBlue))
-                                .onTapGesture { onSelectPhoto(path) }
+                            Button { onSelectPhoto(path) } label: {
+                                if let image = UIImage(contentsOfFile: path) {
+                                    Image(uiImage: image).resizable().scaledToFill()
+                                        .frame(width: 120, height: 90).clipped()
+                                        .clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.md))
+                                } else {
+                                    Image(systemName: "photo").frame(width: 120, height: 90)
+                                }
+                            }
+                            .accessibilityLabel("Open meeting photo")
                         }
                     }
                 }
