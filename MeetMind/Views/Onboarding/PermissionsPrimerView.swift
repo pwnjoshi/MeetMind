@@ -3,6 +3,7 @@ import UIKit
 
 /// Permissions primer screen educating users and orchestrating capability authorizations
 public struct PermissionsPrimerView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable public var viewModel: OnboardingViewModel
     
     public init(viewModel: OnboardingViewModel) {
@@ -20,6 +21,14 @@ public struct PermissionsPrimerView: View {
             .padding(.horizontal, Spacing.lg)
         }
         .background(Theme.Colors.background.ignoresSafeArea())
+        .onAppear {
+            viewModel.refreshPermissions()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                viewModel.refreshPermissions()
+            }
+        }
         .alert("Permission Required", isPresented: $viewModel.shouldShowSettingsAlert) {
             Button("Open Settings") { openSettings() }
             Button("Cancel", role: .cancel) {}

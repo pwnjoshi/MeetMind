@@ -30,7 +30,11 @@
     <string>MeetMind requires speech recognition access to transcribe spoken dialogue into real-time text.</string>
     <key>NSCalendarsUsageDescription</key>
     <string>MeetMind accesses your calendar to import scheduled meetings and save meeting reminders.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>MeetMind accesses your calendar to import scheduled meetings and save meeting reminders.</string>
     <key>NSRemindersUsageDescription</key>
+    <string>MeetMind accesses reminders to export extracted meeting action items into Apple Reminders.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
     <string>MeetMind accesses reminders to export extracted meeting action items into Apple Reminders.</string>
     <key>NSCameraUsageDescription</key>
     <string>MeetMind requires camera access to capture photos of whiteboards and presentations during meetings.</string>

@@ -60,6 +60,7 @@ public final class OnboardingViewModel {
     // MARK: - Permissions Primer State
     public var shouldShowSettingsAlert: Bool = false
     public var lastDeniedPermission: PermissionType? = nil
+    public var permissionStatuses: [PermissionType: PermissionStatus] = [:]
     
     // MARK: - Completion Callback
     public var onCompletion: ((UserProfile) -> Void)? = nil
@@ -71,6 +72,9 @@ public final class OnboardingViewModel {
     ) {
         self.permissionsService = permissionsService
         self.onCompletion = onCompletion
+        for p in PermissionType.allCases {
+            self.permissionStatuses[p] = permissionsService.status(for: p)
+        }
     }
     
     // MARK: - Computed Properties & Validations
@@ -157,16 +161,23 @@ public final class OnboardingViewModel {
     
     // MARK: - Permissions Operations
     public func permissionStatus(for permission: PermissionType) -> PermissionStatus {
-        permissionsService.status(for: permission)
+        permissionStatuses[permission] ?? permissionsService.status(for: permission)
     }
     
     public func isPermissionGranted(for permission: PermissionType) -> Bool {
-        permissionsService.status(for: permission).isGranted
+        permissionStatus(for: permission).isGranted
+    }
+    
+    public func refreshPermissions() {
+        for p in PermissionType.allCases {
+            permissionStatuses[p] = permissionsService.status(for: p)
+        }
     }
     
     @discardableResult
     public func requestPermission(_ permission: PermissionType) async -> PermissionStatus {
         let status = await permissionsService.requestPermission(for: permission)
+        permissionStatuses[permission] = status
         if status == .denied {
             lastDeniedPermission = permission
             shouldShowSettingsAlert = true
@@ -175,7 +186,10 @@ public final class OnboardingViewModel {
     }
     
     public func requestAllPermissions() async {
-        _ = await permissionsService.requestAllPermissions()
+        let results = await permissionsService.requestAllPermissions()
+        for (p, status) in results {
+            permissionStatuses[p] = status
+        }
     }
     
     public var settingsDeepLinkURL: URL? {
