@@ -16,25 +16,28 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Verify Xcode Version & SDKs
+      - name: Configure Full Xcode Developer Tools
         run: |
+          echo "Selecting full Xcode developer tools..."
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          echo "Active Developer Path:"
+          xcode-select -p
           xcodebuild -version
+          echo "Installed SDKs:"
           xcodebuild -showsdks
-          xcodebuild -list -project MeetMind.xcodeproj
 
-      - name: Build MeetMind Application
+      - name: Build MeetMind iOS App
         run: |
-          xcodebuild build \
+          xcodebuild clean build \
             -project MeetMind.xcodeproj \
-            -scheme MeetMind \
+            -target MeetMind \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
             -derivedDataPath ./build/DerivedData \
-            CODE_SIGN_STYLE="Manual" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM=""
+            CODE_SIGN_STYLE="Manual"
 
       - name: Package into IPA
         run: |
@@ -45,7 +48,7 @@ jobs:
             APP_PATH=$(find ./build/DerivedData -name "MeetMind.app" | head -n 1)
           fi
           if [ -z "$APP_PATH" ]; then
-            echo "Error: MeetMind.app not found!"
+            echo "Error: MeetMind.app was not built!"
             find ./build/DerivedData -maxdepth 5
             exit 1
           fi
