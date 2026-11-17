@@ -129,6 +129,14 @@ public final class ActionItemsViewModel {
         }
     }
     
+    public var groupedActionItems: [ActionItemGroupSection] {
+        groupedSections
+    }
+    
+    public func presentCreateSheet() {
+        openCreateSheet()
+    }
+    
     public var hasEmptyActionItems: Bool {
         allActionItems.isEmpty
     }
