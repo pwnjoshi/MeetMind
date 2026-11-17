@@ -13,6 +13,25 @@ import SwiftData
 
 final class MeetingModelTests: XCTestCase {
     @MainActor
+    func testStandaloneViewModelsRetainTheirStoresAfterInitialization() async throws {
+        // Device crash reports trapped in fetchActionItems after its local container died.
+        let actions = ActionItemsViewModel()
+        let home = HomeViewModel()
+        let setup = MeetingSetupViewModel()
+        let folders = FolderTagViewModel()
+        let audioImport = AudioImportViewModel()
+        await Task.yield()
+        actions.fetchActionItems()
+        home.fetchMeetings()
+        folders.fetchFoldersAndTags()
+        let meeting = Meeting(title: "Owned store remains usable")
+        home.addMeeting(meeting)
+        home.fetchMeetings()
+        XCTAssertTrue(home.meetings.contains { $0.id == meeting.id })
+        XCTAssertTrue(actions.allActionItems.isEmpty)
+        withExtendedLifetime((setup, audioImport)) {}
+    }
+    @MainActor
     func testProductionSchemaPersistsAcrossContainerReopen() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

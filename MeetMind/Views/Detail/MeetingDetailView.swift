@@ -15,6 +15,8 @@ public struct MeetingDetailView: View {
     @State private var showActionItemModal: Bool = false
     @State private var showPhotoModal: String? = nil
     @State private var showSpeakerReassign: TranscriptSegment? = nil
+    @State private var showDeleteConfirmation = false
+    @State private var deletionError: String?
     
     public init(viewModel: MeetingDetailViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -29,7 +31,7 @@ public struct MeetingDetailView: View {
                 onRename: { renameText = viewModel.headerTitle; showRenameAlert = true },
                 onExport: { showExportSheet = true },
                 onAskAI: { showAskAISheet = true },
-                onDelete: { dismiss() }
+                onDelete: { showDeleteConfirmation = true }
             )
             MeetingDetailTabBarView(selectedTab: viewModel.selectedTab) { viewModel.selectTab($0) }
             
@@ -75,6 +77,23 @@ public struct MeetingDetailView: View {
             showRenameAlert: $showRenameAlert,
             renameText: $renameText
         ))
+        .task {
+            while !Task.isCancelled {
+                viewModel.refreshPlaybackPosition()
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { break }
+            }
+        }
+        .onDisappear { viewModel.stopPlayback() }
+        .alert("Delete meeting?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                do { try viewModel.deleteMeeting(); dismiss() }
+                catch { deletionError = error.localizedDescription }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("This deletes the meeting, transcript, notes, and action items.") }
+        .alert("Unable to delete", isPresented: Binding(get: { deletionError != nil }, set: { if !$0 { deletionError = nil } })) {
+            Button("OK") { deletionError = nil }
+        } message: { Text(deletionError ?? "") }
     }
     
     private func cyclePlaybackRate() {

@@ -200,6 +200,7 @@ public final class MeetingSetupViewModel {
     public var shouldSimulateCorruptFile: Bool = false
     
     private var modelContext: ModelContext?
+    private var ownedContainer: ModelContainer?
     private let transcriptionService: SpeechTranscriptionServiceProtocol?
     private let summarizationService: SummarizationServiceProtocol?
     private let audioRecordingService: AudioRecordingServiceProtocol?
@@ -259,6 +260,7 @@ public final class MeetingSetupViewModel {
         
         if modelContext == nil && dataStore == nil {
             if let container = try? ModelContainerFactory.createInMemoryContainer() {
+                self.ownedContainer = container
                 self.modelContext = container.mainContext
             }
         }

@@ -164,6 +164,8 @@ public final class ActionItemsViewModel {
     }
     
     private var modelContext: ModelContext?
+    // ModelContext does not own the store lifetime. Retain any container we create.
+    private var ownedContainer: ModelContainer?
     private let remindersService: RemindersSyncServiceProtocol?
     private var dataStore: Any?
     
@@ -178,6 +180,7 @@ public final class ActionItemsViewModel {
         
         if modelContext == nil && dataStore == nil {
             if let container = try? ModelContainerFactory.createInMemoryContainer() {
+                self.ownedContainer = container
                 self.modelContext = container.mainContext
             }
         }

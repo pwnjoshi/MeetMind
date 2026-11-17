@@ -440,6 +440,21 @@ public final class MeetingDetailViewModel {
             _isPlayingInternal = true
         }
     }
+
+    public func refreshPlaybackPosition() {
+        guard let playbackService else { return }
+        updatePlaybackTime(playbackService.currentTime)
+        _isPlayingInternal = playbackService.isPlaying
+    }
+
+    public func stopPlayback() { playbackService?.pause() }
+
+    public func deleteMeeting() throws {
+        guard let meeting, let modelContext else { return }
+        playbackService?.stop()
+        modelContext.delete(meeting)
+        try modelContext.save()
+    }
     
     public func setPlaybackRate(_ rate: Float) {
         self.playbackRate = rate

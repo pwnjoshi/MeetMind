@@ -38,6 +38,7 @@ public final class HomeViewModel {
     // In-memory fallback meetings list when operating without persistent context
     private var inMemoryMeetings: [Meeting] = []
     private var modelContext: ModelContext?
+    private var ownedContainer: ModelContainer?
     private var dataStore: Any?
     
     public var meetings: [Meeting] {
@@ -122,6 +123,7 @@ public final class HomeViewModel {
         self.dataStore = dataStore
         if modelContext == nil && dataStore == nil {
             if let container = try? ModelContainerFactory.createInMemoryContainer() {
+                self.ownedContainer = container
                 self.modelContext = container.mainContext
             }
         }
