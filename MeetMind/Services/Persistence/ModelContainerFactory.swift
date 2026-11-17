@@ -37,7 +37,8 @@ public final class ModelContainerFactory {
     public static func createProductionContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(
             schema: schema,
-            isStoredInMemoryOnly: false
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .none
         )
         return try ModelContainer(for: schema, configurations: [configuration])
     }

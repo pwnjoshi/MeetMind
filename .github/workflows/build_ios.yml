@@ -1,8 +1,11 @@
 name: Build iOS App (.IPA)
 
+permissions:
+  contents: read
+
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 'codex/**' ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -35,10 +38,31 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_STYLE="Manual"
 
+      - name: Validate compiled app privacy keys
+        run: python3 Scripts/validate_ipa.py build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
+
+      - name: Run Swift XCTest suite
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
+          xcodebuild test \
+            -project MeetMind.xcodeproj \
+            -scheme MeetMind \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -resultBundlePath build/TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeetMind-TestResults
+          path: build/TestResults.xcresult
+          if-no-files-found: ignore
+
       - name: Package into IPA
         run: |
           mkdir -p ./build/Payload
-          APP_PATH=$(find ./build/DerivedData -name "MeetMind.app" | head -n 1)
+          APP_PATH=./build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
           if [ -z "$APP_PATH" ]; then
             echo "Error: MeetMind.app was not built!"
             find ./build/DerivedData -maxdepth 5
@@ -53,6 +77,6 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MeetMind-iOS-App
+          name: MeetMind-iOS-Unsigned-Requires-Resigning
           path: ./build/MeetMind.ipa
           retention-days: 14

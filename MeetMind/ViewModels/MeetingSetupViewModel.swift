@@ -728,10 +728,9 @@ public final class MeetingSetupViewModel {
         // Copy audio file to app sandbox directory for persistence
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? temporaryDirectory
         let targetURL = docs.appendingPathComponent("\(UUID().uuidString).\(ext)")
-        var persistentAudioURL = url
-        if (try? FileManager.default.copyItem(at: url, to: targetURL)) != nil {
-            persistentAudioURL = targetURL
-        }
+        try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: url, to: targetURL)
+        let persistentAudioURL = targetURL
         
         let meetingTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? url.deletingPathExtension().lastPathComponent

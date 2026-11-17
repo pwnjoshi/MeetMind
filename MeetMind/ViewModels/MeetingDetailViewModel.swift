@@ -256,9 +256,9 @@ public final class MeetingDetailViewModel {
     ) {
         self.meeting = meeting
         self.modelContext = modelContext
-        self.playbackService = playbackService
-        self.summarizationService = summarizationService
-        self.exportService = exportService
+        self.playbackService = playbackService ?? AudioPlaybackService()
+        self.summarizationService = summarizationService ?? NaturalLanguageSummarizationService()
+        self.exportService = exportService ?? ExportService()
         self.remindersService = remindersService
         self.dataStore = dataStore
         
@@ -271,7 +271,7 @@ public final class MeetingDetailViewModel {
         }
         
         if let meeting = self.meeting, let audioURL = meeting.audioFileURL {
-            try? playbackService?.loadAudio(url: audioURL)
+            try? self.playbackService?.loadAudio(url: audioURL)
         }
     }
     

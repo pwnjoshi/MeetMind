@@ -5,6 +5,8 @@ import SwiftData
 public struct MeetingProcessingView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
+    @Environment(\.dismiss) private var dismiss
+    @State private var processingError: String?
     @State private var viewModel: ProcessingPipelineViewModel
     public let meetingId: UUID
     
@@ -55,6 +57,10 @@ public struct MeetingProcessingView: View {
             .padding(.horizontal, Spacing.md)
             
             Spacer()
+            if let processingError {
+                Text(processingError).foregroundStyle(.red)
+                Button("Back to meeting") { dismiss() }
+            }
         }
         .padding(.horizontal, Spacing.lg)
         .background(Theme.Colors.background)
@@ -65,7 +71,12 @@ public struct MeetingProcessingView: View {
             }
         }
         .task {
-            try? await viewModel.startPipeline()
+            do {
+                try viewModel.prepareForProduction(context: modelContext)
+                try await viewModel.startPipeline()
+            } catch {
+                processingError = error.localizedDescription
+            }
         }
     }
 }

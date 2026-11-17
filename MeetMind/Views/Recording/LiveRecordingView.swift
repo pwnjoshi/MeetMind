@@ -74,7 +74,19 @@ public struct LiveRecordingView: View {
             Button("Discard", role: .destructive) { viewModel.confirmDiscard(); dismiss() }
             Button("Save Anyway") { proceedToProcessing() }
         } message: { Text(viewModel.shortRecordingPrompt) }
-        .onAppear { if viewModel.recordingState == .idle { viewModel.startSession() } }
+        .alert("Recording unavailable", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK") { viewModel.errorMessage = nil }
+        } message: { Text(viewModel.errorMessage ?? "") }
+        .task {
+            do {
+                try viewModel.prepareSession(context: modelContext)
+                if viewModel.recordingState == .idle { viewModel.startSession() }
+            } catch { viewModel.errorMessage = error.localizedDescription }
+        }
+        .onDisappear { viewModel.leaveSession() }
     }
     
     private func handleStop() {
@@ -87,8 +99,10 @@ public struct LiveRecordingView: View {
     
     private func proceedToProcessing() {
         Task {
-            _ = try? await viewModel.finishSession()
-            router.navigate(to: .meetingProcessing(id: meetingId), in: .home)
+            do {
+                _ = try await viewModel.finishSession()
+                router.navigate(to: .meetingProcessing(id: meetingId), in: .home)
+            } catch { viewModel.errorMessage = error.localizedDescription }
         }
     }
 }

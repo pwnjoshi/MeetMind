@@ -50,6 +50,7 @@ public protocol AudioRecordingServiceProtocol: AnyObject, Sendable {
     
     /// Real-time 60Hz stream of normalized linear audio power levels (0.0 to 1.0)
     var audioMeterStream: AsyncStream<Float> { get }
+    var audioBufferStream: AsyncStream<AVAudioPCMBuffer> { get }
     
     /// Starts recording and writing audio to the specified destination URL
     func startRecording(destinationURL: URL) async throws
@@ -65,4 +66,10 @@ public protocol AudioRecordingServiceProtocol: AnyObject, Sendable {
     
     /// Cancels recording and deletes the partially recorded audio file
     func cancelRecording() throws
+}
+
+public extension AudioRecordingServiceProtocol {
+    var audioBufferStream: AsyncStream<AVAudioPCMBuffer> {
+        AsyncStream { $0.finish() }
+    }
 }

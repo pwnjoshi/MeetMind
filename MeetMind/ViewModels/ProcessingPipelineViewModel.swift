@@ -108,8 +108,8 @@ public final class ProcessingPipelineViewModel {
     private var meeting: Meeting?
     private var meetingId: UUID?
     private var modelContext: ModelContext?
-    private let summarizationService: SummarizationServiceProtocol?
-    private let transcriptionService: SpeechTranscriptionServiceProtocol?
+    private var summarizationService: SummarizationServiceProtocol?
+    private var transcriptionService: SpeechTranscriptionServiceProtocol?
     private var dataStore: Any?
     
     public init(
@@ -167,7 +167,8 @@ public final class ProcessingPipelineViewModel {
         stages[1].state = .inProgress
         currentStep = .diarization
         if let transcriptionService = transcriptionService, let meeting = meeting, let url = meeting.audioFileURL {
-            if let segments = try? await transcriptionService.transcribeAudioFile(at: url) {
+            do {
+                let segments = try await transcriptionService.transcribeAudioFile(at: url)
                 for seg in segments {
                     let ts = TranscriptSegment(
                         text: seg.text,
@@ -178,6 +179,12 @@ public final class ProcessingPipelineViewModel {
                     )
                     meeting.addTranscriptSegment(ts)
                 }
+            } catch {
+                stages[1].state = .failed
+                stages[1].errorMessage = error.localizedDescription
+                errorMessage = error.localizedDescription
+                pipelineStatus = .failed
+                throw error
             }
         }
         stages[1].state = .completed
@@ -189,7 +196,10 @@ public final class ProcessingPipelineViewModel {
         currentStep = .summarization
         var summaryResponse: MeetingSummaryResponse?
         if let summarizationService = summarizationService, let meeting = meeting {
-            let transcriptText = meeting.fullTranscriptText.isEmpty ? "Meeting discussion" : meeting.fullTranscriptText
+            let transcriptText = meeting.fullTranscriptText
+            guard !transcriptText.isEmpty else {
+                throw SpeechTranscriptionError.recognitionRequestFailed("No speech was recognized. Your audio has been preserved.")
+            }
             summaryResponse = try await summarizationService.generateSummary(from: transcriptText)
             if let response = summaryResponse {
                 let summary = Summary(
@@ -234,6 +244,21 @@ public final class ProcessingPipelineViewModel {
         }
     }
     
+    public func prepareForProduction(context: ModelContext) throws {
+        modelContext = context
+        if summarizationService == nil { summarizationService = NaturalLanguageSummarizationService() }
+        if transcriptionService == nil { transcriptionService = SpeechTranscriptionService() }
+        if meeting == nil, let id = meetingId {
+            var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            meeting = try context.fetch(descriptor).first
+        }
+        guard let meeting, let url = meeting.audioFileURL,
+              FileManager.default.fileExists(atPath: url.path) else {
+            throw SpeechTranscriptionError.audioFileReadFailed("Saved audio is unavailable. Return to Meetings and try again.")
+        }
+    }
+
     public func executePipeline(for targetMeeting: Meeting) async throws {
         self.meeting = targetMeeting
         self.meetingId = targetMeeting.id

@@ -45,7 +45,6 @@
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>
-        <string>processing</string>
     </array>
     
     <!-- Custom URL Schemes for Deep Linking -->

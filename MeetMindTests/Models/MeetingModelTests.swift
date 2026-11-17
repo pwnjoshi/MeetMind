@@ -12,6 +12,33 @@ import SwiftData
 @testable import MeetMind
 
 final class MeetingModelTests: XCTestCase {
+    @MainActor
+    func testProductionSchemaPersistsAcrossContainerReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = ModelConfiguration(
+            schema: ModelContainerFactory.schema,
+            url: directory.appendingPathComponent("meetings.store"),
+            cloudKitDatabase: .none
+        )
+        let id = UUID()
+        do {
+            let container = try ModelContainer(for: ModelContainerFactory.schema, configurations: [configuration])
+            let context = container.mainContext
+            let meeting = Meeting(id: id, title: "Relaunch regression")
+            context.insert(meeting)
+            meeting.addNote(Note(content: "Persist this note", timestamp: 1))
+            meeting.addActionItem(ActionItem(title: "Persist this action"))
+            try context.save()
+        }
+        let reopened = try ModelContainer(for: ModelContainerFactory.schema, configurations: [configuration])
+        let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+        let restored = try XCTUnwrap(reopened.mainContext.fetch(descriptor).first)
+        XCTAssertEqual(restored.title, "Relaunch regression")
+        XCTAssertEqual(restored.notes.first?.content, "Persist this note")
+        XCTAssertEqual(restored.actionItems.first?.title, "Persist this action")
+    }
     
     private var modelContainer: ModelContainer!
     private var context: ModelContext!

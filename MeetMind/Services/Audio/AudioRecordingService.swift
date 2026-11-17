@@ -13,6 +13,14 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
     private var lastPauseTime: Date?
     
     private var meterContinuation: AsyncStream<Float>.Continuation?
+    private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    public var audioBufferStream: AsyncStream<AVAudioPCMBuffer> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(16)) { continuation in
+            lock.lock()
+            bufferContinuation = continuation
+            lock.unlock()
+        }
+    }
     private var lastMeterYieldTime: Date = Date.distantPast
     
     public var state: RecordingState {
@@ -54,9 +62,13 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             engine.stop()
         }
         meterContinuation?.finish()
+        bufferContinuation?.finish()
     }
     
     public func startRecording(destinationURL: URL) async throws {
+        guard await AVAudioApplication.requestRecordPermission() else {
+            throw AudioRecordingError.permissionDenied
+        }
         lock.lock()
         guard internalState == .idle || internalState == .stopped else {
             let currentState = internalState
@@ -88,7 +100,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0 else {
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             lock.lock()
             internalState = .idle
             lock.unlock()
@@ -97,7 +109,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         
         // Adaptively handle input hardware format sample rates (e.g. 48kHz tap vs 44.1kHz default)
         let hardwareSampleRate = inputFormat.sampleRate > 0 ? inputFormat.sampleRate : 44100.0
-        let channelCount = min(max(inputFormat.channelCount, 1), 2)
+        let channelCount = inputFormat.channelCount
         
         let fileSettings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
@@ -198,6 +210,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
+        bufferContinuation?.finish()
         
         guard let finalURL = url else {
             throw AudioRecordingError.recordingFailed("Destination URL was missing.")
@@ -223,6 +236,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
+        bufferContinuation?.finish()
         
         if let url = url, FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.removeItem(at: url)
@@ -237,6 +251,23 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         
         // Write audio frame
         try? targetFile.write(from: buffer)
+
+        // Audio engine owns and reuses tap buffers. Copy before asynchronous recognition.
+        lock.lock()
+        let speechContinuation = bufferContinuation
+        lock.unlock()
+        if let speechContinuation,
+           let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
+            copy.frameLength = buffer.frameLength
+            let sourceBuffers = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+            let destinationBuffers = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+            for index in 0..<sourceBuffers.count {
+                if let source = sourceBuffers[index].mData, let destination = destinationBuffers[index].mData {
+                    memcpy(destination, source, Int(sourceBuffers[index].mDataByteSize))
+                }
+            }
+            speechContinuation.yield(copy)
+        }
         
         // 60Hz Power Metering Calculation
         let now = Date()

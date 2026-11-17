@@ -5,7 +5,6 @@
 
 # Xcode user-specific files
 *.xcuserdatad/
-*.xcuserdatad/
 *.xcscmblueprint
 
 # Build outputs
@@ -45,3 +44,8 @@ Desktop.ini
 .agents/
 .vscode/
 screenshots/
+
+# Python tooling caches
+__pycache__/
+*.py[cod]
+.pytest_cache/

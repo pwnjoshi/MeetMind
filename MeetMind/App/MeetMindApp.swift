@@ -1,37 +1,28 @@
 import SwiftUI
 import SwiftData
+import OSLog
 
 @main
 struct MeetMindApp: App {
-    private let container: ModelContainer
+    @State private var container: ModelContainer?
+    @State private var startupError: String?
     @State private var appState: AppState
     @State private var router: NavigationRouter
     @State private var settingsVM: SettingsViewModel
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
-        let initializedContainer: ModelContainer
+        let initializedContainer: ModelContainer?
+        var initializationError: String?
         do {
             initializedContainer = try ModelContainerFactory.createProductionContainer()
         } catch {
-            print("Production ModelContainer creation failed: \(error). Falling back to in-memory container.")
-            do {
-                initializedContainer = try ModelContainerFactory.createInMemoryContainer()
-            } catch {
-                fatalError("Critical ModelContainer initialization failure: \(error)")
-            }
+            Logger(subsystem: "com.meetmind.app", category: "Persistence").error("Store initialization failed: \(String(describing: error), privacy: .public)")
+            initializedContainer = nil
+            initializationError = error.localizedDescription
         }
-        self.container = initializedContainer
-        
-        Task { @MainActor in
-            let context = initializedContainer.mainContext
-            var descriptor = FetchDescriptor<Meeting>()
-            descriptor.fetchLimit = 1
-            if (try? context.fetchCount(descriptor)) == 0 {
-                SampleDataGenerator.populateSampleData(context: context)
-                try? context.save()
-            }
-        }
+        _container = State(initialValue: initializedContainer)
+        _startupError = State(initialValue: initializationError)
         
         let state = AppState()
         let navRouter = NavigationRouter()
@@ -44,7 +35,32 @@ struct MeetMindApp: App {
     
     var body: some Scene {
         WindowGroup {
-            RootView()
+            Group {
+                if let container {
+                    RootView()
+                        .modelContainer(container)
+                } else {
+                    VStack(spacing: 20) {
+                        Image(systemName: "externaldrive.badge.exclamationmark")
+                            .font(.largeTitle)
+                        Text("Unable to open your meetings").font(.title2)
+                        Text("Your saved data has been kept. Retry opening it, or share the error below for support.")
+                        Text(startupError ?? "Unknown storage error")
+                            .font(.caption).textSelection(.enabled)
+                        Button("Retry") {
+                            do {
+                                container = try ModelContainerFactory.createProductionContainer()
+                                startupError = nil
+                            } catch {
+                                startupError = error.localizedDescription
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding()
+                }
+            }
                 .environment(appState)
                 .environment(router)
                 .environment(settingsVM)
@@ -52,7 +68,6 @@ struct MeetMindApp: App {
                     _ = router.handleDeepLink(url: url, appState: appState)
                 }
         }
-        .modelContainer(container)
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:

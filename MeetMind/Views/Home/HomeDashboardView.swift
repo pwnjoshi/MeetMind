@@ -10,7 +10,7 @@ public struct HomeDashboardView: View {
     
     @State private var isShowingSettings: Bool = false
     @State private var isMicrophoneCheckPresented: Bool = false
-    @State private var isNewMeetingSheetPresented: Bool = false
+    @State private var isFilterPresented: Bool = false
     
     public init(viewModel: HomeViewModel = HomeViewModel()) { _viewModel = State(initialValue: viewModel) }
     public init(modelContext: ModelContext? = nil) { _viewModel = State(initialValue: HomeViewModel(modelContext: modelContext)) }
@@ -18,7 +18,7 @@ public struct HomeDashboardView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                MeetingsSearchBarView(text: $viewModel.searchText)
+                MeetingsSearchBarView(text: $viewModel.searchText) { isFilterPresented = true }
                 
                 Button(action: { isMicrophoneCheckPresented = true }) {
                     HStack(spacing: 8) {
@@ -45,7 +45,7 @@ public struct HomeDashboardView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
         }
-        .background(Color(hex: "#F8FAFC"))
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Meetings")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -60,8 +60,8 @@ public struct HomeDashboardView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Schedule meeting", systemImage: "calendar.badge.plus") { isNewMeetingSheetPresented = true }
-                    Button("Import audio", systemImage: "square.and.arrow.down") { isNewMeetingSheetPresented = true }
+                    Button("Schedule meeting", systemImage: "calendar.badge.plus") { appState.activeSheet = .scheduleMeeting }
+                    Button("Import audio", systemImage: "square.and.arrow.down") { appState.activeSheet = .audioImport }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .semibold))
@@ -73,17 +73,30 @@ public struct HomeDashboardView: View {
             }
         }
         .sheet(isPresented: $isShowingSettings) { NavigationStack { SettingsView() } }
+        .sheet(isPresented: $isFilterPresented) {
+            NavigationStack {
+                List(MeetingFilter.allCases, id: \.self) { filter in
+                    Button {
+                        viewModel.setFilter(filter)
+                        isFilterPresented = false
+                    } label: {
+                        HStack {
+                            Label(filter.title, systemImage: filter.iconName)
+                            Spacer()
+                            if viewModel.selectedFilter == filter { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+                .navigationTitle("Filter meetings")
+                .toolbar { Button("Done") { isFilterPresented = false } }
+            }
+            .presentationDetents([.medium])
+        }
         .sheet(isPresented: $isMicrophoneCheckPresented) {
             MicrophoneCheckView {
                 let m = Meeting(title: "New Meeting \(Date().formatted(date: .omitted, time: .shortened))", createdAt: Date(), duration: 0, status: .recording)
                 viewModel.addMeeting(m)
                 router.navigate(to: .liveRecording(id: m.id), in: .home)
-            }
-        }
-        .sheet(isPresented: $isNewMeetingSheetPresented) {
-            NewMeetingSheet(modelContext: modelContext) { m in
-                viewModel.fetchMeetings()
-                if m.status == .recording { router.navigate(to: .liveRecording(id: m.id), in: .home) }
             }
         }
         .onAppear { viewModel.setModelContext(modelContext); viewModel.fetchMeetings() }
