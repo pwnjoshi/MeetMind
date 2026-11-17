@@ -3,6 +3,7 @@
 import argparse
 import plistlib
 import zipfile
+import json
 from pathlib import Path
 
 REQUIRED = (
@@ -30,6 +31,22 @@ def validate(path):
         raise ValueError("Missing privacy declarations: " + ", ".join(missing))
     if "processing" in data.get("UIBackgroundModes", []) and not data.get("BGTaskSchedulerPermittedIdentifiers"):
         raise ValueError("Background processing declared without scheduler identifiers")
+    if path.suffix.lower() == ".ipa":
+        with zipfile.ZipFile(path) as archive:
+            catalog = matches[0].replace("Info.plist", "Assets.car")
+            if catalog not in archive.namelist() or archive.getinfo(catalog).file_size == 0:
+                raise ValueError("Compiled asset catalog is missing or empty")
+    elif path.parent.suffix == ".app":
+        catalog = path.parent / "Assets.car"
+        if not catalog.is_file() or catalog.stat().st_size == 0:
+            raise ValueError("Compiled asset catalog is missing or empty")
+    else:
+        for manifest in (path.parent / "Assets.xcassets").glob("*.imageset/Contents.json"):
+            for entry in json.loads(manifest.read_text(encoding="utf-8")).get("images", []):
+                if "filename" in entry:
+                    asset = manifest.parent / entry["filename"]
+                    if not asset.is_file() or asset.stat().st_size == 0:
+                        raise ValueError(f"Missing or empty image asset: {asset}")
     return data
 
 
@@ -41,4 +58,4 @@ if __name__ == "__main__":
         validate(args.path)
     except (ValueError, OSError, plistlib.InvalidFileException, zipfile.BadZipFile) as error:
         parser.exit(1, f"FAIL: {error}\n")
-    print("PASS: bundled privacy and background-mode declarations")
+    print("PASS: privacy declarations, background modes, and image assets")

@@ -158,6 +158,7 @@ final class OnboardingViewModelTests: XCTestCase {
     func test_permissionStatusLookup() {
         mockPermissions.setStatus(.authorized, for: .microphone)
         mockPermissions.setStatus(.denied, for: .speechRecognition)
+        sut.refreshPermissions()
         
         XCTAssertTrue(sut.isPermissionGranted(for: .microphone))
         XCTAssertFalse(sut.isPermissionGranted(for: .speechRecognition))

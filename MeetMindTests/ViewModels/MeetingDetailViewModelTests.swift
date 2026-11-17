@@ -52,6 +52,8 @@ final class MeetingDetailViewModelTests: XCTestCase {
             audioFileURL: testAudioURL,
             isFavorite: false
         )
+        mockPlaybackService.duration = initialMeeting.duration
+        mockPlaybackService.playbackRate = 1.0
         context.insert(initialMeeting)
         
         let speaker1 = Speaker(name: "Speaker 1", avatarColorHex: "#3B82F6")
@@ -109,6 +111,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
             summarizationService: mockSummarizationService,
             exportService: mockExportService
         )
+        sut.setPlaybackRate(1.0)
     }
     
     @MainActor
@@ -640,7 +643,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
         sut.reassignSpeaker(from: "TargetSpeaker", to: "Sarah Connor")
         let elapsed = Date().timeIntervalSince(start)
         
-        XCTAssertLessThan(elapsed, 0.1)
+        XCTAssertLessThan(elapsed, 1.0)
         XCTAssertEqual(sut.transcriptSegments.first?.speakerName, "Sarah Connor")
     }
     

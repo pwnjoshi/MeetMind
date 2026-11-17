@@ -11,10 +11,18 @@ public struct WelcomeAndSignInView: View {
     public var body: some View {
         GeometryReader { proxy in
             let isCompact = proxy.size.height < 700
-            VStack(spacing: 0) {
-                topIllustrationView(height: isCompact ? 220 : 320)
-                signInPanelView
+            ScrollView {
+                VStack(spacing: 0) {
+                    topIllustrationView(height: isCompact ? 240 : 350)
+                        .frame(width: proxy.size.width)
+                        .clipped()
+                        .padding(.bottom, -20)
+                    signInPanelView
+                        .frame(minHeight: max(0, proxy.size.height - (isCompact ? 220 : 330)))
+                }
+                .frame(width: proxy.size.width)
             }
+            .scrollDismissesKeyboard(.interactively)
             .ignoresSafeArea(edges: .top)
             .background(Color(hex: "#F2F2F7").ignoresSafeArea())
         }
@@ -34,7 +42,7 @@ public struct WelcomeAndSignInView: View {
     private var signInPanelView: some View {
         VStack(spacing: Spacing.md) {
             VStack(spacing: Spacing.xs) {
-                Text("Welcome to MeetMind")
+                Text("Welcome to\nMeetMind")
                     .font(Typography.largeTitle)
                     .fontWeight(.bold)
                     .foregroundStyle(Color(hex: "#1C1C1E"))

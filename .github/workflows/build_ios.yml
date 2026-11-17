@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Verify Xcode Environment
         run: |
@@ -62,14 +62,14 @@ jobs:
           ls -lh MeetMind.ipa
 
       - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: MeetMind-iOS-Unsigned-Requires-Resigning
           path: ./build/MeetMind.ipa
           retention-days: 14
 
       - name: Upload release crash symbols
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: MeetMind-Release-Symbols
           path: build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app.dSYM
@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload simulator screenshots and launch diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: MeetMind-Launch-Smoke
           path: build/smoke
@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload test diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: MeetMind-TestResults
           path: build/TestResults.xcresult

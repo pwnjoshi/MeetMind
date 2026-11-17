@@ -21,7 +21,7 @@ public struct SettingsAboutAndDiagnosticsSection: View {
             HStack {
                 Text("Version")
                 Spacer()
-                Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0") (Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "2"))")
+                Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0") (Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "3"))")
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
             

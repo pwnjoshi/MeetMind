@@ -34,6 +34,7 @@ final class LiveRecordingViewModelTests: XCTestCase {
         modelContainer = try ModelContainer(for: ModelContainerFactory.schema, configurations: [configuration])
         context = ModelContext(modelContainer)
         mockAudioService = MockAudioRecordingService()
+        mockAudioService.automaticallyAdvancesDuration = false
         mockSpeechService = MockSpeechTranscriptionService()
         testAudioURL = URL(fileURLWithPath: "/tmp/live_test_audio_\(UUID().uuidString).m4a")
         
@@ -53,7 +54,9 @@ final class LiveRecordingViewModelTests: XCTestCase {
             meeting: initialMeeting,
             modelContext: context,
             recordingService: mockAudioService,
-            transcriptionService: mockSpeechService
+            transcriptionService: mockSpeechService,
+            destinationAudioURL: testAudioURL,
+            updatesFromRecordingClock: false
         )
     }
     
@@ -219,7 +222,7 @@ final class LiveRecordingViewModelTests: XCTestCase {
         
         sut.simulateSpeechChunk(text: "Key point discussed at 45 seconds.", isFinal: true)
         let segment = sut.finalTranscriptSegments.last
-        XCTAssertEqual(segment?.startTime, 45.0)
+        XCTAssertEqual(segment?.endTime, 45.0)
     }
     
     // MARK: - Tier 1: Feature 32 (Live Note-Taking Dock Tool)
@@ -425,7 +428,9 @@ final class LiveRecordingViewModelTests: XCTestCase {
         try await sut.waitUntilRecordingStarted()
         sut.simulateTimerTick(seconds: 120.0)
         
-        let outputURL = try sut.stopSession()
+        mockAudioService.currentDuration = sut.elapsedDuration
+
+        let outputURL = try await sut.stopSession()
         
         XCTAssertEqual(sut.recordingState, .stopped)
         XCTAssertEqual(mockAudioService.state, .stopped)
@@ -436,7 +441,8 @@ final class LiveRecordingViewModelTests: XCTestCase {
     func test_tier1_feature37_stopRecordingAdvancesStateToProcessing() async throws {
         sut.startSession()
         try await sut.waitUntilRecordingStarted()
-        _ = try sut.stopSession()
+        mockAudioService.currentDuration = sut.elapsedDuration
+        _ = try await sut.stopSession()
         
         let updatedMeeting = fetchMeeting(id: sut.meetingId)
         XCTAssertEqual(updatedMeeting?.status, .processing)
@@ -595,8 +601,8 @@ final class LiveRecordingViewModelTests: XCTestCase {
         try await sut.waitUntilRecordingStarted()
         sut.simulateTimerTick(seconds: 15.0)
         
-        sut.saveNote(text: "Note A")
-        sut.saveNote(text: "Note B")
+        sut.addLiveNote(text: "Note A")
+        sut.addLiveNote(text: "Note B")
         
         XCTAssertEqual(sut.capturedNotes.count, 2)
         XCTAssertEqual(sut.capturedNotes[0].timestamp, 15.0)
@@ -734,7 +740,9 @@ final class LiveRecordingViewModelTests: XCTestCase {
         sut.simulateTimerTick(seconds: 15.0)
         sut.pauseSession()
         
-        let url = try sut.stopSession()
+        mockAudioService.currentDuration = sut.elapsedDuration
+
+        let url = try await sut.stopSession()
         XCTAssertEqual(sut.recordingState, .stopped)
         XCTAssertEqual(url, testAudioURL)
     }

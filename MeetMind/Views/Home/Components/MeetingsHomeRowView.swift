@@ -27,8 +27,8 @@ public struct MeetingsHomeRowView: View {
             HStack(alignment: .center, spacing: Spacing.md) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(Typography.headline)
-                        .foregroundStyle(Color(hex: "#1C1C1E"))
+                        .font(.body)
+                        .foregroundStyle(.primary)
                     Text(subtitle)
                         .font(Typography.subheadline)
                         .foregroundStyle(Color(uiColor: .secondaryLabel))
@@ -44,6 +44,7 @@ public struct MeetingsHomeRowView: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, 12)
+            .frame(minHeight: 88)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

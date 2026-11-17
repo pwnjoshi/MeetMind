@@ -30,7 +30,7 @@ public struct HomeDashboardView: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(Color(hex: "#0068D9"))
+                    .background(Color(hex: "#0088FF"))
                     .clipShape(RoundedRectangle(cornerRadius: 25))
                 }
                 
@@ -65,7 +65,7 @@ public struct HomeDashboardView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color(hex: "#1C1C1E"))
+                        .foregroundStyle(Color(hex: "#0088FF"))
                         .frame(width: 36, height: 36)
                         .background(Color(hex: "#F0F3FA"))
                         .clipShape(Circle())

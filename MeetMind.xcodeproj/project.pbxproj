@@ -207,6 +207,7 @@
 		1A0000D52CEE000100000001 /* SettingsSpeechAndAISection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D52CEE000100000001 /* SettingsSpeechAndAISection.swift */; };
 		1A0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift */; };
 		1A0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift */; };
+		260B8F0C0D404602B56F39FD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8336B9012144485AB6650445 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -423,6 +424,7 @@
 		1B0000D52CEE000100000001 /* SettingsSpeechAndAISection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsSpeechAndAISection.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsStorageAndCacheSection.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsThemeAndAppearanceSection.swift"; sourceTree = SOURCE_ROOT; };
+		8336B9012144485AB6650445 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -577,6 +579,7 @@
 			isa = PBXGroup;
 			children = (
 				1B0000242CEE000100000001 /* Info.plist */,
+				8336B9012144485AB6650445 /* Assets.xcassets */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -924,6 +927,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				260B8F0C0D404602B56F39FD /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

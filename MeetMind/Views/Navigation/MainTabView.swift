@@ -36,7 +36,7 @@ public struct MainTabView: View {
             .badge(pendingActionItemsBadge)
             .tag(TabIdentifier.actionItems)
         }
-        .tint(Color(hex: "#0068D9"))
+        .tint(Color(hex: "#0088FF"))
     }
     
     private var pendingActionItemsBadge: String? {

@@ -145,7 +145,7 @@ public final class SearchViewModel {
         
         for meeting in candidateMeetings {
             // Scope: Meeting Title
-            if selectedScope == .all {
+            if selectedScope == .all || selectedScope == .titles {
                 if meeting.title.lowercased().contains(queryLower) {
                     let range = calculateHighlight(in: meeting.title, term: queryLower)
                     matches.append(SearchResultItem(

@@ -717,7 +717,9 @@ public final class MeetingSetupViewModel {
                 importErrorMessage = "The audio file duration is invalid or zero."
                 throw AudioImportError.invalidDuration
             } else {
-                duration = 120.0
+                hasImportError = true
+                importErrorMessage = "The audio file could not be read. Choose another recording."
+                throw AudioImportError.invalidDuration
             }
         }
         

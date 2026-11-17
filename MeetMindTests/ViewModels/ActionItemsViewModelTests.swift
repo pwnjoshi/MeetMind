@@ -143,8 +143,8 @@ final class ActionItemsViewModelTests: XCTestCase {
     @MainActor
     override func tearDown() async throws {
         clearActionItems()
-        try? context.delete(model: Meeting.self)
-        try? context.delete(model: Speaker.self)
+        for model in (try? context.fetch(FetchDescriptor<Meeting>())) ?? [] { context.delete(model) }
+        for model in (try? context.fetch(FetchDescriptor<Speaker>())) ?? [] { context.delete(model) }
         try? context.save()
         mockRemindersSyncService = nil
         sut = nil

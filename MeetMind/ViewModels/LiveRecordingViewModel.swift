@@ -211,6 +211,7 @@ public final class LiveRecordingViewModel {
     private var clockTask: Task<Void, Never>?
     private var speechTask: Task<Void, Never>?
     private var destinationAudioURL: URL?
+    private let updatesFromRecordingClock: Bool
     private var dataStore: Any?
     
     public init(
@@ -222,7 +223,8 @@ public final class LiveRecordingViewModel {
         audioService: AudioRecordingServiceProtocol? = nil,
         speechService: SpeechTranscriptionServiceProtocol? = nil,
         dataStore: Any? = nil,
-        destinationAudioURL: URL? = nil
+        destinationAudioURL: URL? = nil,
+        updatesFromRecordingClock: Bool = true
     ) {
         let actualMeetingId = meeting?.id ?? meetingId ?? UUID()
         self.meetingId = actualMeetingId
@@ -235,6 +237,7 @@ public final class LiveRecordingViewModel {
         self.transcriptionService = transcriptionService ?? speechService
         self.dataStore = dataStore
         self.destinationAudioURL = destinationAudioURL
+        self.updatesFromRecordingClock = updatesFromRecordingClock
     }
     
     public func startSession() {
@@ -282,10 +285,12 @@ public final class LiveRecordingViewModel {
                         self?.updateWaveformLevels(with: power)
                     }
                 }
-                clockTask = Task { [weak self] in
-                    while !Task.isCancelled {
-                        do { try await Task.sleep(for: .milliseconds(200)) } catch { break }
-                        self?.elapsedDuration = recordingService.currentDuration
+                if updatesFromRecordingClock {
+                    clockTask = Task { [weak self] in
+                        while !Task.isCancelled {
+                            do { try await Task.sleep(for: .milliseconds(200)) } catch { break }
+                            self?.elapsedDuration = recordingService.currentDuration
+                        }
                     }
                 }
             } catch {
@@ -640,16 +645,8 @@ public final class LiveRecordingViewModel {
         }
     }
     
-    public func stopSession() throws -> URL {
-        recordingState = .stopped
-        let url = meeting?.audioFileURL ?? (recordingService as? MockAudioRecordingService)?.destinationURL ?? destinationAudioURL ?? URL(fileURLWithPath: "/tmp/live_test_audio_\(meetingId.uuidString).m4a")
-        if let meeting = meeting {
-            meeting.audioFileURL = url
-            meeting.duration = elapsedDuration
-            meeting.status = .processing
-            try? modelContext?.save()
-        }
-        return url
+    public func stopSession() async throws -> URL {
+        try await finishSession()
     }
     
     public func finishSession() async throws -> URL {

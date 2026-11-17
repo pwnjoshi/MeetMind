@@ -33,13 +33,13 @@ public struct MeetingsSearchBarView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(Color(hex: "#F0F3FA"))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(Capsule())
             
             Button(action: onFilterTap) {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Color(hex: "#1C1C1E"))
-                    .frame(width: 42, height: 42)
+                    .foregroundStyle(Color(hex: "#0088FF"))
+                    .frame(width: 44, height: 44)
                     .background(Color(hex: "#F0F3FA"))
                     .clipShape(Circle())
             }
