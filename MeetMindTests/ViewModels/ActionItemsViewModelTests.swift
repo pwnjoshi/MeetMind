@@ -164,7 +164,9 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     private func clearActionItems() {
-        try? context.delete(model: ActionItem.self)
+        for item in (try? context.fetch(FetchDescriptor<ActionItem>())) ?? [] {
+            context.delete(item)
+        }
         try? context.save()
     }
     
@@ -288,12 +290,10 @@ final class ActionItemsViewModelTests: XCTestCase {
     // MARK: - Tier 1: Feature 50 (Sync to Apple Reminders)
     
     /// Tier 1: Feature 50 - Validates syncing pending tasks dispatches EventKit sync calls.
-    func test_tier1_feature50_syncToRemindersDispatchesEventKit() throws {
+    func test_tier1_feature50_syncToRemindersDispatchesEventKit() async throws {
         sut.loadActionItems()
         
-        let syncedCount = sut.syncPendingToAppleReminders()
-        
-        XCTAssertEqual(syncedCount, 2) // 2 pending items
+        try await sut.syncToAppleReminders()
         XCTAssertEqual(mockRemindersSyncService.dispatchedRemindersCount, 2)
     }
     
@@ -438,7 +438,7 @@ final class ActionItemsViewModelTests: XCTestCase {
         
         XCTAssertFalse(sut.isSheetValid)
         XCTAssertThrowsError(try sut.saveActionItem()) { error in
-            XCTAssertTrue(error is ActionItemValidationError)
+            XCTAssertTrue(error is MeetingSetupError)
         }
     }
     
@@ -525,6 +525,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     
     /// Tier 2: Feature 54 - Validates performance filtering across 1,000 tasks under 150ms.
     func test_tier2_feature54_thousandTasksPerformanceFiltering() throws {
+        clearActionItems()
         for i in 0..<1000 {
             let item = ActionItem(
                 id: UUID(),

@@ -78,14 +78,15 @@ public final class MockAudioRecordingService: AudioRecordingServiceProtocol, @un
     
     public func cancelRecording() throws {
         lock.lock()
-        defer { lock.unlock() }
-        if let error = shouldThrowError { throw error }
+        if let error = shouldThrowError { lock.unlock(); throw error }
         state = .idle
         isCancelled = true
         currentDuration = 0.0
+        let continuation = meterContinuation
+        lock.unlock()
         stopSimulation()
-        meterContinuation?.yield(0.0)
-        meterContinuation?.finish()
+        continuation?.yield(0.0)
+        continuation?.finish()
     }
     
     private func startSimulation() {
