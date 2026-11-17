@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 @Model
-public final class Folder {
+public final class Folder: Identifiable {
     @Attribute(.unique) public var id: UUID
     public var name: String
     public var iconName: String

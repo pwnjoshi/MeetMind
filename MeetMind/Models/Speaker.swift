@@ -2,13 +2,18 @@ import Foundation
 import SwiftData
 
 @Model
-public final class Speaker {
+public final class Speaker: Identifiable {
     @Attribute(.unique) public var id: UUID
     public var name: String
     public var email: String?
     public var role: String?
     public var avatarColorHex: String
     public var voiceSampleURL: URL?
+    
+    public var colorHex: String {
+        get { avatarColorHex }
+        set { avatarColorHex = newValue }
+    }
     
     // Relationships
     @Relationship(deleteRule: .nullify)

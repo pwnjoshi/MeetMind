@@ -29,7 +29,7 @@ public struct RootView: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.8), value: appState.hasCompletedOnboarding)
         .sheet(item: Bindable(appState).activeSheet) { sheetDestination(for: $0) }
         .modifier(RootAlertModifier(appState: appState))
-        .preferredColorScheme(settingsVM.preferredColorScheme)
+        .preferredColorScheme(settingsVM.preferredColorScheme?.systemColorScheme)
     }
     
     @ViewBuilder

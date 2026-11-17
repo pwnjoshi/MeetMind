@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 @Model
-public final class Summary {
+public final class Summary: Identifiable {
     @Attribute(.unique) public var id: UUID
     public var executiveSummary: String
     public var keyPoints: [String]

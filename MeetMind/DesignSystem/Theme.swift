@@ -92,6 +92,10 @@ public extension Color {
         self.init(.sRGB, red: red, green: green, blue: blue, opacity: opacity)
     }
     
+    init(hex: String) {
+        self.init(hexString: hex)
+    }
+    
     init(hexString: String) {
         let hex = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0

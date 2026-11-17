@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// Display theme appearance mode
 public enum ThemeMode: String, CaseIterable, Sendable {
@@ -12,6 +13,13 @@ public enum ThemeMode: String, CaseIterable, Sendable {
 public enum ColorSchemePreference: String, Sendable {
     case light = "light"
     case dark = "dark"
+    
+    public var systemColorScheme: ColorScheme {
+        switch self {
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
 }
 
 /// AI Summary generation style

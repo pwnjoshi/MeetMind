@@ -329,6 +329,32 @@ public final class ActionItemsViewModel {
         return item
     }
     
+    @discardableResult
+    public func createActionItem(
+        title: String,
+        priority: ActionPriority = .medium,
+        dueDate: Date? = nil,
+        assigneeName: String? = nil
+    ) -> ActionItem {
+        let speaker = assigneeName != nil && !assigneeName!.isEmpty ? Speaker(name: assigneeName!) : nil
+        let item = ActionItem(
+            title: title,
+            assigneeName: assigneeName,
+            dueDate: dueDate,
+            priority: priority
+        )
+        if let context = modelContext {
+            context.insert(item)
+            try? context.save()
+        }
+        allActionItems.append(item)
+        return item
+    }
+    
+    public func syncAllToAppleReminders() async throws {
+        try await syncToAppleReminders()
+    }
+    
     public func addItem(_ item: ActionItem) {
         if !allActionItems.contains(where: { $0.id == item.id }) {
             allActionItems.append(item)

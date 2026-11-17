@@ -13,6 +13,7 @@ public struct ActionItemsConsoleView: View {
     }
     
     public var body: some View {
+        @Bindable var vm = viewModel
         VStack(spacing: Spacing.sm) {
             topControlBar
             ActionItemFilterHeaderView(
@@ -34,7 +35,7 @@ public struct ActionItemsConsoleView: View {
         }
         .background(Theme.Colors.background)
         .navigationTitle("Action Items")
-        .sheet(isPresented: $viewModel.isShowingActionItemSheet) {
+        .sheet(isPresented: $vm.isShowingActionItemSheet) {
             CreateActionItemSheet(
                 onSave: { title, priority, due, assignee in
                     viewModel.createActionItem(title: title, priority: priority, dueDate: due, assigneeName: assignee)

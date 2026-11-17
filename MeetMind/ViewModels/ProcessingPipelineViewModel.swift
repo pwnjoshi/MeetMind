@@ -132,7 +132,7 @@ public final class ProcessingPipelineViewModel {
         overallProgress = max(0.0, min(1.0, progress))
     }
     
-    public func startPipeline() {
+    private func preparePipeline() {
         if isCorruptAudioSimulated {
             pipelineStatus = .failed
             stages[0].state = .failed
@@ -147,8 +147,12 @@ public final class ProcessingPipelineViewModel {
         stages[0].state = .inProgress
     }
     
+    public func startPipeline() {
+        preparePipeline()
+    }
+    
     public func startPipeline() async throws {
-        startPipeline()
+        preparePipeline()
         if pipelineStatus == .failed { return }
         
         // Stage 0: Audio Finalization

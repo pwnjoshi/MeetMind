@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 @Model
-public final class TranscriptSegment {
+public final class TranscriptSegment: Identifiable {
     @Attribute(.unique) public var id: UUID
     public var text: String
     public var startTime: TimeInterval

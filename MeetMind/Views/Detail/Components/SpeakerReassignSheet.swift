@@ -21,7 +21,7 @@ public struct SpeakerReassignSheet: View {
     
     public var body: some View {
         NavigationStack {
-            List(availableSpeakers) { speaker in
+            List(availableSpeakers, id: \.id) { speaker in
                 Button {
                     onSelect(speaker)
                 } label: {

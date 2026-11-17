@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 @Model
-public final class Note {
+public final class Note: Identifiable {
     @Attribute(.unique) public var id: UUID
     public var content: String
     public var timestamp: TimeInterval

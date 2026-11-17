@@ -3,12 +3,17 @@ import SwiftUI
 // MARK: - Status Badge
 public struct StatusBadge: View {
     public let statusText: String
+    public let statusColor: Color?
     
-    public init(statusText: String) {
+    public init(statusText: String, statusColor: Color? = nil) {
         self.statusText = statusText
+        self.statusColor = statusColor
     }
     
     private var badgeColor: (bg: Color, fg: Color, icon: String) {
+        if let statusColor = statusColor {
+            return (statusColor.opacity(0.15), statusColor, "checkmark.circle.fill")
+        }
         switch statusText.lowercased() {
         case "recording":
             return (Theme.Colors.coralRedLight, Theme.Colors.coralRed, "record.circle")

@@ -53,7 +53,7 @@ public typealias ActionItemPriority = ActionPriority
 
 // MARK: - Action Item SwiftData Entity
 @Model
-public final class ActionItem {
+public final class ActionItem: Identifiable {
     @Attribute(.unique) public var id: UUID
     public var title: String
     public var taskDescription: String
@@ -121,6 +121,49 @@ public final class ActionItem {
             completedAt: completedAt,
             assignee: speaker,
             reminderIdentifier: reminderIdentifier,
+            meeting: meeting
+        )
+    }
+    
+    public convenience init(
+        title: String,
+        assigneeName: String? = nil,
+        dueDate: Date? = nil,
+        priority: ActionPriority = .medium,
+        meeting: Meeting? = nil
+    ) {
+        let speaker = assigneeName != nil && !assigneeName!.isEmpty ? Speaker(name: assigneeName!) : nil
+        self.init(
+            id: UUID(),
+            title: title,
+            taskDescription: "",
+            isCompleted: false,
+            priority: priority,
+            dueDate: dueDate,
+            completedAt: nil,
+            assignee: speaker,
+            reminderIdentifier: nil,
+            meeting: meeting
+        )
+    }
+    
+    public convenience init(
+        title: String,
+        assignee: Speaker? = nil,
+        dueDate: Date? = nil,
+        priority: ActionPriority = .medium,
+        meeting: Meeting? = nil
+    ) {
+        self.init(
+            id: UUID(),
+            title: title,
+            taskDescription: "",
+            isCompleted: false,
+            priority: priority,
+            dueDate: dueDate,
+            completedAt: nil,
+            assignee: assignee,
+            reminderIdentifier: nil,
             meeting: meeting
         )
     }

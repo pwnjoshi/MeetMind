@@ -27,7 +27,7 @@ public struct FolderCreationSheet: View {
                     HStack(spacing: Spacing.md) {
                         ForEach(availableColors, id: \.self) { colorHex in
                             Circle()
-                                .fill(Color(hex: colorHex) ?? Theme.Colors.liveBlue)
+                                .fill(Color(hex: colorHex))
                                 .frame(width: 32, height: 32)
                                 .overlay(
                                     Circle()

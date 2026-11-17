@@ -120,7 +120,7 @@ public enum AudioQuality: String, Codable, CaseIterable, Sendable {
 
 // MARK: - Meeting SwiftData Entity
 @Model
-public final class Meeting {
+public final class Meeting: Identifiable {
     @Attribute(.unique) public var id: UUID
     public var title: String
     public var createdAt: Date
