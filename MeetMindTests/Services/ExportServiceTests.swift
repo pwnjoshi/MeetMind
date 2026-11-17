@@ -11,6 +11,7 @@ import XCTest
 import Foundation
 @testable import MeetMind
 
+@MainActor
 final class ExportServiceTests: XCTestCase {
     
     private var mockService: MockExportService!

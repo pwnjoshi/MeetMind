@@ -13,6 +13,7 @@ import SwiftData
 /// Comprehensive test suite covering Central Dashboard Feed, Meeting Status Badges,
 /// Quick Filter Chips, and Meeting Card Swipe Actions.
 /// Corresponds to Features 18, 19, 20, and 21.
+@MainActor
 final class HomeViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

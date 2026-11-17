@@ -14,6 +14,7 @@ import SwiftData
 /// Multi-Stage Progression (Audio Finalization -> Speech Diarization -> AI Summarization -> Action Extraction),
 /// Progress Interpolation, Stage Retries, Error Fallbacks, and Completion Routing.
 /// Corresponds to Feature 39.
+@MainActor
 final class ProcessingPipelineViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

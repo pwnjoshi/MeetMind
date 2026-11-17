@@ -11,6 +11,7 @@ import Foundation
 import SwiftData
 @testable import MeetMind
 
+@MainActor
 final class SpeakerAndNotesModelTests: XCTestCase {
     
     private var modelContainer: ModelContainer!

@@ -13,6 +13,7 @@ import Foundation
 import SwiftData
 @testable import MeetMind
 
+@MainActor
 final class RecordingToSummaryE2ETests: XCTestCase {
     
     private var modelContainer: ModelContainer!

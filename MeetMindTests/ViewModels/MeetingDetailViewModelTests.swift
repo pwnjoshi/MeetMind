@@ -15,6 +15,7 @@ import SwiftData
 /// Speaker Reassignment Sheet, Sticky Audio Player Bar, Variable Speed Playback,
 /// Whiteboard & Notes Gallery, and Interactive Ask AI Assistant.
 /// Corresponds to Features 40, 41, 42, 43, 44, 45, 46, 47, 51, and 52.
+@MainActor
 final class MeetingDetailViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

@@ -12,6 +12,7 @@ import Foundation
 import SwiftData
 @testable import MeetMind
 
+@MainActor
 final class ExportAndAIE2ETests: XCTestCase {
     
     private var modelContainer: ModelContainer!

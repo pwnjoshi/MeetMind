@@ -14,6 +14,7 @@ import SwiftData
 /// Templates Selector, Participant Manager, Quick Meeting Launcher, Audio Import Pipeline,
 /// and Folders & Tags Organization.
 /// Corresponds to Features 22, 23, 24, 25, 26, 27, and 28.
+@MainActor
 final class MeetingSetupViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

@@ -12,6 +12,7 @@ import Foundation
 /// Comprehensive test suite covering Settings: Theme & Design System Tokens,
 /// Audio Quality Configuration, Speech & AI Options, Storage & Cache Purge, and Theme Persistence.
 /// Corresponds to Features 2, 14, 15, 16, and 17.
+@MainActor
 final class SettingsViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

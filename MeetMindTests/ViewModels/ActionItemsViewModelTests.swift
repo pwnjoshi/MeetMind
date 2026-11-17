@@ -41,6 +41,7 @@ public final class MockRemindersSyncService: @unchecked Sendable {
 /// Add / Edit Action Item Sheet, Sync to Apple Reminders (EventKit integration),
 /// and Cross-Meeting Action Console aggregation, filtering, and grouping.
 /// Corresponds to Features 48, 49, 50, and 54.
+@MainActor
 final class ActionItemsViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

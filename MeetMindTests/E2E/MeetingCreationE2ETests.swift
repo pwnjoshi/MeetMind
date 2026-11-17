@@ -12,6 +12,7 @@ import Foundation
 import SwiftData
 @testable import MeetMind
 
+@MainActor
 final class MeetingCreationE2ETests: XCTestCase {
     
     private var modelContainer: ModelContainer!

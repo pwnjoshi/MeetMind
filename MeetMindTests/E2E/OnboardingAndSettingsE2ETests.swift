@@ -10,6 +10,7 @@ import XCTest
 import Foundation
 @testable import MeetMind
 
+@MainActor
 final class OnboardingAndSettingsE2ETests: XCTestCase {
     
     private var navigationVM: AppNavigationViewModel!

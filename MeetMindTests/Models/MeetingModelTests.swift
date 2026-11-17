@@ -11,6 +11,7 @@ import Foundation
 import SwiftData
 @testable import MeetMind
 
+@MainActor
 final class MeetingModelTests: XCTestCase {
     @MainActor
     func testStandaloneViewModelsRetainTheirStoresAfterInitialization() async throws {

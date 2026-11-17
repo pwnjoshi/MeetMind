@@ -14,6 +14,7 @@ import SwiftData
 /// Streaming Speech Transcript Feed, Live In-Recording Note Dock, Bookmarks/Flags, Speaker Switcher,
 /// Whiteboard Camera Snaps, Pause/Resume, Stop Finalization, and Discard Confirmation.
 /// Corresponds to Features 29, 30, 31, 32, 33, 34, 35, 36, 37, and 38.
+@MainActor
 final class LiveRecordingViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

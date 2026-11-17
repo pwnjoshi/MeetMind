@@ -15,6 +15,7 @@ import SwiftData
 /// Validates Scope Filtering, Match Snippet Highlighting, Regex Escaping, Debouncing,
 /// Deep Link Routing, and Search History.
 /// Corresponds to Feature 55.
+@MainActor
 final class SearchViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

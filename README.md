@@ -1,6 +1,9 @@
 # MeetMind
 
-An intelligent, production-grade meeting intelligence application for iOS 17+ built natively in SwiftUI.
+A meeting intelligence application for iOS 17+ built natively in SwiftUI.
+
+See [REPAIR_NOTES.md](REPAIR_NOTES.md) for the confirmed launch-crash diagnosis,
+repairs, installation requirements, and remaining production-readiness gaps.
 
 MeetMind transforms your meetings through real-time audio recording, dynamic waveform visualization, live streaming transcription, on-device extractive summaries, automated action item tracking with Apple Reminders synchronization, synchronized audio scrubbing, and universal cross-meeting search.
 
@@ -55,3 +58,7 @@ To verify project structure and run tests via command line:
 python Scripts/verify_project.py
 python Scripts/run_unit_tests.py
 ```
+
+The Python runner is a host-side domain simulation; it does not compile or run
+Swift XCTest. GitHub Actions runs the Swift suite with Xcode on macOS. Validate a
+built package with `python Scripts/validate_ipa.py path/to/MeetMind.ipa`.

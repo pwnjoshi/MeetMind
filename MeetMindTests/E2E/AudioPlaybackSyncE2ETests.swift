@@ -14,6 +14,7 @@ import Foundation
 import SwiftData
 @testable import MeetMind
 
+@MainActor
 final class AudioPlaybackSyncE2ETests: XCTestCase {
     
     private var modelContainer: ModelContainer!
