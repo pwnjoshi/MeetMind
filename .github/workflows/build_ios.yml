@@ -16,10 +16,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure Full Xcode Developer Tools
+      - name: Verify Xcode Environment
         run: |
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
+          xcodebuild -showsdks
           xcodebuild -list -project MeetMind.xcodeproj
 
       - name: Build MeetMind iOS App
