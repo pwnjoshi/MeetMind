@@ -40,12 +40,14 @@ public struct OnboardingContainerView: View {
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.currentStage)
         .onAppear {
-            viewModel.onCompletion = { _ in
+            viewModel.onCompletion = { profile in
+                print("Onboarding completed for: \(profile.name)")
                 appState.completeOnboarding()
             }
         }
         .onChange(of: viewModel.isOnboardingCompleted) { _, completed in
             if completed {
+                print("Onboarding completion detected via flag")
                 appState.completeOnboarding()
             }
         }
