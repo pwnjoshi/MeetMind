@@ -1,0 +1,45 @@
+# Xcode
+#
+# gitignore template for Apple Xcode programs
+# website: https://bit.ly/apple-gitignore
+
+# Xcode user-specific files
+*.xcuserdatad/
+*.xcuserdatad/
+*.xcscmblueprint
+
+# Build outputs
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Packages/
+
+# CocoaPods & Carthage
+Pods/
+Carthage/Build/
+
+# macOS System Files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows System Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Environment and Secrets
+*.env
+*.env.local
+
+# Teamwork and Scratch (internal state)
+.agents/

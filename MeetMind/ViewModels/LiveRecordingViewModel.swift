@@ -1,0 +1,611 @@
+import Foundation
+import SwiftData
+import Observation
+
+/// Segment item displayed in the live transcript stream
+public struct LiveTranscriptSegmentItem: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let speakerName: String
+    public let text: String
+    public let startTime: TimeInterval
+    public let endTime: TimeInterval
+    public let confidence: Float
+    
+    public init(
+        id: UUID = UUID(),
+        speakerName: String,
+        text: String,
+        startTime: TimeInterval,
+        endTime: TimeInterval,
+        confidence: Float = 1.0
+    ) {
+        self.id = id
+        self.speakerName = speakerName
+        self.text = text
+        self.startTime = startTime
+        self.endTime = endTime
+        self.confidence = confidence
+    }
+}
+
+/// Note item captured during live recording
+public struct NoteItem: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let text: String
+    public let timestamp: TimeInterval
+    public let isFlagged: Bool
+    
+    public init(id: UUID = UUID(), text: String, timestamp: TimeInterval, isFlagged: Bool = false) {
+        self.id = id
+        self.text = text
+        self.timestamp = timestamp
+        self.isFlagged = isFlagged
+    }
+}
+
+/// Bookmark item flagged during live recording
+public struct BookmarkItem: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let timestamp: TimeInterval
+    
+    public init(id: UUID = UUID(), timestamp: TimeInterval) {
+        self.id = id
+        self.timestamp = timestamp
+    }
+}
+
+/// Speaker item for live speaker switching
+public struct SpeakerItem: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let name: String
+    public let colorHex: String
+    
+    public init(id: UUID = UUID(), name: String, colorHex: String = "#3B82F6") {
+        self.id = id
+        self.name = name
+        self.colorHex = colorHex
+    }
+}
+
+/// Photo item attached during live recording
+public struct PhotoAttachmentItem: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let url: URL
+    public let timestamp: TimeInterval
+    public let isCompressed: Bool
+    
+    public init(id: UUID = UUID(), url: URL, timestamp: TimeInterval, isCompressed: Bool = false) {
+        self.id = id
+        self.url = url
+        self.timestamp = timestamp
+        self.isCompressed = isCompressed
+    }
+}
+
+/// System audio interruption type
+public enum InterruptionType: Sendable, Equatable {
+    case began
+    case ended
+}
+
+/// ViewModel powering the live recording console HUD, dynamic waveforms, notes, and transcription
+@Observable
+@MainActor
+public final class LiveRecordingViewModel {
+    public var meetingId: UUID
+    public var meetingTitle: String = "Live Meeting"
+    public var recordingState: RecordingState = .idle
+    public var elapsedDuration: TimeInterval = 0.0
+    
+    public var elapsedTime: TimeInterval {
+        get { elapsedDuration }
+        set { elapsedDuration = newValue }
+    }
+    
+    public var isRecording: Bool { recordingState == .recording }
+    public var isPaused: Bool { recordingState == .paused }
+    
+    public var formattedDuration: String {
+        let total = Int(elapsedDuration)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if hours > 0 {
+            return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+    }
+    
+    public var activeAudioRoute: String = "Built-In Microphone"
+    public var audioRouteBadgeTitle: String = "Built-In Mic"
+    
+    public var waveformLevels: [Float] = Array(repeating: 0.05, count: 32)
+    public var audioPowerLevels: [Float] {
+        get { waveformLevels }
+        set { waveformLevels = newValue }
+    }
+    
+    public var interimTranscriptText: String = ""
+    public var interimTranscript: String {
+        get { interimTranscriptText }
+        set { interimTranscriptText = newValue }
+    }
+    public var hasInterimText: Bool { !interimTranscriptText.isEmpty }
+    
+    public var finalTranscriptSegments: [LiveTranscriptSegmentItem] = []
+    public var transcriptSegments: [LiveTranscriptSegmentItem] {
+        get { finalTranscriptSegments }
+        set { finalTranscriptSegments = newValue }
+    }
+    public var liveTranscriptChunks: [LiveTranscriptChunk] = []
+    
+    public var activeSpeaker: Speaker? = Speaker(name: "Speaker 1")
+    public var activeSpeakerName: String? {
+        get { activeSpeaker?.name }
+        set {
+            if let name = newValue {
+                activeSpeaker = Speaker(name: name)
+            } else {
+                activeSpeaker = nil
+            }
+        }
+    }
+    
+    public var availableSpeakers: [SpeakerItem] = [
+        SpeakerItem(name: "Speaker 1", colorHex: "#3B82F6"),
+        SpeakerItem(name: "Speaker 2", colorHex: "#10B981")
+    ]
+    
+    public var bookmarks: [BookmarkItem] = []
+    public var isBookmarkButtonHighlighted: Bool = false
+    public var isBookmarkLimitReached: Bool = false
+    private var lastBookmarkTimestamp: TimeInterval? = nil
+    
+    public var isNoteSheetPresented: Bool = false
+    public var noteCaptureTimestamp: TimeInterval = 0.0
+    public var capturedNotes: [NoteItem] = []
+    public var notes: [NoteItem] {
+        get { capturedNotes }
+        set { capturedNotes = newValue }
+    }
+    public var notesCount: Int { capturedNotes.count }
+    
+    public var whiteboardPhotos: [URL] = []
+    public var capturedPhotos: [PhotoAttachmentItem] = []
+    public var photoAttachments: [PhotoAttachmentItem] {
+        get { capturedPhotos }
+        set { capturedPhotos = newValue }
+    }
+    public var photosCount: Int { capturedPhotos.count }
+    
+    public var isShowingDiscardAlert: Bool = false
+    public var showDiscardConfirmationAlert: Bool {
+        get { isShowingDiscardAlert }
+        set { isShowingDiscardAlert = newValue }
+    }
+    public var didCompleteDismissal: Bool = false
+    
+    public var isShowingShortRecordingAlert: Bool = false
+    public var shortRecordingPrompt: String = ""
+    public var shouldPromptForShortRecordingDiscard: Bool {
+        elapsedDuration < 3.0
+    }
+    
+    public var wasInterruptedBySystem: Bool = false
+    public var isInterrupted: Bool = false
+    
+    public var isUsingOnDeviceSpeechFallback: Bool = false
+    public var hasOfflineIndicatorPill: Bool = false
+    
+    public var isShowingCameraPermissionAlert: Bool = false
+    public var cameraAlertMessage: String = ""
+    
+    private var meeting: Meeting?
+    private var modelContext: ModelContext?
+    private let recordingService: AudioRecordingServiceProtocol?
+    private let transcriptionService: SpeechTranscriptionServiceProtocol?
+    private var destinationAudioURL: URL?
+    private var dataStore: Any?
+    
+    public init(
+        meeting: Meeting? = nil,
+        meetingId: UUID? = nil,
+        modelContext: ModelContext? = nil,
+        recordingService: AudioRecordingServiceProtocol? = nil,
+        transcriptionService: SpeechTranscriptionServiceProtocol? = nil,
+        audioService: AudioRecordingServiceProtocol? = nil,
+        speechService: SpeechTranscriptionServiceProtocol? = nil,
+        dataStore: Any? = nil,
+        destinationAudioURL: URL? = nil
+    ) {
+        let actualMeetingId = meeting?.id ?? meetingId ?? UUID()
+        self.meetingId = actualMeetingId
+        self.meeting = meeting
+        if let meeting = meeting {
+            self.meetingTitle = meeting.title
+        }
+        self.modelContext = modelContext
+        self.recordingService = recordingService ?? audioService
+        self.transcriptionService = transcriptionService ?? speechService
+        self.dataStore = dataStore
+        self.destinationAudioURL = destinationAudioURL
+    }
+    
+    public func startSession() {
+        recordingState = .recording
+        if let recordingService = recordingService {
+            let dest = destinationAudioURL ?? FileManager.default.temporaryDirectory
+                .appendingPathComponent("recording_\(meetingId.uuidString).m4a")
+            Task {
+                try? await recordingService.startRecording(destinationURL: dest)
+            }
+        }
+    }
+    
+    public func startRecording() {
+        startSession()
+    }
+    
+    public func startSession(for targetMeeting: Meeting) async throws {
+        self.meeting = targetMeeting
+        self.meetingId = targetMeeting.id
+        self.meetingTitle = targetMeeting.title
+        startSession()
+        targetMeeting.status = .recording
+        try? modelContext?.save()
+    }
+    
+    public func startSessionSync(for targetMeeting: Meeting) {
+        self.meeting = targetMeeting
+        self.meetingId = targetMeeting.id
+        self.meetingTitle = targetMeeting.title
+        startSession()
+        targetMeeting.status = .recording
+        try? modelContext?.save()
+    }
+    
+    public func simulateTimerTick(seconds: Double) {
+        guard recordingState == .recording else { return }
+        elapsedDuration += seconds
+    }
+    
+    public func simulateTimeAdvance(seconds: Double) {
+        simulateTimerTick(seconds: seconds)
+    }
+    
+    public func simulateAudioPowerUpdate(power: Float) {
+        guard recordingState == .recording else { return }
+        let clamped: Float
+        if !power.isFinite {
+            clamped = 0.0
+        } else {
+            clamped = max(0.0, min(1.0, power))
+        }
+        waveformLevels.removeLast()
+        waveformLevels.insert(clamped, at: 0)
+    }
+    
+    public func simulateAudioPower(level: Float) {
+        simulateAudioPowerUpdate(power: level)
+    }
+    
+    public func updateWaveformLevels(with level: Float) {
+        simulateAudioPowerUpdate(power: level)
+    }
+    
+    public func simulateSilenceDecay() {
+        waveformLevels = waveformLevels.map { max(0.02, $0 * 0.7) }
+    }
+    
+    public func simulateRouteChange(newRoute: String) {
+        activeAudioRoute = newRoute
+        if newRoute.contains("AirPods") {
+            audioRouteBadgeTitle = "AirPods Pro"
+        } else if newRoute.contains("Headphones") {
+            audioRouteBadgeTitle = "Headphones"
+        } else {
+            audioRouteBadgeTitle = "Built-In Mic"
+        }
+    }
+    
+    public func updateMeetingTitle(_ newTitle: String) {
+        meetingTitle = newTitle
+        meeting?.title = newTitle
+        try? modelContext?.save()
+    }
+    
+    public func simulateSpeechChunk(text: String, isFinal: Bool, confidence: Float = 0.95) {
+        if isFinal {
+            interimTranscriptText = ""
+            let speaker = activeSpeaker?.name ?? "Speaker 1"
+            let start = max(0.0, elapsedDuration - 5.0)
+            let seg = LiveTranscriptSegmentItem(
+                speakerName: speaker,
+                text: text,
+                startTime: start,
+                endTime: elapsedDuration,
+                confidence: confidence
+            )
+            finalTranscriptSegments.append(seg)
+            let chunk = LiveTranscriptChunk(
+                text: text,
+                isFinal: true,
+                segments: [LiveTranscriptSegment(text: text, startTime: start, duration: 5.0, confidence: confidence)]
+            )
+            liveTranscriptChunks.append(chunk)
+            
+            if let meeting = meeting {
+                let speakerModel = meeting.participants.first(where: { $0.name == speaker }) ?? Speaker(name: speaker)
+                let transcriptSegment = TranscriptSegment(
+                    text: text,
+                    startTime: start,
+                    endTime: elapsedDuration,
+                    confidence: confidence,
+                    speaker: speakerModel,
+                    meeting: meeting
+                )
+                meeting.addTranscriptSegment(transcriptSegment)
+                try? modelContext?.save()
+            }
+        } else {
+            interimTranscriptText = text
+        }
+    }
+    
+    public func openNoteDock() {
+        noteCaptureTimestamp = elapsedDuration
+        isNoteSheetPresented = true
+    }
+    
+    public func saveNote(text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            isNoteSheetPresented = false
+            return
+        }
+        isNoteSheetPresented = false
+        let noteItem = NoteItem(text: text, timestamp: noteCaptureTimestamp, isFlagged: false)
+        capturedNotes.append(noteItem)
+        
+        if let meeting = meeting {
+            let note = Note(content: text, timestamp: noteCaptureTimestamp, meeting: meeting)
+            meeting.addNote(note)
+            try? modelContext?.save()
+        }
+    }
+    
+    public func addLiveNote(text: String) {
+        noteCaptureTimestamp = elapsedDuration
+        saveNote(text: text)
+    }
+    
+    public func addTextNote(content: String) {
+        noteCaptureTimestamp = elapsedDuration
+        saveNote(text: content)
+    }
+    
+    public func addBookmark() {
+        if bookmarks.count >= 100 {
+            isBookmarkLimitReached = true
+            return
+        }
+        if let lastTime = lastBookmarkTimestamp, abs(elapsedDuration - lastTime) < 1.0 {
+            return
+        }
+        lastBookmarkTimestamp = elapsedDuration
+        let b = BookmarkItem(timestamp: elapsedDuration)
+        bookmarks.append(b)
+        bookmarks.sort { $0.timestamp < $1.timestamp }
+        isBookmarkButtonHighlighted = true
+        
+        if let meeting = meeting {
+            let note = Note(content: "Bookmark", timestamp: elapsedDuration, isBookmark: true, meeting: meeting)
+            meeting.addNote(note)
+            try? modelContext?.save()
+        }
+    }
+    
+    public func addBookmarkNote() {
+        addBookmark()
+    }
+    
+    public func resetBookmarkHighlight() {
+        isBookmarkButtonHighlighted = false
+    }
+    
+    public func switchSpeaker(to name: String) {
+        activeSpeaker = Speaker(name: name)
+        if !availableSpeakers.contains(where: { $0.name == name }) {
+            availableSpeakers.append(SpeakerItem(name: name))
+        }
+    }
+    
+    public func switchActiveSpeaker(to speaker: Speaker) {
+        activeSpeaker = speaker
+        if !availableSpeakers.contains(where: { $0.name == speaker.name }) {
+            availableSpeakers.append(SpeakerItem(name: speaker.name, colorHex: speaker.avatarColorHex))
+        }
+    }
+    
+    public func switchActiveSpeaker(to name: String) {
+        switchSpeaker(to: name)
+    }
+    
+    public func clearActiveSpeaker() {
+        activeSpeaker = nil
+    }
+    
+    public func addNewSpeaker(name: String, colorHex: String = "#3B82F6") {
+        let speaker = SpeakerItem(name: name, colorHex: colorHex)
+        availableSpeakers.append(speaker)
+        activeSpeaker = Speaker(name: name, avatarColorHex: colorHex)
+    }
+    
+    public func attachPhoto(url: URL, originalSizeBytes: Int? = nil) {
+        let isCompressed = (originalSizeBytes ?? 0) > 10 * 1024 * 1024
+        let item = PhotoAttachmentItem(url: url, timestamp: elapsedDuration, isCompressed: isCompressed)
+        capturedPhotos.append(item)
+        whiteboardPhotos.append(url)
+        if let meeting = meeting {
+            let note = Note(content: "Whiteboard photo: \(url.lastPathComponent)", timestamp: elapsedDuration, imageAttachmentPath: url.path, meeting: meeting)
+            meeting.addNote(note)
+            try? modelContext?.save()
+        }
+    }
+    
+    public func captureWhiteboardPhoto(data: Data) {
+        let filename = "whiteboard_\(UUID().uuidString).jpg"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try? data.write(to: tempURL)
+        attachPhoto(url: tempURL, originalSizeBytes: data.count)
+    }
+    
+    public func snapWhiteboardPhoto(url: URL) {
+        attachPhoto(url: url)
+    }
+    
+    public func handleCameraPermissionDenied() {
+        isShowingCameraPermissionAlert = true
+        cameraAlertMessage = "Camera access is required to capture whiteboards."
+    }
+    
+    public func pauseSession() {
+        recordingState = .paused
+        waveformLevels = Array(repeating: 0.05, count: 32)
+        try? recordingService?.pauseRecording()
+    }
+    
+    public func pause() {
+        pauseSession()
+    }
+    
+    public func pauseRecording() {
+        pauseSession()
+    }
+    
+    public func resumeSession() {
+        recordingState = .recording
+        try? recordingService?.resumeRecording()
+    }
+    
+    public func resume() {
+        resumeSession()
+    }
+    
+    public func resumeRecording() {
+        resumeSession()
+    }
+    
+    public func handleAudioSessionInterruption(began: Bool) {
+        if began {
+            wasInterruptedBySystem = true
+            isInterrupted = true
+            pauseSession()
+        } else {
+            isInterrupted = false
+        }
+    }
+    
+    public func handleSystemInterruption(type: InterruptionType) {
+        switch type {
+        case .began:
+            wasInterruptedBySystem = true
+            isInterrupted = true
+            pauseSession()
+        case .ended:
+            isInterrupted = false
+        }
+    }
+    
+    public func simulateNetworkDrop() {
+        isUsingOnDeviceSpeechFallback = true
+        hasOfflineIndicatorPill = true
+    }
+    
+    public func simulateAppDidEnterBackground() {}
+    public func simulateAppWillEnterForeground() {}
+    
+    public func isDurationUnderThreshold(seconds: Double) -> Bool {
+        return elapsedDuration < seconds
+    }
+    
+    public func requestStop() {
+        if isDurationUnderThreshold(seconds: 3.0) {
+            isShowingShortRecordingAlert = true
+            shortRecordingPrompt = "Recording is very short (\(String(format: "%.1f", elapsedDuration))s). Save or Discard?"
+        }
+    }
+    
+    public func stopSession() throws -> URL {
+        recordingState = .stopped
+        let url = meeting?.audioFileURL ?? (recordingService as? MockAudioRecordingService)?.destinationURL ?? destinationAudioURL ?? URL(fileURLWithPath: "/tmp/live_test_audio_\(meetingId.uuidString).m4a")
+        if let meeting = meeting {
+            meeting.audioFileURL = url
+            meeting.duration = elapsedDuration
+            meeting.status = .processing
+            try? modelContext?.save()
+        }
+        return url
+    }
+    
+    public func finishSession() async throws -> URL {
+        recordingState = .stopped
+        let url: URL
+        if let service = recordingService {
+            url = try await service.stopRecording()
+        } else {
+            url = destinationAudioURL ?? FileManager.default.temporaryDirectory
+                .appendingPathComponent("finalized_\(meetingId.uuidString).m4a")
+        }
+        
+        if let meeting = meeting {
+            meeting.audioFileURL = url
+            meeting.duration = elapsedDuration
+            meeting.status = .processing
+            try? modelContext?.save()
+        }
+        return url
+    }
+    
+    public func finishRecording() async throws -> URL {
+        try await finishSession()
+    }
+    
+    public func requestDiscard() {
+        isShowingDiscardAlert = true
+    }
+    
+    public func cancelDiscard() {
+        isShowingDiscardAlert = false
+        if recordingState != .paused {
+            recordingState = .recording
+        }
+    }
+    
+    public func confirmDiscard(for targetMeeting: Meeting? = nil) {
+        isShowingDiscardAlert = false
+        recordingState = .idle
+        try? recordingService?.cancelRecording()
+        elapsedDuration = 0
+        finalTranscriptSegments.removeAll()
+        capturedNotes.removeAll()
+        bookmarks.removeAll()
+        capturedPhotos.removeAll()
+        didCompleteDismissal = true
+        
+        let toDelete = targetMeeting ?? meeting ?? (modelContext != nil ? try? modelContext?.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == meetingId })).first : nil)
+        if let m = toDelete {
+            modelContext?.delete(m)
+            try? modelContext?.save()
+        }
+    }
+    
+    public func discardSession() {
+        confirmDiscard()
+    }
+    
+    public func discardRecording() {
+        discardSession()
+    }
+}

@@ -1,0 +1,77 @@
+import SwiftUI
+import SwiftData
+
+/// Dedicated Tab 3 universal cross-meeting search console
+public struct SearchConsoleView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(NavigationRouter.self) private var router
+    @Query private var allMeetings: [Meeting]
+    @State public var viewModel: SearchViewModel
+    
+    public init(viewModel: SearchViewModel = SearchViewModel()) {
+        _viewModel = State(initialValue: viewModel)
+    }
+    
+    public var body: some View {
+        VStack(spacing: Spacing.sm) {
+            SearchBar(text: $viewModel.searchQuery, placeholder: "Search transcripts, notes, tasks...") {
+                viewModel.performSearch(query: viewModel.searchQuery)
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.top, Spacing.xs)
+            
+            SearchScopeFilterBar(
+                selectedScope: viewModel.selectedScope,
+                onSelectScope: { viewModel.selectedScope = $0; viewModel.performSearch(query: viewModel.searchQuery) }
+            )
+            
+            if !viewModel.hasQuery && !viewModel.recentSearches.isEmpty {
+                RecentSearchesView(
+                    recentSearches: viewModel.recentSearches,
+                    onSelect: { viewModel.searchQuery = $0; viewModel.performSearch(query: $0) },
+                    onClear: { viewModel.recentSearches.removeAll() }
+                )
+                .padding(.top, Spacing.xs)
+            }
+            
+            if viewModel.hasQuery && viewModel.searchResults.isEmpty {
+                emptyResultsView
+            } else {
+                resultsList
+            }
+        }
+        .background(Theme.Colors.background)
+        .navigationTitle("Search")
+        .onAppear { viewModel.indexMeetings(allMeetings) }
+        .onChange(of: allMeetings) { _, newMeetings in viewModel.indexMeetings(newMeetings) }
+        .onChange(of: viewModel.searchQuery) { _, newQuery in viewModel.performSearch(query: newQuery) }
+    }
+    
+    private var resultsList: some View {
+        ScrollView {
+            LazyVStack(spacing: Spacing.sm) {
+                ForEach(viewModel.searchResults) { res in
+                    SearchResultRowView(result: res) {
+                        router.navigate(to: .meetingDetail(id: res.meetingId), in: .search)
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+        }
+    }
+    
+    private var emptyResultsView: some View {
+        VStack(spacing: Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 40))
+                .foregroundStyle(Theme.Colors.textTertiary)
+            Text("No results found for \"\(viewModel.searchQuery)\"")
+                .font(Typography.headline)
+            Text("Try searching for speaker names, topics, or action items.")
+                .font(Typography.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
