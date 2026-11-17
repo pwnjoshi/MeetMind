@@ -18,21 +18,17 @@ jobs:
 
       - name: Configure Full Xcode Developer Tools
         run: |
-          echo "Selecting full Xcode developer tools..."
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-          echo "Active Developer Path:"
-          xcode-select -p
           xcodebuild -version
-          echo "Installed SDKs:"
-          xcodebuild -showsdks
+          xcodebuild -list -project MeetMind.xcodeproj
 
       - name: Build MeetMind iOS App
         run: |
-          xcodebuild clean build \
+          xcodebuild build \
             -project MeetMind.xcodeproj \
-            -target MeetMind \
+            -scheme MeetMind \
             -configuration Release \
-            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath ./build/DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
@@ -42,11 +38,7 @@ jobs:
       - name: Package into IPA
         run: |
           mkdir -p ./build/Payload
-          APP_PATH=$(find ./build/DerivedData -name "MeetMind.app" | grep "Release-iphoneos" | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "Searching all built .app directories..."
-            APP_PATH=$(find ./build/DerivedData -name "MeetMind.app" | head -n 1)
-          fi
+          APP_PATH=$(find ./build/DerivedData -name "MeetMind.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
             echo "Error: MeetMind.app was not built!"
             find ./build/DerivedData -maxdepth 5
