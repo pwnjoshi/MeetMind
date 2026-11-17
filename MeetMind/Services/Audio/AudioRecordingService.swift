@@ -232,8 +232,8 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         if let engine = engine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
         bufferContinuation?.finish()

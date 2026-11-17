@@ -2,9 +2,8 @@ import SwiftUI
 
 /// Dark waveform visualization card matching Figma node 161:1089
 public struct MicWaveformCardView: View {
-    @State private var phase: Double = 0
-    
-    public init() {}
+    public let levels: [Float]
+    public init(levels: [Float] = Array(repeating: 0, count: 32)) { self.levels = levels }
     
     public var body: some View {
         ZStack {
@@ -24,21 +23,15 @@ public struct MicWaveformCardView: View {
                             )
                         )
                         .frame(width: 4, height: max(6, height))
-                        .animation(.easeInOut(duration: 0.15), value: phase)
+                        .animation(.easeInOut(duration: 0.15), value: levels)
                 }
             }
             .padding(.horizontal, 16)
         }
-        .onAppear {
-            Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
-                phase += 0.3
-            }
-        }
     }
     
     private func barHeight(for index: Int) -> CGFloat {
-        let normalized = sin(phase + Double(index) * 0.45)
-        let magnitude = CGFloat(abs(normalized))
-        return 16 + magnitude * 85
+        let level = levels.indices.contains(index) ? levels[index] : 0
+        return 6 + CGFloat(level.isFinite ? max(0, min(1, level)) : 0) * 100
     }
 }

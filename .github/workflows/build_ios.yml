@@ -3,6 +3,10 @@ name: Build iOS App (.IPA)
 permissions:
   contents: read
 
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, master, 'codex/**' ]
@@ -14,6 +18,7 @@ jobs:
   build:
     name: Build MeetMind iOS IPA
     runs-on: macos-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Repository
@@ -44,12 +49,26 @@ jobs:
       - name: Run Swift XCTest suite
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
           xcodebuild test \
             -project MeetMind.xcodeproj \
             -scheme MeetMind \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -derivedDataPath ./build/DerivedData \
             -resultBundlePath build/TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Smoke test onboarding and repeated main-tab launches
+        if: ${{ !cancelled() && env.DEVICE_ID != '' }}
+        run: bash Scripts/smoke_launch.sh "$DEVICE_ID"
+
+      - name: Upload simulator screenshots and launch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeetMind-Launch-Smoke
+          path: build/smoke
+          if-no-files-found: ignore
 
       - name: Upload test diagnostics
         if: always()
