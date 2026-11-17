@@ -182,7 +182,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     // MARK: - Tier 1: Feature 48 (Action Items Interactive Checklist)
     
     /// Tier 1: Feature 48 - Validates tapping checklist checkbox toggles completion status.
-    func test_tier1_feature48_actionItemChecklistToggleCompleted() throws {
+    func test_tier1_feature48_actionItemChecklistToggleCompleted() async throws {
         sut.loadActionItems()
         let pendingItem = sut.allActionItems.first(where: { !$0.isCompleted })!
         
@@ -195,7 +195,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 48 - Validates completed task visual representation has strikethrough flag.
-    func test_tier1_feature48_actionItemStrikethroughStyleWhenCompleted() throws {
+    func test_tier1_feature48_actionItemStrikethroughStyleWhenCompleted() async throws {
         sut.loadActionItems()
         let completedItem = sut.allActionItems.first(where: { $0.isCompleted })!
         
@@ -203,7 +203,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 48 - Validates priority badge colors match brand tokens.
-    func test_tier1_feature48_priorityBadgeColorsHighMediumLow() throws {
+    func test_tier1_feature48_priorityBadgeColorsHighMediumLow() async throws {
         XCTAssertEqual(sut.badgeColorHex(for: .urgent), "#EF4444")  // Coral Red
         XCTAssertEqual(sut.badgeColorHex(for: .high), "#F59E0B")    // Warm Amber
         XCTAssertEqual(sut.badgeColorHex(for: .medium), "#3B82F6")  // Live Blue
@@ -211,14 +211,14 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 48 - Validates assignee chip display text.
-    func test_tier1_feature48_assigneeChipDisplay() throws {
+    func test_tier1_feature48_assigneeChipDisplay() async throws {
         sut.loadActionItems()
         let item = sut.allActionItems.first(where: { $0.assigneeName == "Sarah Connor" })
         XCTAssertEqual(sut.assigneeDisplayName(for: item!), "Sarah Connor")
     }
     
     /// Tier 1: Feature 48 - Validates upcoming due date formatting string.
-    func test_tier1_feature48_dueDateFormattingUpcoming() throws {
+    func test_tier1_feature48_dueDateFormattingUpcoming() async throws {
         sut.loadActionItems()
         let item = sut.allActionItems.first(where: { $0.title == "Finalize PRD for v2.0" })!
         
@@ -230,7 +230,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     // MARK: - Tier 1: Feature 49 (Add / Edit Action Item Sheet)
     
     /// Tier 1: Feature 49 - Validates opening add action item modal sheet initializes empty fields.
-    func test_tier1_feature49_openAddActionItemSheet() throws {
+    func test_tier1_feature49_openAddActionItemSheet() async throws {
         sut.openCreateSheet(forMeetingId: meeting1Id)
         
         XCTAssertTrue(sut.isShowingActionItemSheet)
@@ -240,7 +240,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 49 - Validates creating new action item inserts record into data store.
-    func test_tier1_feature49_createActionItemWithFullDetails() throws {
+    func test_tier1_feature49_createActionItemWithFullDetails() async throws {
         sut.openCreateSheet(forMeetingId: meeting1Id)
         sut.sheetTitle = "Write unit tests for ViewModel"
         sut.sheetDescription = "Ensure 100% test coverage"
@@ -259,7 +259,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 49 - Validates editing existing action item updates its properties.
-    func test_tier1_feature49_editActionItemUpdatesProperties() throws {
+    func test_tier1_feature49_editActionItemUpdatesProperties() async throws {
         sut.loadActionItems()
         let itemToEdit = sut.allActionItems.first!
         
@@ -276,7 +276,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 49 - Validates deleting action item removes it from list and store.
-    func test_tier1_feature49_deleteActionItemRemovesRecord() throws {
+    func test_tier1_feature49_deleteActionItemRemovesRecord() async throws {
         sut.loadActionItems()
         let countBefore = sut.allActionItems.count
         let itemToDelete = sut.allActionItems.first!
@@ -298,9 +298,9 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 50 - Validates synced status badge updates on completion.
-    func test_tier1_feature50_syncStatusBadgeUpdatesOnCompletion() throws {
+    func test_tier1_feature50_syncStatusBadgeUpdatesOnCompletion() async throws {
         sut.loadActionItems()
-        _ = sut.syncPendingToAppleReminders()
+        _ = try await sut.syncPendingToAppleReminders()
         
         let pending = sut.allActionItems.filter({ !$0.isCompleted })
         for item in pending {
@@ -309,15 +309,15 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 50 - Validates created reminder list name is "MeetMind".
-    func test_tier1_feature50_remindersListNameIsMeetMind() throws {
-        _ = sut.syncPendingToAppleReminders()
+    func test_tier1_feature50_remindersListNameIsMeetMind() async throws {
+        _ = try await sut.syncPendingToAppleReminders()
         XCTAssertEqual(mockRemindersSyncService.targetReminderListName, "MeetMind")
     }
     
     // MARK: - Tier 1: Feature 54 (Cross-Meeting Action Console)
     
     /// Tier 1: Feature 54 - Validates cross-meeting console aggregates all tasks across all meetings.
-    func test_tier1_feature54_crossMeetingConsoleAggregatesAllTasks() throws {
+    func test_tier1_feature54_crossMeetingConsoleAggregatesAllTasks() async throws {
         sut.loadActionItems()
         
         XCTAssertEqual(sut.allActionItems.count, 3)
@@ -325,7 +325,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 54 - Validates filtering by "Pending" returns only incomplete tasks.
-    func test_tier1_feature54_filterPendingTasks() throws {
+    func test_tier1_feature54_filterPendingTasks() async throws {
         sut.loadActionItems()
         sut.setFilterScope(ActionItemFilterScope.pending)
         
@@ -336,7 +336,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 54 - Validates filtering by "Due Soon" isolates tasks due within 48 hours.
-    func test_tier1_feature54_filterDueSoonTasks() throws {
+    func test_tier1_feature54_filterDueSoonTasks() async throws {
         sut.loadActionItems()
         sut.setFilterScope(.dueSoon)
         
@@ -344,7 +344,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 54 - Validates filtering by "Completed" returns completed tasks.
-    func test_tier1_feature54_filterCompletedTasks() throws {
+    func test_tier1_feature54_filterCompletedTasks() async throws {
         sut.loadActionItems()
         sut.setFilterScope(ActionItemFilterScope.completed)
         
@@ -353,7 +353,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 54 - Validates grouping tasks by priority sections (Urgent -> High -> Medium -> Low).
-    func test_tier1_feature54_groupByPrioritySections() throws {
+    func test_tier1_feature54_groupByPrioritySections() async throws {
         sut.loadActionItems()
         sut.setGrouping(.priority)
         
@@ -363,7 +363,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 54 - Validates bulk complete marks all selected action items completed.
-    func test_tier1_feature54_bulkCompleteActionItems() throws {
+    func test_tier1_feature54_bulkCompleteActionItems() async throws {
         sut.loadActionItems()
         let pending = sut.allActionItems.filter({ !$0.isCompleted })
         XCTAssertEqual(pending.count, 2)
@@ -379,7 +379,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 48: Empty States & Overdue)
     
     /// Tier 2: Feature 48 - Validates zero action items renders empty placeholder.
-    func test_tier2_feature48_zeroActionItemsEmptyState() throws {
+    func test_tier2_feature48_zeroActionItemsEmptyState() async throws {
         clearActionItems()
         sut.loadActionItems()
         
@@ -389,7 +389,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 48 - Validates rapid checkbox toggling preserves final state.
-    func test_tier2_feature48_rapidCheckboxTogglingMaintainsState() throws {
+    func test_tier2_feature48_rapidCheckboxTogglingMaintainsState() async throws {
         sut.loadActionItems()
         let item = sut.allActionItems.first!
         let initialCompleted = item.isCompleted
@@ -403,7 +403,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 48 - Validates overdue due date displays red warning badge.
-    func test_tier2_feature48_overdueDueDateDisplaysRedWarningBadge() throws {
+    func test_tier2_feature48_overdueDueDateDisplaysRedWarningBadge() async throws {
         sut.loadActionItems()
         let overdueItem = sut.allActionItems.first(where: { $0.title == "Update API documentation" })!
         
@@ -412,7 +412,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 48 - Validates unassigned task assignee chip displays "Unassigned".
-    func test_tier2_feature48_unassignedTaskAssigneeFallback() throws {
+    func test_tier2_feature48_unassignedTaskAssigneeFallback() async throws {
         let unassignedItem = ActionItem(
             id: UUID(),
             title: "Task with no owner",
@@ -432,7 +432,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 49: Form Validation & Cancel)
     
     /// Tier 2: Feature 49 - Validates saving blank title throws validation error.
-    func test_tier2_feature49_blankTitleValidationRejection() throws {
+    func test_tier2_feature49_blankTitleValidationRejection() async throws {
         sut.openCreateSheet(forMeetingId: meeting1Id)
         sut.sheetTitle = ""
         
@@ -443,7 +443,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 49 - Validates whitespace-only title is rejected as invalid.
-    func test_tier2_feature49_whitespaceOnlyTitleRejected() throws {
+    func test_tier2_feature49_whitespaceOnlyTitleRejected() async throws {
         sut.openCreateSheet(forMeetingId: meeting1Id)
         sut.sheetTitle = "   \t \n "
         
@@ -451,7 +451,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 49 - Validates due date in past is allowed with warning banner.
-    func test_tier2_feature49_pastDueDateAllowedWithWarning() throws {
+    func test_tier2_feature49_pastDueDateAllowedWithWarning() async throws {
         sut.openCreateSheet(forMeetingId: meeting1Id)
         sut.sheetTitle = "Retrospective Action"
         sut.sheetDueDate = Date().addingTimeInterval(-86400 * 5)
@@ -462,7 +462,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 49 - Validates dismissing modal sheet without saving cancels changes.
-    func test_tier2_feature49_cancelSheetDiscardsDraftWithoutSaving() throws {
+    func test_tier2_feature49_cancelSheetDiscardsDraftWithoutSaving() async throws {
         sut.loadActionItems()
         let countBefore = sut.allActionItems.count
         
@@ -477,11 +477,11 @@ final class ActionItemsViewModelTests: XCTestCase {
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 50: Reminders Error Fallbacks)
     
     /// Tier 2: Feature 50 - Validates reminders permission denied displays instructional primer.
-    func test_tier2_feature50_remindersPermissionDeniedShowsPrimer() throws {
+    func test_tier2_feature50_remindersPermissionDeniedShowsPrimer() async throws {
         mockRemindersSyncService.isAuthorized = false
         sut.loadActionItems()
         
-        let count = sut.syncPendingToAppleReminders()
+        let count = try await sut.syncPendingToAppleReminders()
         
         XCTAssertEqual(count, 0)
         XCTAssertTrue(sut.isShowingRemindersPermissionAlert)
@@ -489,34 +489,34 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 50 - Validates syncing with zero pending tasks presents "Nothing to sync" banner.
-    func test_tier2_feature50_syncZeroTasksAlertsNothingToSync() throws {
+    func test_tier2_feature50_syncZeroTasksAlertsNothingToSync() async throws {
         clearActionItems()
         sut.loadActionItems()
         
-        let count = sut.syncPendingToAppleReminders()
+        let count = try await sut.syncPendingToAppleReminders()
         
         XCTAssertEqual(count, 0)
         XCTAssertTrue(sut.isShowingNothingToSyncBanner)
     }
     
     /// Tier 2: Feature 50 - Validates repeated sync requests prevent creating duplicate reminders.
-    func test_tier2_feature50_duplicateSyncPreventionAvoidsDoubleEntries() throws {
+    func test_tier2_feature50_duplicateSyncPreventionAvoidsDoubleEntries() async throws {
         sut.loadActionItems()
         
-        let firstSyncCount = sut.syncPendingToAppleReminders()
+        let firstSyncCount = try await sut.syncPendingToAppleReminders()
         XCTAssertEqual(firstSyncCount, 2)
         
         // Immediate second sync should sync 0 because both are already synced
-        let secondSyncCount = sut.syncPendingToAppleReminders()
+        let secondSyncCount = try await sut.syncPendingToAppleReminders()
         XCTAssertEqual(secondSyncCount, 0)
     }
     
     /// Tier 2: Feature 50 - Validates offline sync queues items into local sync queue.
-    func test_tier2_feature50_offlineRemindersSyncQueuesForReconnection() throws {
+    func test_tier2_feature50_offlineRemindersSyncQueuesForReconnection() async throws {
         mockRemindersSyncService.isOnline = false
         sut.loadActionItems()
         
-        _ = sut.syncPendingToAppleReminders()
+        _ = try await sut.syncPendingToAppleReminders()
         
         XCTAssertEqual(sut.pendingOfflineSyncCount, 2)
     }
@@ -524,7 +524,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 54: Scale & Navigation Deep Links)
     
     /// Tier 2: Feature 54 - Validates performance filtering across 1,000 tasks under 150ms.
-    func test_tier2_feature54_thousandTasksPerformanceFiltering() throws {
+    func test_tier2_feature54_thousandTasksPerformanceFiltering() async throws {
         clearActionItems()
         for i in 0..<1000 {
             let item = ActionItem(
@@ -551,7 +551,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 54 - Validates deleting meeting cascades and removes its tasks from console.
-    func test_tier2_feature54_deletingMeetingCascadesAndRemovesTasksFromConsole() throws {
+    func test_tier2_feature54_deletingMeetingCascadesAndRemovesTasksFromConsole() async throws {
         sut.loadActionItems()
         XCTAssertEqual(sut.allActionItems.count, 3)
         
@@ -564,7 +564,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 54 - Validates tapping task generates deep link destination to source meeting.
-    func test_tier2_feature54_tappingTaskDeepLinksToSourceMeeting() throws {
+    func test_tier2_feature54_tappingTaskDeepLinksToSourceMeeting() async throws {
         sut.loadActionItems()
         let item = sut.allActionItems.first!
         
@@ -573,7 +573,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 54 - Validates grouping by due date partitions into Overdue, Today, and Upcoming.
-    func test_tier2_feature54_groupByDueDateSectionsOverdueTodayUpcoming() throws {
+    func test_tier2_feature54_groupByDueDateSectionsOverdueTodayUpcoming() async throws {
         sut.loadActionItems()
         sut.setGrouping(.dueDate)
         
@@ -583,7 +583,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 54 - Validates bulk complete with empty selection is a safe no-op.
-    func test_tier2_feature54_bulkCompleteWithEmptySelectionNoOp() throws {
+    func test_tier2_feature54_bulkCompleteWithEmptySelectionNoOp() async throws {
         sut.bulkComplete(items: [])
         XCTAssertEqual(sut.allActionItems.count, 3)
     }

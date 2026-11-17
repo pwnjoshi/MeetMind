@@ -424,7 +424,7 @@ public final class ActionItemsViewModel {
         return .meetingDetail(id: meetingId)
     }
     
-    public func syncPendingToAppleReminders() -> Int {
+    public func syncPendingToAppleReminders() async throws -> Int {
         if let rem = remindersService {
             let mirror = Mirror(reflecting: rem)
             for child in mirror.children {
@@ -448,31 +448,30 @@ public final class ActionItemsViewModel {
             isShowingNothingToSyncBanner = true
             return 0
         }
-        Task {
-            _ = try? await syncToAppleReminders()
-        }
-        for item in pending {
-            item.isSyncedToReminders = true
-        }
-        try? modelContext?.save()
+        try await syncToAppleReminders()
         return pending.count
     }
     
     public func syncToAppleReminders() async throws {
-        guard let remindersService = remindersService else { return }
+        guard let remindersService = remindersService else {
+            throw NSError(domain: "MeetMind.Reminders", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Reminders sync is unavailable."])
+        }
         isSyncingReminders = true
         defer { isSyncingReminders = false }
         
         let pending = allActionItems.filter { !$0.isCompleted }
         let ids = try await remindersService.syncActionItems(pending, toList: "MeetMind")
+        guard ids.count == pending.count else {
+            throw NSError(domain: "MeetMind.Reminders", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "Some tasks could not be synced. Please retry."])
+        }
         for (index, item) in pending.enumerated() {
             if index < ids.count {
                 item.reminderIdentifier = ids[index]
-            } else {
-                item.reminderIdentifier = UUID().uuidString
             }
         }
-        try? modelContext?.save()
+        try modelContext?.save()
     }
     
     public func setFilterScope(_ scope: ActionItemFilterScope) {
