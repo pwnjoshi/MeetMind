@@ -27,6 +27,7 @@ public enum ActionItemGrouping: String, CaseIterable, Sendable {
     case priority = "priority"
     case meeting = "meeting"
     case assignee = "assignee"
+    case dueDate = "dueDate"
 }
 
 /// Sheet presentation mode for create/edit action item
@@ -126,6 +127,18 @@ public final class ActionItemsViewModel {
         case .assignee:
             let grouped = Dictionary(grouping: currentItems) { $0.assigneeName }
             return grouped.map { ActionItemGroupSection(id: $0.key, title: $0.key, items: $0.value) }
+        case .dueDate:
+            let calendar = Calendar.current
+            let now = Date()
+            let grouped = Dictionary(grouping: currentItems) { item -> String in
+                guard let date = item.dueDate else { return "No due date" }
+                if calendar.isDateInToday(date) { return "Today" }
+                return date < now ? "Overdue" : "Upcoming"
+            }
+            return ["Overdue", "Today", "Upcoming", "No due date"].compactMap { title in
+                guard let items = grouped[title], !items.isEmpty else { return nil }
+                return ActionItemGroupSection(id: title, title: title, items: items)
+            }
         }
     }
     

@@ -11,7 +11,6 @@ import XCTest
 import Foundation
 @testable import MeetMind
 
-@MainActor
 final class AudioPlaybackServiceTests: XCTestCase {
     
     private var service: MockAudioPlaybackService!

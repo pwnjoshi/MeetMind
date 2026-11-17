@@ -327,7 +327,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     /// Tier 1: Feature 54 - Validates filtering by "Pending" returns only incomplete tasks.
     func test_tier1_feature54_filterPendingTasks() throws {
         sut.loadActionItems()
-        sut.setFilterScope(.pending)
+        sut.setFilterScope(ActionItemFilterScope.pending)
         
         XCTAssertEqual(sut.filteredActionItems.count, 2)
         for item in sut.filteredActionItems {
@@ -346,7 +346,7 @@ final class ActionItemsViewModelTests: XCTestCase {
     /// Tier 1: Feature 54 - Validates filtering by "Completed" returns completed tasks.
     func test_tier1_feature54_filterCompletedTasks() throws {
         sut.loadActionItems()
-        sut.setFilterScope(.completed)
+        sut.setFilterScope(ActionItemFilterScope.completed)
         
         XCTAssertEqual(sut.filteredActionItems.count, 1)
         XCTAssertEqual(sut.filteredActionItems.first?.title, "Deploy hotfix to staging")
@@ -542,7 +542,7 @@ final class ActionItemsViewModelTests: XCTestCase {
         sut.loadActionItems()
         
         let start = Date()
-        sut.setFilterScope(.pending)
+        sut.setFilterScope(ActionItemFilterScope.pending)
         let elapsed = Date().timeIntervalSince(start)
         
         XCTAssertLessThan(elapsed, 0.15)

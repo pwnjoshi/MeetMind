@@ -12,7 +12,6 @@ import Foundation
 import AVFoundation
 @testable import MeetMind
 
-@MainActor
 final class AudioRecordingServiceTests: XCTestCase {
     
     private var service: MockAudioRecordingService!

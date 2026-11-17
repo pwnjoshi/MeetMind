@@ -312,7 +312,7 @@ final class LiveRecordingViewModelTests: XCTestCase {
         try await sut.waitUntilRecordingStarted()
         let speakers = sut.availableSpeakers
         XCTAssertGreaterThanOrEqual(speakers.count, 2)
-        XCTAssertEqual(sut.activeSpeaker, speakers.first?.name)
+        XCTAssertEqual(sut.activeSpeakerName, speakers.first?.name)
     }
     
     /// Tier 1: Feature 34 - Validates switching active speaker tags subsequent speech chunks.
@@ -320,7 +320,7 @@ final class LiveRecordingViewModelTests: XCTestCase {
         sut.startSession()
         try await sut.waitUntilRecordingStarted()
         sut.switchSpeaker(to: "Alex Rivera")
-        XCTAssertEqual(sut.activeSpeaker, "Alex Rivera")
+        XCTAssertEqual(sut.activeSpeakerName, "Alex Rivera")
         
         sut.simulateSpeechChunk(text: "Here is the architectural design.", isFinal: true)
         XCTAssertEqual(sut.finalTranscriptSegments.last?.speakerName, "Alex Rivera")
@@ -333,7 +333,7 @@ final class LiveRecordingViewModelTests: XCTestCase {
         sut.addNewSpeaker(name: "David Kim", colorHex: "#F59E0B")
         
         XCTAssertTrue(sut.availableSpeakers.contains(where: { $0.name == "David Kim" }))
-        XCTAssertEqual(sut.activeSpeaker, "David Kim")
+        XCTAssertEqual(sut.activeSpeakerName, "David Kim")
     }
     
     // MARK: - Tier 1: Feature 35 (Whiteboard / Media Capture)
