@@ -46,7 +46,38 @@ jobs:
       - name: Validate compiled app privacy keys
         run: python3 Scripts/validate_ipa.py build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
 
+      - name: Package into IPA
+        run: |
+          mkdir -p ./build/Payload
+          APP_PATH=./build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: MeetMind.app was not built!"
+            find ./build/DerivedData -maxdepth 5
+            exit 1
+          fi
+          echo "Found compiled app at: $APP_PATH"
+          cp -r "$APP_PATH" ./build/Payload/
+          cd ./build
+          zip -r MeetMind.ipa Payload
+          ls -lh MeetMind.ipa
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeetMind-iOS-Unsigned-Requires-Resigning
+          path: ./build/MeetMind.ipa
+          retention-days: 14
+
+      - name: Upload release crash symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeetMind-Release-Symbols
+          path: build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app.dSYM
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Run Swift XCTest suite
+        timeout-minutes: 12
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
           echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
@@ -57,6 +88,9 @@ jobs:
             -derivedDataPath ./build/DerivedData \
             -resultBundlePath build/TestResults.xcresult \
             -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 20 \
+            -maximum-test-execution-time-allowance 30 \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Smoke test onboarding and repeated main-tab launches
@@ -79,24 +113,3 @@ jobs:
           path: build/TestResults.xcresult
           if-no-files-found: ignore
 
-      - name: Package into IPA
-        run: |
-          mkdir -p ./build/Payload
-          APP_PATH=./build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: MeetMind.app was not built!"
-            find ./build/DerivedData -maxdepth 5
-            exit 1
-          fi
-          echo "Found compiled app at: $APP_PATH"
-          cp -r "$APP_PATH" ./build/Payload/
-          cd ./build
-          zip -r MeetMind.ipa Payload
-          ls -lh MeetMind.ipa
-
-      - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MeetMind-iOS-Unsigned-Requires-Resigning
-          path: ./build/MeetMind.ipa
-          retention-days: 14

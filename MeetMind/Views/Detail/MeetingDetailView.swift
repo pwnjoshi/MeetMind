@@ -36,7 +36,7 @@ public struct MeetingDetailView: View {
                 onDelete: { showDeleteConfirmation = true }
             )
             MeetingDetailTabBarView(selectedTab: viewModel.selectedTab) { viewModel.selectTab($0) }
-            if let meeting = viewModel.meeting, meeting.status == .scheduled || meeting.status == .processing {
+            if let meeting = viewModel.meeting, meeting.status == .scheduled || meeting.status == .processing || meeting.status == .recording {
                 Button(meeting.status == .scheduled ? "Start recording" : "Process saved audio") {
                     if meeting.status == .scheduled {
                         meeting.status = .recording

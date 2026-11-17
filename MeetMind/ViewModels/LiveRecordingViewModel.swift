@@ -258,6 +258,11 @@ public final class LiveRecordingViewModel {
                     return
                 }
                 recordingState = .recording
+                if let meeting {
+                    meeting.audioFileURL = dest
+                    do { try modelContext?.save() }
+                    catch { errorMessage = "Audio is recording, but its meeting record could not be saved: \(error.localizedDescription)" }
+                }
                 if let transcriptionService {
                     speechTask = Task { [weak self] in
                         guard await transcriptionService.requestAuthorization() == .authorized else { return }

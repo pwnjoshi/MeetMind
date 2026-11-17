@@ -88,6 +88,15 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         
         // 1. Configure AVAudioSession
         let session = AVAudioSession.sharedInstance()
+        var didStart = false
+        defer {
+            if !didStart {
+                lock.lock()
+                internalState = .idle
+                lock.unlock()
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            }
+        }
         do {
             try session.setCategory(
                 .playAndRecord,
@@ -162,6 +171,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         self.audioFile = file
         self.recordingStartTime = Date()
         self.internalState = .recording
+        didStart = true
         lock.unlock()
     }
     
