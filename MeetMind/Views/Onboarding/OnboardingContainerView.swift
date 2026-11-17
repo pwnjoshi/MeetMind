@@ -13,9 +13,15 @@ public struct OnboardingContainerView: View {
         Group {
             switch viewModel.currentStage {
             case .carousel:
-                OnboardingWelcomeView(viewModel: viewModel)
+                WelcomeAndSignInView(viewModel: viewModel)
                     .transition(.asymmetric(
                         insertion: .opacity,
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+            case .verifyEmail:
+                VerifyEmailView(viewModel: viewModel)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
                         removal: .move(edge: .leading).combined(with: .opacity)
                     ))
             case .profileSetup:

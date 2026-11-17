@@ -57,6 +57,34 @@ public final class OnboardingViewModel {
     public var voiceBaselineDuration: TimeInterval = 0.0
     public var hasVoiceBaseline: Bool = false
     
+    // MARK: - Sign In & Verification State
+    public var enteredEmail: String = "pawan@apple.com"
+    public var verificationDigits: [String] = ["8", "2", "4", "6", "1", "9"]
+    public var isResendCodeConfirmationShown: Bool = false
+    
+    public func continueWithEmail() {
+        email = enteredEmail
+        currentStage = .verifyEmail
+    }
+    
+    public func continueWithSocialAuth(provider: String) {
+        name = "Pawan Joshi"
+        email = "pawan@apple.com"
+        role = "Product Lead"
+        currentStage = .permissionsPrimer
+    }
+    
+    public func verifyCodeAndContinue() {
+        if name.isEmpty { name = "Pawan Joshi" }
+        if role.isEmpty { role = "Product Lead" }
+        email = enteredEmail
+        currentStage = .permissionsPrimer
+    }
+    
+    public func backToSignIn() {
+        currentStage = .carousel
+    }
+    
     // MARK: - Permissions Primer State
     public var shouldShowSettingsAlert: Bool = false
     public var lastDeniedPermission: PermissionType? = nil

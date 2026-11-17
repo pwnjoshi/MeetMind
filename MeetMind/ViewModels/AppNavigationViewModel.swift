@@ -28,6 +28,7 @@ public enum NavigationDestination: Hashable, Sendable {
 /// Stage within the onboarding sequence
 public enum OnboardingStage: String, Sendable {
     case carousel = "carousel"
+    case verifyEmail = "verifyEmail"
     case profileSetup = "profileSetup"
     case permissionsPrimer = "permissionsPrimer"
 }

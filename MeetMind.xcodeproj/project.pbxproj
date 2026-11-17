@@ -7,6 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1AE0002CEE000100000001 /* HomeRecentSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0002CEE000100000001 /* HomeRecentSectionView.swift */; };
+		1AE0012CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0012CEE000100000001 /* HomeUpcomingSectionView.swift */; };
+		1AE0022CEE000100000001 /* MeetingsHomeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0022CEE000100000001 /* MeetingsHomeRowView.swift */; };
+		1AE0032CEE000100000001 /* MeetingsSearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0032CEE000100000001 /* MeetingsSearchBarView.swift */; };
+		1AE0042CEE000100000001 /* VerifyEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0042CEE000100000001 /* VerifyEmailView.swift */; };
+		1AE0052CEE000100000001 /* WelcomeAndSignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0052CEE000100000001 /* WelcomeAndSignInView.swift */; };
+		1AE0062CEE000100000001 /* OtpDigitsRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0062CEE000100000001 /* OtpDigitsRowView.swift */; };
+		1AE0072CEE000100000001 /* SignInPanelSubviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0072CEE000100000001 /* SignInPanelSubviews.swift */; };
+		1AE0082CEE000100000001 /* MicrophoneCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0082CEE000100000001 /* MicrophoneCheckView.swift */; };
+		1AE0092CEE000100000001 /* MicWaveformCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0092CEE000100000001 /* MicWaveformCardView.swift */; };
 		1A0000012CEE000100000001 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000012CEE000100000001 /* Theme.swift */; };
 		1A0000022CEE000100000001 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000022CEE000100000001 /* Typography.swift */; };
 		1A0000032CEE000100000001 /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000032CEE000100000001 /* Spacing.swift */; };
@@ -210,6 +220,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1BE0002CEE000100000001 /* HomeRecentSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeRecentSectionView.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0012CEE000100000001 /* HomeUpcomingSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeUpcomingSectionView.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0022CEE000100000001 /* MeetingsHomeRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsHomeRowView.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0032CEE000100000001 /* MeetingsSearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsSearchBarView.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0042CEE000100000001 /* VerifyEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/VerifyEmailView.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0052CEE000100000001 /* WelcomeAndSignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/WelcomeAndSignInView.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0062CEE000100000001 /* OtpDigitsRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/OtpDigitsRowView.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0072CEE000100000001 /* SignInPanelSubviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/SignInPanelSubviews.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0082CEE000100000001 /* MicrophoneCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/MicrophoneCheckView.swift"; sourceTree = SOURCE_ROOT; };
+		1BE0092CEE000100000001 /* MicWaveformCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/Components/MicWaveformCardView.swift"; sourceTree = SOURCE_ROOT; };
 		1F0000012CEE000100000001 /* MeetMind.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeetMind.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1F0000022CEE000100000001 /* MeetMindTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MeetMindTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B0000012CEE000100000001 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Theme.swift"; sourceTree = SOURCE_ROOT; };
@@ -688,6 +708,16 @@
 		1D0000172CEE000100000001 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				1BE0002CEE000100000001 /* HomeRecentSectionView.swift */,
+				1BE0012CEE000100000001 /* HomeUpcomingSectionView.swift */,
+				1BE0022CEE000100000001 /* MeetingsHomeRowView.swift */,
+				1BE0032CEE000100000001 /* MeetingsSearchBarView.swift */,
+				1BE0042CEE000100000001 /* VerifyEmailView.swift */,
+				1BE0052CEE000100000001 /* WelcomeAndSignInView.swift */,
+				1BE0062CEE000100000001 /* OtpDigitsRowView.swift */,
+				1BE0072CEE000100000001 /* SignInPanelSubviews.swift */,
+				1BE0082CEE000100000001 /* MicrophoneCheckView.swift */,
+				1BE0092CEE000100000001 /* MicWaveformCardView.swift */,
 				1D00001C2CEE000100000001 /* Home */,
 				1D00001E2CEE000100000001 /* Setup */,
 				1D0000192CEE000100000001 /* Navigation */,
@@ -911,6 +941,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1AE0002CEE000100000001 /* HomeRecentSectionView.swift in Sources */,
+				1AE0012CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */,
+				1AE0022CEE000100000001 /* MeetingsHomeRowView.swift in Sources */,
+				1AE0032CEE000100000001 /* MeetingsSearchBarView.swift in Sources */,
+				1AE0042CEE000100000001 /* VerifyEmailView.swift in Sources */,
+				1AE0052CEE000100000001 /* WelcomeAndSignInView.swift in Sources */,
+				1AE0062CEE000100000001 /* OtpDigitsRowView.swift in Sources */,
+				1AE0072CEE000100000001 /* SignInPanelSubviews.swift in Sources */,
+				1AE0082CEE000100000001 /* MicrophoneCheckView.swift in Sources */,
+				1AE0092CEE000100000001 /* MicWaveformCardView.swift in Sources */,
 				1A0000302CEE000100000001 /* RemindersSyncServiceProtocol.swift in Sources */,
 				1A0000312CEE000100000001 /* MockRemindersSyncService.swift in Sources */,
 				1A0000322CEE000100000001 /* HomeViewModel.swift in Sources */,

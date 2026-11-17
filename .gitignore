@@ -43,3 +43,5 @@ Desktop.ini
 
 # Teamwork and Scratch (internal state)
 .agents/
+.vscode/
+screenshots/

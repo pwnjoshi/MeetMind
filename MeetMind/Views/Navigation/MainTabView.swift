@@ -25,32 +25,18 @@ public struct MainTabView: View {
                 HomeDashboardView(modelContext: modelContext)
                     .navigationDestination(for: NavigationDestination.self) { destinationView(for: $0) }
             }
-            .tabItem { Label("Home", systemImage: appState.activeTab == .home ? "house.fill" : "house") }
+            .tabItem { Label("Meetings", systemImage: "calendar") }
             .tag(TabIdentifier.home)
             
             NavigationStack(path: Bindable(router).actionItemsPath) {
                 ActionItemsConsoleView()
                     .navigationDestination(for: NavigationDestination.self) { destinationView(for: $0) }
             }
-            .tabItem { Label("Action Items", systemImage: "checklist") }
+            .tabItem { Label("Actions", systemImage: "flag.fill") }
             .badge(pendingActionItemsBadge)
             .tag(TabIdentifier.actionItems)
-            
-            NavigationStack(path: Bindable(router).searchPath) {
-                SearchConsoleView()
-                    .navigationDestination(for: NavigationDestination.self) { destinationView(for: $0) }
-            }
-            .tabItem { Label("Search", systemImage: "magnifyingglass") }
-            .tag(TabIdentifier.search)
-            
-            NavigationStack(path: Bindable(router).settingsPath) {
-                SettingsView()
-                    .navigationDestination(for: NavigationDestination.self) { destinationView(for: $0) }
-            }
-            .tabItem { Label("Settings", systemImage: appState.activeTab == .settings ? "gearshape.fill" : "gearshape") }
-            .tag(TabIdentifier.settings)
         }
-        .tint(Theme.Colors.primarySlate)
+        .tint(Color(hex: "#0068D9"))
     }
     
     private var pendingActionItemsBadge: String? {

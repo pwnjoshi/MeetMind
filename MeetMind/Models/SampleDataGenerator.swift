@@ -29,21 +29,49 @@ public final class SampleDataGenerator {
         )
         context.insert(completedMeeting)
         
-        let scheduledFolder = folders.count > 1 ? folders[1] : sampleFolder
-        let scheduledTags: [Tag] = tags.count > 4 ? [tags[4]] : []
-        let upcomingMeeting = createScheduledMeeting(
-            speakers: Array(speakers.prefix(2)),
-            folder: scheduledFolder,
-            tags: scheduledTags
+        // Figma sample meetings
+        let mFinance = Meeting(
+            title: "Finance review",
+            createdAt: Date().addingTimeInterval(-86400 * 3),
+            duration: 1800,
+            status: .completed,
+            templateName: nil,
+            folder: sampleFolder
         )
-        context.insert(upcomingMeeting)
+        context.insert(mFinance)
         
-        if let primarySpeaker = speakers.first {
-            let recordingMeeting = createRecordingMeeting(
-                speaker: primarySpeaker
-            )
-            context.insert(recordingMeeting)
-        }
+        let mDesign = Meeting(
+            title: "Design review",
+            createdAt: Date(),
+            scheduledStartTime: Date().addingTimeInterval(86400 * 1),
+            duration: 0,
+            status: .scheduled,
+            templateName: "Series · 2 meetings",
+            folder: sampleFolder
+        )
+        context.insert(mDesign)
+        
+        let mLaunch = Meeting(
+            title: "Launch readiness",
+            createdAt: Date(),
+            scheduledStartTime: Date().addingTimeInterval(86400 * 2),
+            duration: 0,
+            status: .scheduled,
+            templateName: "Scheduled",
+            folder: sampleFolder
+        )
+        context.insert(mLaunch)
+        
+        let mProduct = Meeting(
+            title: "Product planning",
+            createdAt: Date(),
+            scheduledStartTime: Date().addingTimeInterval(86400 * 3),
+            duration: 0,
+            status: .scheduled,
+            templateName: "Series · 3 meetings",
+            folder: sampleFolder
+        )
+        context.insert(mProduct)
     }
     
     public static func createSampleSpeakers() -> [Speaker] {

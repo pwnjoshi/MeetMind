@@ -232,6 +232,42 @@ public final class Meeting: Identifiable {
         return Self.cachedDateFormatter.string(from: date)
     }
     
+    private static let figmaDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMMM · h:mm a"
+        return formatter
+    }()
+    
+    public var figmaFormattedSubtitle: String {
+        let date = scheduledStartTime ?? createdAt
+        let dateStr = Self.figmaDateFormatter.string(from: date)
+        if status == .scheduled && templateName?.contains("Series") == true {
+            return "Next: \(dateStr)"
+        }
+        return dateStr
+    }
+    
+    public var figmaBadgeText: String {
+        if let templateName = templateName, !templateName.isEmpty {
+            return templateName
+        }
+        if status == .completed {
+            return "Finalized"
+        } else if status == .scheduled {
+            return "Scheduled"
+        } else {
+            return status.displayName
+        }
+    }
+    
+    public var figmaBadgeColorHex: String {
+        if status == .completed {
+            return "#0068D9"
+        } else {
+            return "#5F636B"
+        }
+    }
+    
     public var fullTranscriptText: String {
         transcriptSegments
             .sorted { $0.startTime < $1.startTime }
