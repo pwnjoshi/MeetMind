@@ -11,6 +11,7 @@ import Foundation
 
 /// Comprehensive unit test suite covering OnboardingViewModel:
 /// Carousel progression, profile validation, voice baseline recording, permissions priming, and completion.
+@MainActor
 final class OnboardingViewModelTests: XCTestCase {
     
     private var mockPermissions: MockPermissionsService!
@@ -157,6 +158,7 @@ final class OnboardingViewModelTests: XCTestCase {
     func test_permissionStatusLookup() {
         mockPermissions.setStatus(.authorized, for: .microphone)
         mockPermissions.setStatus(.denied, for: .speechRecognition)
+        sut.refreshPermissions()
         
         XCTAssertTrue(sut.isPermissionGranted(for: .microphone))
         XCTAssertFalse(sut.isPermissionGranted(for: .speechRecognition))

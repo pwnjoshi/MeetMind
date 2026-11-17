@@ -1,5 +1,12 @@
 name: Build iOS App (.IPA)
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, master ]
@@ -11,10 +18,11 @@ jobs:
   build:
     name: Build MeetMind iOS IPA
     runs-on: macos-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Verify Xcode Environment
         run: |
@@ -35,10 +43,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_STYLE="Manual"
 
+      - name: Validate compiled app privacy keys
+        run: python3 Scripts/validate_ipa.py build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
+
       - name: Package into IPA
         run: |
           mkdir -p ./build/Payload
-          APP_PATH=$(find ./build/DerivedData -name "MeetMind.app" | head -n 1)
+          APP_PATH=./build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
           if [ -z "$APP_PATH" ]; then
             echo "Error: MeetMind.app was not built!"
             find ./build/DerivedData -maxdepth 5
@@ -51,8 +62,54 @@ jobs:
           ls -lh MeetMind.ipa
 
       - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: MeetMind-iOS-App
+          name: MeetMind-iOS-Unsigned-Requires-Resigning
           path: ./build/MeetMind.ipa
           retention-days: 14
+
+      - name: Upload release crash symbols
+        uses: actions/upload-artifact@v6
+        with:
+          name: MeetMind-Release-Symbols
+          path: build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app.dSYM
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Run Swift XCTest suite
+        timeout-minutes: 12
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcodebuild test \
+            -project MeetMind.xcodeproj \
+            -scheme MeetMind \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -derivedDataPath ./build/DerivedData \
+            -resultBundlePath build/TestResults.xcresult \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 20 \
+            -maximum-test-execution-time-allowance 30 \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Smoke test onboarding and repeated main-tab launches
+        if: ${{ !cancelled() && env.DEVICE_ID != '' }}
+        run: bash Scripts/smoke_launch.sh "$DEVICE_ID"
+
+      - name: Upload simulator screenshots and launch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: MeetMind-Launch-Smoke
+          path: build/smoke
+          if-no-files-found: ignore
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: MeetMind-TestResults
+          path: build/TestResults.xcresult
+          if-no-files-found: ignore
+

@@ -200,6 +200,7 @@ public final class MeetingSetupViewModel {
     public var shouldSimulateCorruptFile: Bool = false
     
     private var modelContext: ModelContext?
+    private var ownedContainer: ModelContainer?
     private let transcriptionService: SpeechTranscriptionServiceProtocol?
     private let summarizationService: SummarizationServiceProtocol?
     private let audioRecordingService: AudioRecordingServiceProtocol?
@@ -259,6 +260,7 @@ public final class MeetingSetupViewModel {
         
         if modelContext == nil && dataStore == nil {
             if let container = try? ModelContainerFactory.createInMemoryContainer() {
+                self.ownedContainer = container
                 self.modelContext = container.mainContext
             }
         }
@@ -715,7 +717,9 @@ public final class MeetingSetupViewModel {
                 importErrorMessage = "The audio file duration is invalid or zero."
                 throw AudioImportError.invalidDuration
             } else {
-                duration = 120.0
+                hasImportError = true
+                importErrorMessage = "The audio file could not be read. Choose another recording."
+                throw AudioImportError.invalidDuration
             }
         }
         
@@ -728,10 +732,9 @@ public final class MeetingSetupViewModel {
         // Copy audio file to app sandbox directory for persistence
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? temporaryDirectory
         let targetURL = docs.appendingPathComponent("\(UUID().uuidString).\(ext)")
-        var persistentAudioURL = url
-        if (try? FileManager.default.copyItem(at: url, to: targetURL)) != nil {
-            persistentAudioURL = targetURL
-        }
+        try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: url, to: targetURL)
+        let persistentAudioURL = targetURL
         
         let meetingTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? url.deletingPathExtension().lastPathComponent

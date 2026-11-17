@@ -39,7 +39,7 @@ public struct RootView: View {
             NewMeetingSheet(modelContext: modelContext) { meeting in
                 appState.activeSheet = nil
                 if meeting.status == .recording {
-                    router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
+                    router.navigate(to: .liveRecording(id: meeting.id), in: .home)
                 }
             }
             .environment(\.modelContext, modelContext)
@@ -49,8 +49,9 @@ public struct RootView: View {
             }
             .environment(\.modelContext, modelContext)
         case .audioImport:
-            AudioImportView(viewModel: MeetingSetupViewModel(modelContext: modelContext)) { _ in
+            AudioImportView(viewModel: MeetingSetupViewModel(modelContext: modelContext)) { meeting in
                 appState.activeSheet = nil
+                router.navigate(to: .meetingProcessing(id: meeting.id), in: .home)
             }
             .environment(\.modelContext, modelContext)
         case .editActionItem(let id):

@@ -203,9 +203,15 @@ public final class LiveRecordingViewModel {
     
     private var meeting: Meeting?
     private var modelContext: ModelContext?
-    private let recordingService: AudioRecordingServiceProtocol?
-    private let transcriptionService: SpeechTranscriptionServiceProtocol?
+    private var recordingService: AudioRecordingServiceProtocol?
+    private var transcriptionService: SpeechTranscriptionServiceProtocol?
+    public var errorMessage: String?
+    private var sessionTask: Task<Void, Never>?
+    private var meterTask: Task<Void, Never>?
+    private var clockTask: Task<Void, Never>?
+    private var speechTask: Task<Void, Never>?
     private var destinationAudioURL: URL?
+    private let updatesFromRecordingClock: Bool
     private var dataStore: Any?
     
     public init(
@@ -217,7 +223,8 @@ public final class LiveRecordingViewModel {
         audioService: AudioRecordingServiceProtocol? = nil,
         speechService: SpeechTranscriptionServiceProtocol? = nil,
         dataStore: Any? = nil,
-        destinationAudioURL: URL? = nil
+        destinationAudioURL: URL? = nil,
+        updatesFromRecordingClock: Bool = true
     ) {
         let actualMeetingId = meeting?.id ?? meetingId ?? UUID()
         self.meetingId = actualMeetingId
@@ -230,21 +237,116 @@ public final class LiveRecordingViewModel {
         self.transcriptionService = transcriptionService ?? speechService
         self.dataStore = dataStore
         self.destinationAudioURL = destinationAudioURL
+        self.updatesFromRecordingClock = updatesFromRecordingClock
     }
     
     public func startSession() {
-        recordingState = .recording
-        if let recordingService = recordingService {
-            let dest = destinationAudioURL ?? FileManager.default.temporaryDirectory
-                .appendingPathComponent("recording_\(meetingId.uuidString).m4a")
-            Task {
-                try? await recordingService.startRecording(destinationURL: dest)
+        guard recordingState == .idle || recordingState == .stopped else { return }
+        errorMessage = nil
+        guard let recordingService else {
+            errorMessage = "Audio recording is unavailable. Please reopen this meeting."
+            return
+        }
+        recordingState = .preparing
+        sessionTask = Task {
+            do {
+                let dest = destinationAudioURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("Recordings", isDirectory: true)
+                    .appendingPathComponent("recording_\(meetingId.uuidString).m4a")
+                try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                destinationAudioURL = dest
+                try await recordingService.startRecording(destinationURL: dest)
+                guard !Task.isCancelled else {
+                    try recordingService.cancelRecording()
+                    return
+                }
+                recordingState = .recording
+                if let meeting {
+                    meeting.audioFileURL = dest
+                    do { try modelContext?.save() }
+                    catch { errorMessage = "Audio is recording, but its meeting record could not be saved: \(error.localizedDescription)" }
+                }
+                if let transcriptionService {
+                    speechTask = Task { [weak self] in
+                        guard await transcriptionService.requestAuthorization() == .authorized else { return }
+                        do {
+                            for try await chunk in transcriptionService.startLiveTranscription(audioBufferStream: recordingService.audioBufferStream) {
+                                guard !Task.isCancelled else { break }
+                                self?.interimTranscriptText = chunk.text
+                            }
+                        } catch {
+                            self?.interimTranscriptText = "Live transcription unavailable. Audio is still being saved."
+                        }
+                    }
+                }
+                meterTask = Task { [weak self] in
+                    for await power in recordingService.audioMeterStream {
+                        guard !Task.isCancelled else { break }
+                        self?.updateWaveformLevels(with: power)
+                    }
+                }
+                if updatesFromRecordingClock {
+                    clockTask = Task { [weak self] in
+                        while !Task.isCancelled {
+                            do { try await Task.sleep(for: .milliseconds(200)) } catch { break }
+                            self?.elapsedDuration = recordingService.currentDuration
+                        }
+                    }
+                }
+            } catch {
+                recordingState = .idle
+                errorMessage = error.localizedDescription
             }
         }
     }
-    
+
+    /// Bind the routed screen to its persisted meeting before starting hardware.
+    public func prepareSession(context: ModelContext, settings: SettingsViewModel? = nil) throws {
+        modelContext = context
+        if meeting == nil {
+            let id = meetingId
+            var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            meeting = try context.fetch(descriptor).first
+        }
+        guard let meeting else {
+            throw AudioRecordingError.invalidState("This meeting no longer exists.")
+        }
+        meetingTitle = meeting.title
+        if recordingService == nil {
+            recordingService = AudioRecordingService(bitRate: settings?.audioQuality.bitRate ?? 128_000,
+                                                     noiseSuppression: settings?.isNoiseSuppressionEnabled ?? false)
+        }
+        if transcriptionService == nil {
+            transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"),
+                                                               onDeviceOnly: settings?.isOnDeviceRecognitionOnly ?? true)
+        }
+    }
+
+    public func leaveSession() {
+        sessionTask?.cancel()
+        meterTask?.cancel()
+        clockTask?.cancel()
+        speechTask?.cancel()
+        transcriptionService?.stopLiveTranscription()
+        if recordingState == .recording || recordingState == .paused {
+            // Keep captured audio when leaving; it can be processed from the meeting later.
+            Task {
+                do { _ = try await finishSession() }
+                catch { errorMessage = error.localizedDescription }
+            }
+        }
+    }
+
     public func startRecording() {
         startSession()
+    }
+
+    public func waitUntilRecordingStarted() async throws {
+        if let sessionTask { await sessionTask.value }
+        guard recordingState == .recording else {
+            throw AudioRecordingError.recordingFailed(errorMessage ?? "Recording did not start.")
+        }
     }
     
     public func startSession(for targetMeeting: Meeting) async throws {
@@ -252,6 +354,7 @@ public final class LiveRecordingViewModel {
         self.meetingId = targetMeeting.id
         self.meetingTitle = targetMeeting.title
         startSession()
+        try await waitUntilRecordingStarted()
         targetMeeting.status = .recording
         try? modelContext?.save()
     }
@@ -282,7 +385,7 @@ public final class LiveRecordingViewModel {
         } else {
             clamped = max(0.0, min(1.0, power))
         }
-        waveformLevels.removeLast()
+        if !waveformLevels.isEmpty { waveformLevels.removeLast() }
         waveformLevels.insert(clamped, at: 0)
     }
     
@@ -456,9 +559,14 @@ public final class LiveRecordingViewModel {
     
     public func captureWhiteboardPhoto(data: Data) {
         let filename = "whiteboard_\(UUID().uuidString).jpg"
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-        try? data.write(to: tempURL)
-        attachPhoto(url: tempURL, originalSizeBytes: data.count)
+        do {
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Attachments", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent(filename)
+            try data.write(to: url, options: .atomic)
+            attachPhoto(url: url, originalSizeBytes: data.count)
+        } catch { errorMessage = error.localizedDescription }
     }
     
     public func snapWhiteboardPhoto(url: URL) {
@@ -537,33 +645,30 @@ public final class LiveRecordingViewModel {
         }
     }
     
-    public func stopSession() throws -> URL {
-        recordingState = .stopped
-        let url = meeting?.audioFileURL ?? (recordingService as? MockAudioRecordingService)?.destinationURL ?? destinationAudioURL ?? URL(fileURLWithPath: "/tmp/live_test_audio_\(meetingId.uuidString).m4a")
-        if let meeting = meeting {
-            meeting.audioFileURL = url
-            meeting.duration = elapsedDuration
-            meeting.status = .processing
-            try? modelContext?.save()
-        }
-        return url
+    public func stopSession() async throws -> URL {
+        try await finishSession()
     }
     
     public func finishSession() async throws -> URL {
-        recordingState = .stopped
+        if let sessionTask { await sessionTask.value }
+        elapsedDuration = recordingService?.currentDuration ?? elapsedDuration
         let url: URL
         if let service = recordingService {
             url = try await service.stopRecording()
         } else {
-            url = destinationAudioURL ?? FileManager.default.temporaryDirectory
-                .appendingPathComponent("finalized_\(meetingId.uuidString).m4a")
+            throw AudioRecordingError.invalidState("No audio recorder is active.")
         }
+        recordingState = .stopped
+        meterTask?.cancel()
+        clockTask?.cancel()
+        speechTask?.cancel()
+        transcriptionService?.stopLiveTranscription()
         
         if let meeting = meeting {
             meeting.audioFileURL = url
             meeting.duration = elapsedDuration
             meeting.status = .processing
-            try? modelContext?.save()
+            try modelContext?.save()
         }
         return url
     }
@@ -584,6 +689,11 @@ public final class LiveRecordingViewModel {
     }
     
     public func confirmDiscard(for targetMeeting: Meeting? = nil) {
+        sessionTask?.cancel()
+        meterTask?.cancel()
+        clockTask?.cancel()
+        speechTask?.cancel()
+        transcriptionService?.stopLiveTranscription()
         isShowingDiscardAlert = false
         recordingState = .idle
         try? recordingService?.cancelRecording()

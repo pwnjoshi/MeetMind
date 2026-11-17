@@ -11,6 +11,7 @@ import Foundation
 
 /// Comprehensive unit test suite covering AppState and NavigationRouter:
 /// Tab navigation paths, badge computation, tab reselection, deep linking, modal sheets, and state restoration.
+@MainActor
 final class NavigationRouterTests: XCTestCase {
     
     private var mockUserDefaults: UserDefaults!

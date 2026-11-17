@@ -140,6 +140,7 @@ public final class MockAudioPlaybackService: AudioPlaybackServiceProtocol, @unch
         playbackTask?.cancel()
         playbackTask = Task { [weak self] in
             while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 100_000_000) } catch { break }
                 guard let self = self else { return }
                 self.lock.lock()
                 let isPlaying = self.internalState == .playing
@@ -164,7 +165,6 @@ public final class MockAudioPlaybackService: AudioPlaybackServiceProtocol, @unch
                 if state == .completed {
                     break
                 }
-                try? await Task.sleep(nanoseconds: 100_000_000)
             }
         }
     }

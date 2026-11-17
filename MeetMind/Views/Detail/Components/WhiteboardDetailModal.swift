@@ -18,15 +18,12 @@ public struct WhiteboardDetailModal: View {
                 Color.black.ignoresSafeArea()
                 
                 VStack(spacing: Spacing.lg) {
-                    Image(systemName: "photo.artframe")
-                        .font(.system(size: 80))
-                        .foregroundStyle(Theme.Colors.cardBorder)
-                    Text("Whiteboard Capture")
-                        .font(Typography.headline)
-                        .foregroundStyle(.white)
-                    Text(photoPath)
-                        .font(Typography.caption)
-                        .foregroundStyle(.gray)
+                    if let image = UIImage(contentsOfFile: photoPath) {
+                        Image(uiImage: image).resizable().scaledToFit()
+                            .accessibilityLabel("Meeting photo")
+                    } else {
+                        Text("This photo is no longer available.").foregroundStyle(.white)
+                    }
                 }
                 .scaleEffect(scale)
                 .gesture(

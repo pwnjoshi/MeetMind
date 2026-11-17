@@ -3,16 +3,27 @@ import AVFoundation
 
 public final class AudioRecordingService: NSObject, AudioRecordingServiceProtocol, @unchecked Sendable {
     private let lock = NSLock()
+    private let bitRate: Int
+    private let noiseSuppression: Bool
     private var internalState: RecordingState = .idle
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var destinationFileURL: URL?
+    private var writeFailure: String?
     
     private var recordingStartTime: Date?
     private var accumulatedDuration: TimeInterval = 0.0
     private var lastPauseTime: Date?
     
     private var meterContinuation: AsyncStream<Float>.Continuation?
+    private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    public var audioBufferStream: AsyncStream<AVAudioPCMBuffer> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(16)) { continuation in
+            lock.lock()
+            bufferContinuation = continuation
+            lock.unlock()
+        }
+    }
     private var lastMeterYieldTime: Date = Date.distantPast
     
     public var state: RecordingState {
@@ -44,7 +55,9 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         }
     }
     
-    public override init() {
+    public init(bitRate: Int = 128_000, noiseSuppression: Bool = false) {
+        self.bitRate = bitRate
+        self.noiseSuppression = noiseSuppression
         super.init()
     }
     
@@ -54,9 +67,13 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             engine.stop()
         }
         meterContinuation?.finish()
+        bufferContinuation?.finish()
     }
     
     public func startRecording(destinationURL: URL) async throws {
+        guard await AVAudioApplication.requestRecordPermission() else {
+            throw AudioRecordingError.permissionDenied
+        }
         lock.lock()
         guard internalState == .idle || internalState == .stopped else {
             let currentState = internalState
@@ -64,12 +81,22 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             throw AudioRecordingError.invalidState("Cannot start recording in state: \(currentState)")
         }
         internalState = .preparing
+        writeFailure = nil
         self.destinationFileURL = destinationURL
         self.accumulatedDuration = 0.0
         lock.unlock()
         
         // 1. Configure AVAudioSession
         let session = AVAudioSession.sharedInstance()
+        var didStart = false
+        defer {
+            if !didStart {
+                lock.lock()
+                internalState = .idle
+                lock.unlock()
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            }
+        }
         do {
             try session.setCategory(
                 .playAndRecord,
@@ -87,8 +114,9 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         // 2. Configure AVAudioEngine and File
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+        if noiseSuppression { try inputNode.setVoiceProcessingEnabled(true) }
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0 else {
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             lock.lock()
             internalState = .idle
             lock.unlock()
@@ -97,13 +125,13 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         
         // Adaptively handle input hardware format sample rates (e.g. 48kHz tap vs 44.1kHz default)
         let hardwareSampleRate = inputFormat.sampleRate > 0 ? inputFormat.sampleRate : 44100.0
-        let channelCount = min(max(inputFormat.channelCount, 1), 2)
+        let channelCount = inputFormat.channelCount
         
         let fileSettings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: hardwareSampleRate,
             AVNumberOfChannelsKey: channelCount,
-            AVEncoderBitRateKey: 64000,
+            AVEncoderBitRateKey: bitRate,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
         ]
         
@@ -143,6 +171,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         self.audioFile = file
         self.recordingStartTime = Date()
         self.internalState = .recording
+        didStart = true
         lock.unlock()
     }
     
@@ -185,6 +214,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         }
         let engine = self.audioEngine
         let url = self.destinationFileURL
+        let failure = self.writeFailure
         self.audioEngine = nil
         self.audioFile = nil
         self.internalState = .stopped
@@ -198,10 +228,12 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
+        bufferContinuation?.finish()
         
         guard let finalURL = url else {
             throw AudioRecordingError.recordingFailed("Destination URL was missing.")
         }
+        if let failure { throw AudioRecordingError.recordingFailed(failure) }
         return finalURL
     }
     
@@ -219,10 +251,11 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         if let engine = engine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
+        bufferContinuation?.finish()
         
         if let url = url, FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.removeItem(at: url)
@@ -232,11 +265,35 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, targetFile: AVAudioFile) {
         lock.lock()
         let currentState = internalState
+        let meter = meterContinuation
         lock.unlock()
         guard currentState == .recording else { return }
         
         // Write audio frame
-        try? targetFile.write(from: buffer)
+        do { try targetFile.write(from: buffer) }
+        catch {
+            lock.lock()
+            writeFailure = error.localizedDescription
+            lock.unlock()
+            return
+        }
+
+        // Audio engine owns and reuses tap buffers. Copy before asynchronous recognition.
+        lock.lock()
+        let speechContinuation = bufferContinuation
+        lock.unlock()
+        if let speechContinuation,
+           let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
+            copy.frameLength = buffer.frameLength
+            let sourceBuffers = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+            let destinationBuffers = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+            for index in 0..<sourceBuffers.count {
+                if let source = sourceBuffers[index].mData, let destination = destinationBuffers[index].mData {
+                    memcpy(destination, source, Int(sourceBuffers[index].mDataByteSize))
+                }
+            }
+            speechContinuation.yield(copy)
+        }
         
         // 60Hz Power Metering Calculation
         let now = Date()
@@ -258,17 +315,17 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             }
         }
         guard validSampleCount > 0 else {
-            meterContinuation?.yield(0.0)
+            meter?.yield(0.0)
             return
         }
         let rms = sqrt(sumSquares / Float(validSampleCount))
         guard rms.isFinite else {
-            meterContinuation?.yield(0.0)
+            meter?.yield(0.0)
             return
         }
         let db = 20.0 * log10(max(rms, 0.0001))
         guard db.isFinite else {
-            meterContinuation?.yield(0.0)
+            meter?.yield(0.0)
             return
         }
         
@@ -278,6 +335,6 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         let linearPower = (clampedDb - minDb) / (0.0 - minDb)
         let finalPower = linearPower.isFinite ? max(0.0, min(1.0, linearPower)) : 0.0
         
-        meterContinuation?.yield(finalPower)
+        meter?.yield(finalPower)
     }
 }

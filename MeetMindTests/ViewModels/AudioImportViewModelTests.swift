@@ -10,6 +10,7 @@ import Foundation
 import SwiftData
 @testable import MeetMind
 
+@MainActor
 final class AudioImportViewModelTests: XCTestCase {
     private var modelContainer: ModelContainer!
     private var context: ModelContext!

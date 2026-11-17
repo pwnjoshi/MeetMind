@@ -77,6 +77,7 @@ public enum ActionItemFilter: String, Codable, CaseIterable, Sendable {
 // MARK: - Search Scope Options
 public enum SearchScope: String, Codable, CaseIterable, Sendable {
     case all = "all"
+    case titles = "titles"
     case transcripts = "transcripts"
     case summaries = "summaries"
     case actionItems = "actionItems"
@@ -85,6 +86,7 @@ public enum SearchScope: String, Codable, CaseIterable, Sendable {
     public var title: String {
         switch self {
         case .all: return "All"
+        case .titles: return "Meeting Titles"
         case .transcripts: return "Transcripts"
         case .summaries: return "Summaries"
         case .actionItems: return "Action Items"

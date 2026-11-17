@@ -9,6 +9,8 @@ public struct MeetingExportSheet: View {
     
     @State private var exportFormat: ExportFormat = .pdf
     @State private var exportedText: String = ""
+    @State private var exportedURL: URL?
+    @State private var exportError: String?
     
     public init(
         onExportPDF: @escaping () -> Data?,
@@ -37,13 +39,24 @@ public struct MeetingExportSheet: View {
                 Section("Actions") {
                     if exportFormat == .pdf {
                         Button {
-                            _ = onExportPDF()
+                            do {
+                                guard let data = onExportPDF(), !data.isEmpty else {
+                                    exportError = "Could not generate the PDF. Please try again."
+                                    return
+                                }
+                                let url = FileManager.default.temporaryDirectory.appendingPathComponent("MeetMind-\(UUID().uuidString).pdf")
+                                try data.write(to: url, options: .atomic)
+                                exportedURL = url
+                            } catch { exportError = error.localizedDescription }
                         } label: { Label("Generate & Share PDF", systemImage: "doc.richtext") }
+                        if let exportedURL {
+                            ShareLink(item: exportedURL) { Label("Share PDF", systemImage: "square.and.arrow.up") }
+                        }
                     } else {
                         Button {
-                            let text = onExportMarkdown()
+                            let text = exportFormat == .plainText ? onExportEmailDraft().body : onExportMarkdown()
                             UIPasteboard.general.string = text
-                        } label: { Label("Copy Markdown to Clipboard", systemImage: "doc.on.doc") }
+                        } label: { Label(exportFormat == .plainText ? "Copy Plain Text" : "Copy Markdown", systemImage: "doc.on.doc") }
                     }
                     
                     Button {
@@ -59,5 +72,8 @@ public struct MeetingExportSheet: View {
             }
         }
         .presentationDetents([.medium])
+        .alert("Export failed", isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
+            Button("OK") { exportError = nil }
+        } message: { Text(exportError ?? "") }
     }
 }

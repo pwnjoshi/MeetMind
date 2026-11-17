@@ -19,11 +19,13 @@ public final class FolderTagViewModel {
     public var errorMessage: String? = nil
     
     private var modelContext: ModelContext?
+    private var ownedContainer: ModelContainer?
     
     public init(modelContext: ModelContext? = nil) {
         self.modelContext = modelContext
         if modelContext == nil {
             if let container = try? ModelContainerFactory.createInMemoryContainer() {
+                self.ownedContainer = container
                 self.modelContext = container.mainContext
             }
         }

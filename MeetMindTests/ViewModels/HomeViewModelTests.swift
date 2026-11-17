@@ -13,6 +13,7 @@ import SwiftData
 /// Comprehensive test suite covering Central Dashboard Feed, Meeting Status Badges,
 /// Quick Filter Chips, and Meeting Card Swipe Actions.
 /// Corresponds to Features 18, 19, 20, and 21.
+@MainActor
 final class HomeViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures
@@ -72,10 +73,10 @@ final class HomeViewModelTests: XCTestCase {
     }
     
     private func clearMeetings() {
-        try? context.delete(model: Meeting.self)
-        try? context.delete(model: Folder.self)
-        try? context.delete(model: ActionItem.self)
-        try? context.delete(model: Summary.self)
+        for model in (try? context.fetch(FetchDescriptor<Meeting>())) ?? [] { context.delete(model) }
+        for model in (try? context.fetch(FetchDescriptor<Folder>())) ?? [] { context.delete(model) }
+        for model in (try? context.fetch(FetchDescriptor<ActionItem>())) ?? [] { context.delete(model) }
+        for model in (try? context.fetch(FetchDescriptor<Summary>())) ?? [] { context.delete(model) }
         try? context.save()
     }
     

@@ -10,6 +10,7 @@ public final class MockAudioRecordingService: AudioRecordingServiceProtocol, @un
     public var isCancelled: Bool = false
     public var wasRecordingCancelled: Bool { isCancelled }
     public var simulateFileAlreadyDeleted: Bool = false
+    public var automaticallyAdvancesDuration: Bool = true
     
     private var meterContinuation: AsyncStream<Float>.Continuation?
     private var simulationTask: Task<Void, Never>?
@@ -78,14 +79,15 @@ public final class MockAudioRecordingService: AudioRecordingServiceProtocol, @un
     
     public func cancelRecording() throws {
         lock.lock()
-        defer { lock.unlock() }
-        if let error = shouldThrowError { throw error }
+        if let error = shouldThrowError { lock.unlock(); throw error }
         state = .idle
         isCancelled = true
         currentDuration = 0.0
+        let continuation = meterContinuation
+        lock.unlock()
         stopSimulation()
-        meterContinuation?.yield(0.0)
-        meterContinuation?.finish()
+        continuation?.yield(0.0)
+        continuation?.finish()
     }
     
     private func startSimulation() {
@@ -97,7 +99,7 @@ public final class MockAudioRecordingService: AudioRecordingServiceProtocol, @un
                 self.lock.lock()
                 let isRecording = self.state == .recording
                 let levels = self.simulatedPowerLevels
-                if isRecording {
+                if isRecording && self.automaticallyAdvancesDuration {
                     self.currentDuration += 0.1
                 }
                 let continuation = self.meterContinuation

@@ -138,7 +138,9 @@ public final class SettingsViewModel {
     public var isAudioSettingsLocked: Bool = false
     
     public var speechLanguageLocale: String = "en-US"
-    public var isOnDeviceRecognitionOnly: Bool = false
+    public var isOnDeviceRecognitionOnly: Bool = true {
+        didSet { userDefaults.set(isOnDeviceRecognitionOnly, forKey: "MeetMind_OnDeviceSpeechOnly") }
+    }
     public var mustUseOnDeviceRecognition: Bool = false
     public var isOnlineRecognitionDisabled: Bool = false
     
@@ -199,6 +201,9 @@ public final class SettingsViewModel {
     }
     
     private func loadSavedPreferences() {
+        if let onDeviceOnly = userDefaults.object(forKey: "MeetMind_OnDeviceSpeechOnly") as? Bool {
+            isOnDeviceRecognitionOnly = onDeviceOnly
+        }
         if let modeRaw = userDefaults.string(forKey: "MeetMind_ThemeMode"),
            let mode = ThemeMode(rawValue: modeRaw) {
             self.themeMode = mode
@@ -216,8 +221,8 @@ public final class SettingsViewModel {
             }
         }
         
-        if userDefaults.object(forKey: "MeetMind_NoiseSuppression") != nil {
-            self.isNoiseSuppressionEnabled = userDefaults.bool(forKey: "MeetMind_NoiseSuppression")
+        if let noiseSuppression = userDefaults.object(forKey: "MeetMind_NoiseSuppression") as? Bool {
+            self.isNoiseSuppressionEnabled = noiseSuppression
         }
         
         if let savedLocale = userDefaults.string(forKey: "MeetMind_SpeechLocale") {
@@ -335,7 +340,7 @@ public final class SettingsViewModel {
         setThemeMode(.system)
         setAPIKey("")
         setSummaryStyle(.executive)
-        isOnDeviceRecognitionOnly = false
+        isOnDeviceRecognitionOnly = true
         isiCloudSyncEnabled = false
         isHighContrastEnabled = false
     }

@@ -127,7 +127,7 @@ public final class ActionItem: Identifiable {
     
     public convenience init(
         title: String,
-        assigneeName: String? = nil,
+        assigneeName: String?,
         dueDate: Date? = nil,
         priority: ActionPriority = .medium,
         meeting: Meeting? = nil
@@ -149,7 +149,7 @@ public final class ActionItem: Identifiable {
     
     public convenience init(
         title: String,
-        assignee: Speaker? = nil,
+        assignee: Speaker?,
         dueDate: Date? = nil,
         priority: ActionPriority = .medium,
         meeting: Meeting? = nil

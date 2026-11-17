@@ -4,6 +4,11 @@ import SwiftUI
 public struct MicrophoneCheckView: View {
     @Environment(\.dismiss) private var dismiss
     public let onStartRecording: () -> Void
+    @State private var recorder = AudioRecordingService()
+    @State private var levels: [Float] = Array(repeating: 0, count: 32)
+    @State private var inputDetected = false
+    @State private var microphoneReady = false
+    @State private var microphoneError: String?
     
     public init(onStartRecording: @escaping () -> Void) {
         self.onStartRecording = onStartRecording
@@ -30,17 +35,17 @@ public struct MicrophoneCheckView: View {
                     .foregroundStyle(Color(uiColor: .secondaryLabel))
             }
             
-            MicWaveformCardView()
+            MicWaveformCardView(levels: levels)
             
             HStack(spacing: 12) {
                 Circle()
-                    .fill(Color(hex: "#10B981"))
+                    .fill(inputDetected ? Color(hex: "#10B981") : .gray)
                     .frame(width: 10, height: 10)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Input detected")
+                    Text(inputDetected ? "Input detected" : "Speak to test your microphone")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Color(hex: "#1C1C1E"))
-                    Text("iPhone microphone (Built-in)")
+                    Text(microphoneError ?? "Current audio input")
                         .font(.system(size: 13))
                         .foregroundStyle(Color(uiColor: .secondaryLabel))
                 }
@@ -53,6 +58,7 @@ public struct MicrophoneCheckView: View {
             Spacer()
             
             Button(action: {
+                try? recorder.cancelRecording()
                 dismiss()
                 onStartRecording()
             }) {
@@ -65,8 +71,24 @@ public struct MicrophoneCheckView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 26))
             }
             .padding(.bottom, 16)
+            .disabled(!microphoneReady)
         }
         .padding(.horizontal, 20)
         .background(Color(uiColor: .systemBackground))
+        .task {
+            do {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("mic-check-\(UUID().uuidString).m4a")
+                try await recorder.startRecording(destinationURL: url)
+                guard !Task.isCancelled else { try recorder.cancelRecording(); return }
+                microphoneReady = true
+                for await level in recorder.audioMeterStream {
+                    guard !Task.isCancelled else { break }
+                    levels.removeLast()
+                    levels.insert(level, at: 0)
+                    inputDetected = level > 0.1
+                }
+            } catch { microphoneError = error.localizedDescription }
+        }
+        .onDisappear { try? recorder.cancelRecording() }
     }
 }

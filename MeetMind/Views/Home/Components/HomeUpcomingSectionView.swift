@@ -13,8 +13,8 @@ public struct HomeUpcomingSectionView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Upcoming meetings")
-                .font(.system(size: 19, weight: .bold))
-                .foregroundStyle(Color(hex: "#1C1C1E"))
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
             
             VStack(spacing: 0) {
                 if meetings.isEmpty {
@@ -40,11 +40,8 @@ public struct HomeUpcomingSectionView: View {
                 }
             }
             .background(Color(uiColor: .systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color(hex: "#E4E8F1"), lineWidth: 1)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+
         }
     }
 }

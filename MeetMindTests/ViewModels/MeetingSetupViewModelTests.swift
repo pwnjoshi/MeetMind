@@ -14,10 +14,18 @@ import SwiftData
 /// Templates Selector, Participant Manager, Quick Meeting Launcher, Audio Import Pipeline,
 /// and Folders & Tags Organization.
 /// Corresponds to Features 22, 23, 24, 25, 26, 27, and 28.
+@MainActor
 final class MeetingSetupViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures
     
+    func testUnreadableNonemptyAudioDoesNotInventTwoMinuteDuration() throws {
+        let url = tempDirectoryURL.appendingPathComponent("unreadable.m4a")
+        try Data("not an audio container".utf8).write(to: url)
+        XCTAssertThrowsError(try sut.importAudioFile(from: url))
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Meeting>()), 0)
+    }
+
     private var modelContainer: ModelContainer!
     private var context: ModelContext!
     private var sut: MeetingSetupViewModel!
@@ -304,13 +312,15 @@ final class MeetingSetupViewModelTests: XCTestCase {
         let meeting = try sut.importAudioFile(from: audioFileURL)
         
         XCTAssertEqual(meeting.duration, 185.0)
-        XCTAssertEqual(meeting.audioFileURL, audioFileURL)
+        XCTAssertNotEqual(meeting.audioFileURL, audioFileURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(meeting.audioFileURL).path))
     }
     
     /// Tier 1: Feature 27 - Validates imported audio creates meeting in processing state.
     func test_tier1_feature27_audioFileImportCreatesMeetingInProcessingState() throws {
         let audioFileURL = tempDirectoryURL.appendingPathComponent("import_test.wav")
         try Data("wav content".utf8).write(to: audioFileURL)
+        sut.setSimulatedAudioDuration(120)
         
         let meeting = try sut.importAudioFile(from: audioFileURL)
         XCTAssertEqual(meeting.status, .processing)
@@ -703,7 +713,7 @@ final class MeetingSetupViewModelTests: XCTestCase {
         try Data("audio_content_valid".utf8).write(to: audioFileURL)
         sut.setSimulatedAudioDuration(120.0)
         
-        mockTranscription.mockSegments = [
+        mockTranscription.mockFileSegments = [
             LiveTranscriptSegment(text: "Hello everyone", startTime: 0.0, duration: 2.0),
             LiveTranscriptSegment(text: "Let's review the quarterly metrics", startTime: 2.5, duration: 3.5)
         ]
@@ -711,7 +721,7 @@ final class MeetingSetupViewModelTests: XCTestCase {
         let meeting = try await sut.importAudioFile(at: audioFileURL, title: "Quarterly Strategy")
         XCTAssertEqual(meeting.title, "Quarterly Strategy")
         XCTAssertEqual(meeting.transcriptSegments.count, 2)
-        XCTAssertEqual(meeting.transcriptSegments.first?.text, "Hello everyone")
+        XCTAssertEqual(meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }.first?.text, "Hello everyone")
         XCTAssertTrue(meeting.duration > 0)
     }
 }

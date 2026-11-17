@@ -256,9 +256,9 @@ public final class MeetingDetailViewModel {
     ) {
         self.meeting = meeting
         self.modelContext = modelContext
-        self.playbackService = playbackService
-        self.summarizationService = summarizationService
-        self.exportService = exportService
+        self.playbackService = playbackService ?? AudioPlaybackService()
+        self.summarizationService = summarizationService ?? NaturalLanguageSummarizationService()
+        self.exportService = exportService ?? ExportService()
         self.remindersService = remindersService
         self.dataStore = dataStore
         
@@ -271,7 +271,7 @@ public final class MeetingDetailViewModel {
         }
         
         if let meeting = self.meeting, let audioURL = meeting.audioFileURL {
-            try? playbackService?.loadAudio(url: audioURL)
+            try? self.playbackService?.loadAudio(url: audioURL)
         }
     }
     
@@ -439,6 +439,21 @@ public final class MeetingDetailViewModel {
             try? playbackService?.play()
             _isPlayingInternal = true
         }
+    }
+
+    public func refreshPlaybackPosition() {
+        guard let playbackService else { return }
+        updatePlaybackTime(playbackService.currentTime)
+        _isPlayingInternal = playbackService.isPlaying
+    }
+
+    public func stopPlayback() { playbackService?.pause() }
+
+    public func deleteMeeting() throws {
+        guard let meeting, let modelContext else { return }
+        playbackService?.stop()
+        modelContext.delete(meeting)
+        try modelContext.save()
     }
     
     public func setPlaybackRate(_ rate: Float) {

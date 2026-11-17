@@ -1,57 +1,59 @@
 # MeetMind
 
-An intelligent, production-grade meeting intelligence application for iOS 17+ built natively in SwiftUI.
+Native iOS 17+ meeting recorder built with SwiftUI and SwiftData. No account is
+required; recordings, transcripts, notes, photos, and summaries are stored locally.
 
-MeetMind transforms your meetings through real-time audio recording, dynamic waveform visualization, live streaming transcription, on-device extractive summaries, automated action item tracking with Apple Reminders synchronization, synchronized audio scrubbing, and universal cross-meeting search.
+See [REPAIR_NOTES.md](REPAIR_NOTES.md) for the confirmed launch-crash diagnosis,
+repairs, verification evidence, and remaining limitations.
 
 ## Features
 
-- **Real-Time Audio Recording**: High-fidelity AAC recording via `AVAudioEngine` with 60Hz linear power metering.
-- **Dynamic Waveform Visualizer**: Smooth, reactive 32-bar visualizer mirroring microphone input.
-- **Live Diarized Transcription**: Streaming speech recognition powered by Apple's `Speech` framework with offline neural engine fallback.
-- **Intelligent Summaries & Decisions**: Dual-engine synthesis using Apple `NaturalLanguage` and structured JSON intelligence models.
-- **Action Items & Reminders Sync**: Interactive task checklists with one-tap sync to Apple Reminders (`EventKit`).
-- **Synchronized Playback Engine**: Variable playback speed (0.75x–2.0x) with pitch correction and tap-to-seek transcript scrubbing.
-- **Multi-Format Export**: Professional PDF minutes generation (`UIGraphicsPDFRenderer`), Markdown, and email summaries.
-- **Universal Search**: Deep full-text search across meeting titles, spoken sentences, and action items.
+- AAC recording, live microphone metering, pause/resume, and persistent audio.
+- Apple Speech transcription with on-device recognition enabled by default.
+- Local extractive summaries, decisions, and suggested action items.
+- Transcript editing, manual speaker attribution, playback, notes, and photos.
+- Meeting scheduling, audio import, filtering, and cross-meeting search services.
+- Action checklists and optional Apple Reminders export through EventKit.
+- PDF sharing, Markdown export, and email-draft text.
 
-## Architecture
+On-device recognition depends on device/language support and installed speech
+models. Online recognition can be enabled explicitly in Settings and may send
+audio to Apple's speech service. Calendar sync, iCloud sync, and automatic speaker
+diarization are not provided.
 
-- **Clean Architecture + Protocol-Oriented MVVM + Observation (`@Observable`)**
-- **Persistence**: SwiftData (`@Model`) with relational schemas and cascade delete rules.
-- **Strict Concurrency**: Built with Swift 5.9 strict concurrency checking (`SWIFT_STRICT_CONCURRENCY = complete`).
-- **Test-Driven Design**: Protocol abstractions with full mock implementations for deterministic automated testing.
+## Build and test
 
-## Requirements
+Open `MeetMind.xcodeproj` with Xcode on macOS, select the MeetMind scheme and an
+iOS 17+ simulator or signed iPhone destination. Build with Cmd+B; run Swift XCTest
+with Cmd+U. GitHub Actions also builds the Release app and runs simulator tests
+and repeated-launch checks. Inspect the complete workflow outcome, not just the
+compilation step.
 
-- **iOS**: 17.0+
-- **Xcode**: 15.0+
-- **Swift**: 5.9+
+Cross-platform structural checks:
 
-## Project Layout
-
-```
-MeetMind/
-├── App/                 # App lifecycle, state router, navigation
-├── DesignSystem/        # Color, typography, and spacing tokens + reusable UI components
-├── Models/              # SwiftData entities (Meeting, Transcript, Speaker, Summary, ActionItem)
-├── Services/            # Audio recording/playback, Speech transcription, Summarization, Export
-├── ViewModels/          # Observable view models for dashboard, recording, cockpit, search
-├── Views/               # SwiftUI screens, cards, modals, and player bars
-└── Resources/           # Assets catalog and Info.plist
-MeetMindTests/           # Unit, integration, and E2E test suites
-Scripts/                 # Verification and test runner scripts
+```sh
+python -X utf8 Scripts/verify_project.py
+python Scripts/validate_ipa.py MeetMind/Resources/Info.plist
+python Scripts/validate_ipa.py path/to/MeetMind.ipa
 ```
 
-## Building and Testing
+`Scripts/run_unit_tests.py` is a legacy Python domain simulation. It does not
+compile or execute the Swift app and cannot certify iOS behavior.
 
-1. Open `MeetMind.xcodeproj` in Xcode 15+.
-2. Select target `MeetMind` and choose an iOS 17+ Simulator (e.g. iPhone 15 Pro).
-3. Press `Cmd + B` to build, or `Cmd + R` to run.
-4. Press `Cmd + U` to execute the automated unit test suite.
+## Sideloading
 
-To verify project structure and run tests via command line:
-```bash
-python Scripts/verify_project.py
-python Scripts/run_unit_tests.py
-```
+Download the IPA artifact for the current successful GitHub Actions run. The
+artifact is **unsigned** and must be re-signed by Sideloadly or equivalent for your
+device. Update using the same signing account and bundle identifier to preserve
+app data. The old local `build/MeetMind.ipa` predates these repairs and should not
+be used for verification. Do not commit IPA files or build outputs.
+
+## Repository layout
+
+- `MeetMind/App`: lifecycle and routing
+- `MeetMind/Models`: SwiftData entities
+- `MeetMind/Services`: audio, speech, persistence, summaries, export, integrations
+- `MeetMind/ViewModels` and `MeetMind/Views`: app behavior and SwiftUI screens
+- `MeetMind/DesignSystem` and `MeetMind/Resources`: UI tokens and bundled assets
+- `MeetMindTests`: Swift XCTest unit and integration suites
+- `Scripts`: project, package, and simulator launch checks

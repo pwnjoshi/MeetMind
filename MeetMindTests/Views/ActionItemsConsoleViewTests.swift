@@ -16,7 +16,7 @@ final class ActionItemsConsoleViewTests: XCTestCase {
         
         let meeting = Meeting(title: "Product Roadmap", status: .completed)
         let item1 = ActionItem(title: "Update design tokens", priority: .high, meeting: meeting)
-        let item2 = ActionItem(title: "Verify API payload", priority: .urgent, isCompleted: true, meeting: meeting)
+        let item2 = ActionItem(title: "Verify API payload", isCompleted: true, priority: .urgent, meeting: meeting)
         context.insert(meeting)
         context.insert(item1)
         context.insert(item2)

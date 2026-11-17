@@ -12,6 +12,7 @@ import Foundation
 /// Comprehensive test suite covering App Lifecycle, Navigation Routing, Onboarding Carousel,
 /// Profile & Voice Baseline Setup, Permissions Primer, and Main Tab Navigation Shell.
 /// Corresponds to Features 9, 10, 11, 12, and 13.
+@MainActor
 final class AppNavigationViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures

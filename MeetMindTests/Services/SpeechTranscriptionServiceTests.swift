@@ -13,6 +13,7 @@ import Speech
 import AVFoundation
 @testable import MeetMind
 
+@MainActor
 final class SpeechTranscriptionServiceTests: XCTestCase {
     
     private var service: MockSpeechTranscriptionService!

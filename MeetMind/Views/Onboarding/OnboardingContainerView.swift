@@ -19,7 +19,7 @@ public struct OnboardingContainerView: View {
                         removal: .move(edge: .leading).combined(with: .opacity)
                     ))
             case .verifyEmail:
-                VerifyEmailView(viewModel: viewModel)
+                WelcomeAndSignInView(viewModel: viewModel)
                     .transition(.asymmetric(
                         insertion: .move(edge: .trailing).combined(with: .opacity),
                         removal: .move(edge: .leading).combined(with: .opacity)
@@ -41,13 +41,14 @@ public struct OnboardingContainerView: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.currentStage)
         .onAppear {
             viewModel.onCompletion = { profile in
-                print("Onboarding completed for: \(profile.name)")
+                if let data = try? JSONEncoder().encode(profile) {
+                    UserDefaults.standard.set(data, forKey: "MeetMind_UserProfile")
+                }
                 appState.completeOnboarding()
             }
         }
         .onChange(of: viewModel.isOnboardingCompleted) { _, completed in
             if completed {
-                print("Onboarding completion detected via flag")
                 appState.completeOnboarding()
             }
         }

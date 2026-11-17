@@ -18,7 +18,7 @@ public struct MeetingDetailContainerView: View {
     
     public var body: some View {
         Group {
-            if let meeting = targetMeeting, meeting.status == .recording {
+            if let meeting = targetMeeting, meeting.status == .recording, meeting.audioFileURL == nil {
                 LiveRecordingView(meetingId: meetingId, viewModel: LiveRecordingViewModel(meeting: meeting, meetingId: meetingId, modelContext: modelContext))
             } else {
                 MeetingDetailView(viewModel: MeetingDetailViewModel(meeting: targetMeeting, meetingId: meetingId, modelContext: modelContext))

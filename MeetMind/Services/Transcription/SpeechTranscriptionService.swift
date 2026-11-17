@@ -4,6 +4,7 @@ import AVFoundation
 
 public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtocol, @unchecked Sendable {
     private let speechRecognizer: SFSpeechRecognizer?
+    private let onDeviceOnly: Bool
     private var activeRecognitionTask: SFSpeechRecognitionTask?
     private var activeRequest: SFSpeechAudioBufferRecognitionRequest?
     private let lock = NSLock()
@@ -16,8 +17,9 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
         speechRecognizer?.supportsOnDeviceRecognition ?? false
     }
     
-    public init(locale: Locale = Locale(identifier: "en-US")) {
+    public init(locale: Locale = Locale(identifier: "en-US"), onDeviceOnly: Bool = true) {
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
+        self.onDeviceOnly = onDeviceOnly
     }
     
     deinit {
@@ -43,7 +45,11 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
             request.shouldReportPartialResults = true
             request.taskHint = .dictation
             
-            if recognizer.supportsOnDeviceRecognition {
+            if onDeviceOnly && !recognizer.supportsOnDeviceRecognition {
+                continuation.finish(throwing: SpeechTranscriptionError.onDeviceRecognitionUnavailable)
+                return
+            }
+            if onDeviceOnly {
                 request.requiresOnDeviceRecognition = true
             }
             
@@ -106,14 +112,19 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
     
     public func stopLiveTranscription() {
         lock.lock()
-        activeRequest?.endAudio()
+        let request = activeRequest
+        let task = activeRecognitionTask
         activeRequest = nil
-        activeRecognitionTask?.cancel()
         activeRecognitionTask = nil
         lock.unlock()
+        request?.endAudio()
+        task?.cancel()
     }
     
     public func transcribeAudioFile(at url: URL) async throws -> [LiveTranscriptSegment] {
+        guard await requestAuthorization() == .authorized else {
+            throw SpeechTranscriptionError.authorizationDenied
+        }
         guard let recognizer = speechRecognizer, recognizer.isAvailable else {
             throw SpeechTranscriptionError.recognizerUnavailable
         }
@@ -122,6 +133,12 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
         }
         
         let request = SFSpeechURLRecognitionRequest(url: url)
+        if onDeviceOnly {
+            guard recognizer.supportsOnDeviceRecognition else {
+                throw SpeechTranscriptionError.onDeviceRecognitionUnavailable
+            }
+            request.requiresOnDeviceRecognition = true
+        }
         request.shouldReportPartialResults = false
         request.taskHint = .dictation
         
@@ -137,7 +154,7 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
                 continuation.resume(with: result)
             }
             
-            recognizer.recognitionTask(with: request) { result, error in
+            let task = recognizer.recognitionTask(with: request) { result, error in
                 if let error = error {
                     resumeOnce(with: .failure(SpeechTranscriptionError.recognitionRequestFailed(error.localizedDescription)))
                     return
@@ -154,6 +171,9 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
                 }
                 resumeOnce(with: .success(segments))
             }
+            lock.lock()
+            activeRecognitionTask = task
+            lock.unlock()
         }
     }
 }

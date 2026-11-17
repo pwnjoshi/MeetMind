@@ -17,6 +17,7 @@ public final class AudioImportViewModel {
     public var shouldSimulateCorruptFile: Bool = false
     
     private var modelContext: ModelContext?
+    private var ownedContainer: ModelContainer?
     private let transcriptionService: SpeechTranscriptionServiceProtocol?
     private let summarizationService: SummarizationServiceProtocol?
     
@@ -31,6 +32,7 @@ public final class AudioImportViewModel {
         
         if modelContext == nil {
             if let container = try? ModelContainerFactory.createInMemoryContainer() {
+                self.ownedContainer = container
                 self.modelContext = container.mainContext
             }
         }

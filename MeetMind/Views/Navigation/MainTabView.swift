@@ -29,14 +29,14 @@ public struct MainTabView: View {
             .tag(TabIdentifier.home)
             
             NavigationStack(path: Bindable(router).actionItemsPath) {
-                ActionItemsConsoleView()
+                ActionItemsConsoleView(viewModel: ActionItemsViewModel(modelContext: modelContext, remindersService: SystemRemindersSyncService()))
                     .navigationDestination(for: NavigationDestination.self) { destinationView(for: $0) }
             }
             .tabItem { Label("Actions", systemImage: "flag.fill") }
             .badge(pendingActionItemsBadge)
             .tag(TabIdentifier.actionItems)
         }
-        .tint(Color(hex: "#0068D9"))
+        .tint(Color(hex: "#0088FF"))
     }
     
     private var pendingActionItemsBadge: String? {

@@ -1,11 +1,13 @@
 import SwiftUI
 import SwiftData
+import AVFoundation
 
 /// Master live recording console HUD coordinating waveforms, speech stream, and tool dock
 public struct LiveRecordingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
+    @Environment(SettingsViewModel.self) private var settings
     @State private var viewModel: LiveRecordingViewModel
     @State private var isPhotoSheetPresented: Bool = false
     public let meetingId: UUID
@@ -74,7 +76,26 @@ public struct LiveRecordingView: View {
             Button("Discard", role: .destructive) { viewModel.confirmDiscard(); dismiss() }
             Button("Save Anyway") { proceedToProcessing() }
         } message: { Text(viewModel.shortRecordingPrompt) }
-        .onAppear { if viewModel.recordingState == .idle { viewModel.startSession() } }
+        .alert("Recording unavailable", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK") { viewModel.errorMessage = nil }
+        } message: { Text(viewModel.errorMessage ?? "") }
+        .task {
+            do {
+                try viewModel.prepareSession(context: modelContext, settings: settings)
+                if viewModel.recordingState == .idle { viewModel.startSession() }
+            } catch { viewModel.errorMessage = error.localizedDescription }
+        }
+        .onDisappear { viewModel.leaveSession() }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
+            guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            if type == .began, viewModel.isRecording {
+                viewModel.handleAudioSessionInterruption(began: true)
+            }
+        }
     }
     
     private func handleStop() {
@@ -87,8 +108,10 @@ public struct LiveRecordingView: View {
     
     private func proceedToProcessing() {
         Task {
-            _ = try? await viewModel.finishSession()
-            router.navigate(to: .meetingProcessing(id: meetingId), in: .home)
+            do {
+                _ = try await viewModel.finishSession()
+                router.navigate(to: .meetingProcessing(id: meetingId), in: .home)
+            } catch { viewModel.errorMessage = error.localizedDescription }
         }
     }
 }

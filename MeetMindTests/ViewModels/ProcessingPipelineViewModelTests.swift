@@ -14,6 +14,7 @@ import SwiftData
 /// Multi-Stage Progression (Audio Finalization -> Speech Diarization -> AI Summarization -> Action Extraction),
 /// Progress Interpolation, Stage Retries, Error Fallbacks, and Completion Routing.
 /// Corresponds to Feature 39.
+@MainActor
 final class ProcessingPipelineViewModelTests: XCTestCase {
     
     // MARK: - Test Infrastructure & Fixtures
@@ -198,7 +199,7 @@ final class ProcessingPipelineViewModelTests: XCTestCase {
         }
         
         let meeting = fetchMeeting(id: targetMeetingId)
-        XCTAssertNotNil(meeting?.summarySnippet)
+        XCTAssertNotNil(meeting?.summary?.executiveSummary)
     }
     
     /// Tier 1: Feature 39 - Validates extracted action items are attached to meeting record.
@@ -209,7 +210,7 @@ final class ProcessingPipelineViewModelTests: XCTestCase {
         }
         
         let meeting = fetchMeeting(id: targetMeetingId)
-        XCTAssertGreaterThan(meeting?.actionItemCount ?? 0, 0)
+        XCTAssertGreaterThan(meeting?.actionItems.count ?? 0, 0)
     }
     
     /// Tier 1: Feature 39 - Validates pipeline duration estimation string calculation.
@@ -301,7 +302,7 @@ final class ProcessingPipelineViewModelTests: XCTestCase {
         
         XCTAssertEqual(sut.pipelineStatus, .completed)
         let meeting = fetchMeeting(id: targetMeetingId)
-        XCTAssertEqual(meeting?.summarySnippet, "No speech detected during meeting.")
+        XCTAssertEqual(meeting?.summary?.executiveSummary, "No speech detected during meeting.")
     }
     
     /// Tier 2: Feature 39 - Validates extracting 0 action items completes successfully without error.
@@ -315,7 +316,7 @@ final class ProcessingPipelineViewModelTests: XCTestCase {
         
         XCTAssertEqual(sut.pipelineStatus, .completed)
         let meeting = fetchMeeting(id: targetMeetingId)
-        XCTAssertEqual(meeting?.actionItemCount, 0)
+        XCTAssertEqual(meeting?.actionItems.count, 0)
     }
     
     /// Tier 2: Feature 39 - Validates background processing completion posts local notification signal.

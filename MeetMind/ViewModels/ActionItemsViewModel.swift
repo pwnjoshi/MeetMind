@@ -27,6 +27,7 @@ public enum ActionItemGrouping: String, CaseIterable, Sendable {
     case priority = "priority"
     case meeting = "meeting"
     case assignee = "assignee"
+    case dueDate = "dueDate"
 }
 
 /// Sheet presentation mode for create/edit action item
@@ -126,6 +127,18 @@ public final class ActionItemsViewModel {
         case .assignee:
             let grouped = Dictionary(grouping: currentItems) { $0.assigneeName }
             return grouped.map { ActionItemGroupSection(id: $0.key, title: $0.key, items: $0.value) }
+        case .dueDate:
+            let calendar = Calendar.current
+            let now = Date()
+            let grouped = Dictionary(grouping: currentItems) { item -> String in
+                guard let date = item.dueDate else { return "No due date" }
+                if calendar.isDateInToday(date) { return "Today" }
+                return date < now ? "Overdue" : "Upcoming"
+            }
+            return ["Overdue", "Today", "Upcoming", "No due date"].compactMap { title in
+                guard let items = grouped[title], !items.isEmpty else { return nil }
+                return ActionItemGroupSection(id: title, title: title, items: items)
+            }
         }
     }
     
@@ -164,6 +177,8 @@ public final class ActionItemsViewModel {
     }
     
     private var modelContext: ModelContext?
+    // ModelContext does not own the store lifetime. Retain any container we create.
+    private var ownedContainer: ModelContainer?
     private let remindersService: RemindersSyncServiceProtocol?
     private var dataStore: Any?
     
@@ -178,6 +193,7 @@ public final class ActionItemsViewModel {
         
         if modelContext == nil && dataStore == nil {
             if let container = try? ModelContainerFactory.createInMemoryContainer() {
+                self.ownedContainer = container
                 self.modelContext = container.mainContext
             }
         }
@@ -408,7 +424,7 @@ public final class ActionItemsViewModel {
         return .meetingDetail(id: meetingId)
     }
     
-    public func syncPendingToAppleReminders() -> Int {
+    public func syncPendingToAppleReminders() async throws -> Int {
         if let rem = remindersService {
             let mirror = Mirror(reflecting: rem)
             for child in mirror.children {
@@ -432,31 +448,30 @@ public final class ActionItemsViewModel {
             isShowingNothingToSyncBanner = true
             return 0
         }
-        Task {
-            _ = try? await syncToAppleReminders()
-        }
-        for item in pending {
-            item.isSyncedToReminders = true
-        }
-        try? modelContext?.save()
+        try await syncToAppleReminders()
         return pending.count
     }
     
     public func syncToAppleReminders() async throws {
-        guard let remindersService = remindersService else { return }
+        guard let remindersService = remindersService else {
+            throw NSError(domain: "MeetMind.Reminders", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Reminders sync is unavailable."])
+        }
         isSyncingReminders = true
         defer { isSyncingReminders = false }
         
         let pending = allActionItems.filter { !$0.isCompleted }
         let ids = try await remindersService.syncActionItems(pending, toList: "MeetMind")
+        guard ids.count == pending.count else {
+            throw NSError(domain: "MeetMind.Reminders", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "Some tasks could not be synced. Please retry."])
+        }
         for (index, item) in pending.enumerated() {
             if index < ids.count {
                 item.reminderIdentifier = ids[index]
-            } else {
-                item.reminderIdentifier = UUID().uuidString
             }
         }
-        try? modelContext?.save()
+        try modelContext?.save()
     }
     
     public func setFilterScope(_ scope: ActionItemFilterScope) {

@@ -12,6 +12,7 @@ import Foundation
 import NaturalLanguage
 @testable import MeetMind
 
+@MainActor
 final class SummarizationServiceTests: XCTestCase {
     
     private var mockService: MockSummarizationService!

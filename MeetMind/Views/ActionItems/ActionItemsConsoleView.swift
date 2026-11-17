@@ -7,6 +7,7 @@ public struct ActionItemsConsoleView: View {
     @Environment(NavigationRouter.self) private var router
     @Query private var queriedItems: [ActionItem]
     @State public var viewModel: ActionItemsViewModel
+    @State private var syncError: String?
     
     public init(viewModel: ActionItemsViewModel = ActionItemsViewModel()) {
         _viewModel = State(initialValue: viewModel)
@@ -53,12 +54,18 @@ public struct ActionItemsConsoleView: View {
         .onChange(of: queriedItems) { _, newItems in
             viewModel.allActionItems = newItems
         }
+        .alert("Reminders sync failed", isPresented: Binding(get: { syncError != nil }, set: { if !$0 { syncError = nil } })) {
+            Button("OK") { syncError = nil }
+        } message: { Text(syncError ?? "") }
     }
     
     private var topControlBar: some View {
         HStack {
             Button {
-                Task { try? await viewModel.syncAllToAppleReminders() }
+                Task {
+                    do { try await viewModel.syncAllToAppleReminders() }
+                    catch { syncError = error.localizedDescription }
+                }
             } label: {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: "arrow.triangle.2.circlepath")

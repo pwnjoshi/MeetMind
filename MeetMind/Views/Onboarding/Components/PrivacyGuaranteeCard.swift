@@ -11,11 +11,11 @@ public struct PrivacyGuaranteeCard: View {
                 .foregroundStyle(Theme.Colors.mintGreen)
             
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("100% On-Device Privacy")
+                Text("Your meetings stay with you")
                     .font(Typography.headline)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 
-                Text("Audio recording and speech transcription run strictly on your iPhone. Your voice and transcripts never leave your device without your explicit export.")
+                Text("Recordings and summaries are saved on your iPhone. Speech recognition uses on-device processing by default. Enabling online recognition in Settings may send audio to Apple's speech service.")
                     .font(Typography.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineSpacing(2)
