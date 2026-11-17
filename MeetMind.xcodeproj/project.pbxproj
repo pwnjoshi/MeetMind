@@ -42,7 +42,6 @@
 		1A0000212CEE000100000001 /* ExportServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000212CEE000100000001 /* ExportServiceProtocol.swift */; };
 		1A0000222CEE000100000001 /* ExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000222CEE000100000001 /* ExportService.swift */; };
 		1A0000232CEE000100000001 /* MockExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000232CEE000100000001 /* MockExportService.swift */; };
-		1A0000242CEE000100000001 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1B0000242CEE000100000001 /* Info.plist */; };
 		1A0000302CEE000100000001 /* RemindersSyncServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000302CEE000100000001 /* RemindersSyncServiceProtocol.swift */; };
 		1A0000312CEE000100000001 /* MockRemindersSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000312CEE000100000001 /* MockRemindersSyncService.swift */; };
 		1A0000322CEE000100000001 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000322CEE000100000001 /* HomeViewModel.swift */; };
@@ -895,7 +894,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1A0000242CEE000100000001 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
