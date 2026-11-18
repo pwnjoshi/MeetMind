@@ -143,6 +143,9 @@ private struct LocalSeriesTimeline: View {
     @Environment(\.modelContext) private var modelContext
     @State private var setup: MeetingSetupViewModel?
     @State private var showsSchedule = false
+    @State private var showsRename = false
+    @State private var nameDraft = ""
+    @State private var saveError: String?
 
     private var occurrences: [Meeting] {
         meetings.filter { $0.seriesID == seriesID }.sorted {
@@ -178,7 +181,40 @@ private struct LocalSeriesTimeline: View {
         .sheet(isPresented: $showsSchedule) {
             if let setup { ScheduleMeetingView(viewModel: setup) }
         }
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Rename Series") {
+                        nameDraft = occurrences.first?.seriesName ?? ""
+                        showsRename = true
+                    }
+                } label: { Image(systemName: "ellipsis") }
+                .accessibilityLabel("Series options")
+            }
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+        }
+        .alert("Rename Series", isPresented: $showsRename) {
+            TextField("Series name", text: $nameDraft)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") { renameSeries() }
+                .disabled(nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .alert("Could Not Save Series", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK") { saveError = nil }
+        } message: { Text(saveError ?? "") }
+    }
+
+    private func renameSeries() {
+        let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let previous = occurrences.map { ($0, $0.seriesName) }
+        for meeting in occurrences { meeting.seriesName = name }
+        do { try modelContext.save() }
+        catch {
+            for (meeting, oldName) in previous { meeting.seriesName = oldName }
+            saveError = "The series name could not be saved. Try again."
+        }
     }
 
     private func row(_ meeting: Meeting) -> some View {
