@@ -23,7 +23,7 @@ public struct MainTabView: View {
                 TabView(selection: selection) {
                     Tab("Meetings", systemImage: "calendar", value: TabIdentifier.home) { meetingsStack }
                     Tab("Actions", systemImage: "flag.fill", value: TabIdentifier.actionItems) { actionsStack }
-                        .badge(pendingActionItemsBadge)
+                        .badge(pendingActionItemsBadge.map { Text($0) })
                     Tab("Search", systemImage: "magnifyingglass", value: TabIdentifier.search, role: .search) { searchStack }
                 }
             } else {
