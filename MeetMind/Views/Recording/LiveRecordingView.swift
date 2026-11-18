@@ -21,75 +21,81 @@ public struct LiveRecordingView: View {
     }
     
     public var body: some View {
-        VStack(spacing: Spacing.sm) {
-            LiveRecordingHeaderView(
-                title: Binding(get: { viewModel.meetingTitle },
-                    set: { viewModel.updateMeetingTitle($0) }),
-                isOfflineFallback: viewModel.hasOfflineIndicatorPill,
-                isPaused: viewModel.isPaused,
-                onDismiss: { handleStop() }
-            )
+        VStack(spacing: 24) {
+            HStack {
+                Button(action: handleStop) { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                    .buttonStyle(.bordered).buttonBorderShape(.circle)
+                    .accessibilityLabel("Finish recording")
+                Spacer()
+                HStack {
+                    Button { viewModel.openNoteDock() } label: { Image(systemName: "text.bubble") }
+                        .accessibilityLabel("Add note")
+                    Button { isPhotoSheetPresented = true } label: { Image(systemName: "photo") }
+                        .accessibilityLabel("Attach photo")
+                }
+                .buttonStyle(.bordered).controlSize(.large)
+            }
+            Text(viewModel.meetingTitle).font(.largeTitle.bold())
+                .frame(maxWidth: .infinity, alignment: .leading)
             ScrollView {
-                VStack(spacing: Spacing.md) {
-            LiveRecordingTimerBadgeView(
-                formattedDuration: viewModel.formattedDuration,
-                isRecording: viewModel.isRecording,
-                audioRouteBadgeTitle: viewModel.audioRouteBadgeTitle
-            )
-            WaveformVisualizerView(
-                levels: viewModel.waveformLevels,
-                isRecording: viewModel.isRecording
-            )
-            LiveSpeakerSwitcherBar(
-                speakers: viewModel.availableSpeakers,
-                activeSpeakerName: viewModel.activeSpeaker?.name,
-                onSelectSpeaker: { viewModel.switchActiveSpeaker(to: $0.name) },
-                onAddSpeaker: { viewModel.addNewSpeaker(name: "Speaker \(viewModel.availableSpeakers.count + 1)") }
-            )
-            Toggle(isOn: $showsLiveTranscript) {
-                VStack(alignment: .leading) {
-                    Text("Live transcript")
-                    Text("Provisional").font(.footnote).foregroundStyle(.secondary)
+                VStack(spacing: 20) {
+                    Label(viewModel.isPaused ? "Paused" : "Recording",
+                          systemImage: viewModel.isPaused ? "pause.fill" : "record.circle.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(viewModel.isPaused ? .orange : .red)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background((viewModel.isPaused ? Color.orange : Color.red).opacity(0.15), in: Capsule())
+                    Text(viewModel.formattedDuration).font(.system(size: 60, weight: .medium)).monospacedDigit()
+                    if viewModel.isPaused {
+                        Rectangle().fill(.secondary.opacity(0.5)).frame(height: 1)
+                            .frame(height: 60)
+                            .accessibilityLabel("Audio capture paused")
+                    } else {
+                        WaveformVisualizerView(levels: viewModel.waveformLevels, isRecording: viewModel.isRecording)
+                    }
+                    VStack(spacing: 16) {
+                        Toggle("Live transcript", isOn: $showsLiveTranscript).font(.subheadline)
+                        if showsLiveTranscript {
+                            LiveTranscriptScrollView(segments: viewModel.finalTranscriptSegments,
+                                interimText: viewModel.interimTranscriptText)
+                                .frame(minHeight: 140, idealHeight: 180)
+                        }
+                        if viewModel.isBookmarkButtonHighlighted {
+                            Label("Bookmarked", systemImage: "flag").font(.caption).foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(20)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
                 }
             }
-            if showsLiveTranscript {
-                LiveTranscriptScrollView(
-                    segments: viewModel.finalTranscriptSegments,
-                    interimText: viewModel.interimTranscriptText
-                )
-                .frame(minHeight: 200, idealHeight: 260)
-            } else {
-                Spacer(minLength: 0)
-            }
+            HStack(spacing: 36) {
+                Button { viewModel.addBookmark() } label: { Image(systemName: "flag").frame(width: 44, height: 44) }
+                    .buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("Bookmark")
+                Button { viewModel.isPaused ? viewModel.resume() : viewModel.pause() } label: {
+                    Image(systemName: viewModel.isPaused ? "play.fill" : "pause.fill")
+                        .font(.title2).foregroundStyle(.black).frame(width: 70, height: 70)
+                        .background(.white, in: Circle())
                 }
-                .padding()
-                .background(Theme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 24))
+                .accessibilityLabel(viewModel.isPaused ? "Resume recording" : "Pause recording")
+                Button(action: handleStop) {
+                    Image(systemName: "stop.fill").foregroundStyle(.white).frame(width: 56, height: 56)
+                        .background(.red, in: Circle())
+                }
+                .accessibilityLabel("Finish recording")
             }
-            LiveActionToolDock(
-                bookmarkCount: viewModel.bookmarks.count,
-                isBookmarkHighlighted: viewModel.isBookmarkButtonHighlighted,
-                notesCount: viewModel.notesCount,
-                photosCount: viewModel.photosCount,
-                onBookmarkTap: { viewModel.addBookmark() },
-                onNoteTap: { viewModel.openNoteDock() },
-                onPhotoTap: { isPhotoSheetPresented = true }
-            )
-            RecordingControlBarView(
-                isPaused: viewModel.isPaused,
-                onDiscard: { viewModel.requestDiscard() },
-                onTogglePauseResume: { viewModel.isPaused ? viewModel.resume() : viewModel.pause() },
-                onStop: { handleStop() }
-            )
+            .padding(.bottom, 36)
         }
-        .padding(.horizontal, Spacing.sm)
-        .background(Color(uiColor: .systemGroupedBackground))
+        .padding(.horizontal, 24)
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .toolbar(.hidden, for: .tabBar)
         .navigationBarHidden(true)
         .disabled(isFinishing)
-        .alert("Finish recording?", isPresented: $isFinishConfirmationPresented) {
-            Button("Keep Recording", role: .cancel) { }
-            Button("Finish Recording") { proceedToProcessing() }
+        .alert("Finish Recording?", isPresented: $isFinishConfirmationPresented) {
+            Button("Cancel", role: .cancel) { }
+            Button("Finish") { proceedToProcessing() }
         } message: {
-            Text("Save the recording on this iPhone and prepare the transcript and minutes for review.")
+            Text("Your recording will be saved on this iPhone.")
         }
         .sheet(isPresented: $viewModel.isNoteSheetPresented) {
             LiveNoteTakingSheet(timestamp: viewModel.noteCaptureTimestamp) { viewModel.saveNote(text: $0) }
