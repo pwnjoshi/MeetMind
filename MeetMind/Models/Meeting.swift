@@ -227,6 +227,9 @@ public final class Meeting: Identifiable {
     public var audioQualityRaw: String
     public var isFavorite: Bool
     public var templateName: String?
+    /// Stable local series identity, independent of display titles and templates.
+    public var seriesID: UUID?
+    public var seriesName: String?
     /// Additive optional storage preserves existing installations during migration.
     public var offlineAnalysisData: Data?
     public var reviewedTaskIDsData: Data?
