@@ -11,7 +11,6 @@ public struct HomeDashboardView: View {
     
     @State private var isShowingSettings: Bool = false
     @State private var isMicrophoneCheckPresented: Bool = false
-    @State private var isFilterPresented: Bool = false
     
     public init(viewModel: HomeViewModel = HomeViewModel()) { _viewModel = State(initialValue: viewModel) }
     public init(modelContext: ModelContext? = nil) { _viewModel = State(initialValue: HomeViewModel(modelContext: modelContext)) }
@@ -81,25 +80,6 @@ public struct HomeDashboardView: View {
             }
         }
         .sheet(isPresented: $isShowingSettings) { NavigationStack { SettingsView() } }
-        .sheet(isPresented: $isFilterPresented) {
-            NavigationStack {
-                List(MeetingFilter.allCases, id: \.self) { filter in
-                    Button {
-                        viewModel.setFilter(filter)
-                        isFilterPresented = false
-                    } label: {
-                        HStack {
-                            Label(filter.title, systemImage: filter.iconName)
-                            Spacer()
-                            if viewModel.selectedFilter == filter { Image(systemName: "checkmark") }
-                        }
-                    }
-                }
-                .navigationTitle("Filter meetings")
-                .toolbar { Button("Done") { isFilterPresented = false } }
-            }
-            .presentationDetents([.medium])
-        }
         .sheet(isPresented: $isMicrophoneCheckPresented) {
             MicrophoneCheckView {
                 let m = Meeting(title: "New Meeting \(Date().formatted(date: .omitted, time: .shortened))", createdAt: Date(), duration: 0, status: .recording)
