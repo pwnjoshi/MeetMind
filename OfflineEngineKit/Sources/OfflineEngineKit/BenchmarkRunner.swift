@@ -72,9 +72,10 @@ public actor OfflineBenchmarkRunner {
         } else if profile.id.hasPrefix("qwen") {
             guard !input.isEmpty else { throw OfflineError.unavailable("Transcribe audio or use the synthetic text fixture first.") }
             turns = input
-            let configuration: LocalModelConfiguration = profile.id == "qwen-4b" ? .compactEvaluation : .standard
+            let configuration: LocalModelConfiguration = profile.id == "qwen-4b" ? .compact : .standard
             let model = try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"), configuration: configuration)
-            let chunks = MeetingAnalysisPipeline.analysisChunks(input, maxJSONBytes: profile.id == "qwen-4b" ? 1200 : 1800)
+            let chunks = try MeetingAnalysisPipeline.fittedAnalysisChunks(input, model: model,
+                meetingDate: start, timezone: TimeZone.current.identifier, maxJSONBytes: profile.id == "qwen-4b" ? 1200 : 1800)
             var seen = Set<String>()
             turns = chunks.flatMap { $0 }.filter { seen.insert($0.id).inserted }
             for chunk in chunks {
@@ -88,7 +89,7 @@ public actor OfflineBenchmarkRunner {
         let peak = max(Self.footprint(), await sampler.value)
         return BenchmarkResult(engine: profile.id, modelRevision: profile.revision,
             promptVersion: profile.id.hasPrefix("qwen") ? OfflineAnalysisContract.promptVersion : nil,
-            contextTokens: profile.id.hasPrefix("qwen") ? Int((profile.id == "qwen-4b" ? LocalModelConfiguration.compactEvaluation : .standard).contextTokens) : nil,
+            contextTokens: profile.id.hasPrefix("qwen") ? Int((profile.id == "qwen-4b" ? LocalModelConfiguration.compact : .standard).contextTokens) : nil,
             elapsedSeconds: Date().timeIntervalSince(start), sampledPeakFootprintBytes: peak,
             thermalState: ProcessInfo.processInfo.thermalState.rawValue, turns: turns, speakers: speakers, analysis: analysis)
     }

@@ -2,11 +2,12 @@
 
 Status: **NOT QUALITY-QUALIFIED — synthetic device engine tests completed; held-out meeting evaluation remains outstanding.**
 
-Build 7 connects the normal saved-audio processing flow to compressed multilingual
-Whisper large-v3, FluidAudio offline speaker separation, and Qwen3-1.7B Q4_K_M.
+The integrated trial connects saved-audio processing to compressed multilingual
+Whisper large-v3, FluidAudio offline speaker separation, and local Qwen analysis.
+Build 10 selects compact Qwen3-4B after the 1.7B candidate missed public commitments.
 This is an integrated evaluation build, not a claim that the accuracy, one-hour
 performance, memory, or full production-readiness gates below have passed.
-The 4B model remains excluded from the normal flow because of device memory pressure.
+The original 4B/4096 configuration remains excluded; compact 4B/2048 has a separate measured trial profile.
 
 ## Integrated app flow (build 7)
 
@@ -102,6 +103,38 @@ estimate is 2,997,280,256 bytes; admission still rejects insufficient available 
 and retains the 3 GB cap. Runtime load/decode footprint checks abort excessive usage.
 This compact candidate has not yet passed device or quality qualification and is not
 enabled for normal meetings. Build 9 device results are pending.
+
+## Build 9 comparison and build 10 trial flow
+
+Build 9 (`3276342`, Actions `44288137991`) installed successfully. Public fixtures:
+
+| Candidate / prompt v2 | Seconds | Sampled footprint | Result |
+| --- | ---: | ---: | --- |
+| 1.7B / 4096 context | 5.99 | 605259968 bytes | No task; missed the valid commitment |
+| 4B / 2048 context | 19.13 | 437013464 bytes | One estimate commitment; no cancelled/rejected task; owner and spoken deadline omitted |
+
+The build-9 normal-flow smoke also failed: ASR contained the expected words,
+analysis decoded successfully, but generated zero tasks. The task-review persistence
+step therefore still has not passed on hardware. These are development fixtures,
+not held-out accuracy measurements.
+
+Build 10 changes the trial meeting flow and Ask AI to compact 4B, based on this
+comparison. It retains human task review and the memory cap; it is not production
+quality qualification. Prompt v3 adds explicit owner/self-identification and raw
+spoken-deadline guidance. Model-token-aware planning includes the complete prompt,
+persists the exact fitted chunk IDs for recovery, and preserves all Unicode text.
+Chat-role delimiters inside source text/questions are escaped as JSON data. Split
+transcript fragments carry persisted sequence indexes so tied timestamps cannot
+scramble their display/export order after reloading.
+
+Saved audio also gets a relative locator, with recovery for legacy sandbox URLs
+after an app update. Apple documents container relocation in TN2285; the existing
+absolute URL field is retained for additive migration compatibility. Build-10
+native/device regression results are pending.
+
+The user currently has two approximately two-minute Hindi-English recordings.
+They can support an initial private development review on the phone, but do not
+meet the 20-case / three-hour held-out corpus gate.
 
 ## Running the device lab
 

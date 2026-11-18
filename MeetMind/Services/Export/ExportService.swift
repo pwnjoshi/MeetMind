@@ -170,7 +170,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
                 transTitle.draw(at: CGPoint(x: margin, y: currentY), withAttributes: tAttrs)
                 currentY += 18
                 
-                let sortedSegments = meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }
+                let sortedSegments = meeting.orderedTranscriptSegments
                 for segment in sortedSegments {
                     let textAttrs: [NSAttributedString.Key: Any] = [
                         .font: UIFont.systemFont(ofSize: 10, weight: .regular),
@@ -249,7 +249,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
         
         if !meeting.transcriptSegments.isEmpty {
             md += "## Transcript\n"
-            let sortedSegments = meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }
+            let sortedSegments = meeting.orderedTranscriptSegments
             for segment in sortedSegments {
                 md += "**\(segment.speakerDisplayName)** [\(segment.formattedStartTime)]: \(segment.text)\n\n"
             }

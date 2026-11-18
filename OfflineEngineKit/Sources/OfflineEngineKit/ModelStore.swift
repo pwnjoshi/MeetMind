@@ -24,7 +24,7 @@ public enum OfflineError: LocalizedError {
         case .unavailable(let message): return message
         case .memoryBudget(let required, let available):
             if required > ModelMemoryAdmission.maximumBudget {
-                return "This model exceeds the safe memory budget. Use the 1.7B model for meeting analysis."
+                return "This model configuration exceeds the safe memory budget. Your recording and completed steps are preserved."
             }
             let needed = ByteCountFormatter.string(fromByteCount: Int64(clamping: required), countStyle: .memory)
             let free = ByteCountFormatter.string(fromByteCount: Int64(clamping: available), countStyle: .memory)

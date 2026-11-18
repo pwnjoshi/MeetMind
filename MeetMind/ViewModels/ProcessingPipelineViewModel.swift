@@ -175,7 +175,7 @@ public final class ProcessingPipelineViewModel {
         // Stage 1: Diarization
         stages[1].state = .inProgress
         currentStep = .diarization
-        if let transcriptionService = transcriptionService, let meeting = meeting, let url = meeting.audioFileURL {
+        if let transcriptionService = transcriptionService, let meeting = meeting, let url = meeting.resolvedAudioFileURL {
             do {
                 let segments = try await transcriptionService.transcribeAudioFile(at: url)
                 guard !segments.isEmpty else {
@@ -271,7 +271,7 @@ public final class ProcessingPipelineViewModel {
             descriptor.fetchLimit = 1
             meeting = try context.fetch(descriptor).first
         }
-        guard let meeting, let url = meeting.audioFileURL,
+        guard let meeting, let url = meeting.resolvedAudioFileURL,
               FileManager.default.fileExists(atPath: url.path) else {
             throw SpeechTranscriptionError.audioFileReadFailed("Saved audio is unavailable. Return to Meetings and try again.")
         }
@@ -279,6 +279,7 @@ public final class ProcessingPipelineViewModel {
         guard audio.fileFormat.sampleRate > 0, audio.length > 0 else {
             throw SpeechTranscriptionError.audioFileReadFailed("This recording contains no readable audio.")
         }
+        meeting.setAudioFileURL(url)
         meeting.duration = Double(audio.length) / audio.fileFormat.sampleRate
         meeting.status = .processing
         meeting.analysisState = "ready"
@@ -312,7 +313,7 @@ public final class ProcessingPipelineViewModel {
     }
 
     private func runOfflinePipeline() async throws {
-        guard let meeting, let audio = meeting.audioFileURL else { throw MeetingError.meetingNotFound }
+        guard let meeting, let audio = meeting.resolvedAudioFileURL else { throw MeetingError.meetingNotFound }
         preparePipeline()
         errorMessage = nil
         var committing = false
@@ -334,7 +335,7 @@ public final class ProcessingPipelineViewModel {
             meeting.transcriptSegments.removeAll()
             for segment in previousSegments { modelContext?.delete(segment) }
             var speakers: [String: Speaker] = [:]
-            for turn in result.turns {
+            for (index, turn) in result.turns.enumerated() {
                 var speaker: Speaker?
                 if let label = turn.speaker {
                     if let existing = speakers[label] ?? meeting.participants.first(where: { $0.name == label }) {
@@ -350,7 +351,7 @@ public final class ProcessingPipelineViewModel {
                     }
                 }
                 meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
-                    endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting))
+                    endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
             }
             let points = uniqueTexts(result.analysis.flatMap { $0.discussion.map(\.text) })
             let decisions = uniqueTexts(result.analysis.flatMap { $0.decisions.map(\.text) })

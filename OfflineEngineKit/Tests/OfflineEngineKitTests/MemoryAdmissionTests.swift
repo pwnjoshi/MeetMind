@@ -21,9 +21,9 @@ final class MemoryAdmissionTests: XCTestCase {
     }
     func testCompactEvaluationFitsCapButStillRejectsInsufficientAvailableMemory() {
         XCTAssertNoThrow(try ModelMemoryAdmission.check(modelBytes: 2_497_280_256,
-            availableBytes: 3_000_000_000, reserveBytes: LocalModelConfiguration.compactEvaluation.reserveBytes))
+            availableBytes: 3_000_000_000, reserveBytes: LocalModelConfiguration.compact.reserveBytes))
         XCTAssertThrowsError(try ModelMemoryAdmission.check(modelBytes: 2_497_280_256,
-            availableBytes: 2_900_000_000, reserveBytes: LocalModelConfiguration.compactEvaluation.reserveBytes))
+            availableBytes: 2_900_000_000, reserveBytes: LocalModelConfiguration.compact.reserveBytes))
     }
     func testOwnProcessFootprintCanBeMeasuredForRuntimeGuard() {
         XCTAssertGreaterThan(ModelMemoryAdmission.footprint(), 0)

@@ -12,6 +12,7 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public var speakers: [SpeakerSpan]
     public var analysis: [LocalAnalysisResult]
     public var analyzedChunks: Int
+    public var chunkTurnIDs: [[String]]? = nil
 }
 
 /// Production orchestration. Downloads are an explicit setup action, never an
@@ -24,7 +25,10 @@ public actor MeetingAnalysisPipeline {
     private var discardActiveCheckpoint = false
     private let backend: any MeetingAnalysisBackend
     private let checkpointRoot: URL?
-    public static let requiredModelIDs = ["whisper-large", "diarization", "qwen-1.7b"]
+    public static let analysisModelID = "qwen-4b"
+    public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
+    private static let modelConfiguration = LocalModelConfiguration.compact
+    private static let analysisChunkBytes = 1200
     public init() { backend = LocalMeetingAnalysisBackend(); checkpointRoot = nil }
     init(backend: any MeetingAnalysisBackend, checkpointRoot: URL) {
         self.backend = backend; self.checkpointRoot = checkpointRoot
@@ -50,16 +54,18 @@ public actor MeetingAnalysisPipeline {
         running = true
         defer { running = false }
         try checkConditions()
-        guard let profile = try OfflineModelStore.profiles().first(where: { $0.id == "qwen-1.7b" }) else {
+        guard let profile = try OfflineModelStore.profiles().first(where: { $0.id == Self.analysisModelID }) else {
             throw OfflineError.unavailable("The offline analysis model is unavailable.")
         }
         let folder = try await backend.verifiedFolder(profile)
-        let model = try backend.makeSession(folder: folder)
+        let model = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
+        let referenceDate = Date(), timezone = TimeZone.current.identifier
         var points: [SupportedPoint] = []
         var seen = Set<String>()
-        for chunk in Self.analysisChunks(turns) {
+        for chunk in try Self.fittedAnalysisChunks(turns, model: model, meetingDate: referenceDate,
+            timezone: timezone, question: question, maxJSONBytes: 900) {
             try checkConditions()
-            let result = try model.analyze(turns: chunk, meetingDate: Date(), timezone: TimeZone.current.identifier, question: question)
+            let result = try model.analyze(turns: chunk, meetingDate: referenceDate, timezone: timezone, question: question)
             for point in result.discussion where seen.insert(point.text.lowercased()).inserted { points.append(point) }
         }
         return points
@@ -106,7 +112,7 @@ public actor MeetingAnalysisPipeline {
         var folders: [URL] = []
         for profile in profiles { folders.append(try await backend.verifiedFolder(profile)) }
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v2"
+        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v3|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         let checkpointURL = try self.checkpointURL(meetingID)
         var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature, stage: .transcription,
             turns: [], speakers: [], analysis: [], analyzedChunks: 0)
@@ -137,12 +143,33 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .analysis {
             try checkConditions()
             await progress(.analysis)
-            let chunks = Self.analysisChunks(checkpoint.turns)
+            let model = try backend.makeSession(folder: folders[2], configuration: Self.modelConfiguration)
+            if checkpoint.chunkTurnIDs == nil {
+                let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: model,
+                    meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes)
+                var seen = Set<String>()
+                checkpoint.turns = fitted.flatMap { $0 }.filter { seen.insert($0.id).inserted }
+                checkpoint.chunkTurnIDs = fitted.map { $0.map(\.id) }
+                try save()
+            }
+            guard Set(checkpoint.turns.map(\.id)).count == checkpoint.turns.count else {
+                throw OfflineError.unavailable("Transcript checkpoint IDs are invalid. Reanalyze the saved recording.")
+            }
+            let byID = Dictionary(uniqueKeysWithValues: checkpoint.turns.map { ($0.id, $0) })
+            let chunks = try (checkpoint.chunkTurnIDs ?? []).map { ids in
+                try ids.map { id in
+                    guard let turn = byID[id] else {
+                        throw OfflineError.unavailable("Analysis checkpoint is invalid. Reanalyze the saved recording.")
+                    }
+                    return turn
+                }
+            }
             guard checkpoint.analyzedChunks == checkpoint.analysis.count,
-                  checkpoint.analyzedChunks <= chunks.count else {
+                  checkpoint.analyzedChunks <= chunks.count, !chunks.isEmpty,
+                  chunks.allSatisfy({ !$0.isEmpty && Set($0.map(\.id)).count == $0.count }),
+                  Set(chunks.flatMap { $0.map(\.id) }) == Set(checkpoint.turns.map(\.id)) else {
                 throw OfflineError.unavailable("Analysis checkpoint is invalid. Preserve the recording and restart analysis.")
             }
-            let model = try backend.makeSession(folder: folders[2])
             for index in checkpoint.analyzedChunks..<chunks.count {
                 try checkConditions()
                 let result = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone, question: nil)
@@ -158,6 +185,35 @@ public actor MeetingAnalysisPipeline {
         if discardActiveCheckpoint { throw CancellationError() }
         await progress(.completed)
         return checkpoint
+    }
+
+    /// Use the actual model tokenizer, including instructions and question, to
+    /// fit inputs without discarding any transcript text. Plans are checkpointed
+    /// so a resumed run cannot skip different chunks after finer splitting.
+    static func fittedAnalysisChunks(_ turns: [AnalysisTurn], model: any MeetingAnalysisSession,
+        meetingDate: Date, timezone: String, question: String? = nil, maxJSONBytes: Int = 1200) throws -> [[AnalysisTurn]] {
+        var fitted: [[AnalysisTurn]] = [], seen = Set<[String]>()
+        func fit(_ chunk: [AnalysisTurn]) throws {
+            try Task.checkCancellation()
+            guard !chunk.isEmpty else { return }
+            if try model.inputTokenCount(turns: chunk, meetingDate: meetingDate, timezone: timezone, question: question) <= model.inputTokenLimit {
+                if seen.insert(chunk.map(\.id)).inserted { fitted.append(chunk) }
+            } else if chunk.count > 1 {
+                let middle = chunk.count / 2
+                try fit(Array(chunk[..<middle]))
+                try fit(Array(chunk[middle...]))
+            } else {
+                let turn = chunk[0], characters = Array(chunk[0].text)
+                guard characters.count > 1 else {
+                    throw OfflineError.unavailable("The model context cannot fit this input. Shorten the question or restart analysis.")
+                }
+                let middle = characters.count / 2
+                try fit([AnalysisTurn(id: turn.id + ".0", text: String(characters[..<middle]), start: turn.start, end: turn.end, speaker: turn.speaker)])
+                try fit([AnalysisTurn(id: turn.id + ".1", text: String(characters[middle...]), start: turn.start, end: turn.end, speaker: turn.speaker)])
+            }
+        }
+        for chunk in analysisChunks(turns, maxJSONBytes: maxJSONBytes) { try fit(chunk) }
+        return fitted
     }
 
     private func checkConditions() throws {

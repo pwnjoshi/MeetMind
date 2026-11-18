@@ -22,9 +22,10 @@ Calendar and iCloud sync are not provided. Saved meeting storage is excluded fro
 device backups; sharing and Reminders export are explicit user actions.
 
 Build 7 integrates offline WhisperKit transcription, FluidAudio speaker separation,
-and Qwen3-1.7B analysis into saved-meeting processing, with explicit model setup,
+and local Qwen analysis into saved-meeting processing, with explicit model setup,
 protected resume checkpoints, and human review before generated tasks are saved.
-Settings includes model management and a separate diagnostics lab. Real Hinglish
+Build 10 uses the compact 4B trial profile after device comparisons exposed missed
+commitments in the 1.7B candidate. Settings includes model management and a separate diagnostics lab. Real Hinglish
 accuracy and long-meeting performance remain unqualified. See
 [OFFLINE_QUALIFICATION.md](OFFLINE_QUALIFICATION.md) for device measurements and
 outstanding Hinglish quality gates.

@@ -10,9 +10,9 @@ struct LocalModelConfiguration: Sendable {
     let reserveBytes: UInt64
     static let standard = LocalModelConfiguration(contextTokens: 4096, inputTokens: 3072,
         outputTokens: 1024, batchTokens: 512, microBatchTokens: 128, reserveBytes: 750_000_000)
-    // Evaluation only: bounded KV cache and smaller compute batches. The normal
-    // meeting pipeline continues to use the 1.7B standard configuration.
-    static let compactEvaluation = LocalModelConfiguration(contextTokens: 2048, inputTokens: 1280,
+    // Bounded KV cache and compute batches for the accuracy-first 4B trial.
+    // Real-meeting quality and long-duration qualification remain outstanding.
+    static let compact = LocalModelConfiguration(contextTokens: 2048, inputTokens: 1280,
         outputTokens: 768, batchTokens: 256, microBatchTokens: 64, reserveBytes: 500_000_000)
 }
 

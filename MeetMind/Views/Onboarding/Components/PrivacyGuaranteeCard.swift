@@ -15,7 +15,7 @@ public struct PrivacyGuaranteeCard: View {
                     .font(Typography.headline)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 
-                Text("Recordings and summaries are saved on your iPhone. Speech recognition uses on-device processing by default. Enabling online recognition in Settings may send audio to Apple's speech service.")
+                Text("Recordings, transcripts, and analysis stay on your iPhone. Public model files require a one-time download; meeting analysis then runs offline without an account.")
                     .font(Typography.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineSpacing(2)

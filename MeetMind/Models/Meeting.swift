@@ -223,6 +223,7 @@ public final class Meeting: Identifiable {
     public var duration: TimeInterval
     public var statusRaw: String
     public var audioFileURL: URL?
+    public var audioRelativePath: String?
     public var audioQualityRaw: String
     public var isFavorite: Bool
     public var templateName: String?
@@ -295,6 +296,7 @@ public final class Meeting: Identifiable {
         self.duration = duration
         self.statusRaw = status.rawValue
         self.audioFileURL = audioFileURL
+        self.audioRelativePath = Self.relativeAudioPath(for: audioFileURL)
         self.audioQualityRaw = audioQuality.rawValue
         self.isFavorite = isFavorite
         self.templateName = templateName
@@ -369,13 +371,23 @@ public final class Meeting: Identifiable {
     }
     
     public var fullTranscriptText: String {
-        transcriptSegments
-            .sorted { $0.startTime < $1.startTime }
+        orderedTranscriptSegments
             .map { segment in
                 let speakerName = segment.speaker?.name ?? "Unknown"
                 return "[\(segment.formattedStartTime)] \(speakerName): \(segment.text)"
             }
             .joined(separator: "\n")
+    }
+
+    public var orderedTranscriptSegments: [TranscriptSegment] {
+        transcriptSegments.enumerated().sorted { left, right in
+            if left.element.startTime != right.element.startTime {
+                return left.element.startTime < right.element.startTime
+            }
+            let lhs = left.element.sequenceIndex ?? left.offset
+            let rhs = right.element.sequenceIndex ?? right.offset
+            return lhs == rhs ? left.offset < right.offset : lhs < rhs
+        }.map(\.element)
     }
     
     public var pendingActionItemsCount: Int {
@@ -388,6 +400,44 @@ public final class Meeting: Identifiable {
     
     public var hasAudio: Bool {
         audioFileURL != nil
+    }
+
+    /// Keep the original URL for compatibility, but locate saved recordings
+    /// relative to today's sandbox after an app update relocates its container.
+    public var resolvedAudioFileURL: URL? {
+        guard let stored = audioFileURL, stored.isFileURL else { return nil }
+        if FileManager.default.fileExists(atPath: stored.path) { return stored }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        func relocated(_ relative: String) -> URL? {
+            guard !relative.hasPrefix("/"), !relative.split(separator: "/").contains("..") else { return nil }
+            let root = documents.standardizedFileURL.resolvingSymlinksInPath()
+            let candidate = root.appendingPathComponent(relative).standardizedFileURL.resolvingSymlinksInPath()
+            guard candidate.path.hasPrefix(root.path + "/"),
+                  FileManager.default.fileExists(atPath: candidate.path) else { return nil }
+            return candidate
+        }
+        if let relative = audioRelativePath, stored.path.hasSuffix("/" + relative),
+           let current = relocated(relative) { return current }
+        // Recover legacy iOS app-container URLs, never unrelated provider URLs.
+        if stored.path.contains("/Containers/Data/Application/"),
+           let marker = stored.path.range(of: "/Documents/", options: .backwards),
+           let current = relocated(String(stored.path[marker.upperBound...])) { return current }
+        // The caller/AVFoundation still reports genuinely missing files normally.
+        return stored
+    }
+
+    public func setAudioFileURL(_ url: URL?) {
+        audioFileURL = url
+        audioRelativePath = Self.relativeAudioPath(for: url)
+    }
+
+    private static func relativeAudioPath(for url: URL?) -> String? {
+        guard let url, url.isFileURL else { return nil }
+        let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        guard path.hasPrefix(root) else { return nil }
+        return String(path.dropFirst(root.count))
     }
     
     public func addParticipant(_ speaker: Speaker) {

@@ -33,6 +33,7 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         XCTAssertEqual(backend.counts.0, 1)
         XCTAssertEqual(backend.counts.1, 2)
         XCTAssertFalse(result.analysis.isEmpty)
+        XCTAssertEqual(backend.contextTokens, 2048)
     }
 
     func testAnalysisFailureResumesAtLastSavedChunkAndCompletedRunReusesResult() async throws {
@@ -47,7 +48,7 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         } catch { }
         let resumed = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
         let result = try await resumed.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
-        let chunks = MeetingAnalysisPipeline.analysisChunks(backend.turns).count
+        let chunks = MeetingAnalysisPipeline.analysisChunks(backend.turns, maxJSONBytes: 1200).count
         XCTAssertEqual(result.analysis.count, chunks)
         XCTAssertEqual(backend.counts.0, 1)
         XCTAssertEqual(backend.counts.1, 1)
@@ -69,23 +70,49 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         try await pipeline.discardCheckpoint(meetingID: id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(id.uuidString + ".json").path))
     }
+    func testFittedChunkPlanSurvivesInterruptedRunWithoutRepeatingSource() async throws {
+        let (root, audio) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let backend = CheckpointTestBackend(root: root, failAnalysisCall: 2, tokenBudget: 300)
+        let id = UUID(), date = Date(timeIntervalSince1970: 1700000000)
+        let first = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        do {
+            _ = try await first.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
+            XCTFail("Injected interruption must surface")
+        } catch { }
+        let before = try JSONDecoder().decode(MeetingAnalysisCheckpoint.self,
+            from: Data(contentsOf: root.appendingPathComponent(id.uuidString + ".json")))
+        let plan = try XCTUnwrap(before.chunkTurnIDs)
+        XCTAssertEqual(before.analyzedChunks, 1)
+        let resumed = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        let result = try await resumed.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
+        XCTAssertEqual(result.chunkTurnIDs, plan)
+        XCTAssertEqual(result.analysis.count, plan.count)
+        XCTAssertEqual(backend.counts.0, 1)
+        XCTAssertEqual(backend.counts.2, plan.count + 1)
+        XCTAssertEqual(result.turns.map(\.text).joined(), backend.turns.map(\.text).joined())
+    }
+
 }
 
 private final class CheckpointTestBackend: MeetingAnalysisBackend, @unchecked Sendable {
     private let root: URL
     private let lock = NSLock()
     private var transcriptionCalls = 0, speakerCalls = 0, analysisCalls = 0
+    private var latestContextTokens: UInt32?
     private var failSpeakers: Bool
     private let failAnalysisCall: Int?
+    let tokenBudget: Int
     let turns = (0..<12).map {
         AnalysisTurn(id: "t\($0)", text: String(repeating: "a", count: 500), start: Double($0), end: Double($0 + 1), speaker: nil)
     }
-    init(root: URL, failSpeakers: Bool = false, failAnalysisCall: Int? = nil) {
-        self.root = root; self.failSpeakers = failSpeakers; self.failAnalysisCall = failAnalysisCall
+    init(root: URL, failSpeakers: Bool = false, failAnalysisCall: Int? = nil, tokenBudget: Int = 1280) {
+        self.root = root; self.failSpeakers = failSpeakers; self.failAnalysisCall = failAnalysisCall; self.tokenBudget = tokenBudget
     }
     private func synchronized<T>(_ body: () -> T) -> T {
         lock.lock(); defer { lock.unlock() }; return body()
     }
+    var contextTokens: UInt32? { synchronized { latestContextTokens } }
     var counts: (Int, Int, Int) { synchronized { (transcriptionCalls, speakerCalls, analysisCalls) } }
     func verifiedFolder(_ profile: ModelProfile) async throws -> URL { root }
     func transcribe(audio: URL, folder: URL) async throws -> [AnalysisTurn] {
@@ -100,7 +127,10 @@ private final class CheckpointTestBackend: MeetingAnalysisBackend, @unchecked Se
         if fail { throw CancellationError() }
         return []
     }
-    func makeSession(folder: URL) throws -> any MeetingAnalysisSession { CheckpointTestSession(backend: self) }
+    func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession {
+        synchronized { latestContextTokens = configuration.contextTokens }
+        return CheckpointTestSession(backend: self)
+    }
     func analyze(_ turns: [AnalysisTurn]) throws -> LocalAnalysisResult {
         let fail = synchronized { analysisCalls += 1; return analysisCalls == failAnalysisCall }
         if fail { throw CancellationError() }
@@ -111,6 +141,8 @@ private final class CheckpointTestBackend: MeetingAnalysisBackend, @unchecked Se
 }
 
 private struct CheckpointTestSession: MeetingAnalysisSession {
+    var inputTokenLimit: Int { backend.tokenBudget }
+    func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int { turns.reduce(10) { $0 + $1.text.utf8.count } }
     let backend: CheckpointTestBackend
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult {
         try backend.analyze(turns)

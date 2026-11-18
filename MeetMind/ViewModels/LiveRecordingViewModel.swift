@@ -262,7 +262,7 @@ public final class LiveRecordingViewModel {
                 }
                 recordingState = .recording
                 if let meeting {
-                    meeting.audioFileURL = dest
+                    meeting.setAudioFileURL(dest)
                     do { try modelContext?.save() }
                     catch { errorMessage = "Audio is recording, but its meeting record could not be saved: \(error.localizedDescription)" }
                 }
@@ -664,7 +664,7 @@ public final class LiveRecordingViewModel {
         transcriptionService?.stopLiveTranscription()
         
         if let meeting = meeting {
-            meeting.audioFileURL = url
+            meeting.setAudioFileURL(url)
             meeting.duration = elapsedDuration
             meeting.status = .processing
             try modelContext?.save()

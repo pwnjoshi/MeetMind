@@ -605,3 +605,50 @@ final class MeetingModelTests: XCTestCase {
         XCTAssertEqual(meeting.tags.count, 1)
     }
 }
+
+
+extension MeetingModelTests {
+    func testRecordingURLRecoversAfterAppContainerRelocation() throws {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let filename = "relocation-\(UUID().uuidString).m4a"
+        let current = documents.appendingPathComponent("Recordings").appendingPathComponent(filename)
+        try FileManager.default.createDirectory(at: current.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("synthetic audio-path fixture".utf8).write(to: current)
+        defer { try? FileManager.default.removeItem(at: current) }
+        let legacy = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/OLD-CONTAINER/Documents/Recordings/" + filename)
+        let meeting = Meeting(title: "Relocated", audioFileURL: legacy)
+        XCTAssertEqual(meeting.resolvedAudioFileURL?.resolvingSymlinksInPath(), current.resolvingSymlinksInPath())
+        meeting.setAudioFileURL(current)
+        XCTAssertEqual(meeting.audioRelativePath, "Recordings/" + filename)
+        meeting.setAudioFileURL(nil)
+        XCTAssertNil(meeting.resolvedAudioFileURL)
+        XCTAssertNil(meeting.audioRelativePath)
+    }
+
+    func testStaleRelativePathCannotSelectAnUnrelatedRecording() throws {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let existing = documents.appendingPathComponent("existing-\(UUID().uuidString).m4a")
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        try Data("unrelated synthetic fixture".utf8).write(to: existing)
+        defer { try? FileManager.default.removeItem(at: existing) }
+        let meeting = Meeting(title: "Missing", audioFileURL: existing)
+        let missing = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/OLD-CONTAINER/Documents/missing-\(UUID().uuidString).m4a")
+        meeting.audioFileURL = missing
+        XCTAssertEqual(meeting.resolvedAudioFileURL, missing)
+        XCTAssertNotEqual(meeting.resolvedAudioFileURL, existing)
+    }
+}
+
+
+extension MeetingModelTests {
+    func testSplitTranscriptOrderSurvivesRelationshipReordering() throws {
+        let meeting = Meeting(title: "Split transcript")
+        let first = TranscriptSegment(text: "पहला भाग", startTime: 10, endTime: 20, meeting: meeting, sequenceIndex: 0)
+        let second = TranscriptSegment(text: "second part", startTime: 10, endTime: 20, meeting: meeting, sequenceIndex: 1)
+        meeting.transcriptSegments = [second, first]
+        XCTAssertEqual(meeting.orderedTranscriptSegments.map(\.text), ["पहला भाग", "second part"])
+        let transcript = meeting.fullTranscriptText
+        XCTAssertLessThan(try XCTUnwrap(transcript.range(of: "पहला भाग")?.lowerBound),
+                          try XCTUnwrap(transcript.range(of: "second part")?.lowerBound))
+    }
+}

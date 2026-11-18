@@ -143,7 +143,7 @@ public final class MeetingDetailViewModel {
             if let custom = internalSegments {
                 return custom
             }
-            return meeting?.transcriptSegments.sorted { $0.startTime < $1.startTime } ?? []
+            return meeting?.orderedTranscriptSegments ?? []
         }
         set {
             internalSegments = newValue
@@ -281,14 +281,14 @@ public final class MeetingDetailViewModel {
             self.meeting = try? context.fetch(desc).first
         }
         
-        if let meeting = self.meeting, let audioURL = meeting.audioFileURL {
+        if let meeting = self.meeting, let audioURL = meeting.resolvedAudioFileURL {
             try? self.playbackService?.loadAudio(url: audioURL)
         }
     }
     
     public func loadMeeting() {
         if let meeting = meeting {
-            self.transcriptSegments = meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }
+            self.transcriptSegments = meeting.orderedTranscriptSegments
         }
     }
     
@@ -655,9 +655,9 @@ public final class MeetingDetailViewModel {
     }
 
     public func askAI(prompt: String) async throws -> AIAnswerResponse {
-        let turns = transcriptSegments.map {
-            AnalysisTurn(id: $0.id.uuidString, text: $0.text, start: $0.startTime,
-                         end: $0.endTime, speaker: $0.speaker?.name)
+        let turns = transcriptSegments.enumerated().map { index, segment in
+            AnalysisTurn(id: "t\(index + 1)", text: segment.text, start: segment.startTime,
+                         end: segment.endTime, speaker: segment.speaker?.name)
         }
         let points = try await questionAnswerer(prompt, turns)
         try Task.checkCancellation()
