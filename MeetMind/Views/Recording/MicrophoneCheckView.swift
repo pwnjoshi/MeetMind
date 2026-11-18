@@ -116,6 +116,9 @@ public struct MicrophoneCheckView: View {
                 }
                 .disabled(stoppingSample || (capturingSample && !microphoneReady))
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .buttonBorderShape(.capsule)
+                .frame(maxWidth: .infinity)
             }
             
             Button(action: {
@@ -126,10 +129,10 @@ public struct MicrophoneCheckView: View {
             }) {
                 Text(sampleReady ? "Sounds Good, Start Recording" : "Skip Test")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(sampleReady ? Color.white : Color.accentColor)
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
-                    .background(Color(hex: "#0068D9"))
+                    .background(sampleReady ? Color(hex: "#0068D9") : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 26))
             }
             .padding(.bottom, 16)
