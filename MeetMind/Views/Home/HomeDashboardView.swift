@@ -103,7 +103,7 @@ public struct HomeDashboardView: View {
     // Observe persisted changes so imports, scheduling, and edits refresh the list.
     private var savedMeetingRevision: [String] {
         savedMeetings.map {
-            "\($0.id)|\($0.title)|\($0.status.rawValue)|\($0.scheduledStartTime?.timeIntervalSince1970 ?? 0)"
+            "\($0.id)|\($0.title)|\($0.status.rawValue)|\($0.scheduledStartTime?.timeIntervalSince1970 ?? 0)|\($0.seriesName ?? "")|\($0.seriesID?.uuidString ?? "")"
         }.sorted()
     }
     private func meetingRow(_ meeting: Meeting, upcoming: Bool) -> some View {
@@ -112,7 +112,7 @@ public struct HomeDashboardView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(meeting.title).font(.body).foregroundStyle(.primary)
                     Text(upcoming
-                        ? "\((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))) \u{00B7} \(meeting.figmaBadgeText)"
+                        ? "\((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))) \u{00B7} \(seriesSubtitle(meeting))"
                         : meeting.figmaBadgeText)
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
@@ -132,6 +132,12 @@ public struct HomeDashboardView: View {
                 }
             }
         }
+    }
+
+    private func seriesSubtitle(_ meeting: Meeting) -> String {
+        guard let id = meeting.seriesID else { return meeting.figmaBadgeText }
+        let count = savedMeetings.filter { $0.seriesID == id }.count
+        return "Series \u{00B7} \(count) \(count == 1 ? "meeting" : "meetings")"
     }
 
 }
