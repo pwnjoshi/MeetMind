@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// Microphone check screen matching Figma node 161:1089
 public struct MicrophoneCheckView: View {
@@ -32,6 +33,7 @@ public struct MicrophoneCheckView: View {
                     .clipShape(Circle())
             }
             .padding(.top, 8)
+            .accessibilityLabel("Close microphone test")
             
             VStack(alignment: .leading, spacing: 6) {
                 Text("Test Microphone")
@@ -49,18 +51,23 @@ public struct MicrophoneCheckView: View {
                     .fill(inputDetected ? Color(hex: "#10B981") : .gray)
                     .frame(width: 10, height: 10)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(inputDetected ? "Input detected" : "Speak to test your microphone")
+                    Text(microphoneError != nil ? "Microphone test unavailable" : (inputDetected ? "Input Detected" : "Ready to record a sample"))
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Text(microphoneError ?? "Current audio input")
+                    Text(microphoneError ?? AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? "iPhone Microphone")
                         .font(.system(size: 13))
                         .foregroundStyle(Color(uiColor: .secondaryLabel))
                 }
                 Spacer()
             }
             .padding(14)
-            .background(Color(hex: "#F0F3FA"))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+
+            if microphoneError != nil && !sampleReady {
+                Button("Troubleshoot Input") { showsTroubleshooting = true }
+                    .frame(minHeight: 44)
+            }
             
             Spacer()
 
@@ -163,7 +170,7 @@ public struct MicrophoneCheckView: View {
                     guard !Task.isCancelled else { break }
                     levels.removeLast()
                     levels.insert(level, at: 0)
-                    inputDetected = level > 0.1
+                    inputDetected = inputDetected || level > 0.1
                 }
             } catch {
                 microphoneError = error.localizedDescription
