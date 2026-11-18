@@ -71,7 +71,7 @@ public struct HomeDashboardView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Meetings")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: { isShowingSettings = true }) {
