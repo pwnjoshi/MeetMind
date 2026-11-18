@@ -28,6 +28,7 @@ public struct AudioImportView: View {
                     onSelect: { isPickerPresented = true },
                     onClear: { selectedURL = nil }
                 )
+                .disabled(isProcessing)
                 
                 if isProcessing {
                     ProgressView("Saving audio on this iPhone…")
@@ -45,6 +46,7 @@ public struct AudioImportView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isProcessing)
                 }
             }
             .fileImporter(
