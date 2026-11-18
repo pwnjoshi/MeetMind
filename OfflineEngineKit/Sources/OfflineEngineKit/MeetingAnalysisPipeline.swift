@@ -20,8 +20,40 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
 public actor MeetingAnalysisPipeline {
     public static let shared = MeetingAnalysisPipeline()
     private var running = false
+    private var activeMeetingID: UUID?
+    private var discardActiveCheckpoint = false
     public static let requiredModelIDs = ["whisper-large", "diarization", "qwen-1.7b"]
     public init() {}
+
+    public func discardCheckpoint(meetingID: UUID) throws {
+        if activeMeetingID == meetingID { discardActiveCheckpoint = true }
+        let url = try OfflineModelStore.privateDirectory("MeetingCheckpoints").appendingPathComponent(meetingID.uuidString + ".json")
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
+
+    public func answer(question: String, turns: [AnalysisTurn]) async throws -> [SupportedPoint] {
+        guard !running else { throw OfflineError.unavailable("Wait for the current analysis to finish or pause it first.") }
+        guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              question.utf8.count <= 300, !turns.isEmpty else {
+            throw OfflineError.unavailable("Ask a short question after a transcript is available.")
+        }
+        running = true
+        defer { running = false }
+        try checkConditions()
+        guard let profile = try OfflineModelStore.profiles().first(where: { $0.id == "qwen-1.7b" }) else {
+            throw OfflineError.unavailable("The offline analysis model is unavailable.")
+        }
+        let folder = try await OfflineModelStore.shared.verifiedFolder(profile)
+        let model = try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"))
+        var points: [SupportedPoint] = []
+        var seen = Set<String>()
+        for chunk in Self.analysisChunks(turns) {
+            try checkConditions()
+            let result = try model.analyze(turns: chunk, meetingDate: Date(), timezone: TimeZone.current.identifier, question: question)
+            for point in result.discussion where seen.insert(point.text.lowercased()).inserted { points.append(point) }
+        }
+        return points
+    }
 
     public func removeCheckpoint(meetingID: UUID) throws {
         guard !running else { throw OfflineError.unavailable("Wait for the current analysis to finish or pause it first.") }
@@ -51,7 +83,9 @@ public actor MeetingAnalysisPipeline {
                     progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
         guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Pause it before starting this one.") }
         running = true
-        defer { running = false }
+        activeMeetingID = meetingID
+        discardActiveCheckpoint = false
+        defer { running = false; activeMeetingID = nil; discardActiveCheckpoint = false }
         guard audio.isFileURL else { throw OfflineError.unavailable("Choose a recording saved on this iPhone.") }
         let duration = try await AVURLAsset(url: audio).load(.duration).seconds
         guard duration.isFinite, duration > 0, duration <= 3600 else {
@@ -62,7 +96,7 @@ public actor MeetingAnalysisPipeline {
         var folders: [URL] = []
         for profile in profiles { folders.append(try await OfflineModelStore.shared.verifiedFolder(profile)) }
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(profiles.map(\.revision).joined(separator: ","))|v1"
+        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(profiles.map(\.revision).joined(separator: ","))|v2"
         let checkpointURL = try OfflineModelStore.privateDirectory("MeetingCheckpoints")
             .appendingPathComponent(meetingID.uuidString + ".json")
         var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature, stage: .transcription,
@@ -71,6 +105,7 @@ public actor MeetingAnalysisPipeline {
            let saved = try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data),
            saved.sourceSignature == signature { checkpoint = saved }
         func save() throws {
+            if discardActiveCheckpoint { throw CancellationError() }
             try JSONEncoder().encode(checkpoint).write(to: checkpointURL,
                 options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         }
@@ -111,6 +146,7 @@ public actor MeetingAnalysisPipeline {
             try save()
         }
         try Task.checkCancellation()
+        if discardActiveCheckpoint { throw CancellationError() }
         await progress(.completed)
         return checkpoint
     }
@@ -144,15 +180,20 @@ public actor MeetingAnalysisPipeline {
     private static func splitTurns(_ turns: [AnalysisTurn]) -> [AnalysisTurn] {
         var fragments: [AnalysisTurn] = []
         for turn in turns {
-            let text = Array(turn.text)
-            if text.count <= 600 {
-                if !text.isEmpty { fragments.append(turn) }
-                continue
+            guard !turn.text.isEmpty else { continue }
+            if turn.text.utf8.count <= 600 { fragments.append(turn); continue }
+            var parts: [String] = [], part = "", bytes = 0
+            for character in turn.text {
+                let next = String(character)
+                if bytes + next.utf8.count > 600 && !part.isEmpty {
+                    parts.append(part); part = ""; bytes = 0
+                }
+                part += next; bytes += next.utf8.count
             }
-            for offset in stride(from: 0, to: text.count, by: 600) {
-                let end = min(offset + 600, text.count)
-                fragments.append(AnalysisTurn(id: "\(turn.id).\(offset / 600)",
-                    text: String(text[offset..<end]), start: turn.start, end: turn.end, speaker: turn.speaker))
+            if !part.isEmpty { parts.append(part) }
+            for (index, text) in parts.enumerated() {
+                fragments.append(AnalysisTurn(id: "\(turn.id).\(index)", text: text,
+                    start: turn.start, end: turn.end, speaker: turn.speaker))
             }
         }
         return fragments
@@ -160,16 +201,18 @@ public actor MeetingAnalysisPipeline {
 
     static func analysisChunks(_ turns: [AnalysisTurn]) -> [[AnalysisTurn]] {
         let fragments = splitTurns(turns)
+        let encoder = JSONEncoder()
+        func inputBytes(_ values: [AnalysisTurn]) -> Int {
+            (try? encoder.encode(values).count) ?? Int.max
+        }
         var result: [[AnalysisTurn]] = [], chunk: [AnalysisTurn] = []
-        var count = 0
         for turn in fragments {
-            if count + turn.text.count > 1600 && !chunk.isEmpty {
+            if inputBytes(chunk + [turn]) > 1800 && !chunk.isEmpty {
                 result.append(chunk)
                 chunk = Array(chunk.suffix(1))
-                count = chunk.reduce(0) { $0 + $1.text.count }
+                if inputBytes(chunk + [turn]) > 1800 { chunk = [] }
             }
             chunk.append(turn)
-            count += turn.text.count
         }
         if !chunk.isEmpty { result.append(chunk) }
         return result

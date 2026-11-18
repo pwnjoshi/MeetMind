@@ -21,6 +21,7 @@ public struct MeetingDetailView: View {
     @State private var deletionError: String?
     @State private var showNoteSheet = false
     @State private var showTaskReview = false
+    @State private var showAnalysisEvidence = false
     
     public init(viewModel: MeetingDetailViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -41,6 +42,10 @@ public struct MeetingDetailView: View {
             if let meeting = viewModel.meeting, !meeting.pendingTaskSuggestions.isEmpty {
                 Button("Review \(meeting.pendingTaskSuggestions.count) suggested tasks") { showTaskReview = true }
                     .buttonStyle(.borderedProminent).padding(.vertical, 8)
+            }
+            if viewModel.selectedTab == .summary, viewModel.meeting?.offlineAnalysis != nil {
+                Button("Review summary evidence") { showAnalysisEvidence = true }
+                    .font(.subheadline).padding(.vertical, 4)
             }
             if let meeting = viewModel.meeting, meeting.status == .scheduled || meeting.status == .processing || meeting.status == .recording {
                 Button(meeting.status == .scheduled ? "Start recording" : "Process saved audio") {
@@ -104,6 +109,9 @@ public struct MeetingDetailView: View {
         .sheet(isPresented: $showTaskReview) {
             if let meeting = viewModel.meeting { MeetingTaskReviewView(meeting: meeting) }
         }
+        .sheet(isPresented: $showAnalysisEvidence) {
+            if let result = viewModel.meeting?.offlineAnalysis { MeetingAnalysisEvidenceView(result: result) }
+        }
         .modifier(MeetingDetailSheetsModifier(
             viewModel: viewModel,
             showExportSheet: $showExportSheet,
@@ -166,6 +174,39 @@ public struct MeetingDetailView: View {
             viewModel.setPlaybackRate(rates[(idx + 1) % rates.count])
         } else {
             viewModel.setPlaybackRate(1.0)
+        }
+    }
+}
+
+private struct MeetingAnalysisEvidenceView: View {
+    let result: MeetingAnalysisCheckpoint
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                evidenceSection("Discussion", points: result.analysis.flatMap(\.discussion))
+                evidenceSection("Decisions", points: result.analysis.flatMap(\.decisions))
+            }
+            .navigationTitle("Summary evidence")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func evidenceSection(_ title: String, points: [SupportedPoint]) -> some View {
+        Section(title) {
+            if points.isEmpty { Text("No supported points extracted.").foregroundStyle(.secondary) }
+            ForEach(Array(points.enumerated()), id: \.offset) { _, point in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(point.text).font(.headline)
+                    ForEach(Array(point.evidence.enumerated()), id: \.offset) { _, source in
+                        if let turn = result.turns.first(where: { $0.id == source.turnID }) {
+                            Text(String(format: "[%02d:%02d] ", Int(turn.start) / 60, Int(turn.start) % 60) + source.quote)
+                                .font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -82,10 +82,13 @@ extension Meeting {
     public var pendingTaskSuggestions: [MeetingTaskSuggestion] {
         guard let result = offlineAnalysis else { return [] }
         var seen = reviewedTaskIDs
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
         return result.analysis.flatMap(\.tasks).compactMap { task in
-            guard let data = try? encoder.encode(task) else { return nil }
+            // Chunk overlap may produce the same task with a different quote.
+            // Review identity is independent of its category/priority/evidence.
+            let identity = [task.title, task.owner ?? ""].map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }.joined(separator: "\u{0}")
+            let data = Data(identity.utf8)
             let id = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             guard seen.insert(id).inserted,
                   !actionItems.contains(where: { $0.sourceSuggestionID == id }) else { return nil }
@@ -100,6 +103,10 @@ extension Meeting {
         guard pendingTaskSuggestions.contains(where: { $0.id == suggestion.id }) else { return }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !accept || !trimmed.isEmpty else { throw MeetingError.emptyTitle }
+        guard !accept || (["Follow-up", "Research", "Create/Update", "Review/Approve", "Coordination", "Other"].contains(category)
+            && (priority.isEmpty || ActionPriority(rawValue: priority) != nil)) else {
+            throw OfflineError.unavailable("Choose a valid category and priority before confirming the task.")
+        }
         let previousIDs = reviewedTaskIDsData
         var inserted: ActionItem?
         var newSpeaker: Speaker?

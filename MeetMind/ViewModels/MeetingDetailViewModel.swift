@@ -1,6 +1,9 @@
 import Foundation
 import SwiftData
 import Observation
+import OfflineEngineKit
+
+public typealias LocalQuestionAnswerer = @Sendable (String, [AnalysisTurn]) async throws -> [SupportedPoint]
 
 /// Segmented tabs available in the meeting detail cockpit
 public enum MeetingDetailTab: String, CaseIterable, Sendable {
@@ -92,6 +95,9 @@ public struct EmailDraft: Sendable, Equatable {
 @Observable
 @MainActor
 public final class MeetingDetailViewModel {
+    private let questionAnswerer: LocalQuestionAnswerer
+    private var questionTask: Task<Void, Never>?
+    public var isAnsweringQuestion = false
     public var meeting: Meeting?
     public var selectedTab: MeetingDetailTab = .summary
     
@@ -252,9 +258,13 @@ public final class MeetingDetailViewModel {
         summarizationService: SummarizationServiceProtocol? = nil,
         exportService: ExportServiceProtocol? = nil,
         remindersService: RemindersSyncServiceProtocol? = nil,
+        questionAnswerer: LocalQuestionAnswerer? = nil,
         dataStore: Any? = nil
     ) {
         self.meeting = meeting
+        self.questionAnswerer = questionAnswerer ?? { question, turns in
+            try await MeetingAnalysisPipeline.shared.answer(question: question, turns: turns)
+        }
         self.modelContext = modelContext
         self.playbackService = playbackService ?? AudioPlaybackService()
         self.summarizationService = summarizationService ?? NaturalLanguageSummarizationService()
@@ -452,8 +462,10 @@ public final class MeetingDetailViewModel {
     public func deleteMeeting() throws {
         guard let meeting, let modelContext else { return }
         playbackService?.stop()
+        let id = meeting.id
         modelContext.delete(meeting)
         try modelContext.save()
+        Task { try? await MeetingAnalysisPipeline.shared.discardCheckpoint(meetingID: id) }
     }
     
     public func setPlaybackRate(_ rate: Float) {
@@ -608,68 +620,49 @@ public final class MeetingDetailViewModel {
     }
     
     public func submitAIQuery(_ query: String, completion: @escaping @MainActor (AIAnswerResponse) -> Void) {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        
-        let lower = trimmed.lowercased()
-        if lower.contains("mars") || lower.contains("weather") {
-            let resp = AIAnswerResponse(answer: "Not discussed in this meeting.", citations: [])
-            aiChatHistory.append((prompt: query, response: resp))
-            completion(resp)
-            return
-        }
-        
-        if lower.contains("offline") || lower.contains("summarization") {
-            let answerText = "The team decided to implement on-device summarization using Apple NaturalLanguage framework for offline capability."
-            let citations = [AICitation(timestamp: 12.0, segmentText: "Discussed on-device processing")]
-            let resp = AIAnswerResponse(answer: answerText, citations: citations)
-            aiChatHistory.append((prompt: query, response: resp))
-            completion(resp)
-            return
-        }
-        
-        let answerText = "Meeting summary: " + (meeting?.summary?.executiveSummary ?? "Discussed project architecture and milestones.")
-        let resp = AIAnswerResponse(answer: answerText, citations: [AICitation(timestamp: 0.0, segmentText: "General discussion")])
-        aiChatHistory.append((prompt: query, response: resp))
-        completion(resp)
-    }
-    
-    public func askAI(prompt: String) async throws -> AIAnswerResponse {
-        let lower = prompt.lowercased()
-        
-        if lower.contains("security audit") || lower.contains("friday") || lower.contains("john commit") {
-            let citation = AICitation(timestamp: 252.0, formattedTimecode: "04:12", snippet: "I commit to delivering the security audit report by Friday.")
-            let response = AIAnswerResponse(
-                answer: "John committed to delivering the security audit report [04:12].",
-                citations: [citation]
-            )
-            aiChatHistory.append((prompt: prompt, response: response))
-            return response
-        }
-        
-        if lower.contains("cake") || lower.contains("recipe") || lower.contains("weather") || lower.contains("mars") {
-            let response = AIAnswerResponse(answer: "Not discussed in meeting.", citations: [])
-            aiChatHistory.append((prompt: prompt, response: response))
-            return response
-        }
-        
-        for segment in transcriptSegments {
-            if segment.text.lowercased().contains(lower) {
-                let citation = AICitation(timestamp: segment.startTime, formattedTimecode: segment.formattedStartTime, snippet: segment.text)
-                let response = AIAnswerResponse(
-                    answer: "In the meeting, it was discussed: \(segment.text) [\(segment.formattedStartTime)].",
-                    citations: [citation]
-                )
-                aiChatHistory.append((prompt: prompt, response: response))
-                return response
+        guard !isAnsweringQuestion, canSubmitAIQuery(query) else { return }
+        isAnsweringQuestion = true
+        questionTask = Task { @MainActor in
+            defer { isAnsweringQuestion = false }
+            do { completion(try await askAI(prompt: query)) }
+            catch is CancellationError { }
+            catch {
+                let response = AIAnswerResponse(answer: error.localizedDescription, citations: [])
+                aiChatHistory.append((prompt: query, response: response))
+                completion(response)
             }
         }
-        
-        let general = AIAnswerResponse(answer: "Based on the meeting summary: \(summaryText)", citations: [])
-        aiChatHistory.append((prompt: prompt, response: general))
-        return general
     }
-    
+
+    public func cancelQuestion() {
+        questionTask?.cancel()
+    }
+
+    public func askAI(prompt: String) async throws -> AIAnswerResponse {
+        let turns = transcriptSegments.map {
+            AnalysisTurn(id: $0.id.uuidString, text: $0.text, start: $0.startTime,
+                         end: $0.endTime, speaker: $0.speaker?.name)
+        }
+        let points = try await questionAnswerer(prompt, turns)
+        try Task.checkCancellation()
+        var citations: [AICitation] = []
+        var seen = Set<String>()
+        for point in points {
+            guard !point.evidence.isEmpty else { throw OfflineError.unavailable("The answer lacked transcript evidence. Please retry.") }
+            for evidence in point.evidence {
+                guard !evidence.quote.isEmpty, let turn = turns.first(where: {
+                    (evidence.turnID == $0.id || evidence.turnID.hasPrefix($0.id + ".")) && $0.text.contains(evidence.quote)
+                }) else { throw OfflineError.unavailable("The answer contained invalid transcript evidence. Please retry.") }
+                if seen.insert(evidence.turnID + evidence.quote).inserted {
+                    citations.append(AICitation(timestamp: turn.start, segmentText: evidence.quote))
+                }
+            }
+        }
+        let response = AIAnswerResponse(answer: points.isEmpty ? "Not discussed in this meeting." : points.map(\.text).joined(separator: "\n"), citations: citations)
+        aiChatHistory.append((prompt: prompt, response: response))
+        return response
+    }
+
     public func seekToCitation(_ citation: AICitation) {
         seek(to: citation.timestamp)
         try? playbackService?.play()

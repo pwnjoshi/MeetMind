@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import OfflineEngineKit
+import Darwin
 
 /// Foreground-only offline analysis with explicit model setup and safe retry.
 public struct MeetingProcessingView: View {
@@ -112,5 +113,76 @@ public struct MeetingProcessingView: View {
                 processingError = error.localizedDescription
             }
         }
+    }
+}
+
+/// USB-triggered synthetic integration check. Uses a separate in-memory store;
+/// never selects, reads, or exports a user's recording or meeting content.
+@MainActor
+struct OfflinePipelineSmokeView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var status = "Synthetic offline pipeline check"
+    @State private var operation: Task<Void, Never>?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Synthetic integration test").font(.title2)
+            Text(status)
+            Text("Keep MeetMind open. This uses a public test clip and does not change your saved meetings.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }.padding()
+        .onAppear {
+            guard operation == nil else { return }
+            UIApplication.shared.isIdleTimerDisabled = true
+            operation = Task { @MainActor in
+                defer { UIApplication.shared.isIdleTimerDisabled = false }
+                let id = UUID()
+                do {
+                    guard let audio = OfflineBenchmarkRunner.syntheticAudioURL else {
+                        throw OfflineError.unavailable("Synthetic audio is unavailable.")
+                    }
+                    let container = try ModelContainerFactory.createInMemoryContainer()
+                    let context = container.mainContext
+                    let meeting = Meeting(id: id, title: "Synthetic pipeline check", status: .processing, audioFileURL: audio)
+                    context.insert(meeting)
+                    try context.save()
+                    let vm = ProcessingPipelineViewModel(meeting: meeting, modelContext: context)
+                    try vm.prepareForProduction(context: context)
+                    guard try await vm.missingOfflineModels().isEmpty else {
+                        throw OfflineError.unavailable("Download the required models in meeting setup first.")
+                    }
+                    print("MEETMIND_PIPELINE running"); fflush(stdout)
+                    try await vm.startPipeline()
+                    guard vm.pipelineStatus == .completed, !meeting.transcriptSegments.isEmpty,
+                          meeting.summary != nil, meeting.actionItems.isEmpty,
+                          let suggestion = meeting.pendingTaskSuggestions.first else {
+                        throw OfflineError.unavailable("Synthetic processing did not produce a reviewable task.")
+                    }
+                    for _ in 0..<2 {
+                        try meeting.reviewTask(suggestion, title: suggestion.task.title,
+                            owner: suggestion.task.owner ?? "", category: suggestion.task.category,
+                            priority: suggestion.task.priority ?? "", dueDate: nil, accept: true, context: context)
+                    }
+                    let freshContext = ModelContext(container)
+                    let saved = try freshContext.fetch(FetchDescriptor<Meeting>()).first
+                    guard saved?.actionItems.count == 1,
+                          saved?.actionItems.first?.sourceEvidence?.isEmpty == false else {
+                        throw OfflineError.unavailable("Synthetic task review persistence check failed.")
+                    }
+                    status = "Completed: transcription, speakers, analysis, task review, and saved-task reload."
+                    print("MEETMIND_PIPELINE completed transcript=\(meeting.transcriptSegments.count) accepted=1 duplicate=0")
+                    fflush(stdout)
+                } catch is CancellationError {
+                    status = "Paused. Restart the synthetic check while MeetMind stays open."
+                    print("MEETMIND_PIPELINE cancelled"); fflush(stdout)
+                } catch {
+                    status = error.localizedDescription
+                    print("MEETMIND_PIPELINE failed"); fflush(stdout)
+                }
+                try? await MeetingAnalysisPipeline.shared.removeCheckpoint(meetingID: id)
+            }
+        }
+        .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { operation?.cancel() } }
     }
 }

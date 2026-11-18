@@ -2,10 +2,12 @@ import SwiftUI
 
 /// Conversational Ask AI assistant sheet answering questions grounded in meeting transcripts
 public struct AskAIAssistantSheet: View {
+    @Environment(\.scenePhase) private var scenePhase
     public let history: [(prompt: String, response: AIAnswerResponse)]
     public let onAsk: (String) -> Void
     public let onSeekToCitation: (AICitation) -> Void
     public let onDismiss: () -> Void
+    public let isBusy: Bool
     
     @State private var queryText: String = ""
     
@@ -13,12 +15,14 @@ public struct AskAIAssistantSheet: View {
         history: [(prompt: String, response: AIAnswerResponse)],
         onAsk: @escaping (String) -> Void,
         onSeekToCitation: @escaping (AICitation) -> Void,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        isBusy: Bool = false
     ) {
         self.history = history
         self.onAsk = onAsk
         self.onSeekToCitation = onSeekToCitation
         self.onDismiss = onDismiss
+        self.isBusy = isBusy
     }
     
     public var body: some View {
@@ -34,6 +38,7 @@ public struct AskAIAssistantSheet: View {
                     .padding(Spacing.lg)
                 }
                 inputBar
+                if isBusy { ProgressView("Reading the transcript on this iPhone…").font(.footnote) }
             }
             .navigationTitle("Ask AI Assistant")
             .navigationBarTitleDisplayMode(.inline)
@@ -41,6 +46,9 @@ public struct AskAIAssistantSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Close", action: onDismiss) }
             }
         }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { onDismiss() } }
+        .onChange(of: isBusy) { _, busy in UIApplication.shared.isIdleTimerDisabled = busy }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
     
     private var emptyStateView: some View {
@@ -82,7 +90,7 @@ public struct AskAIAssistantSheet: View {
             } label: {
                 Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.Colors.aiPurple)
             }
-            .disabled(queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isBusy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(Spacing.md)
     }

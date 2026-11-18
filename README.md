@@ -21,9 +21,11 @@ models; unavailable local recognition fails visibly rather than using cloud spee
 Calendar and iCloud sync are not provided. Saved meeting storage is excluded from
 device backups; sharing and Reminders export are explicit user actions.
 
-Settings includes a separate offline-model qualification lab for WhisperKit,
-FluidAudio speaker separation, and local Qwen3 task analysis. These experimental
-engines have not replaced the normal meeting pipeline. See
+Build 7 integrates offline WhisperKit transcription, FluidAudio speaker separation,
+and Qwen3-1.7B analysis into saved-meeting processing, with explicit model setup,
+protected resume checkpoints, and human review before generated tasks are saved.
+Settings includes model management and a separate diagnostics lab. Real Hinglish
+accuracy and long-meeting performance remain unqualified. See
 [OFFLINE_QUALIFICATION.md](OFFLINE_QUALIFICATION.md) for device measurements and
 outstanding Hinglish quality gates.
 

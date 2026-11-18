@@ -308,6 +308,7 @@ public final class ProcessingPipelineViewModel {
         guard let meeting, let audio = meeting.audioFileURL else { throw MeetingError.meetingNotFound }
         preparePipeline()
         errorMessage = nil
+        var committing = false
         do {
             let result = try await offlinePipeline.run(meetingID: meeting.id, audio: audio,
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
@@ -315,7 +316,13 @@ public final class ProcessingPipelineViewModel {
                     await self?.updateOfflineStage(stage)
                 }
             try Task.checkCancellation()
+            if let context = modelContext {
+                let id = meeting.id
+                let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+                guard try context.fetch(descriptor).first != nil else { throw CancellationError() }
+            }
             let data = try JSONEncoder().encode(result)
+            committing = true
             let previousSegments = meeting.transcriptSegments
             meeting.transcriptSegments.removeAll()
             for segment in previousSegments { modelContext?.delete(segment) }
@@ -323,7 +330,10 @@ public final class ProcessingPipelineViewModel {
             for turn in result.turns {
                 var speaker: Speaker?
                 if let label = turn.speaker {
-                    if let existing = speakers[label] { speaker = existing }
+                    if let existing = speakers[label] ?? meeting.participants.first(where: { $0.name == label }) {
+                        speaker = existing
+                        speakers[label] = existing
+                    }
                     else {
                         let created = Speaker(name: label)
                         modelContext?.insert(created)
@@ -351,6 +361,7 @@ public final class ProcessingPipelineViewModel {
             currentStep = .completed
             onNavigateToDetail?(meeting.id)
         } catch {
+            if committing { modelContext?.rollback() }
             if error is CancellationError {
                 pipelineStatus = .cancelled
                 meeting.analysisState = "paused"

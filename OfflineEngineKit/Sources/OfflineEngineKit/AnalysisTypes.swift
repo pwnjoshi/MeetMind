@@ -14,6 +14,7 @@ public struct AnalysisTurn: Codable, Sendable, Identifiable {
 public struct SourceEvidence: Codable, Sendable {
     public let turnID: String
     public let quote: String
+    public init(turnID: String, quote: String) { self.turnID = turnID; self.quote = quote }
 }
 
 public struct SuggestedTask: Codable, Sendable {
@@ -28,6 +29,7 @@ public struct SuggestedTask: Codable, Sendable {
 public struct SupportedPoint: Codable, Sendable {
     public let text: String
     public let evidence: [SourceEvidence]
+    public init(text: String, evidence: [SourceEvidence]) { self.text = text; self.evidence = evidence }
 }
 
 public struct LocalAnalysisResult: Codable, Sendable {
@@ -42,6 +44,9 @@ public struct LocalAnalysisResult: Codable, Sendable {
         let sources = Dictionary(uniqueKeysWithValues: turns.map { ($0.id, $0.text) })
         let categories = Set(["Follow-up", "Research", "Create/Update", "Review/Approve", "Coordination", "Other"])
         let priorities = Set(["low", "medium", "high", "urgent"])
+        guard (discussion + decisions).allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw OfflineError.unavailable("Analysis returned an empty supported point. Review the transcript and retry.")
+        }
         for task in tasks {
             guard !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   categories.contains(task.category), task.priority == nil || priorities.contains(task.priority!) else {

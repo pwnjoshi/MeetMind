@@ -8,6 +8,7 @@
 import XCTest
 import Foundation
 import SwiftData
+import OfflineEngineKit
 @testable import MeetMind
 
 /// Comprehensive test suite covering Meeting Detail Cockpit & Tabs, Executive Summary View,
@@ -440,18 +441,18 @@ final class MeetingDetailViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 52 - Validates submitting query returns grounded response citing timecodes.
-    func test_tier1_feature52_askAIQueryReturnsGroundedResponseWithCitations() throws {
-        let expectation = expectation(description: "Ask AI Response")
-        
-        sut.submitAIQuery("What was decided about offline summarization?") { response in
-            XCTAssertTrue(response.text.contains("on-device"))
-            XCTAssertFalse(response.citations.isEmpty)
-            expectation.fulfill()
-        }
-        
-        waitForExpectations(timeout: 2.0)
+    func test_tier1_feature52_askAIQueryReturnsGroundedResponseWithCitations() async throws {
+        let model = MeetingDetailViewModel(meeting: initialMeeting, questionAnswerer: { _, turns in
+            let source = try XCTUnwrap(turns.first { $0.start == 15 })
+            return [SupportedPoint(text: "Use variable speed playback with pitch correction.",
+                evidence: [SourceEvidence(turnID: source.id, quote: source.text)])]
+        })
+        let response = try await model.askAI(prompt: "What playback behavior was agreed?")
+        XCTAssertTrue(response.text.contains("pitch correction"))
+        XCTAssertEqual(response.citations.first?.timestamp, 15)
+        XCTAssertEqual(response.citations.first?.snippet, initialMeeting.transcriptSegments.first { $0.startTime == 15 }?.text)
     }
-    
+
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 40: Detail Tabs & Persistence)
     
     /// Tier 2: Feature 40 - Validates switching between cockpit tabs does not halt active audio playback.
@@ -745,17 +746,23 @@ final class MeetingDetailViewModelTests: XCTestCase {
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 52: Off-topic AI Queries & Citations)
     
     /// Tier 2: Feature 52 - Validates off-topic question returns grounded "Not discussed" fallback.
-    func test_tier2_feature52_offTopicQueryReturnsNotDiscussedFallback() throws {
-        let expectation = expectation(description: "Off topic response")
-        
-        sut.submitAIQuery("What was the weather like on Mars?") { response in
-            XCTAssertTrue(response.text.contains("Not discussed") || response.text.contains("not found in meeting"))
-            expectation.fulfill()
-        }
-        
-        waitForExpectations(timeout: 2.0)
+    func test_tier2_feature52_offTopicQueryReturnsNotDiscussedFallback() async throws {
+        let model = MeetingDetailViewModel(meeting: initialMeeting, questionAnswerer: { _, _ in [] })
+        let response = try await model.askAI(prompt: "What was the weather like on Mars?")
+        XCTAssertEqual(response.text, "Not discussed in this meeting.")
+        XCTAssertTrue(response.citations.isEmpty)
     }
-    
+
+    func testQuestionRejectsInventedEvidenceInsteadOfFabricatingCitation() async throws {
+        let model = MeetingDetailViewModel(meeting: initialMeeting, questionAnswerer: { _, turns in
+            [SupportedPoint(text: "Invented commitment", evidence: [SourceEvidence(turnID: turns[0].id, quote: "John promised a security audit Friday")])]
+        })
+        do {
+            _ = try await model.askAI(prompt: "What did John promise?")
+            XCTFail("Invented evidence must be rejected")
+        } catch { XCTAssertTrue(model.aiChatHistory.isEmpty) }
+    }
+
     /// Tier 2: Feature 52 - Validates tapping citation timecode seeks player directly.
     func test_tier2_feature52_tapCitationTimecodeSeeksAudioPlayer() throws {
         let citation = AICitation(timestamp: 30.0, segmentText: "Action items sync")

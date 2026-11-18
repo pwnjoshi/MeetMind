@@ -28,6 +28,7 @@ public enum ActionItemGrouping: String, CaseIterable, Sendable {
     case meeting = "meeting"
     case assignee = "assignee"
     case dueDate = "dueDate"
+    case category = "category"
 }
 
 /// Sheet presentation mode for create/edit action item
@@ -115,12 +116,17 @@ public final class ActionItemsViewModel {
             var sections: [ActionItemGroupSection] = []
             let priorities: [ActionPriority] = [.urgent, .high, .medium, .low]
             for p in priorities {
-                let matched = currentItems.filter { $0.priority == p }
+                    let matched = currentItems.filter { !$0.priorityRaw.isEmpty && $0.priority == p }
                 if !matched.isEmpty {
                     sections.append(ActionItemGroupSection(id: p.rawValue, title: p.displayName, items: matched))
                 }
             }
+            let unspecified = currentItems.filter { $0.priorityRaw.isEmpty }
+            if !unspecified.isEmpty { sections.append(ActionItemGroupSection(id: "unspecified", title: "Unspecified", items: unspecified)) }
             return sections
+        case .category:
+            let grouped = Dictionary(grouping: currentItems) { $0.category ?? "Other" }
+            return grouped.keys.sorted().map { ActionItemGroupSection(id: $0, title: $0, items: grouped[$0] ?? []) }
         case .meeting:
             let grouped = Dictionary(grouping: currentItems) { $0.meeting?.title ?? "General" }
             return grouped.map { ActionItemGroupSection(id: $0.key, title: $0.key, items: $0.value) }

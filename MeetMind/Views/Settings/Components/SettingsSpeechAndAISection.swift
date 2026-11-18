@@ -10,7 +10,7 @@ public struct SettingsSpeechAndAISection: View {
     
     public var body: some View {
         Section(header: Text("Speech Recognition & AI Intelligence")) {
-            Picker("Speech Language", selection: Binding(
+            Picker("Live preview language", selection: Binding(
                 get: { viewModel.speechLanguageLocale },
                 set: { viewModel.setSpeechLanguageLocale($0) }
             )) {
@@ -31,12 +31,7 @@ public struct SettingsSpeechAndAISection: View {
                 }
             }
             
-            Picker("Summary Style", selection: $viewModel.summaryStyle) {
-                Text("Executive Brief").tag(SummaryStyle.executive)
-                Text("Detailed Analysis").tag(SummaryStyle.detailed)
-            }
-            
-            Text("Summaries are generated locally from your transcript.")
+            Text("This setting affects the optional live preview. Saved recordings use multilingual offline transcription with automatic language detection. Summaries and suggested tasks are in English.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
     }

@@ -42,7 +42,7 @@ public struct ActionItemRowView: View {
                 }
                 
                 HStack(spacing: Spacing.xs) {
-                    PriorityBadge(priorityText: item.priority.rawValue)
+                    if !item.priorityRaw.isEmpty { PriorityBadge(priorityText: item.priority.rawValue) }
                     if let assignee = item.assignee?.name {
                         Text(assignee).font(Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
                     }
@@ -50,6 +50,11 @@ public struct ActionItemRowView: View {
                         Text(due.formatted(date: .abbreviated, time: .omitted))
                             .font(Typography.caption2).foregroundStyle(Theme.Colors.textTertiary)
                     }
+                }
+                if let category = item.category { Text(category).font(.caption).foregroundStyle(.secondary) }
+                if let evidence = item.sourceEvidence {
+                    DisclosureGroup("Transcript evidence") { Text(evidence).font(.footnote).textSelection(.enabled) }
+                        .font(.caption)
                 }
             }
             Spacer()

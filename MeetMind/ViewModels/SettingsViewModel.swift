@@ -159,6 +159,7 @@ public final class SettingsViewModel {
     public var availableLanguages: [LanguageOption] = [
         LanguageOption(code: "en-US", name: "English (United States)"),
         LanguageOption(code: "en-GB", name: "English (United Kingdom)"),
+        LanguageOption(code: "hi-IN", name: "Hindi (India)"),
         LanguageOption(code: "es-ES", name: "Spanish (Spain)"),
         LanguageOption(code: "fr-FR", name: "French (France)"),
         LanguageOption(code: "de-DE", name: "German (Germany)"),

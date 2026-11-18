@@ -22,8 +22,13 @@ public enum OfflineError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unavailable(let message): return message
-        case .memoryBudget:
-            return "This model exceeds the safe memory budget. Choose the smaller 1.7B model."
+        case .memoryBudget(let required, let available):
+            if required > ModelMemoryAdmission.maximumBudget {
+                return "This model exceeds the safe memory budget. Use the 1.7B model for meeting analysis."
+            }
+            let needed = ByteCountFormatter.string(fromByteCount: Int64(clamping: required), countStyle: .memory)
+            let free = ByteCountFormatter.string(fromByteCount: Int64(clamping: available), countStyle: .memory)
+            return "Not enough memory is available for offline analysis (estimated \(needed), available \(free)). Close other apps and retry. Your recording and completed steps are preserved."
         }
     }
 }

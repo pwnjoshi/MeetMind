@@ -21,10 +21,12 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
             .sheet(isPresented: $showAskAISheet) {
                 AskAIAssistantSheet(
                     history: viewModel.aiChatHistory,
-                    onAsk: { prompt in Task { _ = try? await viewModel.askAI(prompt: prompt) } },
+                    onAsk: { prompt in viewModel.submitAIQuery(prompt) { _ in } },
                     onSeekToCitation: { viewModel.seekToCitation($0) },
-                    onDismiss: { showAskAISheet = false }
+                    onDismiss: { viewModel.cancelQuestion(); showAskAISheet = false },
+                    isBusy: viewModel.isAnsweringQuestion
                 )
+                .onDisappear { viewModel.cancelQuestion() }
             }
             .sheet(isPresented: $viewModel.isEditingTranscript) {
                 TranscriptEditSheet(

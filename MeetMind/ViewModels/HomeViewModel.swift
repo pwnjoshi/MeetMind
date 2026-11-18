@@ -1,4 +1,5 @@
 import Foundation
+import OfflineEngineKit
 import SwiftData
 import Observation
 
@@ -261,14 +262,18 @@ public final class HomeViewModel {
     }
     
     public func deleteMeeting(_ meeting: Meeting) {
+        let id = meeting.id
         if let context = modelContext {
             context.delete(meeting)
-            try? context.save()
+            do {
+                try context.save()
+                Task { try? await MeetingAnalysisPipeline.shared.discardCheckpoint(meetingID: id) }
+            } catch { context.rollback(); return }
         }
-        inMemoryMeetings.removeAll { $0.id == meeting.id }
-        upcomingMeetings.removeAll { $0.id == meeting.id }
-        recentMeetings.removeAll { $0.id == meeting.id }
-        if featuredUpcomingMeeting?.id == meeting.id {
+        inMemoryMeetings.removeAll { $0.id == id }
+        upcomingMeetings.removeAll { $0.id == id }
+        recentMeetings.removeAll { $0.id == id }
+        if featuredUpcomingMeeting?.id == id {
             featuredUpcomingMeeting = upcomingMeetings.first
         }
         fetchMeetings()

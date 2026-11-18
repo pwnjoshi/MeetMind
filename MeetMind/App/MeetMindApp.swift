@@ -46,6 +46,8 @@ struct MeetMindApp: App {
                     Group {
                         if ProcessInfo.processInfo.arguments.contains("--offline-benchmark") {
                             NavigationStack { OfflineBenchmarkView() }
+                        } else if ProcessInfo.processInfo.arguments.contains("--offline-pipeline-smoke") {
+                            OfflinePipelineSmokeView()
                         } else {
                             RootView()
                         }
