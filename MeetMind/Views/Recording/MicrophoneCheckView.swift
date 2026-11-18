@@ -23,7 +23,9 @@ public struct MicrophoneCheckView: View {
     }
     
     public var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
             Button(action: { dismiss() }) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
@@ -152,7 +154,10 @@ public struct MicrophoneCheckView: View {
                 .frame(minHeight: 44)
             }
         }
-        .padding(.horizontal, 20)
+                .padding(.horizontal, 20)
+                .frame(minHeight: geometry.size.height, alignment: .top)
+            }
+        }
         .background(Color(uiColor: .systemGroupedBackground))
         .alert("Troubleshoot Input", isPresented: $showsTroubleshooting) {
             Button("OK", role: .cancel) { }
