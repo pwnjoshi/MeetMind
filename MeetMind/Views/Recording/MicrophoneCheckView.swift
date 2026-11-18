@@ -91,6 +91,11 @@ public struct MicrophoneCheckView: View {
                     .frame(maxWidth: .infinity)
                 Button(capturingSample ? "Stop Sample" : "Record Sample") {
                     if !capturingSample {
+                        playback.stop()
+                        try? recorder.cancelRecording()
+                        recorder = AudioRecordingService()
+                        inputDetected = false
+                        levels = Array(repeating: 0, count: 32)
                         microphoneReady = false
                         microphoneError = nil
                         capturingSample = true
