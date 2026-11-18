@@ -93,6 +93,18 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         XCTAssertEqual(result.turns.map(\.text).joined(), backend.turns.map(\.text).joined())
     }
 
+    func testFinalTranscriptionAndDiarizationOverlapWhenDeviceIsUnconstrained() async throws {
+        let (root, audio) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let backend = OverlapTestBackend(root: root)
+        let pipeline = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+
+        _ = try await pipeline.run(meetingID: UUID(), audio: audio,
+            meetingDate: Date(timeIntervalSince1970: 1_700_000_000), timezone: "UTC") { _ in }
+
+        XCTAssertTrue(backend.didOverlap, "Diarization should begin while final ASR is still running on an unconstrained device.")
+    }
+
 }
 
 private final class CheckpointTestBackend: MeetingAnalysisBackend, @unchecked Sendable {
@@ -146,5 +158,71 @@ private struct CheckpointTestSession: MeetingAnalysisSession {
     let backend: CheckpointTestBackend
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult {
         try backend.analyze(turns)
+    }
+}
+
+private final class OverlapTestBackend: MeetingAnalysisBackend, @unchecked Sendable {
+    private let root: URL
+    private let lock = NSLock()
+    private var transcribing = false
+    private var diarizing = false
+    private var observedOverlap = false
+    private let turn = AnalysisTurn(id: "t0", text: "Rahul will send the estimate tomorrow.", start: 0, end: 2, speaker: nil)
+
+    init(root: URL) { self.root = root }
+
+    var didOverlap: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return observedOverlap
+    }
+
+    func verifiedFolder(_ profile: ModelProfile) async throws -> URL { root }
+
+    func transcribe(audio: URL, folder: URL, languageCode: String?) async throws -> [AnalysisTurn] {
+        beginTranscription(); defer { endTranscription() }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        return [turn]
+    }
+
+    func diarize(audio: URL, folder: URL) async throws -> [SpeakerSpan] {
+        beginDiarization(); defer { endDiarization() }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        return [SpeakerSpan(speaker: "S0", start: 0, end: 2)]
+    }
+
+    func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession {
+        OverlapTestSession(turn: turn)
+    }
+
+    private func beginTranscription() {
+        lock.lock(); defer { lock.unlock() }
+        transcribing = true
+        observedOverlap = observedOverlap || diarizing
+    }
+
+    private func endTranscription() {
+        lock.lock(); defer { lock.unlock() }
+        transcribing = false
+    }
+
+    private func beginDiarization() {
+        lock.lock(); defer { lock.unlock() }
+        diarizing = true
+        observedOverlap = observedOverlap || transcribing
+    }
+
+    private func endDiarization() {
+        lock.lock(); defer { lock.unlock() }
+        diarizing = false
+    }
+}
+
+private struct OverlapTestSession: MeetingAnalysisSession {
+    let turn: AnalysisTurn
+    var inputTokenLimit: Int { 2_048 }
+    func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int { 20 }
+    func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult {
+        LocalAnalysisResult(discussion: [SupportedPoint(text: "Estimate will be sent tomorrow.",
+            evidence: [SourceEvidence(turnID: turn.id, quote: turn.text)])], decisions: [], tasks: [])
     }
 }
