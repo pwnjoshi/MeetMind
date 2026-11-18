@@ -28,7 +28,7 @@ public struct LiveRecordingView: View {
                     .buttonStyle(.bordered).buttonBorderShape(.circle)
                     .accessibilityLabel("Finish recording")
                 Spacer()
-                HStack {
+                ControlGroup {
                     Button { viewModel.openNoteDock() } label: { Image(systemName: "text.bubble") }
                         .accessibilityLabel("Add note")
                     Button { isPhotoSheetPresented = true } label: { Image(systemName: "photo") }
@@ -67,7 +67,13 @@ public struct LiveRecordingView: View {
                                 .frame(minHeight: 140, idealHeight: 180)
                         }
                         if viewModel.isBookmarkButtonHighlighted {
-                            Label("Bookmarked", systemImage: "flag").font(.caption).foregroundStyle(.orange)
+                            Label("Bookmarked · \(viewModel.formattedDuration)", systemImage: "flag")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.orange.opacity(0.16), in: Capsule())
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     .padding(20)
