@@ -16,6 +16,9 @@ public struct AudioImportView: View {
     @State private var recordedAt = Date()
     @Query private var savedMeetings: [Meeting]
     @State private var selectedSeriesID: UUID?
+    @State private var newSeriesID: UUID?
+    @State private var newSeriesName = ""
+    @State private var isNewSeriesPresented = false
     
     public init(viewModel: MeetingSetupViewModel = MeetingSetupViewModel(), onImportComplete: ((Meeting) -> Void)? = nil) {
         self.viewModel = viewModel
@@ -55,6 +58,8 @@ public struct AudioImportView: View {
                         }
                     }
                     .disabled(isProcessing)
+                    Button("New Series...") { isNewSeriesPresented = true }
+                        .disabled(isProcessing)
                 }
                 Section {
                     if isProcessing { ProgressView("Saving audio on this iPhone...") }
@@ -89,6 +94,17 @@ public struct AudioImportView: View {
                 }
             }
             .interactiveDismissDisabled(isProcessing)
+            .alert("New Series", isPresented: $isNewSeriesPresented) {
+                TextField("Series name", text: $newSeriesName)
+                Button("Cancel", role: .cancel) { }
+                Button("Save") {
+                    newSeriesName = newSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let id = newSeriesID ?? UUID()
+                    newSeriesID = id
+                    selectedSeriesID = id
+                }
+                .disabled(newSeriesName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
             .alert("Import Failed", isPresented: $showErrorAlert) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -99,6 +115,7 @@ public struct AudioImportView: View {
     
     private var seriesOptions: [(id: UUID, name: String)] {
         var names: [UUID: String] = [:]
+        if let id = newSeriesID { names[id] = newSeriesName }
         for meeting in savedMeetings {
             if let id = meeting.seriesID, let name = meeting.seriesName, !name.isEmpty {
                 names[id] = name
