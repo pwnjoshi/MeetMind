@@ -51,7 +51,8 @@ public struct LiveRecordingView: View {
                             .frame(height: 60)
                             .accessibilityLabel("Audio capture paused")
                     } else {
-                        WaveformVisualizerView(levels: viewModel.waveformLevels, isRecording: viewModel.isRecording)
+                        WaveformVisualizerView(levels: viewModel.waveformLevels,
+                            isRecording: viewModel.isRecording, showsBackground: false)
                     }
                     VStack(spacing: 16) {
                         Toggle("Live transcript", isOn: $showsLiveTranscript).font(.subheadline)
