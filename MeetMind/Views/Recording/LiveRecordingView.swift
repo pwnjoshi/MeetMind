@@ -12,6 +12,7 @@ public struct LiveRecordingView: View {
     @State private var isPhotoSheetPresented: Bool = false
     @State private var isFinishConfirmationPresented = false
     @State private var isFinishing = false
+    @State private var showsLiveTranscript = true
     public let meetingId: UUID
     
     public init(meetingId: UUID, viewModel: LiveRecordingViewModel? = nil) {
@@ -42,10 +43,20 @@ public struct LiveRecordingView: View {
                 onSelectSpeaker: { viewModel.switchActiveSpeaker(to: $0.name) },
                 onAddSpeaker: { viewModel.addNewSpeaker(name: "Speaker \(viewModel.availableSpeakers.count + 1)") }
             )
-            LiveTranscriptScrollView(
-                segments: viewModel.finalTranscriptSegments,
-                interimText: viewModel.interimTranscriptText
-            )
+            Toggle(isOn: $showsLiveTranscript) {
+                VStack(alignment: .leading) {
+                    Text("Live transcript")
+                    Text("Provisional").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            if showsLiveTranscript {
+                LiveTranscriptScrollView(
+                    segments: viewModel.finalTranscriptSegments,
+                    interimText: viewModel.interimTranscriptText
+                )
+            } else {
+                Spacer(minLength: 0)
+            }
             LiveActionToolDock(
                 bookmarkCount: viewModel.bookmarks.count,
                 isBookmarkHighlighted: viewModel.isBookmarkButtonHighlighted,

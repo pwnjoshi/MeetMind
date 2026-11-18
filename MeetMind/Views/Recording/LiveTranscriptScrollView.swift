@@ -6,6 +6,7 @@ public struct LiveTranscriptScrollView: View {
     public let interimText: String
     
     @State private var isAutoScrollActive: Bool = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     public init(segments: [LiveTranscriptSegmentItem], interimText: String = "") {
         self.segments = segments
@@ -42,7 +43,7 @@ public struct LiveTranscriptScrollView: View {
                 
                 if !isAutoScrollActive {
                     Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8)) {
                             isAutoScrollActive = true
                             proxy.scrollTo("bottom_anchor_id", anchor: .bottom)
                         }
@@ -67,12 +68,12 @@ public struct LiveTranscriptScrollView: View {
             }
             .onChange(of: segments.count) { _, _ in
                 if isAutoScrollActive {
-                    withAnimation { proxy.scrollTo("bottom_anchor_id", anchor: .bottom) }
+                    withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("bottom_anchor_id", anchor: .bottom) }
                 }
             }
             .onChange(of: interimText) { _, _ in
                 if isAutoScrollActive {
-                    withAnimation { proxy.scrollTo("bottom_anchor_id", anchor: .bottom) }
+                    withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("bottom_anchor_id", anchor: .bottom) }
                 }
             }
         }
