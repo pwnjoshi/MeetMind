@@ -6,6 +6,8 @@ public struct ScheduleMeetingView: View {
     public var onMeetingScheduled: ((Meeting) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showValidationError: Bool = false
+    @State private var initialDraft: String?
+    @State private var showsDiscardConfirmation = false
     
     public init(viewModel: MeetingSetupViewModel = MeetingSetupViewModel(), onMeetingScheduled: ((Meeting) -> Void)? = nil) {
         self.viewModel = viewModel
@@ -70,7 +72,10 @@ public struct ScheduleMeetingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if hasUnsavedChanges { showsDiscardConfirmation = true }
+                        else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Schedule") {
@@ -92,6 +97,12 @@ public struct ScheduleMeetingView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "Please check meeting title and dates.")
             }
+            .interactiveDismissDisabled(hasUnsavedChanges)
+            .onAppear { if initialDraft == nil { initialDraft = draftSignature } }
+            .alert("Discard meeting changes?", isPresented: $showsDiscardConfirmation) {
+                Button("Keep Editing", role: .cancel) { }
+                Button("Discard Changes", role: .destructive) { dismiss() }
+            } message: { Text("The meeting has not been saved.") }
             .alert("Overwrite Custom Agenda?", isPresented: $viewModel.isShowingTemplateOverwriteConfirmation) {
                 Button("Overwrite", role: .destructive) { viewModel.confirmTemplateSwitch() }
                 Button("Cancel", role: .cancel) { viewModel.cancelTemplateSwitch() }
@@ -99,5 +110,17 @@ public struct ScheduleMeetingView: View {
                 Text("Choosing this template will replace custom agenda notes. Do you want to continue?")
             }
         }
+    }
+
+    private var hasUnsavedChanges: Bool {
+        initialDraft.map { $0 != draftSignature } ?? false
+    }
+
+    private var draftSignature: String {
+        [viewModel.title, viewModel.agendaText,
+         String(viewModel.startDate.timeIntervalSince1970),
+         String(viewModel.endDate.timeIntervalSince1970),
+         viewModel.participants.map { $0.id.uuidString }.sorted().joined(separator: ",")]
+            .joined(separator: "\u{001F}")
     }
 }
