@@ -39,6 +39,10 @@ struct OfflineBenchmarkView: View {
                 ForEach(profiles) { profile in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(profile.name).font(.subheadline)
+                        if profile.id == "qwen-4b" {
+                            Text("Compact 2k-context evaluation only. Not enabled for normal meetings.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         Text(ByteCountFormatter.string(fromByteCount: profile.downloadBytes, countStyle: .file))
                             .font(.caption).foregroundStyle(.secondary)
                         HStack {

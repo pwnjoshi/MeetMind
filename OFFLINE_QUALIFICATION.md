@@ -67,6 +67,42 @@ FileHandle temporary buffers with a per-chunk autorelease pool during multi-GB
 model verification. The memory reserve and 3 GB cap are unchanged. Physical-device
 confirmation of this fix and the integrated pipeline is still pending.
 
+## Build 7 physical integration findings
+
+Build 7 (`da893b5`, Actions `44281481468`) passed 749 app tests and 28 engine
+tests. It was installed over build 6 through the same Sideloadly account/bundle ID.
+The existing production store opened and the app remained alive. A foreground
+synthetic pipeline run completed transcription, speaker separation, and analysis,
+but failed the smoke assertion because no reviewable task was found. This is a
+failed end-to-end check, not a passing task-review/persistence result.
+
+Controlled, automatically launched public-fixture benchmarks (no private recordings
+selected) then showed:
+
+- Whisper large-v3: 3.63 seconds warm, sampled footprint 113,247,272 bytes;
+  recognized the public sample's words "send", "estimate", and "tomorrow".
+- Qwen3-1.7B: 6.18 seconds, sampled footprint 607,504,600 bytes, nominal thermal;
+  produced one suggested task involving a cancelled/rejected action in the public
+  Hinglish fixture. It failed this semantic check despite valid output structure.
+
+Only content-free aggregate diagnostics were printed; no private audio, transcript,
+or generated meeting content was copied from the phone. These measurements do not
+satisfy held-out accuracy gates. The lower footprint after bounded verification also
+means earlier 4B failures must not be treated as a clean inference-memory comparison.
+
+Build 9 introduces prompt version `meeting-analysis-v2` to distinguish concrete future
+assignments from unrelated negations, invalidates prior prompt checkpoints, and records
+prompt/context metadata in benchmarks. It also adds content-free pipeline result counts
+so ASR, model output, decoding, and review persistence failures can be distinguished.
+
+The normal pipeline remains the 1.7B trial configuration. The diagnostics-only 4B
+candidate is re-evaluated with a 2,048-token context, 1,280 input / 768 output token
+limits, 256/64 token batches, and a 500 MB working reserve. Its weights-plus-reserve
+estimate is 2,997,280,256 bytes; admission still rejects insufficient available memory
+and retains the 3 GB cap. Runtime load/decode footprint checks abort excessive usage.
+This compact candidate has not yet passed device or quality qualification and is not
+enabled for normal meetings. Build 9 device results are pending.
+
 ## Running the device lab
 
 Use Settings → On-device intelligence → Diagnostics → Offline model benchmarks. Download one candidate and

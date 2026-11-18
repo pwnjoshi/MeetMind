@@ -106,7 +106,7 @@ public actor MeetingAnalysisPipeline {
         var folders: [URL] = []
         for profile in profiles { folders.append(try await backend.verifiedFolder(profile)) }
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(profiles.map(\.revision).joined(separator: ","))|v2"
+        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v2"
         let checkpointURL = try self.checkpointURL(meetingID)
         var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature, stage: .transcription,
             turns: [], speakers: [], analysis: [], analyzedChunks: 0)
@@ -208,7 +208,7 @@ public actor MeetingAnalysisPipeline {
         return fragments
     }
 
-    static func analysisChunks(_ turns: [AnalysisTurn]) -> [[AnalysisTurn]] {
+    static func analysisChunks(_ turns: [AnalysisTurn], maxJSONBytes: Int = 1800) -> [[AnalysisTurn]] {
         let fragments = splitTurns(turns)
         let encoder = JSONEncoder()
         func inputBytes(_ values: [AnalysisTurn]) -> Int {
@@ -216,10 +216,10 @@ public actor MeetingAnalysisPipeline {
         }
         var result: [[AnalysisTurn]] = [], chunk: [AnalysisTurn] = []
         for turn in fragments {
-            if inputBytes(chunk + [turn]) > 1800 && !chunk.isEmpty {
+            if inputBytes(chunk + [turn]) > maxJSONBytes && !chunk.isEmpty {
                 result.append(chunk)
                 chunk = Array(chunk.suffix(1))
-                if inputBytes(chunk + [turn]) > 1800 { chunk = [] }
+                if inputBytes(chunk + [turn]) > maxJSONBytes { chunk = [] }
             }
             chunk.append(turn)
         }

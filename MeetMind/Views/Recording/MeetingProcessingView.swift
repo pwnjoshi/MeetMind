@@ -159,6 +159,10 @@ struct OfflinePipelineSmokeView: View {
                     }
                     print("MEETMIND_PIPELINE running"); fflush(stdout)
                     try await vm.startPipeline()
+                    let analysis = meeting.offlineAnalysis
+                    let transcript = meeting.transcriptSegments.map(\.text).joined(separator: " ").lowercased()
+                    print("MEETMIND_PIPELINE result transcript=\(meeting.transcriptSegments.count) decoded=\(analysis != nil) generated_tasks=\(analysis?.analysis.flatMap(\.tasks).count ?? 0) pending=\(meeting.pendingTaskSuggestions.count) active=\(meeting.actionItems.count) expected_words=\(transcript.contains("send") && transcript.contains("estimate") && transcript.contains("tomorrow"))")
+                    fflush(stdout)
                     guard vm.pipelineStatus == .completed, !meeting.transcriptSegments.isEmpty,
                           meeting.summary != nil, meeting.actionItems.isEmpty,
                           let suggestion = meeting.pendingTaskSuggestions.first else {
@@ -171,6 +175,8 @@ struct OfflinePipelineSmokeView: View {
                     }
                     let freshContext = ModelContext(container)
                     let saved = try freshContext.fetch(FetchDescriptor<Meeting>()).first
+                    print("MEETMIND_PIPELINE review saved_tasks=\(saved?.actionItems.count ?? 0)")
+                    fflush(stdout)
                     guard saved?.actionItems.count == 1,
                           saved?.actionItems.first?.sourceEvidence?.isEmpty == false else {
                         throw OfflineError.unavailable("Synthetic task review persistence check failed.")

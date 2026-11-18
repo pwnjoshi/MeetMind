@@ -45,8 +45,8 @@ def run(model, timeout):
     app = query("apps", "query", BUNDLE).get(BUNDLE, {})
     if int(app.get("CFBundleVersion", "0")) < 4:
         raise RuntimeError("Install the benchmark-enabled build 4 before running engine tests. The installed build is older.")
-    if model == "qwen-4b" and int(app.get("CFBundleVersion", "0")) < 6:
-        raise RuntimeError("Install build 6 before testing 4B: earlier builds lack the memory admission guard.")
+    if model == "qwen-4b" and int(app.get("CFBundleVersion", "0")) < 9:
+        raise RuntimeError("Install build 9 before re-evaluating 4B with the compact context and bounded verification memory.")
     args = f"{BUNDLE} --offline-benchmark --benchmark-model={model}"
     print(f"Starting {model} synthetic smoke test; not a quality qualification.", flush=True)
     watch(args, timeout)
