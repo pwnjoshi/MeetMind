@@ -24,6 +24,7 @@ public struct LiveRecordingView: View {
             LiveRecordingHeaderView(
                 title: $viewModel.meetingTitle,
                 isOfflineFallback: viewModel.hasOfflineIndicatorPill,
+                isPaused: viewModel.isPaused,
                 onDismiss: { handleStop() }
             )
             LiveRecordingTimerBadgeView(

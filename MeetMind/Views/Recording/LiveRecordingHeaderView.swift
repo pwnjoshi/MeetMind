@@ -4,6 +4,7 @@ import SwiftUI
 public struct LiveRecordingHeaderView: View {
     @Binding public var title: String
     public let isOfflineFallback: Bool
+    public let isPaused: Bool
     public var onDismiss: () -> Void
     
     @State private var isEditingTitle: Bool = false
@@ -11,10 +12,12 @@ public struct LiveRecordingHeaderView: View {
     public init(
         title: Binding<String>,
         isOfflineFallback: Bool = false,
+        isPaused: Bool = false,
         onDismiss: @escaping () -> Void
     ) {
         self._title = title
         self.isOfflineFallback = isOfflineFallback
+        self.isPaused = isPaused
         self.onDismiss = onDismiss
     }
     
@@ -48,7 +51,7 @@ public struct LiveRecordingHeaderView: View {
                 }
                 
                 HStack(spacing: 6) {
-                    Text("LIVE RECORDING")
+                    Text(isPaused ? "Paused" : "Recording")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Theme.Colors.coralRed)
                         .padding(.horizontal, 6)

@@ -7,6 +7,7 @@ public struct LiveRecordingTimerBadgeView: View {
     public let audioRouteBadgeTitle: String
     
     @State private var isPulsing: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     public init(
         formattedDuration: String,
@@ -24,10 +25,10 @@ public struct LiveRecordingTimerBadgeView: View {
                 Circle()
                     .fill(isRecording ? Theme.Colors.coralRed : Theme.Colors.textSecondary)
                     .frame(width: 10, height: 10)
-                    .opacity(isRecording && isPulsing ? 0.3 : 1.0)
-                    .scaleEffect(isRecording && isPulsing ? 1.25 : 1.0)
+                    .opacity(isRecording && isPulsing && !reduceMotion ? 0.3 : 1.0)
+                    .scaleEffect(isRecording && isPulsing && !reduceMotion ? 1.25 : 1.0)
                     .animation(
-                        isRecording ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default,
+                        isRecording && !reduceMotion ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : nil,
                         value: isPulsing
                     )
                 
