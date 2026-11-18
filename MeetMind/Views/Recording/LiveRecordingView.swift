@@ -15,10 +15,18 @@ public struct LiveRecordingView: View {
     @State private var showsLiveTranscript = true
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize = 60
     public let meetingId: UUID
+    private let automaticallyStartsSession: Bool
     
-    public init(meetingId: UUID, viewModel: LiveRecordingViewModel? = nil) {
+    public init(
+        meetingId: UUID,
+        viewModel: LiveRecordingViewModel? = nil,
+        automaticallyStartsSession: Bool = true,
+        initiallyShowsFinishConfirmation: Bool = false
+    ) {
         self.meetingId = meetingId
         self._viewModel = State(initialValue: viewModel ?? LiveRecordingViewModel(meetingId: meetingId))
+        self.automaticallyStartsSession = automaticallyStartsSession
+        self._isFinishConfirmationPresented = State(initialValue: initiallyShowsFinishConfirmation)
     }
     
     public var body: some View {
@@ -132,10 +140,12 @@ public struct LiveRecordingView: View {
         .task {
             do {
                 try viewModel.prepareSession(context: modelContext, settings: settings)
-                if viewModel.recordingState == .idle { viewModel.startSession() }
+                if automaticallyStartsSession, viewModel.recordingState == .idle { viewModel.startSession() }
             } catch { viewModel.errorMessage = error.localizedDescription }
         }
-        .onDisappear { viewModel.leaveSession() }
+        .onDisappear {
+            if automaticallyStartsSession { viewModel.leaveSession() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
             guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }

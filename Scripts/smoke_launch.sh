@@ -39,4 +39,12 @@ microphone_pid="${microphone_output##*: }"
 sleep 5
 kill -0 "$microphone_pid"
 simctl io "$device_id" screenshot build/smoke/microphone-idle.png
-echo "PASS: onboarding and three completed-onboarding launches stayed alive"
+for recording_state in active paused finish; do
+    simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
+    recording_output=$(simctl launch "$device_id" "$bundle_id" "--ui-recording-$recording_state")
+    recording_pid="${recording_output##*: }"
+    sleep 3
+    kill -0 "$recording_pid"
+    simctl io "$device_id" screenshot "build/smoke/recording-$recording_state.png"
+done
+echo "PASS: onboarding, main tabs, microphone, and recording visual states stayed alive"

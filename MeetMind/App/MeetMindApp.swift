@@ -101,6 +101,12 @@ struct MeetMindApp: App {
         #if targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("--ui-microphone") {
             MicrophoneCheckView(onStartRecording: {})
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-recording-finish") {
+            recordingVisualFixture(paused: true, showsFinishConfirmation: true)
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-recording-paused") {
+            recordingVisualFixture(paused: true)
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-recording-active") {
+            recordingVisualFixture(paused: false)
         } else {
             RootView()
         }
@@ -108,4 +114,34 @@ struct MeetMindApp: App {
         RootView()
         #endif
     }
+
+    #if targetEnvironment(simulator)
+    private func recordingVisualFixture(paused: Bool, showsFinishConfirmation: Bool = false) -> some View {
+        let meeting = Meeting(title: "Quick meeting", createdAt: Date(), duration: 948, status: .recording)
+        let viewModel = LiveRecordingViewModel(meeting: meeting, updatesFromRecordingClock: false)
+        viewModel.recordingState = paused ? .paused : .recording
+        viewModel.elapsedDuration = 948
+        viewModel.waveformLevels = [0.18, 0.42, 0.24, 0.54, 0.31, 0.66, 0.38, 0.51,
+                                    0.28, 0.73, 0.34, 0.61, 0.44, 0.69, 0.32, 0.57,
+                                    0.41, 0.77, 0.36, 0.62, 0.29, 0.70, 0.45, 0.58,
+                                    0.33, 0.67, 0.39, 0.74, 0.30, 0.55, 0.43, 0.64]
+        viewModel.finalTranscriptSegments = [
+            LiveTranscriptSegmentItem(speakerName: "Speaker 2 · 12:10",
+                                      text: "I’ll update the launch checklist.",
+                                      startTime: 730, endTime: 735),
+            LiveTranscriptSegmentItem(speakerName: "Speaker 3 · 14:42",
+                                      text: "We need a Finance estimate before approving the budget.",
+                                      startTime: 882, endTime: 890)
+        ]
+        viewModel.isBookmarkButtonHighlighted = paused
+        return NavigationStack {
+            LiveRecordingView(
+                meetingId: meeting.id,
+                viewModel: viewModel,
+                automaticallyStartsSession: false,
+                initiallyShowsFinishConfirmation: showsFinishConfirmation
+            )
+        }
+    }
+    #endif
 }
