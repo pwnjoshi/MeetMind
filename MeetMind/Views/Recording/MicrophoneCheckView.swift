@@ -26,8 +26,8 @@ public struct MicrophoneCheckView: View {
             Button(action: { dismiss() }) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color(hex: "#1C1C1E"))
-                    .frame(width: 40, height: 40)
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
                     .background(Color(hex: "#F0F3FA"))
                     .clipShape(Circle())
             }
@@ -35,8 +35,8 @@ public struct MicrophoneCheckView: View {
             
             VStack(alignment: .leading, spacing: 6) {
                 Text("Test Microphone")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Color(hex: "#1C1C1E"))
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(.primary)
                 Text("Read this aloud, then play it back.")
                     .font(.system(size: 15))
                     .foregroundStyle(Color(uiColor: .secondaryLabel))
@@ -51,7 +51,7 @@ public struct MicrophoneCheckView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(inputDetected ? "Input detected" : "Speak to test your microphone")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color(hex: "#1C1C1E"))
+                        .foregroundStyle(.primary)
                     Text(microphoneError ?? "Current audio input")
                         .font(.system(size: 13))
                         .foregroundStyle(Color(uiColor: .secondaryLabel))
