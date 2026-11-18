@@ -16,34 +16,42 @@ public struct HomeDashboardView: View {
     public init(modelContext: ModelContext? = nil) { _viewModel = State(initialValue: HomeViewModel(modelContext: modelContext)) }
     
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                MeetingsSearchBarView(text: $viewModel.searchText) { isFilterPresented = true }
-                
-                Button(action: { isMicrophoneCheckPresented = true }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("Record a meeting")
-                            .font(.system(size: 16, weight: .semibold))
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    MeetingsSearchBarView(text: $viewModel.searchText) { isFilterPresented = true }
+                    
+                    HomeUpcomingSectionView(meetings: viewModel.filteredUpcomingMeetings) { meeting in
+                        router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
                     }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(Color(hex: "#0088FF"))
-                    .clipShape(RoundedRectangle(cornerRadius: 25))
+                    
+                    HomeRecentSectionView(meetings: viewModel.filteredRecentMeetings) { meeting in
+                        router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
+                    }
                 }
-                
-                HomeUpcomingSectionView(meetings: viewModel.filteredUpcomingMeetings) { meeting in
-                    router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
-                }
-                
-                HomeRecentSectionView(meetings: viewModel.filteredRecentMeetings) { meeting in
-                    router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
-                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .padding(.bottom, 80) // Space for FAB
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            
+            // Bottom Action FAB
+            Menu {
+                Button("Record a meeting", systemImage: "mic.fill") { isMicrophoneCheckPresented = true }
+                Button("Schedule meeting", systemImage: "calendar.badge.plus") { appState.activeSheet = .scheduleMeeting }
+                Button("Import audio", systemImage: "square.and.arrow.down") { appState.activeSheet = .audioImport }
+            } label: {
+                HStack {
+                    Image(systemName: "plus")
+                    Text("New Meeting")
+                }
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 160, height: 50)
+                .background(Color(hex: "#0088FF"))
+                .clipShape(RoundedRectangle(cornerRadius: 25))
+                .shadow(color: Color.black.opacity(0.15), radius: 8, y: 4)
+            }
+            .padding(.bottom, 20)
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Meetings")
@@ -58,20 +66,8 @@ public struct HomeDashboardView: View {
                         .overlay(Circle().stroke(Color(hex: "#E4E8F1"), lineWidth: 1))
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Schedule meeting", systemImage: "calendar.badge.plus") { appState.activeSheet = .scheduleMeeting }
-                    Button("Import audio", systemImage: "square.and.arrow.down") { appState.activeSheet = .audioImport }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color(hex: "#0088FF"))
-                        .frame(width: 36, height: 36)
-                        .background(Color(hex: "#F0F3FA"))
-                        .clipShape(Circle())
-                }
-            }
         }
+        // ... (rest of the sheet modifiers)
         .sheet(isPresented: $isShowingSettings) { NavigationStack { SettingsView() } }
         .sheet(isPresented: $isFilterPresented) {
             NavigationStack {
