@@ -189,6 +189,30 @@ final class LiveRecordingViewModelTests: XCTestCase {
         XCTAssertEqual(sut.finalTranscriptSegments.count, 1)
         XCTAssertEqual(sut.finalTranscriptSegments.first?.text, "Good morning everyone. Let's begin the review.")
     }
+
+    /// A partial recognizer hypothesis must remain preview-only; only a unique
+    /// final result can enter the provisional live transcript.
+    func test_tier1_feature31_receivedFinalChunkCommitsOnce() async throws {
+        sut.startSession()
+        try await sut.waitUntilRecordingStarted()
+
+        let partial = LiveTranscriptChunk(text: "Budget approval is", isFinal: false)
+        sut.receiveLiveTranscriptChunk(partial)
+        XCTAssertEqual(sut.interimTranscriptText, "Budget approval is")
+        XCTAssertTrue(sut.finalTranscriptSegments.isEmpty)
+
+        let final = LiveTranscriptChunk(
+            text: "Budget approval is pending.",
+            isFinal: true,
+            segments: [LiveTranscriptSegment(text: "Budget approval is pending.", startTime: 2, duration: 1, confidence: 0.92)]
+        )
+        sut.receiveLiveTranscriptChunk(final)
+        sut.receiveLiveTranscriptChunk(final)
+
+        XCTAssertEqual(sut.finalTranscriptSegments.count, 1)
+        XCTAssertEqual(sut.finalTranscriptSegments.first?.text, "Budget approval is pending.")
+        XCTAssertEqual(sut.interimTranscriptText, "")
+    }
     
     /// Tier 1: Feature 31 - Validates interim results display in italicized pending state.
     func test_tier1_feature31_interimResultsDisplayAsPending() async throws {

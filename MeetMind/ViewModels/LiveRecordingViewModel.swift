@@ -272,7 +272,7 @@ public final class LiveRecordingViewModel {
                         do {
                             for try await chunk in transcriptionService.startLiveTranscription(audioBufferStream: recordingService.audioBufferStream) {
                                 guard !Task.isCancelled else { break }
-                                self?.interimTranscriptText = chunk.text
+                                self?.receiveLiveTranscriptChunk(chunk)
                             }
                         } catch {
                             self?.interimTranscriptText = "Live transcription unavailable. Audio is still being saved."
@@ -459,6 +459,32 @@ public final class LiveRecordingViewModel {
         } else {
             interimTranscriptText = text
         }
+    }
+
+    /// Live recognition is deliberately a preview. We retain only confirmed
+    /// phrases here, then replace them with the selected-language offline
+    /// transcript after the recording stops. This prevents a partial hypothesis
+    /// from becoming a permanent incorrect minute or task source.
+    public func receiveLiveTranscriptChunk(_ chunk: LiveTranscriptChunk) {
+        let trimmed = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        interimTranscriptText = trimmed
+        guard chunk.isFinal else { return }
+
+        let start = chunk.segments.map(\.startTime).min() ?? max(0, elapsedDuration - 5)
+        let end = chunk.segments.map(\.endTime).max() ?? elapsedDuration
+        let confidence = chunk.segments.map(\.confidence).min() ?? 0
+        // Some recognizers resend their full finalized hypothesis. Do not render
+        // it twice while the meeting is still live.
+        guard finalTranscriptSegments.last?.text != trimmed else {
+            interimTranscriptText = ""
+            return
+        }
+        let speaker = activeSpeaker?.name ?? "Speaker"
+        finalTranscriptSegments.append(LiveTranscriptSegmentItem(speakerName: speaker, text: trimmed,
+            startTime: start, endTime: max(start, end), confidence: confidence))
+        liveTranscriptChunks.append(chunk)
+        interimTranscriptText = ""
     }
     
     public func openNoteDock() {

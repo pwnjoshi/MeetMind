@@ -95,6 +95,10 @@ public struct LiveRecordingView: View {
                                 }
                             }
                             .frame(minHeight: 140, idealHeight: 180)
+                            Text("Preview only — the final Hindi–English transcript is checked after recording.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         if viewModel.isBookmarkButtonHighlighted {
                             Label("Bookmarked · \(viewModel.formattedDuration)", systemImage: "flag")
