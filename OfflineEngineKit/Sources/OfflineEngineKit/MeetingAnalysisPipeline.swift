@@ -22,12 +22,22 @@ public actor MeetingAnalysisPipeline {
     private var running = false
     private var activeMeetingID: UUID?
     private var discardActiveCheckpoint = false
+    private let backend: any MeetingAnalysisBackend
+    private let checkpointRoot: URL?
     public static let requiredModelIDs = ["whisper-large", "diarization", "qwen-1.7b"]
-    public init() {}
+    public init() { backend = LocalMeetingAnalysisBackend(); checkpointRoot = nil }
+    init(backend: any MeetingAnalysisBackend, checkpointRoot: URL) {
+        self.backend = backend; self.checkpointRoot = checkpointRoot
+    }
+
+    private func checkpointURL(_ id: UUID) throws -> URL {
+        let root = try checkpointRoot ?? OfflineModelStore.privateDirectory("MeetingCheckpoints")
+        return root.appendingPathComponent(id.uuidString + ".json")
+    }
 
     public func discardCheckpoint(meetingID: UUID) throws {
         if activeMeetingID == meetingID { discardActiveCheckpoint = true }
-        let url = try OfflineModelStore.privateDirectory("MeetingCheckpoints").appendingPathComponent(meetingID.uuidString + ".json")
+        let url = try checkpointURL(meetingID)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
 
@@ -43,8 +53,8 @@ public actor MeetingAnalysisPipeline {
         guard let profile = try OfflineModelStore.profiles().first(where: { $0.id == "qwen-1.7b" }) else {
             throw OfflineError.unavailable("The offline analysis model is unavailable.")
         }
-        let folder = try await OfflineModelStore.shared.verifiedFolder(profile)
-        let model = try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"))
+        let folder = try await backend.verifiedFolder(profile)
+        let model = try backend.makeSession(folder: folder)
         var points: [SupportedPoint] = []
         var seen = Set<String>()
         for chunk in Self.analysisChunks(turns) {
@@ -57,7 +67,7 @@ public actor MeetingAnalysisPipeline {
 
     public func removeCheckpoint(meetingID: UUID) throws {
         guard !running else { throw OfflineError.unavailable("Wait for the current analysis to finish or pause it first.") }
-        let url = try OfflineModelStore.privateDirectory("MeetingCheckpoints").appendingPathComponent(meetingID.uuidString + ".json")
+        let url = try checkpointURL(meetingID)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
 
@@ -94,11 +104,10 @@ public actor MeetingAnalysisPipeline {
         let profiles = try requiredProfiles()
         // Verify all dependencies before modifying any saved result.
         var folders: [URL] = []
-        for profile in profiles { folders.append(try await OfflineModelStore.shared.verifiedFolder(profile)) }
+        for profile in profiles { folders.append(try await backend.verifiedFolder(profile)) }
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
         let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(profiles.map(\.revision).joined(separator: ","))|v2"
-        let checkpointURL = try OfflineModelStore.privateDirectory("MeetingCheckpoints")
-            .appendingPathComponent(meetingID.uuidString + ".json")
+        let checkpointURL = try self.checkpointURL(meetingID)
         var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature, stage: .transcription,
             turns: [], speakers: [], analysis: [], analyzedChunks: 0)
         if let data = try? Data(contentsOf: checkpointURL),
@@ -112,7 +121,7 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .transcription {
             try checkConditions()
             await progress(.transcription)
-            checkpoint.turns = Self.splitTurns(try await LocalSpeech.transcribe(audio: audio, folder: folders[0]))
+            checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: folders[0]))
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
             try save()
@@ -120,7 +129,7 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .speakers {
             try checkConditions()
             await progress(.speakers)
-            checkpoint.speakers = try await LocalSpeech.diarize(audio: audio, folder: folders[1])
+            checkpoint.speakers = try await backend.diarize(audio: audio, folder: folders[1])
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)
             checkpoint.stage = .analysis
             try save()
@@ -133,10 +142,10 @@ public actor MeetingAnalysisPipeline {
                   checkpoint.analyzedChunks <= chunks.count else {
                 throw OfflineError.unavailable("Analysis checkpoint is invalid. Preserve the recording and restart analysis.")
             }
-            let model = try LocalLanguageModel(url: folders[2].appendingPathComponent("model.gguf"))
+            let model = try backend.makeSession(folder: folders[2])
             for index in checkpoint.analyzedChunks..<chunks.count {
                 try checkConditions()
-                let result = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone)
+                let result = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone, question: nil)
                 try result.validate(against: chunks[index])
                 checkpoint.analysis.append(result)
                 checkpoint.analyzedChunks = index + 1

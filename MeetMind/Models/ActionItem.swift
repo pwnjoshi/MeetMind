@@ -76,6 +76,7 @@ public final class ActionItem: Identifiable {
         get { ActionPriority(rawValue: priorityRaw) ?? .medium }
         set { priorityRaw = newValue.rawValue }
     }
+    public var priorityDisplayName: String { priorityRaw.isEmpty ? "Unspecified" : priority.displayName }
     
     public init(
         id: UUID = UUID(),

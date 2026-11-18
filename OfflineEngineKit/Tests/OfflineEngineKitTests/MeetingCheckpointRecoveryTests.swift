@@ -1,0 +1,118 @@
+import XCTest
+import AVFoundation
+@testable import OfflineEngineKit
+
+final class MeetingCheckpointRecoveryTests: XCTestCase {
+    private func fixture() throws -> (URL, URL) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let audio = root.appendingPathComponent("synthetic.caf")
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1600))
+        buffer.frameLength = 1600
+        buffer.floatChannelData?[0].update(repeating: 0, count: 1600)
+        let file = try AVAudioFile(forWriting: audio, settings: format.settings)
+        try file.write(from: buffer)
+        return (root, audio)
+    }
+
+    func testSpeakerFailureResumesWithoutTranscribingAgain() async throws {
+        let (root, audio) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let backend = CheckpointTestBackend(root: root, failSpeakers: true)
+        let id = UUID(), date = Date(timeIntervalSince1970: 1700000000)
+        let first = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        do {
+            _ = try await first.run(meetingID: id, audio: audio, meetingDate: date, timezone: "Asia/Kolkata") { _ in }
+            XCTFail("Injected interruption must surface")
+        } catch { }
+        // New coordinator simulates reopening after the first instance was lost.
+        let resumed = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        let result = try await resumed.run(meetingID: id, audio: audio, meetingDate: date, timezone: "Asia/Kolkata") { _ in }
+        XCTAssertEqual(result.stage, .completed)
+        XCTAssertEqual(backend.counts.0, 1)
+        XCTAssertEqual(backend.counts.1, 2)
+        XCTAssertFalse(result.analysis.isEmpty)
+    }
+
+    func testAnalysisFailureResumesAtLastSavedChunkAndCompletedRunReusesResult() async throws {
+        let (root, audio) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let backend = CheckpointTestBackend(root: root, failAnalysisCall: 2)
+        let id = UUID(), date = Date(timeIntervalSince1970: 1700000000)
+        let first = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        do {
+            _ = try await first.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
+            XCTFail("Injected interruption must surface")
+        } catch { }
+        let resumed = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        let result = try await resumed.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
+        let chunks = MeetingAnalysisPipeline.analysisChunks(backend.turns).count
+        XCTAssertEqual(result.analysis.count, chunks)
+        XCTAssertEqual(backend.counts.0, 1)
+        XCTAssertEqual(backend.counts.1, 1)
+        XCTAssertEqual(backend.counts.2, chunks + 1)
+        _ = try await resumed.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
+        XCTAssertEqual(backend.counts.2, chunks + 1)
+    }
+
+    func testChangedSourceInvalidatesCheckpointAndExplicitDiscardRemovesIt() async throws {
+        let (root, audio) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let backend = CheckpointTestBackend(root: root)
+        let pipeline = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        let id = UUID(), date = Date(timeIntervalSince1970: 1700000000)
+        _ = try await pipeline.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: audio.path)
+        _ = try await pipeline.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
+        XCTAssertEqual(backend.counts.0, 2)
+        try await pipeline.discardCheckpoint(meetingID: id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(id.uuidString + ".json").path))
+    }
+}
+
+private final class CheckpointTestBackend: MeetingAnalysisBackend, @unchecked Sendable {
+    private let root: URL
+    private let lock = NSLock()
+    private var transcriptionCalls = 0, speakerCalls = 0, analysisCalls = 0
+    private var failSpeakers: Bool
+    private let failAnalysisCall: Int?
+    let turns = (0..<12).map {
+        AnalysisTurn(id: "t\($0)", text: String(repeating: "a", count: 500), start: Double($0), end: Double($0 + 1), speaker: nil)
+    }
+    init(root: URL, failSpeakers: Bool = false, failAnalysisCall: Int? = nil) {
+        self.root = root; self.failSpeakers = failSpeakers; self.failAnalysisCall = failAnalysisCall
+    }
+    private func synchronized<T>(_ body: () -> T) -> T {
+        lock.lock(); defer { lock.unlock() }; return body()
+    }
+    var counts: (Int, Int, Int) { synchronized { (transcriptionCalls, speakerCalls, analysisCalls) } }
+    func verifiedFolder(_ profile: ModelProfile) async throws -> URL { root }
+    func transcribe(audio: URL, folder: URL) async throws -> [AnalysisTurn] {
+        synchronized { transcriptionCalls += 1 }
+        return turns
+    }
+    func diarize(audio: URL, folder: URL) async throws -> [SpeakerSpan] {
+        let fail = synchronized {
+            speakerCalls += 1
+            let fail = failSpeakers; failSpeakers = false; return fail
+        }
+        if fail { throw CancellationError() }
+        return []
+    }
+    func makeSession(folder: URL) throws -> any MeetingAnalysisSession { CheckpointTestSession(backend: self) }
+    func analyze(_ turns: [AnalysisTurn]) throws -> LocalAnalysisResult {
+        let fail = synchronized { analysisCalls += 1; return analysisCalls == failAnalysisCall }
+        if fail { throw CancellationError() }
+        let first = try XCTUnwrap(turns.first)
+        return LocalAnalysisResult(discussion: [SupportedPoint(text: "Synthetic supported point",
+            evidence: [SourceEvidence(turnID: first.id, quote: first.text)])], decisions: [], tasks: [])
+    }
+}
+
+private struct CheckpointTestSession: MeetingAnalysisSession {
+    let backend: CheckpointTestBackend
+    func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult {
+        try backend.analyze(turns)
+    }
+}

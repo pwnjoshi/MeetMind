@@ -147,7 +147,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
                     if currentY + 30 > maxContentY { startNewPage() }
                     
                     let checkMark = item.isCompleted ? "[X]" : "[  ]"
-                    let line = "\(checkMark)  \(item.title)  (\(item.assigneeName))  [Priority: \(item.priority.displayName)]"
+                    let line = "\(checkMark)  \(item.title)  (\(item.assigneeName))  [Priority: \(item.priorityDisplayName)]"
                     let itemAttrs: [NSAttributedString.Key: Any] = [
                         .font: UIFont.systemFont(ofSize: 11, weight: .regular),
                         .foregroundColor: item.isCompleted ? UIColor.gray : UIColor.black
@@ -242,7 +242,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
             for item in meeting.actionItems {
                 let check = item.isCompleted ? "[x]" : "[ ]"
                 let due = item.formattedDueDate != nil ? " (Due: \(item.formattedDueDate ?? ""))" : ""
-                md += "- \(check) **\(item.title)** - \(item.assigneeName)\(due) [Priority: \(item.priority.displayName)]\n"
+                md += "- \(check) **\(item.title)** - \(item.assigneeName)\(due) [Priority: \(item.priorityDisplayName)]\n"
             }
             md += "\n"
         }
@@ -288,7 +288,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
             text += "ACTION ITEMS:\n"
             for item in meeting.actionItems {
                 let mark = item.isCompleted ? "[X]" : "[ ]"
-                text += "\(mark) \(item.title) (\(item.assigneeName)) [\(item.priority.displayName)]\n"
+                text += "\(mark) \(item.title) (\(item.assigneeName)) [\(item.priorityDisplayName)]\n"
             }
             text += "\n"
         }

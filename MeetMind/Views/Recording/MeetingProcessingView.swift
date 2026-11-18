@@ -147,6 +147,10 @@ struct OfflinePipelineSmokeView: View {
                     context.insert(meeting)
                     try context.save()
                     let vm = ProcessingPipelineViewModel(meeting: meeting, modelContext: context)
+                    vm.onOfflineStageChanged = { stage in
+                        status = "Running: \(stage.rawValue)"
+                        print("MEETMIND_PIPELINE stage \(stage.rawValue)"); fflush(stdout)
+                    }
                     try vm.prepareForProduction(context: context)
                     guard try await vm.missingOfflineModels().isEmpty else {
                         throw OfflineError.unavailable("Download the required models in meeting setup first.")
@@ -177,7 +181,12 @@ struct OfflinePipelineSmokeView: View {
                     print("MEETMIND_PIPELINE cancelled"); fflush(stdout)
                 } catch {
                     status = error.localizedDescription
-                    print("MEETMIND_PIPELINE failed"); fflush(stdout)
+                    if case OfflineError.memoryBudget(let required, let available) = error {
+                        print("MEETMIND_PIPELINE failed memory_required=\(required) memory_available=\(available)")
+                    } else {
+                        print("MEETMIND_PIPELINE failed type=\(String(reflecting: type(of: error)))")
+                    }
+                    fflush(stdout)
                 }
                 try? await MeetingAnalysisPipeline.shared.removeCheckpoint(meetingID: id)
             }

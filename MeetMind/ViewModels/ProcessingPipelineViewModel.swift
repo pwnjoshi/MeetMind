@@ -79,6 +79,7 @@ public final class ProcessingPipelineViewModel {
     public var currentStep: PipelineStep = .initial
     public var errorMessage: String? = nil
     public var onNavigateToDetail: ((UUID) -> Void)? = nil
+    public var onOfflineStageChanged: ((MeetingAnalysisStage) -> Void)?
     public var onProcessingNotificationPosted: (() -> Void)? = nil
     public var isUsingOfflineExtractiveFallback: Bool = false
     public var didCleanUpPartialArtifacts: Bool = false
@@ -290,6 +291,7 @@ public final class ProcessingPipelineViewModel {
     }
 
     private func updateOfflineStage(_ stage: MeetingAnalysisStage) {
+        onOfflineStageChanged?(stage)
         let index: Int
         switch stage {
         case .transcription: index = 1
