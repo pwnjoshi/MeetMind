@@ -666,6 +666,13 @@ public final class MeetingSetupViewModel {
     }
     
     public func importAudioFile(from url: URL) throws -> Meeting {
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         let ext = url.pathExtension.lowercased()
         guard isExtensionSupported(ext) else {
             hasImportError = true
@@ -685,12 +692,6 @@ public final class MeetingSetupViewModel {
             throw AudioImportError.corruptedFile
         }
         
-        let isSecurityScoped = url.startAccessingSecurityScopedResource()
-        defer {
-            if isSecurityScoped {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
         
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
            let fileSize = attrs[.size] as? UInt64, fileSize == 0 {
@@ -734,6 +735,12 @@ public final class MeetingSetupViewModel {
         let targetURL = docs.appendingPathComponent("\(UUID().uuidString).\(ext)")
         try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: url, to: targetURL)
+        do {
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: targetURL.path)
+        } catch {
+            try? FileManager.default.removeItem(at: targetURL)
+            throw error
+        }
         let persistentAudioURL = targetURL
         
         let meetingTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -756,13 +763,25 @@ public final class MeetingSetupViewModel {
         
         if let context = modelContext {
             context.insert(meeting)
-            try? context.save()
+            do { try context.save() }
+            catch {
+                context.delete(meeting)
+                try? FileManager.default.removeItem(at: persistentAudioURL)
+                throw error
+            }
         }
         
         return meeting
     }
     
     public func importAudioFile(at url: URL, title: String? = nil) async throws -> Meeting {
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         if let title = title {
             self.title = title
         }
@@ -792,12 +811,6 @@ public final class MeetingSetupViewModel {
             throw AudioImportError.invalidDuration
         }
         
-        let isSecurityScoped = url.startAccessingSecurityScopedResource()
-        defer {
-            if isSecurityScoped {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
         
         let meeting = try importAudioFile(from: url)
         

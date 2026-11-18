@@ -86,14 +86,19 @@ public actor OfflineModelStore {
         }
     }
 
-    private func hash(_ url: URL) throws -> String {
+    func hash(_ url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hash = SHA256()
-        while let bytes = try handle.read(upToCount: 1_048_576), !bytes.isEmpty {
+        // FileHandle can bridge autoreleased NSData. Bound its lifetime to one
+        // chunk rather than retaining temporary buffers until a multi-GB hash
+        // finishes on the actor's current executor turn.
+        while try autoreleasepool(invoking: {
             try Task.checkCancellation()
+            guard let bytes = try handle.read(upToCount: 1_048_576), !bytes.isEmpty else { return false }
             hash.update(data: bytes)
-        }
+            return true
+        }) { }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 

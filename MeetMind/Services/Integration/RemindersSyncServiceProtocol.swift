@@ -68,12 +68,14 @@ public final class SystemRemindersSyncService: RemindersSyncServiceProtocol, @un
         }
         return try await MainActor.run {
             let calendar: EKCalendar
-            if let existing = store.calendars(for: .reminder).first(where: { $0.title == title && $0.allowsContentModifications }) {
+            if let existing = store.calendars(for: .reminder).first(where: {
+                $0.title == title && $0.allowsContentModifications && $0.source?.sourceType == .local
+            }) {
                 calendar = existing
             } else {
-                guard let source = store.defaultCalendarForNewReminders()?.source else {
+                guard let source = store.sources.first(where: { $0.sourceType == .local }) else {
                     throw NSError(domain: "MeetMind.Reminders", code: 2,
-                                  userInfo: [NSLocalizedDescriptionKey: "Create a list in Apple Reminders first, then try again."])
+                                  userInfo: [NSLocalizedDescriptionKey: "No on-device Reminders account is available. Keep tasks in MeetMind or enable an On My iPhone Reminders account. Cloud lists are excluded to keep meeting content on this iPhone."])
                 }
                 calendar = EKCalendar(for: .reminder, eventStore: store)
                 calendar.title = title
@@ -83,12 +85,13 @@ public final class SystemRemindersSyncService: RemindersSyncServiceProtocol, @un
             var identifiers: [String] = []
             for item in items {
                 let existing = item.reminderIdentifier.flatMap { store.calendarItem(withIdentifier: $0) as? EKReminder }
+                    .flatMap { $0.calendar?.source?.sourceType == .local ? $0 : nil }
                 let reminder = existing ?? EKReminder(eventStore: store)
                 reminder.calendar = calendar
                 reminder.title = item.title
                 reminder.notes = item.taskDescription
                 reminder.isCompleted = item.isCompleted
-                reminder.priority = item.priority == .urgent ? 1 : (item.priority == .high ? 3 : (item.priority == .medium ? 5 : 9))
+                reminder.priority = item.priorityRaw.isEmpty ? 0 : (item.priority == .urgent ? 1 : (item.priority == .high ? 3 : (item.priority == .medium ? 5 : 9)))
                 reminder.dueDateComponents = item.dueDate.map { Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: $0) }
                 try store.save(reminder, commit: true)
                 item.reminderIdentifier = reminder.calendarItemIdentifier

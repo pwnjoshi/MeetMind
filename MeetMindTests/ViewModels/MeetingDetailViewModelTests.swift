@@ -778,3 +778,26 @@ final class MeetingDetailViewModelTests: XCTestCase {
         XCTAssertTrue(sut.canSubmitAIQuery("What was decided?"))
     }
 }
+
+
+extension MeetingDetailViewModelTests {
+    func testRemindersSyncUsesOnlySavedTasksAndKeepsUnreviewedSuggestionsOut() async throws {
+        let reminders = MockRemindersSyncService()
+        let meeting = Meeting(title: "Review boundary", status: .completed)
+        context.insert(meeting)
+        meeting.addActionItem(ActionItem(title: "Confirmed task", meeting: meeting))
+        let fixture = #"""
+        {"sourceSignature":"test","stage":"completed","turns":[{"id":"t1","text":"Please send an estimate.","start":0,"end":2}],"speakers":[],"analyzedChunks":1,"analysis":[{"discussion":[],"decisions":[],"tasks":[{"title":"Send an estimate","category":"Follow-up","evidence":[{"turnID":"t1","quote":"Please send an estimate."}]}]}]}
+        """#
+        meeting.offlineAnalysisData = Data(fixture.utf8)
+        try context.save()
+        XCTAssertEqual(meeting.pendingTaskSuggestions.count, 1)
+        let model = MeetingDetailViewModel(meeting: meeting, modelContext: context, remindersService: reminders)
+        try await model.syncReviewedTasksToReminders()
+        XCTAssertEqual(reminders.dispatchedRemindersCount, 1)
+        XCTAssertEqual(meeting.actionItems.count, 1)
+        XCTAssertNotNil(meeting.actionItems.first?.reminderIdentifier)
+        XCTAssertEqual(meeting.pendingTaskSuggestions.count, 1)
+        XCTAssertFalse(model.isSyncingReminders)
+    }
+}

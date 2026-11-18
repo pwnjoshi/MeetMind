@@ -86,6 +86,12 @@ public struct MeetingDetailView: View {
                 onReassignSpeaker: { showSpeakerReassign = $0 },
                 onToggleAction: { viewModel.toggleActionItemCompletion($0) },
                 onAddAction: { showActionItemModal = true },
+                onSyncReminders: {
+                    Task {
+                        do { try await viewModel.syncReviewedTasksToReminders() }
+                        catch { deletionError = error.localizedDescription }
+                    }
+                },
                 onAddNote: { showNoteSheet = true },
                 onSelectPhoto: { showPhotoModal = $0 }
             )

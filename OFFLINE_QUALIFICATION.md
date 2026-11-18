@@ -34,6 +34,9 @@ The 4B model remains excluded from the normal flow because of device memory pres
 - Ask AI uses Qwen3-1.7B against bounded transcript chunks, with validated source
   quotes and real timestamps. Hard-coded answers/citations have been removed.
   Question accuracy and cross-chunk answer reconciliation remain unqualified.
+- Optional Apple Reminders sync targets on-device local lists only, preserving the
+  no-cloud requirement. If no local account exists, tasks stay in MeetMind and the
+  app explains why sync is unavailable. Unspecified priority is not invented on export.
 - New persistence fields are optional additions; existing records keep legacy data.
   Installation and a real existing-store open still need physical-device validation.
 
@@ -48,6 +51,21 @@ normal processing into a separate in-memory database, confirms one suggested tas
 and reloads it, checks duplicate confirmation, and prints only numeric/status markers.
 It never selects or exports a private meeting. This smoke test does not measure
 Hindi-English meeting accuracy. Actual results must be reviewed on the iPhone.
+
+## Integrated validation in progress
+
+The first integrated source `363c04b` passed 744 app tests, 20 engine tests, and
+onboarding plus three main-tab simulator launches in Actions run `44275309276`.
+Later source adds restart/failure checkpoint tests, explicit task-category behavior,
+grounded question answering, and synthetic end-to-end device checks. See the latest
+CI result for their final counts; the first run does not validate later changes.
+
+Build 6 opened the iPhone's existing production store and remained running. Its
+memory guard rejected both the unsafe 4B estimate and a 1.7B attempt with about
+1.91 GB available versus a 2.03 GB estimated requirement. Build 7 bounds Foundation
+FileHandle temporary buffers with a per-chunk autorelease pool during multi-GB
+model verification. The memory reserve and 3 GB cap are unchanged. Physical-device
+confirmation of this fix and the integrated pipeline is still pending.
 
 ## Running the device lab
 

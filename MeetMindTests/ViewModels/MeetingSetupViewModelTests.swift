@@ -725,3 +725,27 @@ final class MeetingSetupViewModelTests: XCTestCase {
         XCTAssertTrue(meeting.duration > 0)
     }
 }
+
+
+extension MeetingSetupViewModelTests {
+    func testDefaultImportPersistsIndependentAudioAndWaitsForOfflineReviewPipeline() async throws {
+        let source = tempDirectoryURL.appendingPathComponent("private-import.m4a")
+        let bytes = Data("synthetic copy fixture, not a speech-quality sample".utf8)
+        try bytes.write(to: source)
+        let importer = MeetingSetupViewModel(modelContext: context)
+        importer.setSimulatedAudioDuration(20)
+        let meeting = try await importer.importAudioFile(at: source)
+        let savedURL = try XCTUnwrap(meeting.audioFileURL)
+        defer { try? FileManager.default.removeItem(at: savedURL) }
+        try FileManager.default.removeItem(at: source)
+        XCTAssertEqual(try Data(contentsOf: savedURL), bytes)
+        XCTAssertEqual(meeting.status, .processing)
+        XCTAssertTrue(meeting.transcriptSegments.isEmpty)
+        XCTAssertTrue(meeting.actionItems.isEmpty)
+        XCTAssertNil(meeting.summary)
+        let fresh = ModelContext(modelContainer)
+        let stored = try XCTUnwrap(fresh.fetch(FetchDescriptor<Meeting>()).first)
+        XCTAssertEqual(stored.audioFileURL, savedURL)
+        XCTAssertEqual(stored.status, .processing)
+    }
+}

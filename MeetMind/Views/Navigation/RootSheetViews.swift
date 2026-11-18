@@ -82,12 +82,14 @@ public struct RootAskAISheet: View {
         AskAIAssistantSheet(
             history: viewModel.aiChatHistory,
             onAsk: { prompt in
-                Task { _ = try? await viewModel.askAI(prompt: prompt) }
+                viewModel.submitAIQuery(prompt) { _ in }
             },
             onSeekToCitation: { citation in
                 viewModel.seekToCitation(citation)
             },
-            onDismiss: onDismiss
+            onDismiss: { viewModel.cancelQuestion(); onDismiss() },
+            isBusy: viewModel.isAnsweringQuestion
         )
+        .onDisappear { viewModel.cancelQuestion() }
     }
 }

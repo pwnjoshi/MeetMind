@@ -98,6 +98,7 @@ public final class MeetingDetailViewModel {
     private let questionAnswerer: LocalQuestionAnswerer
     private var questionTask: Task<Void, Never>?
     public var isAnsweringQuestion = false
+    public var isSyncingReminders = false
     public var meeting: Meeting?
     public var selectedTab: MeetingDetailTab = .summary
     
@@ -458,6 +459,21 @@ public final class MeetingDetailViewModel {
     }
 
     public func stopPlayback() { playbackService?.pause() }
+
+    public func syncReviewedTasksToReminders() async throws {
+        guard !isSyncingReminders, let meeting else { return }
+        let items = meeting.actionItems.filter { !$0.isCompleted }
+        guard !items.isEmpty else { return }
+        isSyncingReminders = true
+        defer { isSyncingReminders = false }
+        let service = remindersService ?? SystemRemindersSyncService()
+        let ids = try await service.syncActionItems(items, toList: "MeetMind")
+        guard ids.count == items.count else {
+            throw OfflineError.unavailable("Some confirmed tasks could not be synced. Please retry.")
+        }
+        for (item, id) in zip(items, ids) { item.reminderIdentifier = id }
+        try modelContext?.save()
+    }
 
     public func deleteMeeting() throws {
         guard let meeting, let modelContext else { return }

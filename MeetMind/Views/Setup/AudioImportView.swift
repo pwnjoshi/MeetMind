@@ -30,7 +30,7 @@ public struct AudioImportView: View {
                 )
                 
                 if isProcessing {
-                    ProgressView("Transcribing audio...")
+                    ProgressView("Saving audio on this iPhone…")
                         .tint(Theme.Colors.liveBlue)
                         .padding()
                 }
