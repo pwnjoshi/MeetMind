@@ -8,7 +8,6 @@ public struct MeetingProcessingView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
     @Environment(SettingsViewModel.self) private var settings
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var processingError: String?
     @State private var viewModel: ProcessingPipelineViewModel
@@ -62,14 +61,17 @@ public struct MeetingProcessingView: View {
                 if busy {
                     Button("Pause analysis", role: .cancel) { operation?.cancel() }
                 }
-                Button("Back to meeting") { operation?.cancel(); dismiss() }
+                Button("Back to meeting") {
+                    operation?.cancel()
+                    router.homePath = [.meetingDetail(id: meetingId)]
+                }
             }.padding(24)
         }
         .background(Theme.Colors.background)
         .navigationBarBackButtonHidden(true)
         .onAppear {
             viewModel.onNavigateToDetail = { id in
-                router.navigate(to: .meetingDetail(id: id), in: .home)
+                router.homePath = [.meetingDetail(id: id)]
             }
             if operation == nil { start() }
         }

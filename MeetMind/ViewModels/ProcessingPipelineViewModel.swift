@@ -291,6 +291,10 @@ public final class ProcessingPipelineViewModel {
     }
 
     private func updateOfflineStage(_ stage: MeetingAnalysisStage) {
+        if let context = modelContext, let id = meetingId {
+            let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+            if let existing = try? context.fetch(descriptor), existing.isEmpty { return }
+        }
         onOfflineStageChanged?(stage)
         let index: Int
         switch stage {
@@ -299,6 +303,7 @@ public final class ProcessingPipelineViewModel {
         case .analysis: index = 2
         case .completed: index = 3
         }
+        currentStep = stage == .analysis ? .summarization : (stage == .completed ? .actions : .diarization)
         for i in stages.indices { stages[i].state = i < index ? .completed : (i == index ? .inProgress : .pending) }
         currentStageIndex = index
         overallProgress = Double(index) / Double(stages.count)
@@ -364,7 +369,14 @@ public final class ProcessingPipelineViewModel {
             onNavigateToDetail?(meeting.id)
         } catch {
             if committing { modelContext?.rollback() }
-            if error is CancellationError {
+            if let context = modelContext, let id = meetingId {
+                let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+                if let existing = try? context.fetch(descriptor), existing.isEmpty {
+                    pipelineStatus = .cancelled
+                    throw CancellationError()
+                }
+            }
+            if error is CancellationError || Task.isCancelled {
                 pipelineStatus = .cancelled
                 meeting.analysisState = "paused"
                 errorMessage = "Analysis paused. Your recording and completed steps are saved."

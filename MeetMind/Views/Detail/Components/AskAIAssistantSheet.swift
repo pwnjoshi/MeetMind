@@ -55,7 +55,7 @@ public struct AskAIAssistantSheet: View {
         VStack(spacing: Spacing.sm) {
             Image(systemName: "sparkles").font(.system(size: 32)).foregroundStyle(Theme.Colors.aiPurple)
             Text("Ask questions about this meeting").font(Typography.headline)
-            Text("AI synthesizes answers grounded in spoken dialogue.").font(Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+            Text("Answers are generated on this iPhone. Check the quoted transcript evidence for accuracy.").font(Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, minHeight: 200)
     }
@@ -82,7 +82,7 @@ public struct AskAIAssistantSheet: View {
     
     private var inputBar: some View {
         HStack(spacing: Spacing.sm) {
-            TextField("Ask anything...", text: $queryText)
+            TextField("Ask a short question…", text: $queryText)
                 .textFieldStyle(.roundedBorder)
             Button {
                 let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
