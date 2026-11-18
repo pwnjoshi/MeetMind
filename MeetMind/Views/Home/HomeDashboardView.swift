@@ -39,6 +39,14 @@ public struct HomeDashboardView: View {
             }
             .listStyle(.insetGrouped)
             .headerProminence(.increased)
+            .overlay {
+                if viewModel.isEmptyState {
+                    ContentUnavailableView("No Meetings Yet", systemImage: "mic",
+                        description: Text("Tap + to record your first meeting."))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(uiColor: .systemGroupedBackground))
+                }
+            }
 
             // Bottom Action FAB
             Menu {
