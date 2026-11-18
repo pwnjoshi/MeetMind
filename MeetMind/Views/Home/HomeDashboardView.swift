@@ -221,10 +221,21 @@ private struct LocalSeriesTimeline: View {
         NavigationLink {
             MeetingDetailContainerView(meetingId: meeting.id)
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(meeting.title)
-                Text(meeting.figmaFormattedSubtitle).font(.subheadline).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(meeting.title).foregroundStyle(.primary)
+                    Text(meeting.status == .scheduled
+                        ? "\((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))) \u{00B7} Scheduled"
+                        : meeting.figmaBadgeText)
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Text(meeting.status == .scheduled
+                    ? (meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .omitted, time: .shortened)
+                    : meeting.createdAt.formatted(.dateTime.day().month(.abbreviated)))
+                    .foregroundStyle(.secondary)
             }
+            .frame(minHeight: 44)
         }
     }
 }
