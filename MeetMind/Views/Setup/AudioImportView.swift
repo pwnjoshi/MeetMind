@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UniformTypeIdentifiers
 
 /// Audio file import view with drop-zone, fileImporter, status indicator, and transcription trigger
@@ -13,6 +14,8 @@ public struct AudioImportView: View {
     @State private var errorMessage: String? = nil
     @State private var showErrorAlert: Bool = false
     @State private var recordedAt = Date()
+    @Query private var savedMeetings: [Meeting]
+    @State private var selectedSeriesID: UUID?
     
     public init(viewModel: MeetingSetupViewModel = MeetingSetupViewModel(), onImportComplete: ((Meeting) -> Void)? = nil) {
         self.viewModel = viewModel
@@ -45,6 +48,13 @@ public struct AudioImportView: View {
                     DatePicker("Recorded", selection: $recordedAt, in: ...Date(),
                         displayedComponents: [.date, .hourAndMinute])
                         .disabled(isProcessing)
+                    Picker("Series", selection: $selectedSeriesID) {
+                        Text("None").tag(nil as UUID?)
+                        ForEach(seriesOptions, id: \.id) { series in
+                            Text(series.name).tag(Optional(series.id))
+                        }
+                    }
+                    .disabled(isProcessing)
                 }
                 Section {
                     if isProcessing { ProgressView("Saving audio on this iPhone...") }
@@ -87,10 +97,23 @@ public struct AudioImportView: View {
         }
     }
     
+    private var seriesOptions: [(id: UUID, name: String)] {
+        var names: [UUID: String] = [:]
+        for meeting in savedMeetings {
+            if let id = meeting.seriesID, let name = meeting.seriesName, !name.isEmpty {
+                names[id] = name
+            }
+        }
+        return names.map { (id: $0.key, name: $0.value) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     private var processButton: some View {
         Button("Import recording") {
             guard let url = selectedURL else { return }
             viewModel.importedRecordingDate = recordedAt
+            viewModel.importedSeriesID = selectedSeriesID
+            viewModel.importedSeriesName = seriesOptions.first { $0.id == selectedSeriesID }?.name
             isProcessing = true
             Task {
                 do {

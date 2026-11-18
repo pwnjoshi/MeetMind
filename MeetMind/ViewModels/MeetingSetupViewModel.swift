@@ -172,6 +172,8 @@ public final class MeetingSetupViewModel {
     public var startDate: Date = Date().addingTimeInterval(3600)
     /// User-supplied date of imported audio; nil preserves the existing default.
     public var importedRecordingDate: Date?
+    public var importedSeriesID: UUID?
+    public var importedSeriesName: String?
     public var endDate: Date = Date().addingTimeInterval(5400)
     public var agendaText: String = ""
     public var agenda: String {
@@ -761,6 +763,8 @@ public final class MeetingSetupViewModel {
             templateName: selectedTemplate?.name,
             folder: selectedFolder
         )
+        meeting.seriesID = importedSeriesID
+        meeting.seriesName = importedSeriesID == nil ? nil : importedSeriesName
         meeting.tags = selectedTags
         meeting.participants = participants
         
