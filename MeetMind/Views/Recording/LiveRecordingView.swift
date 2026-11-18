@@ -10,6 +10,8 @@ public struct LiveRecordingView: View {
     @Environment(SettingsViewModel.self) private var settings
     @State private var viewModel: LiveRecordingViewModel
     @State private var isPhotoSheetPresented: Bool = false
+    @State private var isFinishConfirmationPresented = false
+    @State private var isFinishing = false
     public let meetingId: UUID
     
     public init(meetingId: UUID, viewModel: LiveRecordingViewModel? = nil) {
@@ -62,6 +64,13 @@ public struct LiveRecordingView: View {
         .padding(.horizontal, Spacing.sm)
         .background(Theme.Colors.background)
         .navigationBarHidden(true)
+        .disabled(isFinishing)
+        .alert("Finish recording?", isPresented: $isFinishConfirmationPresented) {
+            Button("Keep Recording", role: .cancel) { }
+            Button("Finish Recording") { proceedToProcessing() }
+        } message: {
+            Text("Save the recording on this iPhone and prepare the transcript and minutes for review.")
+        }
         .sheet(isPresented: $viewModel.isNoteSheetPresented) {
             LiveNoteTakingSheet(timestamp: viewModel.noteCaptureTimestamp) { viewModel.saveNote(text: $0) }
         }
@@ -102,12 +111,15 @@ public struct LiveRecordingView: View {
         if viewModel.isDurationUnderThreshold(seconds: 3.0) {
             viewModel.requestStop()
         } else {
-            proceedToProcessing()
+            isFinishConfirmationPresented = true
         }
     }
     
     private func proceedToProcessing() {
+        guard !isFinishing else { return }
+        isFinishing = true
         Task {
+            defer { isFinishing = false }
             do {
                 _ = try await viewModel.finishSession()
                 router.navigate(to: .meetingProcessing(id: meetingId), in: .home)
