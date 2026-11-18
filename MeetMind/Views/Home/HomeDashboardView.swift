@@ -90,7 +90,7 @@ public struct HomeDashboardView: View {
         }
         .sheet(isPresented: $isMicrophoneCheckPresented) {
             MicrophoneCheckView {
-                let m = Meeting(title: "New Meeting \(Date().formatted(date: .omitted, time: .shortened))", createdAt: Date(), duration: 0, status: .recording)
+                let m = Meeting(title: "Quick meeting", createdAt: Date(), duration: 0, status: .recording)
                 viewModel.addMeeting(m)
                 router.navigate(to: .liveRecording(id: m.id), in: .home)
             }
