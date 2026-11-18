@@ -69,6 +69,7 @@ public actor OfflineBenchmarkRunner {
             speakers = try await LocalSpeech.diarize(audio: audio, folder: folder)
         } else if profile.id.hasPrefix("qwen") {
             guard !input.isEmpty else { throw OfflineError.unavailable("Transcribe audio or use the synthetic text fixture first.") }
+            turns = input
             let model = try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"))
             var chunks: [[AnalysisTurn]] = [], chunk: [AnalysisTurn] = [], characters = 0
             for turn in input {

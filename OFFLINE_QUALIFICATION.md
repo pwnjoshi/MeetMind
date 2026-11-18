@@ -14,6 +14,9 @@ and a synthetic Hinglish text fixture are available for engine smoke tests.
 Choose a local audio file to test speech/diarization; successful transcription
 becomes the input for subsequent task-analysis benchmarks. Benchmarks never
 create or modify saved meetings, active tasks, or reminders.
+Build 6 also lets you choose an existing MeetMind recording directly, so no audio
+has to leave the app to test the new engines. Selecting different audio clears
+the previous transcript to prevent analysis of stale or synthetic text.
 
 For automated smoke testing from this Windows workspace, after signing/installing
 build 4 through Sideloadly:

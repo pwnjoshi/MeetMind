@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// Main Settings configuration console for MeetMind application
 public struct SettingsView: View {
@@ -31,5 +32,6 @@ public struct SettingsView: View {
     NavigationStack {
         SettingsView()
             .environment(SettingsViewModel())
+            .modelContainer(for: Meeting.self, inMemory: true)
     }
 }

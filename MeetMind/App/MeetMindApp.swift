@@ -42,11 +42,15 @@ struct MeetMindApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if ProcessInfo.processInfo.arguments.contains("--offline-benchmark") {
-                    NavigationStack { OfflineBenchmarkView() }
-                } else if let container {
-                    RootView()
-                        .modelContainer(container)
+                if let container {
+                    Group {
+                        if ProcessInfo.processInfo.arguments.contains("--offline-benchmark") {
+                            NavigationStack { OfflineBenchmarkView() }
+                        } else {
+                            RootView()
+                        }
+                    }
+                    .modelContainer(container)
                 } else {
                     VStack(spacing: 20) {
                         Image(systemName: "externaldrive.badge.exclamationmark")

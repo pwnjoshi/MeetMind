@@ -2,10 +2,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 import OfflineEngineKit
 import Darwin
+import SwiftData
 
 /// Qualification lab only. Results never write to Meeting/ActionItem entities.
 @MainActor
 struct OfflineBenchmarkView: View {
+    @Query(sort: \Meeting.createdAt, order: .reverse) private var savedMeetings: [Meeting]
     @State private var profiles: [ModelProfile] = []
     @State private var installed: Set<String> = []
     @State private var operation: Task<Void, Never>?
@@ -60,6 +62,24 @@ struct OfflineBenchmarkView: View {
                 }
             }
             Section("Local input") {
+                if !savedMeetings.filter({ $0.audioFileURL != nil }).isEmpty {
+                    Menu("Use a saved MeetMind recording") {
+                        ForEach(savedMeetings.filter { $0.audioFileURL != nil }) { meeting in
+                            Button(meeting.title) {
+                                guard let recording = meeting.audioFileURL,
+                                      FileManager.default.fileExists(atPath: recording.path) else {
+                                    status = "This recording file is unavailable."
+                                    return
+                                }
+                                audio = recording
+                                isSyntheticAudio = false
+                                turns = []
+                                output = ""
+                                status = "Saved recording selected. Run a speech benchmark before task analysis."
+                            }
+                        }
+                    }.disabled(busy)
+                }
                 Button("Choose audio file") { importAudio = true }.disabled(busy)
                 Text(isSyntheticAudio ? "Uses a short synthetic English audio clip and synthetic Hinglish text for smoke testing. This does not measure real meeting quality." : "A local recording is selected. Analysis uses its transcript after a speech benchmark.")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -94,6 +114,8 @@ struct OfflineBenchmarkView: View {
                 try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
                 audio = destination
                 isSyntheticAudio = false
+                turns = []
+                output = ""
                 status = "Local recording ready. Run a speech or speaker benchmark."
             } catch { status = error.localizedDescription }
         }
