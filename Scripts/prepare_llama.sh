@@ -15,13 +15,13 @@ fi
 curl --fail --location --retry 3 \
     https://github.com/ggml-org/llama.cpp/releases/download/b12491/llama-b12491-xcframework.zip \
     --output "$WORK/base.zip"
-python3 - "$WORK/base.zip" "$WORK/base" <<'PY'
-import hashlib, pathlib, sys, zipfile
+python3 - "$WORK/base.zip" <<'PY'
+import hashlib, pathlib, sys
 archive = pathlib.Path(sys.argv[1])
 assert hashlib.sha256(archive.read_bytes()).hexdigest() == "fa1be672f30bc5bb5cd887c734324b8d1538a13cf380bb197f78c1c06ba15011", "Native runtime checksum mismatch"
-with zipfile.ZipFile(archive) as package:
-    package.extractall(sys.argv[2])
 PY
+# ditto preserves versioned macOS framework symlinks; zipfile.extractall does not.
+ditto -x -k "$WORK/base.zip" "$WORK/base"
 if [[ ! -d "$WORK/source/.git" ]]; then
     git init "$WORK/source"
     git -C "$WORK/source" remote add origin https://github.com/ggml-org/llama.cpp.git
