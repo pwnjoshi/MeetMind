@@ -19,15 +19,13 @@ public struct SettingsSpeechAndAISection: View {
                 }
             }
             
-            Toggle("On-Device Recognition Only", isOn: $viewModel.isOnDeviceRecognitionOnly)
-                .tint(Theme.Colors.primarySlate)
-                .disabled(viewModel.isOnlineRecognitionDisabled)
+            Label("Speech processing stays on this iPhone", systemImage: "iphone")
             
             if viewModel.mustUseOnDeviceRecognition {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: "wifi.slash")
                         .foregroundStyle(Theme.Colors.warmAmber)
-                    Text("Offline mode: Neural speech engine active")
+                    Text("Cloud speech recognition is disabled")
                         .font(Typography.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }

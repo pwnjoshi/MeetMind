@@ -1,16 +1,6 @@
 import CryptoKit
 import Foundation
 
-private final class ModelDownloadProgress: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    let update: @Sendable (Int64) -> Void
-    init(update: @escaping @Sendable (Int64) -> Void) { self.update = update }
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        update(totalBytesWritten)
-    }
-}
-
 public struct ModelAsset: Codable, Sendable {
     public let path: String
     public let url: URL
@@ -98,11 +88,34 @@ public actor OfflineModelStore {
     }
 
     public func install(_ profile: ModelProfile, progress: @Sendable @escaping (Double) -> Void) async throws {
+        if isInstalled(profile) {
+            do {
+                _ = try verifiedFolder(profile)
+                progress(1)
+                return
+            } catch is CancellationError { throw CancellationError() }
+            catch { /* Replace corrupt installations only after verifying a new copy. */ }
+        }
         let root = try directory(profile)
         let staging = root.appendingPathExtension("download")
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let available = try staging.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage ?? 0
-        guard available > profile.downloadBytes + 500_000_000 else {
+        var pending: Int64 = 0
+        var cached: Set<String> = []
+        for asset in profile.files {
+            guard !asset.path.contains(".."), !asset.path.hasPrefix("/"),
+                  asset.url.scheme == "https", asset.url.host == "huggingface.co" else {
+                throw OfflineError.unavailable("Invalid model manifest path or origin.")
+            }
+            let partial = staging.appendingPathComponent(asset.path).appendingPathExtension("partial")
+            if (try? hash(staging.appendingPathComponent(asset.path))) == asset.sha256 {
+                cached.insert(asset.path)
+                continue
+            }
+            let resumed = (try? FileManager.default.attributesOfItem(atPath: partial.path)[.size] as? NSNumber)?.int64Value ?? 0
+            pending += max(0, asset.bytes - min(asset.bytes, resumed))
+        }
+        guard available > pending + 500_000_000 else {
             throw OfflineError.unavailable("Not enough storage. Free space for the model plus 500 MB of working space.")
         }
         var complete: Int64 = 0
@@ -113,21 +126,16 @@ public actor OfflineModelStore {
                 throw OfflineError.unavailable("Invalid model manifest path or origin.")
             }
             let target = staging.appendingPathComponent(asset.path)
-            if (try? hash(target)) != asset.sha256 {
+            if !cached.contains(asset.path) {
                 try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 let offset = complete, total = max(1, profile.downloadBytes)
-                let delegate = ModelDownloadProgress { written in
+                let download = target.appendingPathExtension("partial")
+                let downloader = ResumableModelDownloader(transport: SessionModelTransport())
+                try await downloader.download(asset, to: download) { written in
                     progress(min(1, Double(offset + written) / Double(total)))
                 }
-                let configuration = URLSessionConfiguration.ephemeral
-                configuration.urlCache = nil
-                configuration.httpCookieStorage = nil
-                let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-                defer { session.invalidateAndCancel() }
-                let (download, response) = try await session.download(from: asset.url)
-                defer { try? FileManager.default.removeItem(at: download) }
-                guard (response as? HTTPURLResponse)?.statusCode == 200,
-                      try hash(download) == asset.sha256 else {
+                guard try hash(download) == asset.sha256 else {
+                    try? FileManager.default.removeItem(at: download)
                     throw OfflineError.unavailable("Model download failed its integrity check. Retry the download.")
                 }
                 if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }

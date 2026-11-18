@@ -138,11 +138,12 @@ public final class SettingsViewModel {
     public var isAudioSettingsLocked: Bool = false
     
     public var speechLanguageLocale: String = "en-US"
-    public var isOnDeviceRecognitionOnly: Bool = true {
-        didSet { userDefaults.set(isOnDeviceRecognitionOnly, forKey: "MeetMind_OnDeviceSpeechOnly") }
+    public var isOnDeviceRecognitionOnly: Bool {
+        get { true }
+        set { userDefaults.set(true, forKey: "MeetMind_OnDeviceSpeechOnly") }
     }
-    public var mustUseOnDeviceRecognition: Bool = false
-    public var isOnlineRecognitionDisabled: Bool = false
+    public var mustUseOnDeviceRecognition: Bool = true
+    public var isOnlineRecognitionDisabled: Bool = true
     
     public var summaryStyle: SummaryStyle = .executive
     public var apiKey: String = ""
@@ -280,7 +281,7 @@ public final class SettingsViewModel {
     }
     
     public func toggleOnDeviceRecognition() {
-        isOnDeviceRecognitionOnly.toggle()
+        isOnDeviceRecognitionOnly = true
     }
     
     public func setSummaryStyle(_ style: SummaryStyle) {
@@ -362,8 +363,8 @@ public final class SettingsViewModel {
     }
     
     public func simulateNetworkStatus(isOnline: Bool) {
-        mustUseOnDeviceRecognition = !isOnline
-        isOnlineRecognitionDisabled = !isOnline
+        mustUseOnDeviceRecognition = true
+        isOnlineRecognitionDisabled = true
     }
     
     // MARK: - Compatibility Properties & Methods for E2E Tests

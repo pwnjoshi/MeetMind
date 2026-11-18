@@ -47,7 +47,6 @@
 		1A00001C2CEE000100000001 /* MockSpeechTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00001C2CEE000100000001 /* MockSpeechTranscriptionService.swift */; };
 		1A00001D2CEE000100000001 /* SummarizationServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00001D2CEE000100000001 /* SummarizationServiceProtocol.swift */; };
 		1A00001E2CEE000100000001 /* NaturalLanguageSummarizationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00001E2CEE000100000001 /* NaturalLanguageSummarizationService.swift */; };
-		1A00001F2CEE000100000001 /* LLMSummarizationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00001F2CEE000100000001 /* LLMSummarizationService.swift */; };
 		1A0000202CEE000100000001 /* MockSummarizationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000202CEE000100000001 /* MockSummarizationService.swift */; };
 		1A0000212CEE000100000001 /* ExportServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000212CEE000100000001 /* ExportServiceProtocol.swift */; };
 		1A0000222CEE000100000001 /* ExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000222CEE000100000001 /* ExportService.swift */; };
@@ -265,7 +264,6 @@
 		1B00001C2CEE000100000001 /* MockSpeechTranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/MockSpeechTranscriptionService.swift"; sourceTree = SOURCE_ROOT; };
 		1B00001D2CEE000100000001 /* SummarizationServiceProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Intelligence/SummarizationServiceProtocol.swift"; sourceTree = SOURCE_ROOT; };
 		1B00001E2CEE000100000001 /* NaturalLanguageSummarizationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Intelligence/NaturalLanguageSummarizationService.swift"; sourceTree = SOURCE_ROOT; };
-		1B00001F2CEE000100000001 /* LLMSummarizationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Intelligence/LLMSummarizationService.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000202CEE000100000001 /* MockSummarizationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Intelligence/MockSummarizationService.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000212CEE000100000001 /* ExportServiceProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/ExportServiceProtocol.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000222CEE000100000001 /* ExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/ExportService.swift"; sourceTree = SOURCE_ROOT; };
@@ -556,7 +554,6 @@
 			children = (
 				1B00001D2CEE000100000001 /* SummarizationServiceProtocol.swift */,
 				1B00001E2CEE000100000001 /* NaturalLanguageSummarizationService.swift */,
-				1B00001F2CEE000100000001 /* LLMSummarizationService.swift */,
 				1B0000202CEE000100000001 /* MockSummarizationService.swift */,
 			);
 			path = Intelligence;
@@ -1004,7 +1001,6 @@
 				1A00001C2CEE000100000001 /* MockSpeechTranscriptionService.swift in Sources */,
 				1A00001D2CEE000100000001 /* SummarizationServiceProtocol.swift in Sources */,
 				1A00001E2CEE000100000001 /* NaturalLanguageSummarizationService.swift in Sources */,
-				1A00001F2CEE000100000001 /* LLMSummarizationService.swift in Sources */,
 				1A0000202CEE000100000001 /* MockSummarizationService.swift in Sources */,
 				1A0000212CEE000100000001 /* ExportServiceProtocol.swift in Sources */,
 				1A0000222CEE000100000001 /* ExportService.swift in Sources */,
@@ -1235,7 +1231,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MeetMind/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1258,7 +1254,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MeetMind/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1281,7 +1277,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0.0;
@@ -1300,7 +1296,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0.0;

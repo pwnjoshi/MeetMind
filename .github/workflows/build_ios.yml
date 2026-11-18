@@ -50,7 +50,7 @@ jobs:
         run: say -o OfflineEngineKit/Sources/OfflineEngineKit/Resources/synthetic-smoke.aiff 'Rahul will send the estimate tomorrow. We have not decided to change the design.'
 
       - name: Test offline engine contracts (no model downloads)
-        run: swift test --package-path OfflineEngineKit --filter AnalysisContractTests
+        run: swift test --package-path OfflineEngineKit
 
       - name: Build MeetMind iOS App
         run: |

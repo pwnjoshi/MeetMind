@@ -318,8 +318,7 @@ public final class LiveRecordingViewModel {
                                                      noiseSuppression: settings?.isNoiseSuppressionEnabled ?? false)
         }
         if transcriptionService == nil {
-            transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"),
-                                                               onDeviceOnly: settings?.isOnDeviceRecognitionOnly ?? true)
+            transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"))
         }
     }
 

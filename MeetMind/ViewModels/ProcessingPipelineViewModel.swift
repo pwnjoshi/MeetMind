@@ -259,8 +259,7 @@ public final class ProcessingPipelineViewModel {
         modelContext = context
         if summarizationService == nil { summarizationService = NaturalLanguageSummarizationService() }
         if transcriptionService == nil {
-            transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"),
-                                                               onDeviceOnly: settings?.isOnDeviceRecognitionOnly ?? true)
+            transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"))
         }
         if meeting == nil, let id = meetingId {
             var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })

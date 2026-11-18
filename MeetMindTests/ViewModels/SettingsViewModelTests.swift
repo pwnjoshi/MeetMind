@@ -143,15 +143,27 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(sut.speechLanguageLocale, "fr-FR")
     }
     
-    /// Tier 1: Feature 15 - Validates on-device speech recognition toggle mutation.
+    /// The local-only policy cannot be disabled through legacy settings APIs.
     func test_tier1_feature15_onDeviceRecognitionToggle() throws {
         XCTAssertTrue(sut.isOnDeviceRecognitionOnly)
         
         sut.toggleOnDeviceRecognition()
-        XCTAssertFalse(sut.isOnDeviceRecognitionOnly)
+        XCTAssertTrue(sut.isOnDeviceRecognitionOnly)
         
         sut.toggleOnDeviceRecognition()
         XCTAssertTrue(sut.isOnDeviceRecognitionOnly)
+    }
+
+    func test_restoredCloudPreferenceCannotEnableRemoteSpeech() {
+        mockUserDefaults.set(false, forKey: "MeetMind_OnDeviceSpeechOnly")
+        let restored = SettingsViewModel(userDefaults: mockUserDefaults, cacheDirectory: tempDirectoryURL)
+        XCTAssertTrue(restored.isOnDeviceRecognitionOnly)
+        XCTAssertTrue(mockUserDefaults.bool(forKey: "MeetMind_OnDeviceSpeechOnly"))
+        restored.isOnDeviceRecognitionOnly = false
+        restored.simulateNetworkStatus(isOnline: true)
+        XCTAssertTrue(restored.isOnDeviceRecognitionOnly)
+        XCTAssertTrue(restored.mustUseOnDeviceRecognition)
+        XCTAssertTrue(restored.isOnlineRecognitionDisabled)
     }
     
     /// Tier 1: Feature 15 - Validates summary style selection between executive and detailed.

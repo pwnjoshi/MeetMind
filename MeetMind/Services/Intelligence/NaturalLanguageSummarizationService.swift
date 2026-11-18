@@ -91,9 +91,6 @@ public final class NaturalLanguageSummarizationService: SummarizationServiceProt
                 keyDecisions.append(sentence)
             }
         }
-        if keyDecisions.isEmpty && !sentences.isEmpty {
-            keyDecisions.append("Key consensus reached during general discussion.")
-        }
         
         // 5. Action Items Rule-based Parsing with word-boundary regex
         var actionItems: [ParsedActionItem] = []

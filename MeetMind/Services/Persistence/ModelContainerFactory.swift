@@ -35,6 +35,17 @@ public final class ModelContainerFactory {
     
     /// Standard production container writing to disk Application Support
     public static func createProductionContainer() throws -> ModelContainer {
+        // Exclude both current and newly created local meeting files from device
+        // backups. Explicit user exports remain separate actions.
+        for location in [FileManager.SearchPathDirectory.documentDirectory, .applicationSupportDirectory] {
+            var directory = FileManager.default.urls(for: location, in: .userDomainMask)[0]
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: directory.path)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try directory.setResourceValues(values)
+        }
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,

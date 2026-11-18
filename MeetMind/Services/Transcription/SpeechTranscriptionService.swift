@@ -4,7 +4,7 @@ import AVFoundation
 
 public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtocol, @unchecked Sendable {
     private let speechRecognizer: SFSpeechRecognizer?
-    private let onDeviceOnly: Bool
+    private let onDeviceOnly = true
     private var activeRecognitionTask: SFSpeechRecognitionTask?
     private var activeRequest: SFSpeechAudioBufferRecognitionRequest?
     private let lock = NSLock()
@@ -17,9 +17,8 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
         speechRecognizer?.supportsOnDeviceRecognition ?? false
     }
     
-    public init(locale: Locale = Locale(identifier: "en-US"), onDeviceOnly: Bool = true) {
+    public init(locale: Locale = Locale(identifier: "en-US")) {
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
-        self.onDeviceOnly = onDeviceOnly
     }
     
     deinit {

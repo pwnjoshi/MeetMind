@@ -163,7 +163,7 @@ final class SummarizationServiceTests: XCTestCase {
         let response = try await nlService.generateSummary(from: transcript)
         
         XCTAssertEqual(response.executiveSummary, transcript)
-        XCTAssertFalse(response.keyDecisions.isEmpty)
+        XCTAssertTrue(response.keyDecisions.isEmpty, "A transcript without a decision must not invent consensus.")
     }
     
     /// Tier 2: Feature 6 - Validates action item priority detection for "urgent".
