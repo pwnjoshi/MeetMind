@@ -151,6 +151,9 @@ final class MeetingSetupViewModelTests: XCTestCase {
         sut.startDate = start
         sut.endDate = end
         sut.agendaText = "Figma token mapping"
+        let seriesID = UUID()
+        sut.scheduledSeriesID = seriesID
+        sut.scheduledSeriesName = "Architecture reviews"
         
         let savedMeeting = try sut.saveScheduledMeeting()
         
@@ -159,6 +162,10 @@ final class MeetingSetupViewModelTests: XCTestCase {
         XCTAssertEqual(savedMeeting.status, .scheduled)
         XCTAssertEqual(savedMeeting.scheduledStartTime, start)
         XCTAssertEqual(fetchMeeting(id: savedMeeting.id)?.title, "Design Architecture Sync")
+        let freshContext = ModelContext(modelContainer)
+        let persisted = try XCTUnwrap(freshContext.fetch(FetchDescriptor<Meeting>()).first { $0.id == savedMeeting.id })
+        XCTAssertEqual(persisted.seriesID, seriesID)
+        XCTAssertEqual(persisted.seriesName, "Architecture reviews")
     }
     
     // MARK: - Tier 1: Feature 24 (Meeting Templates Selector)
