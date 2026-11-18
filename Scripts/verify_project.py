@@ -128,7 +128,6 @@ REQUIRED_FILES = [
     "MeetMind/Services/Transcription/MockSpeechTranscriptionService.swift",
     "MeetMind/Services/Intelligence/SummarizationServiceProtocol.swift",
     "MeetMind/Services/Intelligence/NaturalLanguageSummarizationService.swift",
-    "MeetMind/Services/Intelligence/LLMSummarizationService.swift",
     "MeetMind/Services/Intelligence/MockSummarizationService.swift",
     "MeetMind/Services/Export/ExportServiceProtocol.swift",
     "MeetMind/Services/Export/ExportService.swift",
@@ -324,9 +323,10 @@ class ProjectVerifier:
 
     def verify_swift_code_quality(self):
         swift_files: List[str] = []
-        for root, _, files in os.walk(self.root_dir):
-            if ".git" in root or ".agents" in root or "node_modules" in root:
-                continue
+        for root, directories, files in os.walk(self.root_dir):
+            directories[:] = [name for name in directories if name not in {
+                ".git", ".agents", "node_modules", "build", "DerivedData", ".build", "Artifacts", "Packages"
+            }]
             for f in files:
                 if f.endswith(".swift"):
                     swift_files.append(os.path.join(root, f))

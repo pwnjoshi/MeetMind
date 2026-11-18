@@ -17,13 +17,13 @@ final class OnboardingAndSettingsE2ETests: XCTestCase {
         onboarding.completeOnboarding()
         XCTAssertEqual(profile?.name, "Alex")
     }
-    func testOnDeviceSpeechPreferenceSurvivesRelaunch() throws {
+    func testLocalOnlySpeechPolicySurvivesRelaunch() throws {
         let suite = "MeetMindTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = SettingsViewModel(userDefaults: defaults)
         XCTAssertTrue(settings.isOnDeviceRecognitionOnly)
         settings.isOnDeviceRecognitionOnly = false
-        XCTAssertFalse(SettingsViewModel(userDefaults: defaults).isOnDeviceRecognitionOnly)
+        XCTAssertTrue(SettingsViewModel(userDefaults: defaults).isOnDeviceRecognitionOnly)
     }
 }
