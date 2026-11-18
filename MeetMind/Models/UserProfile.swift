@@ -51,4 +51,21 @@ public struct UserProfile: Codable, Sendable, Equatable {
             isCalendarSyncEnabled: false
         )
     }
+
+    // Old local-only profiles predate `avatarImageData`; decode them without
+    // discarding a user's saved name, role, or voice reference during upgrade.
+    private enum CodingKeys: String, CodingKey {
+        case name, email, role, avatarColorHex, avatarImageData, voiceProfileURL, isCalendarSyncEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decodeIfPresent(String.self, forKey: .name) ?? "MeetMind User"
+        email = try values.decodeIfPresent(String.self, forKey: .email) ?? ""
+        role = try values.decodeIfPresent(String.self, forKey: .role) ?? ""
+        avatarColorHex = try values.decodeIfPresent(String.self, forKey: .avatarColorHex) ?? "#3B82F6"
+        avatarImageData = try values.decodeIfPresent(Data.self, forKey: .avatarImageData)
+        voiceProfileURL = try values.decodeIfPresent(URL.self, forKey: .voiceProfileURL)
+        isCalendarSyncEnabled = try values.decodeIfPresent(Bool.self, forKey: .isCalendarSyncEnabled) ?? false
+    }
 }
