@@ -117,10 +117,14 @@ public struct ScheduleMeetingView: View {
     }
 
     private var draftSignature: String {
-        [viewModel.title, viewModel.agendaText,
+        let fields = [viewModel.title, viewModel.agendaText,
          String(viewModel.startDate.timeIntervalSince1970),
          String(viewModel.endDate.timeIntervalSince1970),
-         viewModel.participants.map { $0.id.uuidString }.sorted().joined(separator: ",")]
-            .joined(separator: "\u{001F}")
+         viewModel.selectedTemplate?.name ?? "",
+         viewModel.scheduledSeriesID?.uuidString ?? "",
+         viewModel.scheduledSeriesName ?? ""]
+        let people = viewModel.participants.sorted { $0.id.uuidString < $1.id.uuidString }
+            .flatMap { [$0.id.uuidString, $0.name, $0.email ?? "", $0.role ?? ""] }
+        return (try? JSONEncoder().encode(fields + people).base64EncodedString()) ?? ""
     }
 }
