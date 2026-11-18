@@ -37,6 +37,12 @@ public struct ActionItemsConsoleView: View {
         .navigationTitle("Actions")
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    viewModel.presentCreateSheet()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("New action")
                 Menu {
                     Section("Group actions") {
                         ForEach(ActionItemGrouping.allCases, id: \.self) { grouping in
@@ -58,14 +64,8 @@ public struct ActionItemsConsoleView: View {
                     }
                     .disabled(viewModel.isSyncingReminders)
                 } label: {
-                    Image(systemName: "arrow.up.arrow.down.circle")
+                    Image(systemName: "arrow.up.arrow.down")
                 }
-                Button {
-                    viewModel.presentCreateSheet()
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("New action")
             }
         }
         .sheet(isPresented: $vm.isShowingActionItemSheet) {
