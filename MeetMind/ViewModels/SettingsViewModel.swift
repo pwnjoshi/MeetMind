@@ -166,7 +166,12 @@ public final class SettingsViewModel {
     public var audioMimeType: String = "audio/m4a"
     public var isAudioSettingsLocked: Bool = false
     
-    public var speechLanguageLocale: String = "en-US"
+    // The app is configured around in-person Hindi-English meetings by
+    // default. This only drives Apple's live *preview* recognizer; the
+    // durable transcript uses `savedRecordingLanguage` below. Keeping both
+    // defaults aligned avoids an English-only preview misleading a user while
+    // the final Hindi-anchored decode is still pending.
+    public var speechLanguageLocale: String = "hi-IN"
     public var savedRecordingLanguage: SavedRecordingLanguage = .hinglish
     public var isOnDeviceRecognitionOnly: Bool {
         get { true }
@@ -311,8 +316,8 @@ public final class SettingsViewModel {
             self.speechLanguageLocale = locale
             userDefaults.set(locale, forKey: "MeetMind_SpeechLocale")
         } else {
-            self.speechLanguageLocale = "en-US"
-            userDefaults.set("en-US", forKey: "MeetMind_SpeechLocale")
+            self.speechLanguageLocale = "hi-IN"
+            userDefaults.set("hi-IN", forKey: "MeetMind_SpeechLocale")
         }
     }
 
@@ -378,7 +383,7 @@ public final class SettingsViewModel {
     public func resetToDefaults() {
         setAudioQuality(.high)
         isNoiseSuppressionEnabled = true
-        setSpeechLanguageLocale("en-US")
+        setSpeechLanguageLocale("hi-IN")
         setThemeMode(.system)
         setAPIKey("")
         setSummaryStyle(.executive)

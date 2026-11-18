@@ -134,7 +134,7 @@ final class SettingsViewModelTests: XCTestCase {
     
     /// Tier 1: Feature 15 - Validates selecting transcription speech language locale.
     func test_tier1_feature15_speechLanguageSelection() throws {
-        XCTAssertEqual(sut.speechLanguageLocale, "en-US")
+        XCTAssertEqual(sut.speechLanguageLocale, "hi-IN")
         
         sut.setSpeechLanguageLocale("es-ES")
         XCTAssertEqual(sut.speechLanguageLocale, "es-ES")
@@ -274,7 +274,7 @@ final class SettingsViewModelTests: XCTestCase {
         
         XCTAssertEqual(sut.audioQuality, .high)
         XCTAssertTrue(sut.isNoiseSuppressionEnabled)
-        XCTAssertEqual(sut.speechLanguageLocale, "en-US")
+        XCTAssertEqual(sut.speechLanguageLocale, "hi-IN")
         XCTAssertEqual(sut.themeMode, .system)
         XCTAssertEqual(sut.apiKey, "")
         XCTAssertEqual(sut.summaryStyle, .executive)
@@ -327,11 +327,12 @@ final class SettingsViewModelTests: XCTestCase {
     
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 15: Locale & API Key)
     
-    /// Tier 2: Feature 15 - Validates unsupported speech locale string falls back to English (US) and persists to UserDefaults.
+    /// Tier 2: Feature 15 - Validates an unsupported speech locale returns to
+    /// the Hindi preview default used by the local Hinglish experience.
     func test_tier2_feature15_unsupportedLocaleFallbackToSystemLocale() throws {
         sut.setSpeechLanguageLocale("xx-YY")
-        XCTAssertEqual(sut.speechLanguageLocale, "en-US")
-        XCTAssertEqual(mockUserDefaults.string(forKey: "MeetMind_SpeechLocale"), "en-US")
+        XCTAssertEqual(sut.speechLanguageLocale, "hi-IN")
+        XCTAssertEqual(mockUserDefaults.string(forKey: "MeetMind_SpeechLocale"), "hi-IN")
     }
     
     /// Tier 2: Feature 15 - Validates submitting empty or whitespace-only API key clears key.
