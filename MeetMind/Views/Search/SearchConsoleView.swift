@@ -14,10 +14,12 @@ public struct SearchConsoleView: View {
     
     public var body: some View {
         VStack(spacing: Spacing.sm) {
-            SearchScopeFilterBar(
-                selectedScope: viewModel.selectedScope,
-                onSelectScope: { viewModel.selectedScope = $0; viewModel.performSearch(query: viewModel.searchQuery) }
-            )
+            if viewModel.hasQuery {
+                SearchScopeFilterBar(
+                    selectedScope: viewModel.selectedScope,
+                    onSelectScope: { viewModel.setScope($0) }
+                )
+            }
             
             if !viewModel.hasQuery && !viewModel.recentSearches.isEmpty {
                 RecentSearchesView(
@@ -40,8 +42,15 @@ public struct SearchConsoleView: View {
         .background(Theme.Colors.background)
         .navigationTitle("Search")
         .searchable(text: $viewModel.searchQuery, prompt: "Meetings, transcripts, actions")
-        .onAppear { viewModel.indexMeetings(allMeetings) }
-        .onChange(of: allMeetings) { _, newMeetings in viewModel.indexMeetings(newMeetings) }
+        .onAppear {
+            viewModel.setModelContext(modelContext)
+            viewModel.indexMeetings(allMeetings)
+            viewModel.performSearch(query: viewModel.searchQuery)
+        }
+        .onChange(of: allMeetings) { _, newMeetings in
+            viewModel.indexMeetings(newMeetings)
+            viewModel.performSearch(query: viewModel.searchQuery)
+        }
         .onChange(of: viewModel.searchQuery) { _, newQuery in viewModel.performSearch(query: newQuery) }
     }
     
