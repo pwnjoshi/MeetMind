@@ -8,6 +8,7 @@ import SwiftData
 @MainActor
 struct OfflineBenchmarkView: View {
     @Query(sort: \Meeting.createdAt, order: .reverse) private var savedMeetings: [Meeting]
+    @Environment(\.scenePhase) private var scenePhase
     @State private var profiles: [ModelProfile] = []
     @State private var installed: Set<String> = []
     @State private var operation: Task<Void, Never>?
@@ -19,6 +20,7 @@ struct OfflineBenchmarkView: View {
     @State private var importAudio = false
     @State private var turns = OfflineBenchmarkRunner.syntheticTurns
     @State private var output = ""
+    @State private var lastResult: BenchmarkResult?
     private let runner = OfflineBenchmarkRunner()
 
     var body: some View {
@@ -75,6 +77,7 @@ struct OfflineBenchmarkView: View {
                                 isSyntheticAudio = false
                                 turns = []
                                 output = ""
+                                lastResult = nil
                                 status = "Saved recording selected. Run a speech benchmark before task analysis."
                             }
                         }
@@ -85,6 +88,8 @@ struct OfflineBenchmarkView: View {
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Use synthetic text fixture") {
                     turns = OfflineBenchmarkRunner.syntheticTurns
+                    output = ""
+                    lastResult = nil
                     status = "Synthetic text selected. This cannot establish real meeting accuracy."
                 }.disabled(busy)
             }
@@ -94,10 +99,8 @@ struct OfflineBenchmarkView: View {
                         .navigationTitle("Licenses")
                 }
             }
-            if !output.isEmpty {
-                Section("Result — requires human review") {
-                    Text(output).font(.footnote).textSelection(.enabled)
-                }
+            if let lastResult {
+                OfflineBenchmarkResultsView(result: lastResult, rawJSON: output)
             }
         }
         .navigationTitle("Offline Benchmarks")
@@ -116,6 +119,7 @@ struct OfflineBenchmarkView: View {
                 isSyntheticAudio = false
                 turns = []
                 output = ""
+                lastResult = nil
                 status = "Local recording ready. Run a speech or speaker benchmark."
             } catch { status = error.localizedDescription }
         }
@@ -134,6 +138,9 @@ struct OfflineBenchmarkView: View {
             } catch { status = error.localizedDescription }
         }
         .onDisappear { operation?.cancel() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active && busy { operation?.cancel() }
+        }
     }
 
     private func refresh() async {
@@ -146,7 +153,7 @@ struct OfflineBenchmarkView: View {
 
     private func begin(_ work: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }
-        busy = true; progress = 0; output = ""
+        busy = true; progress = 0; output = ""; lastResult = nil
         UIApplication.shared.isIdleTimerDisabled = true
         operation = Task { @MainActor in
             defer { busy = false; UIApplication.shared.isIdleTimerDisabled = false }
@@ -190,9 +197,100 @@ struct OfflineBenchmarkView: View {
         if !result.turns.isEmpty { turns = result.turns }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         output = String(decoding: try encoder.encode(result), as: UTF8.self)
+        lastResult = result
         progress = 1
         status = "Finished in \(Int(result.elapsedSeconds)) seconds. This is a benchmark, not a quality qualification."
         print("MEETMIND_BENCHMARK completed \(profile.id) seconds=\(result.elapsedSeconds) sampledPeakBytes=\(result.sampledPeakFootprintBytes) thermal=\(result.thermalState)")
         fflush(stdout)
+    }
+}
+
+/// All review content is rendered on the phone, never sent through USB telemetry.
+private struct OfflineBenchmarkResultsView: View {
+    let result: BenchmarkResult
+    let rawJSON: String
+
+    var body: some View {
+        Group {
+            Section("Benchmark result") {
+                Text("\(Int(result.elapsedSeconds)) seconds · \(ByteCountFormatter.string(fromByteCount: Int64(clamping: result.sampledPeakFootprintBytes), countStyle: .memory)) sampled peak")
+                    .font(.footnote)
+                Text("Review accuracy below. These results do not create active tasks.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            if !result.turns.isEmpty {
+                Section("Transcript") {
+                    ForEach(result.turns) { turn in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("\(time(turn.start)) · \(turn.speaker ?? "Speaker not identified")")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(turn.text).textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+            if !result.speakers.isEmpty {
+                Section("Speaker timeline") {
+                    ForEach(Array(result.speakers.enumerated()), id: \.offset) { _, span in
+                        Text("\(span.speaker): \(time(span.start))–\(time(span.end))")
+                    }
+                }
+            }
+            let discussion = result.analysis.flatMap(\.discussion)
+            if !discussion.isEmpty {
+                Section("Discussion") {
+                    ForEach(Array(discussion.enumerated()), id: \.offset) { _, point in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(point.text)
+                            evidence(point.evidence)
+                        }
+                    }
+                }
+            }
+            let decisions = result.analysis.flatMap(\.decisions)
+            if !result.analysis.isEmpty {
+                Section("Decisions") {
+                    if decisions.isEmpty { Text("No decisions extracted.").foregroundStyle(.secondary) }
+                    ForEach(Array(decisions.enumerated()), id: \.offset) { _, point in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(point.text)
+                            evidence(point.evidence)
+                        }
+                    }
+                }
+                let tasks = result.analysis.flatMap(\.tasks)
+                Section("Suggested tasks — review required") {
+                    if tasks.isEmpty { Text("No tasks extracted.").foregroundStyle(.secondary) }
+                    ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(task.title).font(.headline)
+                            Text("\(task.category) · \(task.owner ?? "Unassigned")")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            if let deadline = task.deadlineText { Text("Deadline wording: \(deadline)").font(.footnote) }
+                            if let priority = task.priority { Text("Priority: \(priority)").font(.footnote) }
+                            evidence(task.evidence)
+                        }
+                    }
+                }
+            }
+            Section {
+                DisclosureGroup("Technical benchmark data") {
+                    Text(rawJSON).font(.caption).textSelection(.enabled)
+                }
+            }
+        }
+    }
+
+    private func evidence(_ items: [SourceEvidence]) -> some View {
+        DisclosureGroup("Source evidence") {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                Text("\(item.turnID): \(item.quote)").font(.footnote).textSelection(.enabled)
+            }
+        }.font(.footnote)
+    }
+
+    private func time(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0, seconds <= 86_400 else { return "—" }
+        return String(format: "%02d:%02d", Int(seconds) / 60, Int(seconds) % 60)
     }
 }

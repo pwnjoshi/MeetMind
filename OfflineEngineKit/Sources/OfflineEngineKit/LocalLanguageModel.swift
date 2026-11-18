@@ -9,6 +9,7 @@ final class LocalLanguageModel {
     private let vocab: OpaquePointer
 
     init(url: URL) throws {
+        try Task.checkCancellation()
         guard let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber else {
             throw OfflineError.unavailable("Unable to determine the model's memory requirements.")
         }
@@ -22,12 +23,18 @@ final class LocalLanguageModel {
         llama_backend_init()
         llama_log_set({ _, _, _ in }, nil)
         var parameters = llama_model_default_params()
+        parameters.progress_callback = { _, _ in !Task.isCancelled }
         parameters.n_gpu_layers = 99
         #if targetEnvironment(simulator)
         parameters.n_gpu_layers = 0
         #endif
         guard let model = llama_model_load_from_file(url.path, parameters) else {
+            try Task.checkCancellation()
             throw OfflineError.unavailable("Unable to load the local language model.")
+        }
+        if Task.isCancelled {
+            llama_model_free(model)
+            throw CancellationError()
         }
         var options = llama_context_default_params()
         options.n_ctx = 4096
