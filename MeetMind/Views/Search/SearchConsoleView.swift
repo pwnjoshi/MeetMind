@@ -28,7 +28,10 @@ public struct SearchConsoleView: View {
                 .padding(.top, Spacing.xs)
             }
             
-            if viewModel.hasQuery && viewModel.searchResults.isEmpty {
+            if !viewModel.hasQuery && viewModel.recentSearches.isEmpty {
+                ContentUnavailableView("Search your meetings", systemImage: "magnifyingglass",
+                    description: Text("Find meeting titles, transcript passages, notes, and actions saved on this iPhone."))
+            } else if viewModel.hasQuery && viewModel.searchResults.isEmpty {
                 emptyResultsView
             } else {
                 resultsList

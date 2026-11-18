@@ -60,7 +60,7 @@ public final class SearchViewModel {
     public var searchQuery: String = ""
     public var selectedScope: SearchScope = .all
     public var searchResults: [SearchResultItem] = []
-    public var recentSearches: [String] = ["Budget", "Architecture", "Sprint Review"]
+    public var recentSearches: [String] = []
     public var isSearching: Bool = false
     public var isDebouncing: Bool = false
     
