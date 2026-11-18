@@ -734,6 +734,8 @@ extension MeetingSetupViewModelTests {
         try bytes.write(to: source)
         let importer = MeetingSetupViewModel(modelContext: context)
         importer.setSimulatedAudioDuration(20)
+        let recordedAt = Date(timeIntervalSince1970: 1700000000)
+        importer.importedRecordingDate = recordedAt
         let meeting = try await importer.importAudioFile(at: source)
         let savedURL = try XCTUnwrap(meeting.audioFileURL)
         defer { try? FileManager.default.removeItem(at: savedURL) }
@@ -747,5 +749,7 @@ extension MeetingSetupViewModelTests {
         let stored = try XCTUnwrap(fresh.fetch(FetchDescriptor<Meeting>()).first)
         XCTAssertEqual(stored.audioFileURL, savedURL)
         XCTAssertEqual(stored.status, .processing)
+        XCTAssertEqual(stored.createdAt, recordedAt)
+        XCTAssertEqual(stored.scheduledStartTime, recordedAt)
     }
 }
