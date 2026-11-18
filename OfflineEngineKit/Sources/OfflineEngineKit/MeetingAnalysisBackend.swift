@@ -12,7 +12,7 @@ extension LocalLanguageModel: MeetingAnalysisSession {}
 
 protocol MeetingAnalysisBackend: Sendable {
     func verifiedFolder(_ profile: ModelProfile) async throws -> URL
-    func transcribe(audio: URL, folder: URL) async throws -> [AnalysisTurn]
+    func transcribe(audio: URL, folder: URL, languageCode: String?) async throws -> [AnalysisTurn]
     func diarize(audio: URL, folder: URL) async throws -> [SpeakerSpan]
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession
 }
@@ -21,8 +21,8 @@ struct LocalMeetingAnalysisBackend: MeetingAnalysisBackend {
     func verifiedFolder(_ profile: ModelProfile) async throws -> URL {
         try await OfflineModelStore.shared.verifiedFolder(profile)
     }
-    func transcribe(audio: URL, folder: URL) async throws -> [AnalysisTurn] {
-        try await LocalSpeech.transcribe(audio: audio, folder: folder)
+    func transcribe(audio: URL, folder: URL, languageCode: String?) async throws -> [AnalysisTurn] {
+        try await LocalSpeech.transcribe(audio: audio, folder: folder, languageCode: languageCode)
     }
     func diarize(audio: URL, folder: URL) async throws -> [SpeakerSpan] {
         try await LocalSpeech.diarize(audio: audio, folder: folder)

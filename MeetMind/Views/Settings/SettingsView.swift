@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 import OfflineEngineKit
+import PhotosUI
+import UIKit
 
 /// Main Settings configuration console for MeetMind application
 public struct SettingsView: View {
@@ -15,6 +17,18 @@ public struct SettingsView: View {
     
     public var body: some View {
         Form {
+            Section {
+                NavigationLink { ProfileEditorView(viewModel: viewModel) } label: {
+                    HStack(spacing: 12) {
+                        SettingsProfileAvatar(profile: viewModel.userProfile ?? .defaultProfile, size: 52)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(viewModel.userProfile?.name ?? "MeetMind User").foregroundStyle(.primary)
+                            Text(viewModel.userProfile?.email.isEmpty == false ? viewModel.userProfile!.email : "Local profile")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
             SettingsAudioQualitySection(viewModel: viewModel)
             SettingsSpeechAndAISection(viewModel: viewModel)
             Section("On-device intelligence") {
@@ -29,6 +43,89 @@ public struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .background(Theme.Colors.background)
+    }
+}
+
+/// Local-only profile editing: the image is retained in the app's preferences
+/// and never enables an account or cloud sync.
+private struct ProfileEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var viewModel: SettingsViewModel
+    @State private var name = ""
+    @State private var role = ""
+    @State private var email = ""
+    @State private var avatarData: Data?
+    @State private var selectedPhoto: PhotosPickerItem?
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Spacer()
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        SettingsProfileAvatar(profile: draftProfile, size: 112)
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "camera.fill").font(.caption.bold()).foregroundStyle(.white)
+                                    .frame(width: 32, height: 32).background(Color.accentColor, in: Circle())
+                            }
+                    }
+                    .accessibilityLabel("Choose profile photo")
+                    Spacer()
+                }
+                Text("Stored only on this iPhone").font(.footnote).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+            }
+            Section("Profile") {
+                TextField("Name", text: $name).textContentType(.name)
+                TextField("Role", text: $role)
+                TextField("Email (optional)", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress)
+            }
+        }
+        .navigationTitle("Profile")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { save(); dismiss() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .task { load() }
+        .onChange(of: selectedPhoto) { _, item in
+            Task { avatarData = try? await item?.loadTransferable(type: Data.self) }
+        }
+    }
+
+    private var draftProfile: UserProfile {
+        var profile = viewModel.userProfile ?? .defaultProfile
+        profile.name = name.isEmpty ? profile.name : name
+        profile.avatarImageData = avatarData ?? profile.avatarImageData
+        return profile
+    }
+    private func load() {
+        let profile = viewModel.userProfile ?? .defaultProfile
+        name = profile.name; role = profile.role; email = profile.email; avatarData = profile.avatarImageData
+    }
+    private func save() {
+        var profile = viewModel.userProfile ?? .defaultProfile
+        profile.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        profile.role = role.trimmingCharacters(in: .whitespacesAndNewlines)
+        profile.email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        profile.avatarImageData = avatarData
+        viewModel.saveUserProfile(profile)
+    }
+}
+
+private struct SettingsProfileAvatar: View {
+    let profile: UserProfile
+    let size: CGFloat
+    var body: some View {
+        Group {
+            if let data = profile.avatarImageData, let image = UIImage(data: data) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                Text(profile.initials).font(.system(size: size * 0.34, weight: .semibold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.accentColor)
+            }
+        }
+        .frame(width: size, height: size).clipShape(Circle())
     }
 }
 

@@ -115,7 +115,7 @@ private final class CheckpointTestBackend: MeetingAnalysisBackend, @unchecked Se
     var contextTokens: UInt32? { synchronized { latestContextTokens } }
     var counts: (Int, Int, Int) { synchronized { (transcriptionCalls, speakerCalls, analysisCalls) } }
     func verifiedFolder(_ profile: ModelProfile) async throws -> URL { root }
-    func transcribe(audio: URL, folder: URL) async throws -> [AnalysisTurn] {
+    func transcribe(audio: URL, folder: URL, languageCode: String?) async throws -> [AnalysisTurn] {
         synchronized { transcriptionCalls += 1 }
         return turns
     }

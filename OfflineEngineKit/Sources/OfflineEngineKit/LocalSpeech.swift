@@ -74,14 +74,17 @@ public struct SpeakerSpan: Codable, Sendable {
 }
 
 enum LocalSpeech {
-    static func transcribe(audio: URL, folder: URL) async throws -> [AnalysisTurn] {
+    /// Hindi-English conversations are commonly misidentified as Urdu by automatic
+    /// detection. Supplying the meeting language keeps decoding in the intended
+    /// multilingual vocabulary; `nil` retains automatic detection for other use cases.
+    static func transcribe(audio: URL, folder: URL, languageCode: String? = nil) async throws -> [AnalysisTurn] {
         let engine = try await LocalOnlyWhisper(WhisperKitConfig(modelFolder: folder.path,
             verbose: false, logLevel: .none, prewarm: true, load: true, download: false))
         do {
             let results = try await engine.transcribe(audioPath: audio.path,
                 audioInputOptions: AudioInputOptions(audioLoadingMode: .incremental(chunkDurationSeconds: 30, maxBufferedChunks: 1)),
-                decodeOptions: DecodingOptions(task: .transcribe, language: nil, usePrefillPrompt: false,
-                    detectLanguage: true, skipSpecialTokens: true, wordTimestamps: true, concurrentWorkerCount: 1),
+                decodeOptions: DecodingOptions(task: .transcribe, language: languageCode, usePrefillPrompt: false,
+                    detectLanguage: languageCode == nil, skipSpecialTokens: true, wordTimestamps: true, concurrentWorkerCount: 1),
                 callback: { _ in !Task.isCancelled })
             var turns: [AnalysisTurn] = []
             for segment in results.flatMap(\.segments) {
@@ -115,8 +118,11 @@ enum LocalSpeech {
             fbankModel: load("FBank"), embeddingModel: load("Embedding"), pldaRhoModel: load("PldaRho"),
             pldaPsi: floats.map(Double.init), compilationDuration: 0)
         var config = OfflineDiarizerConfig()
-        config.segmentation.batchSize = 4
-        config.embedding.batchSize = 4
+        // The former batch size of four underutilized the Neural Engine on modern
+        // iPhones and made speaker processing the dominant post-recording delay.
+        // Eight keeps the peak bounded while materially increasing Core ML throughput.
+        config.segmentation.batchSize = 8
+        config.embedding.batchSize = 8
         let manager = OfflineDiarizerManager(config: config)
         manager.initialize(models: models)
         let result = try await manager.process(audio)

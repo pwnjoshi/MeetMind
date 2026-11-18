@@ -39,6 +39,23 @@ final class MeetingAnalysisPipelineTests: XCTestCase {
         XCTAssertNil(result[1].speaker)
     }
 
+    func testDominantVoiceCollapsesBriefFalsePositiveLabels() {
+        let spans = [
+            SpeakerSpan(speaker: "S0", start: 0, end: 22),
+            SpeakerSpan(speaker: "S1", start: 22, end: 23),
+            SpeakerSpan(speaker: "S0", start: 23, end: 30)
+        ]
+        XCTAssertEqual(Set(MeetingAnalysisPipeline.stabilizeSpeakerSpans(spans).map(\.speaker)), ["S0"])
+    }
+
+    func testStableMultipleSpeakersAreNotCollapsed() {
+        let spans = [
+            SpeakerSpan(speaker: "S0", start: 0, end: 12),
+            SpeakerSpan(speaker: "S1", start: 12, end: 24)
+        ]
+        XCTAssertEqual(Set(MeetingAnalysisPipeline.stabilizeSpeakerSpans(spans).map(\.speaker)), ["S0", "S1"])
+    }
+
     func testLongHinglishTurnIsPreservedAndBounded() {
         let text = String(repeating: "कल estimate भेज देना। ", count: 250)
         let chunks = MeetingAnalysisPipeline.analysisChunks([

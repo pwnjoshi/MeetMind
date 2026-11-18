@@ -94,6 +94,35 @@ public struct LanguageOption: Identifiable, Sendable, Equatable {
     }
 }
 
+/// The language passed to the saved-recording engine. This is deliberately
+/// separate from Apple's optional live-preview locale: a live preview may be
+/// English while the durable transcript needs Hindi-English decoding.
+public enum SavedRecordingLanguage: String, CaseIterable, Sendable, Identifiable {
+    case hinglish
+    case hindi
+    case english
+    case automatic
+
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .hinglish: return "Hindi + English (recommended)"
+        case .hindi: return "Hindi"
+        case .english: return "English"
+        case .automatic: return "Automatic detection"
+        }
+    }
+    /// Whisper permits one language token per decode. Hindi is the more robust
+    /// anchor for Hinglish and still recognizes English terms in a multilingual model.
+    public var whisperCode: String? {
+        switch self {
+        case .hinglish, .hindi: return "hi"
+        case .english: return "en"
+        case .automatic: return nil
+        }
+    }
+}
+
 /// ViewModel managing user preferences, audio capture settings, themes, AI options, and storage purge
 @Observable
 @MainActor
@@ -138,6 +167,7 @@ public final class SettingsViewModel {
     public var isAudioSettingsLocked: Bool = false
     
     public var speechLanguageLocale: String = "en-US"
+    public var savedRecordingLanguage: SavedRecordingLanguage = .hinglish
     public var isOnDeviceRecognitionOnly: Bool {
         get { true }
         set { userDefaults.set(true, forKey: "MeetMind_OnDeviceSpeechOnly") }
@@ -199,6 +229,7 @@ public final class SettingsViewModel {
             .appendingPathComponent("MeetMindAudioCache")
             
         loadSavedPreferences()
+        loadUserProfile()
         recalculateStorageUsage()
     }
     
@@ -231,6 +262,10 @@ public final class SettingsViewModel {
             if availableLanguages.contains(where: { $0.code == savedLocale }) {
                 self.speechLanguageLocale = savedLocale
             }
+        }
+        if let savedLanguage = userDefaults.string(forKey: "MeetMind_SavedRecordingLanguage"),
+           let language = SavedRecordingLanguage(rawValue: savedLanguage) {
+            savedRecordingLanguage = language
         }
         
         if let savedKey = userDefaults.string(forKey: "MeetMind_APIKey") {
@@ -279,6 +314,11 @@ public final class SettingsViewModel {
             self.speechLanguageLocale = "en-US"
             userDefaults.set("en-US", forKey: "MeetMind_SpeechLocale")
         }
+    }
+
+    public func setSavedRecordingLanguage(_ language: SavedRecordingLanguage) {
+        savedRecordingLanguage = language
+        userDefaults.set(language.rawValue, forKey: "MeetMind_SavedRecordingLanguage")
     }
     
     public func toggleOnDeviceRecognition() {
@@ -420,8 +460,27 @@ public final class SettingsViewModel {
         get { _userProfile }
         set { _userProfile = newValue }
     }
+
+    private func loadUserProfile() {
+        guard let data = userDefaults.data(forKey: "MeetMind_UserProfile"),
+              let profile = try? JSONDecoder().decode(UserProfile.self, from: data) else {
+            _userProfile = .defaultProfile
+            return
+        }
+        _userProfile = profile
+    }
+
+    public func saveUserProfile(_ profile: UserProfile) {
+        _userProfile = profile
+        if let data = try? JSONEncoder().encode(profile) {
+            userDefaults.set(data, forKey: "MeetMind_UserProfile")
+        }
+    }
     
-    public func updateUserProfile(name: String, role: String, email: String, voiceURL: URL?) {
-        self.userProfile = UserProfile(name: name, email: email, role: role, voiceProfileURL: voiceURL)
+    public func updateUserProfile(name: String, role: String, email: String, voiceURL: URL?, avatarImageData: Data? = nil) {
+        let current = userProfile ?? .defaultProfile
+        saveUserProfile(UserProfile(name: name, email: email, role: role,
+            avatarColorHex: current.avatarColorHex, avatarImageData: avatarImageData ?? current.avatarImageData,
+            voiceProfileURL: voiceURL))
     }
 }

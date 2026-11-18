@@ -1,11 +1,13 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// Main Meetings home screen matching Figma node 1408:3209
 public struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
     @Environment(NavigationRouter.self) private var router
+    @Environment(SettingsViewModel.self) private var settings
     @Query private var savedMeetings: [Meeting]
     @State public var viewModel: HomeViewModel
     
@@ -75,9 +77,7 @@ public struct HomeDashboardView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: { isShowingSettings = true }) {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 28))
-                        .frame(width: 44, height: 44)
+                    profileAvatar
                 }
                 .accessibilityLabel("Profile and settings")
             }
@@ -97,6 +97,17 @@ public struct HomeDashboardView: View {
         }
         .onAppear { viewModel.setModelContext(modelContext); viewModel.fetchMeetings() }
         .onChange(of: savedMeetingRevision) { _, _ in viewModel.fetchMeetings() }
+    }
+
+    @ViewBuilder
+    private var profileAvatar: some View {
+        if let data = settings.userProfile?.avatarImageData, let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFill().frame(width: 36, height: 36).clipShape(Circle())
+        } else {
+            Text(settings.userProfile?.initials ?? "MM")
+                .font(.caption.bold()).foregroundStyle(.white)
+                .frame(width: 36, height: 36).background(Color.accentColor, in: Circle())
+        }
     }
 
     // Sheet-based creation does not always trigger the underlying view's onAppear.

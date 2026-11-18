@@ -114,6 +114,7 @@ public final class ProcessingPipelineViewModel {
     private var summarizationService: SummarizationServiceProtocol?
     private var transcriptionService: SpeechTranscriptionServiceProtocol?
     private var dataStore: Any?
+    private var settings: SettingsViewModel?
     private var usesOfflinePipeline = false
     private let offlinePipeline = MeetingAnalysisPipeline.shared
     
@@ -265,6 +266,7 @@ public final class ProcessingPipelineViewModel {
     
     public func prepareForProduction(context: ModelContext, settings: SettingsViewModel? = nil) throws {
         modelContext = context
+        self.settings = settings
         usesOfflinePipeline = true
         if meeting == nil, let id = meetingId {
             var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
@@ -320,7 +322,8 @@ public final class ProcessingPipelineViewModel {
         do {
             let result = try await offlinePipeline.run(meetingID: meeting.id, audio: audio,
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
-                timezone: meeting.analysisTimezone ?? TimeZone.current.identifier) { [weak self] stage in
+                timezone: meeting.analysisTimezone ?? TimeZone.current.identifier,
+                languageCode: settings?.savedRecordingLanguage.whisperCode ?? SavedRecordingLanguage.hinglish.whisperCode) { [weak self] stage in
                     await self?.updateOfflineStage(stage)
                 }
             try Task.checkCancellation()
@@ -392,6 +395,7 @@ public final class ProcessingPipelineViewModel {
             throw error
         }
     }
+
 
     private func uniqueTexts(_ texts: [String]) -> [String] {
         var seen = Set<String>()

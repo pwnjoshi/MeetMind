@@ -95,7 +95,7 @@ public actor MeetingAnalysisPipeline {
         }
     }
 
-    public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String,
+    public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String? = nil,
                     progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
         guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Pause it before starting this one.") }
         running = true
@@ -112,7 +112,7 @@ public actor MeetingAnalysisPipeline {
         var folders: [URL] = []
         for profile in profiles { folders.append(try await backend.verifiedFolder(profile)) }
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v3|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
+        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         let checkpointURL = try self.checkpointURL(meetingID)
         var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature, stage: .transcription,
             turns: [], speakers: [], analysis: [], analyzedChunks: 0)
@@ -127,7 +127,7 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .transcription {
             try checkConditions()
             await progress(.transcription)
-            checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: folders[0]))
+            checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: folders[0], languageCode: languageCode))
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
             try save()
@@ -135,7 +135,7 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .speakers {
             try checkConditions()
             await progress(.speakers)
-            checkpoint.speakers = try await backend.diarize(audio: audio, folder: folders[1])
+            checkpoint.speakers = Self.stabilizeSpeakerSpans(try await backend.diarize(audio: audio, folder: folders[1]))
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)
             checkpoint.stage = .analysis
             try save()
@@ -238,6 +238,35 @@ public actor MeetingAnalysisPipeline {
                 && (ranked.dropFirst().first?.value ?? 0) < duration * 0.2 ? winner?.key : nil
             return AnalysisTurn(id: turn.id, text: turn.text, start: turn.start, end: turn.end, speaker: label)
         }
+    }
+
+    /// Keep a transient clustering glitch from presenting one person as several
+    /// named speakers. We only smooth extremely short label flips and collapse a
+    /// clearly dominant voice; ambiguous multi-person recordings remain reviewable.
+    static func stabilizeSpeakerSpans(_ spans: [SpeakerSpan]) -> [SpeakerSpan] {
+        let ordered = spans.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
+        guard !ordered.isEmpty else { return [] }
+        var stabilized = ordered
+        if stabilized.count >= 3 {
+            for index in 1..<(stabilized.count - 1) {
+                let previous = stabilized[index - 1]
+                let current = stabilized[index]
+                let next = stabilized[index + 1]
+                if current.end - current.start < 1.5, previous.speaker == next.speaker,
+                   previous.end <= current.start + 0.5, current.end <= next.start + 0.5 {
+                    stabilized[index] = SpeakerSpan(speaker: previous.speaker, start: current.start, end: current.end)
+                }
+            }
+        }
+        let totals = stabilized.reduce(into: [String: Double]()) { result, span in
+            result[span.speaker, default: 0] += span.end - span.start
+        }
+        let totalSpeech = totals.values.reduce(0, +)
+        guard totalSpeech > 0, let dominant = totals.max(by: { $0.value < $1.value }) else { return stabilized }
+        // A label covering at least 88% of speech is safer to render as one voice
+        // than to expose short false-positive labels from overlap/noise.
+        guard dominant.value / totalSpeech >= 0.88 else { return stabilized }
+        return stabilized.map { SpeakerSpan(speaker: dominant.key, start: $0.start, end: $0.end) }
     }
 
     /// Bounded Unicode-safe fragments keep even a long uninterrupted speaker

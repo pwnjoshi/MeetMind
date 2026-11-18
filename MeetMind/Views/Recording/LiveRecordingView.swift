@@ -47,8 +47,10 @@ public struct LiveRecordingView: View {
             }
             Text(viewModel.meetingTitle).font(.largeTitle.bold())
                 .frame(maxWidth: .infinity, alignment: .leading)
-            ScrollView {
-                VStack(spacing: 20) {
+            // The recording console is a fixed, glanceable surface. Only the
+            // transcript itself scrolls; the timer and capture controls never
+            // drift away from the user's thumb while recording.
+            VStack(spacing: 20) {
                     Label(viewModel.isPaused ? "Paused" : "Recording",
                           systemImage: viewModel.isPaused ? "pause.fill" : "record.circle.fill")
                         .font(.subheadline.weight(.medium))
@@ -103,10 +105,9 @@ public struct LiveRecordingView: View {
                                 .background(Color.orange.opacity(0.16), in: Capsule())
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                    }
-                    .padding(20)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
                 }
+                .padding(20)
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
             }
             HStack(spacing: 36) {
                 Button { viewModel.addBookmark() } label: { Image(systemName: "flag").frame(width: 44, height: 44) }

@@ -6,6 +6,8 @@ public struct UserProfile: Codable, Sendable, Equatable {
     public var email: String
     public var role: String
     public var avatarColorHex: String
+    /// Locally selected avatar data. It never leaves the device or joins a meeting export.
+    public var avatarImageData: Data?
     public var voiceProfileURL: URL?
     public var isCalendarSyncEnabled: Bool
     
@@ -14,6 +16,7 @@ public struct UserProfile: Codable, Sendable, Equatable {
         email: String = "",
         role: String = "",
         avatarColorHex: String = "#3B82F6",
+        avatarImageData: Data? = nil,
         voiceProfileURL: URL? = nil,
         isCalendarSyncEnabled: Bool = false
     ) {
@@ -21,6 +24,7 @@ public struct UserProfile: Codable, Sendable, Equatable {
         self.email = email
         self.role = role
         self.avatarColorHex = avatarColorHex
+        self.avatarImageData = avatarImageData
         self.voiceProfileURL = voiceProfileURL
         self.isCalendarSyncEnabled = isCalendarSyncEnabled
     }
