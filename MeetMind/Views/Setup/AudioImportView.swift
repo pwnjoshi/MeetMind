@@ -52,10 +52,15 @@ public struct AudioImportView: View {
                 allowedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav],
                 allowsMultipleSelection: false
             ) { res in
-                if case .success(let urls) = res, let first = urls.first {
-                    selectedURL = first
+                switch res {
+                case .success(let urls):
+                    selectedURL = urls.first
+                case .failure(let error):
+                    errorMessage = error.localizedDescription
+                    showErrorAlert = true
                 }
             }
+            .interactiveDismissDisabled(isProcessing)
             .alert("Import Failed", isPresented: $showErrorAlert) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -65,7 +70,7 @@ public struct AudioImportView: View {
     }
     
     private var processButton: some View {
-        Button("Start Processing") {
+        Button("Import recording") {
             guard let url = selectedURL else { return }
             isProcessing = true
             Task {
@@ -83,7 +88,6 @@ public struct AudioImportView: View {
         }
         .disabled(selectedURL == nil || isProcessing)
         .buttonStyle(.borderedProminent)
-        .tint(Theme.Colors.primarySlate)
         .frame(maxWidth: .infinity)
         .frame(height: 50)
     }
