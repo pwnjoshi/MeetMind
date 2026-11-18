@@ -23,7 +23,8 @@ public struct LiveRecordingView: View {
     public var body: some View {
         VStack(spacing: Spacing.sm) {
             LiveRecordingHeaderView(
-                title: $viewModel.meetingTitle,
+                title: Binding(get: { viewModel.meetingTitle },
+                    set: { viewModel.updateMeetingTitle($0) }),
                 isOfflineFallback: viewModel.hasOfflineIndicatorPill,
                 isPaused: viewModel.isPaused,
                 onDismiss: { handleStop() }
