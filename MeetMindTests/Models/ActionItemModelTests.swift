@@ -432,3 +432,65 @@ final class ActionItemModelTests: XCTestCase {
         XCTAssertEqual(try context.fetch(FetchDescriptor<ActionItem>()).count, 0)
     }
 }
+
+
+extension ActionItemModelTests {
+    private func makeOfflineMeeting() throws -> Meeting {
+        let meeting = Meeting(title: "Offline review", status: .completed)
+        context.insert(meeting)
+        let fixture = #"""
+        {"sourceSignature":"test","stage":"completed","turns":[{"id":"t1","text":"Rahul will send the estimate tomorrow.","start":12,"end":16,"speaker":"Speaker 1"}],"speakers":[],"analyzedChunks":1,"analysis":[{"discussion":[],"decisions":[],"tasks":[{"title":"Send the estimate","category":"Follow-up","owner":"Rahul","deadlineText":"tomorrow","priority":null,"evidence":[{"turnID":"t1","quote":"Rahul will send the estimate tomorrow."}]}]}]}
+        """#
+        meeting.offlineAnalysisData = Data(fixture.utf8)
+        try context.save()
+        return meeting
+    }
+
+    func testOfflineSuggestionsDoNotBecomeTasksBeforeReview() throws {
+        let meeting = try makeOfflineMeeting()
+        XCTAssertEqual(meeting.pendingTaskSuggestions.count, 1)
+        XCTAssertTrue(meeting.actionItems.isEmpty)
+    }
+
+    func testConfirmedTaskPersistsEditedFieldsAndEvidenceExactlyOnce() throws {
+        let meeting = try makeOfflineMeeting()
+        let suggestion = try XCTUnwrap(meeting.pendingTaskSuggestions.first)
+        let due = Date(timeIntervalSince1970: 1800000000)
+        for _ in 0..<2 {
+            try meeting.reviewTask(suggestion, title: "Send revised estimate", owner: "Anika", category: "Review/Approve",
+                priority: "", dueDate: due, accept: true, context: context)
+        }
+        XCTAssertEqual(meeting.actionItems.count, 1)
+        let item = try XCTUnwrap(meeting.actionItems.first)
+        XCTAssertEqual(item.title, "Send revised estimate")
+        XCTAssertEqual(item.assignee?.name, "Anika")
+        XCTAssertEqual(item.category, "Review/Approve")
+        XCTAssertEqual(item.priorityRaw, "")
+        XCTAssertEqual(item.dueDate, due)
+        XCTAssertTrue(item.sourceEvidence?.contains("[00:12]") == true)
+        XCTAssertTrue(meeting.pendingTaskSuggestions.isEmpty)
+        let fresh = ModelContext(modelContainer)
+        let saved = try XCTUnwrap(fresh.fetch(FetchDescriptor<Meeting>()).first)
+        XCTAssertTrue(saved.pendingTaskSuggestions.isEmpty)
+        XCTAssertEqual(saved.actionItems.first?.sourceSuggestionID, suggestion.id)
+    }
+
+    func testDiscardPersistsWithoutCreatingTaskOrOwner() throws {
+        let meeting = try makeOfflineMeeting()
+        let suggestion = try XCTUnwrap(meeting.pendingTaskSuggestions.first)
+        try meeting.reviewTask(suggestion, title: "", owner: "Rahul", category: "Other",
+            priority: "", dueDate: nil, accept: false, context: context)
+        XCTAssertTrue(meeting.pendingTaskSuggestions.isEmpty)
+        XCTAssertTrue(meeting.actionItems.isEmpty)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<Speaker>()).isEmpty)
+    }
+
+    func testEmptyConfirmedTitleDoesNotMarkSuggestionReviewed() throws {
+        let meeting = try makeOfflineMeeting()
+        let suggestion = try XCTUnwrap(meeting.pendingTaskSuggestions.first)
+        XCTAssertThrowsError(try meeting.reviewTask(suggestion, title: "  ", owner: "", category: "Other",
+            priority: "", dueDate: nil, accept: true, context: context))
+        XCTAssertEqual(meeting.pendingTaskSuggestions.count, 1)
+        XCTAssertTrue(meeting.actionItems.isEmpty)
+    }
+}

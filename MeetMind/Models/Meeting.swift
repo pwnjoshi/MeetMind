@@ -1,5 +1,7 @@
 import Foundation
 import SwiftData
+import OfflineEngineKit
+import CryptoKit
 
 // MARK: - Meeting Status
 public enum MeetingStatus: String, Codable, CaseIterable, Sendable {
@@ -54,6 +56,92 @@ public enum MeetingStatus: String, Codable, CaseIterable, Sendable {
             return true
         default:
             return self == next
+        }
+    }
+}
+
+public struct MeetingTaskSuggestion: Identifiable {
+    public let id: String
+    public let task: SuggestedTask
+}
+
+extension Meeting {
+    public var offlineAnalysis: MeetingAnalysisCheckpoint? {
+        guard let data = offlineAnalysisData else { return nil }
+        return try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data)
+    }
+
+    public var reviewedTaskIDs: Set<String> {
+        get {
+            guard let data = reviewedTaskIDsData else { return [] }
+            return (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
+        }
+        set { reviewedTaskIDsData = try? JSONEncoder().encode(newValue) }
+    }
+
+    public var pendingTaskSuggestions: [MeetingTaskSuggestion] {
+        guard let result = offlineAnalysis else { return [] }
+        var seen = reviewedTaskIDs
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return result.analysis.flatMap(\.tasks).compactMap { task in
+            guard let data = try? encoder.encode(task) else { return nil }
+            let id = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            guard seen.insert(id).inserted,
+                  !actionItems.contains(where: { $0.sourceSuggestionID == id }) else { return nil }
+            return MeetingTaskSuggestion(id: id, task: task)
+        }
+    }
+
+    @MainActor
+    public func reviewTask(_ suggestion: MeetingTaskSuggestion, title: String, owner: String,
+                           category: String, priority: String, dueDate: Date?,
+                           accept: Bool, context: ModelContext) throws {
+        guard pendingTaskSuggestions.contains(where: { $0.id == suggestion.id }) else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accept || !trimmed.isEmpty else { throw MeetingError.emptyTitle }
+        let previousIDs = reviewedTaskIDsData
+        var inserted: ActionItem?
+        var newSpeaker: Speaker?
+        if accept {
+            let name = owner.trimmingCharacters(in: .whitespacesAndNewlines)
+            let speaker: Speaker?
+            if name.isEmpty { speaker = nil }
+            else if let existing = participants.first(where: { $0.name == name }) { speaker = existing }
+            else {
+                let created = Speaker(name: name)
+                context.insert(created)
+                newSpeaker = created
+                speaker = created
+            }
+            let evidence = suggestion.task.evidence.map { source in
+                let turn = offlineAnalysis?.turns.first { $0.id == source.turnID }
+                let seconds = Int(turn?.start ?? 0)
+                return String(format: "[%02d:%02d] ", seconds / 60, seconds % 60) + source.quote
+            }.joined(separator: "\n")
+            let item = ActionItem(title: trimmed, taskDescription: evidence,
+                priority: ActionPriority(rawValue: priority) ?? .medium, dueDate: dueDate,
+                assignee: speaker, meeting: self)
+            item.priorityRaw = priority
+            item.category = category
+            item.sourceEvidence = evidence
+            item.sourceSuggestionID = suggestion.id
+            context.insert(item)
+            addActionItem(item)
+            inserted = item
+        }
+        var reviewed = reviewedTaskIDs
+        reviewed.insert(suggestion.id)
+        reviewedTaskIDs = reviewed
+        do { try context.save() }
+        catch {
+            reviewedTaskIDsData = previousIDs
+            if let inserted {
+                actionItems.removeAll { $0.id == inserted.id }
+                context.delete(inserted)
+            }
+            if let newSpeaker { context.delete(newSpeaker) }
+            throw error
         }
     }
 }
@@ -131,6 +219,11 @@ public final class Meeting: Identifiable {
     public var audioQualityRaw: String
     public var isFavorite: Bool
     public var templateName: String?
+    /// Additive optional storage preserves existing installations during migration.
+    public var offlineAnalysisData: Data?
+    public var reviewedTaskIDsData: Data?
+    public var analysisState: String?
+    public var analysisTimezone: String?
     
     // Relationships
     @Relationship(deleteRule: .nullify, inverse: \Folder.meetings)

@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import Observation
 import AVFoundation
+import OfflineEngineKit
 
 /// Status of the post-recording processing pipeline
 public enum PipelineStatus: String, Codable, Sendable {
@@ -112,6 +113,8 @@ public final class ProcessingPipelineViewModel {
     private var summarizationService: SummarizationServiceProtocol?
     private var transcriptionService: SpeechTranscriptionServiceProtocol?
     private var dataStore: Any?
+    private var usesOfflinePipeline = false
+    private let offlinePipeline = MeetingAnalysisPipeline.shared
     
     public init(
         meeting: Meeting? = nil,
@@ -153,6 +156,10 @@ public final class ProcessingPipelineViewModel {
     }
     
     public func startPipeline() async throws {
+        if usesOfflinePipeline {
+            try await runOfflinePipeline()
+            return
+        }
         preparePipeline()
         if pipelineStatus == .failed { return }
         
@@ -257,10 +264,7 @@ public final class ProcessingPipelineViewModel {
     
     public func prepareForProduction(context: ModelContext, settings: SettingsViewModel? = nil) throws {
         modelContext = context
-        if summarizationService == nil { summarizationService = NaturalLanguageSummarizationService() }
-        if transcriptionService == nil {
-            transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"))
-        }
+        usesOfflinePipeline = true
         if meeting == nil, let id = meetingId {
             var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
             descriptor.fetchLimit = 1
@@ -276,7 +280,96 @@ public final class ProcessingPipelineViewModel {
         }
         meeting.duration = Double(audio.length) / audio.fileFormat.sampleRate
         meeting.status = .processing
+        meeting.analysisState = "ready"
+        if meeting.analysisTimezone == nil { meeting.analysisTimezone = TimeZone.current.identifier }
         try context.save()
+    }
+
+    public func missingOfflineModels() async throws -> [ModelProfile] {
+        try await offlinePipeline.missingModels()
+    }
+
+    private func updateOfflineStage(_ stage: MeetingAnalysisStage) {
+        let index: Int
+        switch stage {
+        case .transcription: index = 1
+        case .speakers: index = 1
+        case .analysis: index = 2
+        case .completed: index = 3
+        }
+        for i in stages.indices { stages[i].state = i < index ? .completed : (i == index ? .inProgress : .pending) }
+        currentStageIndex = index
+        overallProgress = Double(index) / Double(stages.count)
+        meeting?.analysisState = stage.rawValue
+        try? modelContext?.save()
+    }
+
+    private func runOfflinePipeline() async throws {
+        guard let meeting, let audio = meeting.audioFileURL else { throw MeetingError.meetingNotFound }
+        preparePipeline()
+        errorMessage = nil
+        do {
+            let result = try await offlinePipeline.run(meetingID: meeting.id, audio: audio,
+                meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
+                timezone: meeting.analysisTimezone ?? TimeZone.current.identifier) { [weak self] stage in
+                    await self?.updateOfflineStage(stage)
+                }
+            try Task.checkCancellation()
+            let data = try JSONEncoder().encode(result)
+            let previousSegments = meeting.transcriptSegments
+            meeting.transcriptSegments.removeAll()
+            for segment in previousSegments { modelContext?.delete(segment) }
+            var speakers: [String: Speaker] = [:]
+            for turn in result.turns {
+                var speaker: Speaker?
+                if let label = turn.speaker {
+                    if let existing = speakers[label] { speaker = existing }
+                    else {
+                        let created = Speaker(name: label)
+                        modelContext?.insert(created)
+                        meeting.addParticipant(created)
+                        speakers[label] = created
+                        speaker = created
+                    }
+                }
+                meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
+                    endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting))
+            }
+            let points = uniqueTexts(result.analysis.flatMap { $0.discussion.map(\.text) })
+            let decisions = uniqueTexts(result.analysis.flatMap { $0.decisions.map(\.text) })
+            if let old = meeting.summary { modelContext?.delete(old) }
+            meeting.summary = Summary(executiveSummary: points.joined(separator: "\n"),
+                keyPoints: points, keyDecisions: decisions, meeting: meeting)
+            meeting.offlineAnalysisData = data
+            // Accepted tasks are never deleted or silently regenerated.
+            meeting.status = .completed
+            meeting.analysisState = "completed"
+            try modelContext?.save()
+            for i in stages.indices { stages[i].state = .completed }
+            overallProgress = 1
+            pipelineStatus = .completed
+            currentStep = .completed
+            onNavigateToDetail?(meeting.id)
+        } catch {
+            if error is CancellationError {
+                pipelineStatus = .cancelled
+                meeting.analysisState = "paused"
+                errorMessage = "Analysis paused. Your recording and completed steps are saved."
+            } else {
+                pipelineStatus = .failed
+                stages[currentStageIndex].state = .failed
+                stages[currentStageIndex].errorMessage = error.localizedDescription
+                meeting.analysisState = "failed"
+                errorMessage = error.localizedDescription
+            }
+            try? modelContext?.save()
+            throw error
+        }
+    }
+
+    private func uniqueTexts(_ texts: [String]) -> [String] {
+        var seen = Set<String>()
+        return texts.filter { seen.insert($0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()).inserted }
     }
 
     public func executePipeline(for targetMeeting: Meeting) async throws {

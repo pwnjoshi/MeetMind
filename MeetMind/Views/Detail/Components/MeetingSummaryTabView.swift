@@ -42,7 +42,7 @@ public struct MeetingSummaryTabView: View {
                 Button(action: onRegenerate) {
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: "arrow.triangle.2.circlepath")
-                        Text("Regenerate AI Summary")
+                        Text("Reanalyze saved recording")
                     }
                     .font(Typography.subheadline)
                     .foregroundStyle(Theme.Colors.aiPurple)

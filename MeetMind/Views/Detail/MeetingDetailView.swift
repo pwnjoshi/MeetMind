@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import OfflineEngineKit
 
 /// Master meeting cockpit displaying segmented tabs, audio synchronization, and action extraction
 public struct MeetingDetailView: View {
@@ -19,6 +20,7 @@ public struct MeetingDetailView: View {
     @State private var showDeleteConfirmation = false
     @State private var deletionError: String?
     @State private var showNoteSheet = false
+    @State private var showTaskReview = false
     
     public init(viewModel: MeetingDetailViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -36,6 +38,10 @@ public struct MeetingDetailView: View {
                 onDelete: { showDeleteConfirmation = true }
             )
             MeetingDetailTabBarView(selectedTab: viewModel.selectedTab) { viewModel.selectTab($0) }
+            if let meeting = viewModel.meeting, !meeting.pendingTaskSuggestions.isEmpty {
+                Button("Review \(meeting.pendingTaskSuggestions.count) suggested tasks") { showTaskReview = true }
+                    .buttonStyle(.borderedProminent).padding(.vertical, 8)
+            }
             if let meeting = viewModel.meeting, meeting.status == .scheduled || meeting.status == .processing || meeting.status == .recording {
                 Button(meeting.status == .scheduled ? "Start recording" : "Process saved audio") {
                     if meeting.status == .scheduled {
@@ -60,7 +66,16 @@ public struct MeetingDetailView: View {
                 actionItems: viewModel.actionItems,
                 notes: viewModel.notes,
                 onCopySummary: { UIPasteboard.general.string = viewModel.generateCopyableSummaryText() },
-                onRegenerateSummary: { Task { _ = try? await viewModel.regenerateSummary() } },
+                onRegenerateSummary: {
+                    if let meeting = viewModel.meeting {
+                        Task {
+                            do {
+                                try await MeetingAnalysisPipeline.shared.removeCheckpoint(meetingID: meeting.id)
+                                router.navigate(to: .meetingProcessing(id: meeting.id), in: .home)
+                            } catch { deletionError = error.localizedDescription }
+                        }
+                    }
+                },
                 onSeekTranscript: { viewModel.tapToSeek(segment: $0) },
                 onEditTranscript: { viewModel.beginEditingTranscript(segment: $0) },
                 onReassignSpeaker: { showSpeakerReassign = $0 },
@@ -86,6 +101,9 @@ public struct MeetingDetailView: View {
             }
         }
         .background(Theme.Colors.background.ignoresSafeArea())
+        .sheet(isPresented: $showTaskReview) {
+            if let meeting = viewModel.meeting { MeetingTaskReviewView(meeting: meeting) }
+        }
         .modifier(MeetingDetailSheetsModifier(
             viewModel: viewModel,
             showExportSheet: $showExportSheet,
@@ -136,7 +154,7 @@ public struct MeetingDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { Text("This deletes the meeting, transcript, notes, and action items.") }
-        .alert("Unable to delete", isPresented: Binding(get: { deletionError != nil }, set: { if !$0 { deletionError = nil } })) {
+        .alert("Unable to complete action", isPresented: Binding(get: { deletionError != nil }, set: { if !$0 { deletionError = nil } })) {
             Button("OK") { deletionError = nil }
         } message: { Text(deletionError ?? "") }
     }
@@ -149,5 +167,104 @@ public struct MeetingDetailView: View {
         } else {
             viewModel.setPlaybackRate(1.0)
         }
+    }
+}
+
+private struct MeetingTaskReviewView: View {
+    let meeting: Meeting
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("These are AI suggestions. Confirm the task, owner, category, and deadline against the quoted transcript before adding it. Speaker labels do not establish a person's identity.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                ForEach(meeting.pendingTaskSuggestions) { suggestion in
+                    NavigationLink {
+                        SuggestedTaskEditor(meeting: meeting, suggestion: suggestion)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(suggestion.task.title)
+                            Text(suggestion.task.category).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if meeting.pendingTaskSuggestions.isEmpty { Text("All suggestions reviewed.") }
+            }
+            .navigationTitle("Review tasks")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+private struct SuggestedTaskEditor: View {
+    let meeting: Meeting
+    let suggestion: MeetingTaskSuggestion
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var owner: String
+    @State private var category: String
+    @State private var priority: String
+    @State private var hasDueDate = false
+    @State private var dueDate = Date()
+    @State private var errorMessage: String?
+
+    init(meeting: Meeting, suggestion: MeetingTaskSuggestion) {
+        self.meeting = meeting
+        self.suggestion = suggestion
+        _title = State(initialValue: suggestion.task.title)
+        _owner = State(initialValue: suggestion.task.owner ?? "")
+        _category = State(initialValue: suggestion.task.category)
+        _priority = State(initialValue: suggestion.task.priority ?? "")
+    }
+
+    var body: some View {
+        Form {
+            Section("Task") {
+                TextField("Title", text: $title, axis: .vertical)
+                TextField("Owner (optional)", text: $owner)
+                Picker("Category", selection: $category) {
+                    ForEach(["Follow-up", "Research", "Create/Update", "Review/Approve", "Coordination", "Other"], id: \.self) {
+                        Text($0).tag($0)
+                    }
+                }
+                Picker("Priority", selection: $priority) {
+                    Text("Unspecified").tag("")
+                    ForEach(ActionPriority.allCases, id: \.self) { Text($0.displayName).tag($0.rawValue) }
+                }
+                if let deadline = suggestion.task.deadlineText { Text("Spoken deadline: \(deadline)") }
+                Toggle("Set confirmed due date", isOn: $hasDueDate)
+                if hasDueDate { DatePicker("Due date", selection: $dueDate, displayedComponents: .date) }
+            }
+            Section("Transcript evidence") {
+                ForEach(Array(suggestion.task.evidence.enumerated()), id: \.offset) { _, source in
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let turn = meeting.offlineAnalysis?.turns.first(where: { $0.id == source.turnID }) {
+                            Text("\(Int(turn.start) / 60):\(String(format: "%02d", Int(turn.start) % 60)) · \(turn.speaker ?? "Unassigned speaker")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Text(source.quote).textSelection(.enabled)
+                    }
+                }
+            }
+            Section {
+                Button("Confirm and add task") { save(accept: true) }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Discard suggestion", role: .destructive) { save(accept: false) }
+            }
+            if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
+        }
+        .navigationTitle("Confirm task")
+    }
+
+    private func save(accept: Bool) {
+        do {
+            try meeting.reviewTask(suggestion, title: title, owner: owner, category: category,
+                priority: priority, dueDate: hasDueDate ? dueDate : nil, accept: accept, context: context)
+            dismiss()
+        } catch { errorMessage = error.localizedDescription }
     }
 }
