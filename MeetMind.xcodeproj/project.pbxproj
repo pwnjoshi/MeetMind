@@ -208,6 +208,8 @@
 		1A0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift */; };
 		1A0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift */; };
 		260B8F0C0D404602B56F39FD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8336B9012144485AB6650445 /* Assets.xcassets */; };
+		A80000000000000000000001 /* OfflineEngineKit in Frameworks */ = {isa = PBXBuildFile; productRef = A80000000000000000000002 /* OfflineEngineKit */; };
+		A80000000000000000000003 /* OfflineBenchmarkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000004; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -425,6 +427,7 @@
 		1B0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsStorageAndCacheSection.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsThemeAndAppearanceSection.swift"; sourceTree = SOURCE_ROOT; };
 		8336B9012144485AB6650445 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A80000000000000000000004 /* OfflineBenchmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/OfflineBenchmarkView.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -432,6 +435,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A80000000000000000000001 /* OfflineEngineKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -448,6 +452,7 @@
 		1D0000022CEE000100000001 /* MainGroup */ = {
 			isa = PBXGroup;
 			children = (
+				A80000000000000000000004 /* OfflineBenchmarkView.swift */,
 				1D0000032CEE000100000001 /* MeetMind */,
 				1D0000042CEE000100000001 /* MeetMindTests */,
 				1D0000052CEE000100000001 /* Products */,
@@ -862,6 +867,7 @@
 			dependencies = (
 			);
 			name = MeetMind;
+			packageProductDependencies = (A80000000000000000000002 /* OfflineEngineKit */,);
 			productName = MeetMind;
 			productReference = 1F0000012CEE000100000001 /* MeetMind.app */;
 			productType = "com.apple.product-type.application";
@@ -913,6 +919,7 @@
 			);
 			mainGroup = 1D0000022CEE000100000001 /* MainGroup */;
 			productRefGroup = 1D0000052CEE000100000001 /* Products */;
+			packageReferences = (A80000000000000000000005 /* OfflineEngineKit */,);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -945,6 +952,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A80000000000000000000003 /* OfflineBenchmarkView.swift in Sources */,
 				1AE0002CEE000100000001 /* HomeRecentSectionView.swift in Sources */,
 				1AE0012CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */,
 				1AE0022CEE000100000001 /* MeetingsHomeRowView.swift in Sources */,
@@ -1166,6 +1174,13 @@
 		};
 /* End PBXTargetDependency section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		A80000000000000000000005 /* OfflineEngineKit */ = {isa = XCLocalSwiftPackageReference; relativePath = OfflineEngineKit; };
+/* End XCLocalSwiftPackageReference section */
+/* Begin XCSwiftPackageProductDependency section */
+		A80000000000000000000002 /* OfflineEngineKit */ = {isa = XCSwiftPackageProductDependency; productName = OfflineEngineKit; };
+/* End XCSwiftPackageProductDependency section */
+
 /* Begin XCBuildConfiguration section */
 		1D0000F12CEE000100000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -1220,7 +1235,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MeetMind/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1243,7 +1258,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MeetMind/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1266,7 +1281,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0.0;
@@ -1285,7 +1300,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0.0;

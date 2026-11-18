@@ -36,7 +36,9 @@ struct MeetMindApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if let container {
+                if ProcessInfo.processInfo.arguments.contains("--offline-benchmark") {
+                    NavigationStack { OfflineBenchmarkView() }
+                } else if let container {
                     RootView()
                         .modelContainer(container)
                 } else {

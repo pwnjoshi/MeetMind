@@ -1,0 +1,12 @@
+root ::= "{" ws "\"discussion\":" ws points "," ws "\"decisions\":" ws points "," ws "\"tasks\":" ws tasks "}" ws
+points ::= "[" ws (point ("," ws point)*)? "]" ws
+point ::= "{" ws "\"text\":" ws string "," ws "\"evidence\":" ws evidence "}" ws
+tasks ::= "[" ws (task ("," ws task)*)? "]" ws
+task ::= "{" ws "\"title\":" ws string "," ws "\"category\":" ws category "," ws "\"owner\":" ws nullable "," ws "\"deadlineText\":" ws nullable "," ws "\"priority\":" ws priority "," ws "\"evidence\":" ws evidence "}" ws
+evidence ::= "[" ws citation ("," ws citation)* "]" ws
+citation ::= "{" ws "\"turnID\":" ws string "," ws "\"quote\":" ws string "}" ws
+category ::= ("\"Follow-up\"" | "\"Research\"" | "\"Create/Update\"" | "\"Review/Approve\"" | "\"Coordination\"" | "\"Other\"") ws
+priority ::= ("null" | "\"low\"" | "\"medium\"" | "\"high\"" | "\"urgent\"") ws
+nullable ::= string | "null" ws
+string ::= "\"" ([^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws
+ws ::= [ \t\n\r]*

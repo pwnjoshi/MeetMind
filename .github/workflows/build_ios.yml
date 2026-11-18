@@ -18,17 +18,26 @@ jobs:
   build:
     name: Build MeetMind iOS IPA
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
+
+      - name: Test offline qualification scorer (synthetic data only)
+        run: python3 -m unittest discover -s Scripts -p test_evaluate_offline.py
 
       - name: Verify Xcode Environment
         run: |
           xcodebuild -version
           xcodebuild -showsdks
           xcodebuild -list -project MeetMind.xcodeproj
+
+      - name: Create public synthetic audio for device smoke tests
+        run: say -o OfflineEngineKit/Sources/OfflineEngineKit/Resources/synthetic-smoke.aiff 'Rahul will send the estimate tomorrow. We have not decided to change the design.'
+
+      - name: Test offline engine contracts (no model downloads)
+        run: swift test --package-path OfflineEngineKit --filter AnalysisContractTests
 
       - name: Build MeetMind iOS App
         run: |

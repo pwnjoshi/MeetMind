@@ -15,6 +15,9 @@ public struct SettingsView: View {
         Form {
             SettingsAudioQualitySection(viewModel: viewModel)
             SettingsSpeechAndAISection(viewModel: viewModel)
+            Section("On-device intelligence") {
+                NavigationLink("Offline model benchmarks") { OfflineBenchmarkView() }
+            }
             SettingsStorageAndCacheSection(viewModel: viewModel)
             SettingsThemeAndAppearanceSection(viewModel: viewModel)
             SettingsAboutAndDiagnosticsSection(viewModel: viewModel)
