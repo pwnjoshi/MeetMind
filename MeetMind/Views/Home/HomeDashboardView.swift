@@ -6,6 +6,7 @@ public struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
     @Environment(NavigationRouter.self) private var router
+    @Query private var savedMeetings: [Meeting]
     @State public var viewModel: HomeViewModel
     
     @State private var isShowingSettings: Bool = false
@@ -99,6 +100,15 @@ public struct HomeDashboardView: View {
             }
         }
         .onAppear { viewModel.setModelContext(modelContext); viewModel.fetchMeetings() }
+        .onChange(of: savedMeetingRevision) { _, _ in viewModel.fetchMeetings() }
+    }
+
+    // Sheet-based creation does not always trigger the underlying view's onAppear.
+    // Observe persisted changes so imports, scheduling, and edits refresh the list.
+    private var savedMeetingRevision: [String] {
+        savedMeetings.map {
+            "\($0.id)|\($0.title)|\($0.status.rawValue)|\($0.scheduledStartTime?.timeIntervalSince1970 ?? 0)"
+        }.sorted()
     }
     private func meetingRow(_ meeting: Meeting, upcoming: Bool) -> some View {
         NavigationLink(value: NavigationDestination.meetingDetail(id: meeting.id)) {
