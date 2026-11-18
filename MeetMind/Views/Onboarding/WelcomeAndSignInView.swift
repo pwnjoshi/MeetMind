@@ -23,9 +23,9 @@ public struct WelcomeAndSignInView: View {
                 .frame(width: proxy.size.width)
             }
             .scrollDismissesKeyboard(.interactively)
-            .ignoresSafeArea(edges: .top)
-            .background(Color(hex: "#F2F2F7").ignoresSafeArea())
+            .background(Color(hex: "#FCFCFF").ignoresSafeArea())
         }
+        .ignoresSafeArea()
     }
     
     private func topIllustrationView(height: CGFloat) -> some View {
@@ -75,7 +75,7 @@ public struct WelcomeAndSignInView: View {
             Button("Not Now") { viewModel.continueLocally() }
                 .frame(minHeight: 44)
                 .padding(.top, 8)
-            Spacer(minLength: Spacing.md)
+            Spacer(minLength: 34)
         }
         .padding(.horizontal, Spacing.lg)
         .background(Color(hex: "#FCFCFF"))
