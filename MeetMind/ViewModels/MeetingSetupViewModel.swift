@@ -174,6 +174,8 @@ public final class MeetingSetupViewModel {
     public var importedRecordingDate: Date?
     public var importedSeriesID: UUID?
     public var importedSeriesName: String?
+    public var scheduledSeriesID: UUID?
+    public var scheduledSeriesName: String?
     public var endDate: Date = Date().addingTimeInterval(5400)
     public var agendaText: String = ""
     public var agenda: String {
@@ -578,6 +580,8 @@ public final class MeetingSetupViewModel {
             templateName: selectedTemplate?.name,
             folder: selectedFolder
         )
+        meeting.seriesID = scheduledSeriesID
+        meeting.seriesName = scheduledSeriesID == nil ? nil : scheduledSeriesName
         meeting.tags = selectedTags
         meeting.participants = participants
         

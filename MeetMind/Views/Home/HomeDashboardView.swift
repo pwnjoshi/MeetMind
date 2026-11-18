@@ -140,6 +140,9 @@ private struct LocalSeriesTimeline: View {
     let seriesID: UUID
     @Query private var meetings: [Meeting]
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @State private var setup: MeetingSetupViewModel?
+    @State private var showsSchedule = false
 
     private var occurrences: [Meeting] {
         meetings.filter { $0.seriesID == seriesID }.sorted {
@@ -158,6 +161,23 @@ private struct LocalSeriesTimeline: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle(occurrences.first?.seriesName ?? "Meeting Series")
+        .safeAreaInset(edge: .bottom) {
+            Button("Add Meeting") {
+                let model = MeetingSetupViewModel(modelContext: modelContext)
+                model.scheduledSeriesID = seriesID
+                model.scheduledSeriesName = occurrences.first?.seriesName
+                model.title = occurrences.first?.seriesName ?? ""
+                setup = model
+                showsSchedule = true
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+            .padding()
+        }
+        .sheet(isPresented: $showsSchedule) {
+            if let setup { ScheduleMeetingView(viewModel: setup) }
+        }
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
     }
 
