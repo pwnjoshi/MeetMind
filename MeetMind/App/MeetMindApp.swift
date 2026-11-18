@@ -128,10 +128,10 @@ struct MeetMindApp: App {
                                     0.41, 0.77, 0.36, 0.62, 0.29, 0.70, 0.45, 0.58,
                                     0.33, 0.67, 0.39, 0.74, 0.30, 0.55, 0.43, 0.64]
         viewModel.finalTranscriptSegments = [
-            LiveTranscriptSegmentItem(speakerName: "Speaker 2 · 12:10",
+            LiveTranscriptSegmentItem(speakerName: "Speaker 2",
                                       text: "I’ll update the launch checklist.",
                                       startTime: 730, endTime: 735),
-            LiveTranscriptSegmentItem(speakerName: "Speaker 3 · 14:42",
+            LiveTranscriptSegmentItem(speakerName: "Speaker 3",
                                       text: "We need a Finance estimate before approving the budget.",
                                       startTime: 882, endTime: 890)
         ]

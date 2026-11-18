@@ -43,6 +43,7 @@ public struct LiveRecordingView: View {
                         .accessibilityLabel("Attach photo")
                 }
                 .buttonStyle(.bordered).controlSize(.large)
+                .fixedSize()
             }
             Text(viewModel.meetingTitle).font(.largeTitle.bold())
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -70,9 +71,28 @@ public struct LiveRecordingView: View {
                     VStack(spacing: 16) {
                         Toggle("Live transcript", isOn: $showsLiveTranscript).font(.subheadline)
                         if showsLiveTranscript {
-                            LiveTranscriptScrollView(segments: viewModel.finalTranscriptSegments,
-                                interimText: viewModel.interimTranscriptText)
-                                .frame(minHeight: 140, idealHeight: 180)
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 16) {
+                                    ForEach(viewModel.finalTranscriptSegments) { segment in
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("\(segment.speakerName) · \(transcriptTimestamp(segment.startTime))")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Text(segment.text)
+                                                .font(.body)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    if !viewModel.interimTranscriptText.isEmpty {
+                                        Text(viewModel.interimTranscriptText)
+                                            .font(.body)
+                                            .foregroundStyle(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
+                            .frame(minHeight: 140, idealHeight: 180)
                         }
                         if viewModel.isBookmarkButtonHighlighted {
                             Label("Bookmarked · \(viewModel.formattedDuration)", systemImage: "flag")
@@ -173,5 +193,9 @@ public struct LiveRecordingView: View {
                 router.navigate(to: .meetingProcessing(id: meetingId), in: .home)
             } catch { viewModel.errorMessage = error.localizedDescription }
         }
+    }
+
+    private func transcriptTimestamp(_ seconds: TimeInterval) -> String {
+        Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond))
     }
 }
