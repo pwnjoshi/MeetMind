@@ -55,7 +55,7 @@ public struct OnboardingWelcomeView: View {
                     .frame(maxWidth: 100)
                 }
                 
-                PrimaryButton(title: "Next", icon: "chevron.right") {
+                PrimaryButton(title: "Continue", icon: "chevron.right") {
                     viewModel.advanceSlide()
                 }
             }
