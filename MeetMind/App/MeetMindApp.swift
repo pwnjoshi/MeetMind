@@ -49,7 +49,7 @@ struct MeetMindApp: App {
                         } else if ProcessInfo.processInfo.arguments.contains("--offline-pipeline-smoke") {
                             OfflinePipelineSmokeView()
                         } else {
-                            RootView()
+                            appContent
                         }
                     }
                     .modelContainer(container)
@@ -94,5 +94,18 @@ struct MeetMindApp: App {
                 break
             }
         }
+    }
+
+    @ViewBuilder
+    private var appContent: some View {
+        #if targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("--ui-microphone") {
+            MicrophoneCheckView(onStartRecording: {})
+        } else {
+            RootView()
+        }
+        #else
+        RootView()
+        #endif
     }
 }
