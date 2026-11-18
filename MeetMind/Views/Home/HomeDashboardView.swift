@@ -11,6 +11,8 @@ public struct HomeDashboardView: View {
     
     @State private var isShowingSettings: Bool = false
     @State private var isMicrophoneCheckPresented: Bool = false
+    @State private var selectedSeriesID: UUID?
+    @State private var showsSeries = false
     
     public init(viewModel: HomeViewModel = HomeViewModel()) { _viewModel = State(initialValue: viewModel) }
     public init(modelContext: ModelContext? = nil) { _viewModel = State(initialValue: HomeViewModel(modelContext: modelContext)) }
@@ -81,6 +83,11 @@ public struct HomeDashboardView: View {
             }
         }
         .sheet(isPresented: $isShowingSettings) { NavigationStack { SettingsView() } }
+        .sheet(isPresented: $showsSeries) {
+            if let id = selectedSeriesID {
+                NavigationStack { LocalSeriesTimeline(seriesID: id) }
+            }
+        }
         .sheet(isPresented: $isMicrophoneCheckPresented) {
             MicrophoneCheckView {
                 let m = Meeting(title: "New Meeting \(Date().formatted(date: .omitted, time: .shortened))", createdAt: Date(), duration: 0, status: .recording)
@@ -117,6 +124,51 @@ public struct HomeDashboardView: View {
             }
             .frame(minHeight: 44)
         }
+        .contextMenu {
+            if let id = meeting.seriesID {
+                Button("View Series", systemImage: "calendar") {
+                    selectedSeriesID = id
+                    showsSeries = true
+                }
+            }
+        }
     }
 
+}
+
+private struct LocalSeriesTimeline: View {
+    let seriesID: UUID
+    @Query private var meetings: [Meeting]
+    @Environment(\.dismiss) private var dismiss
+
+    private var occurrences: [Meeting] {
+        meetings.filter { $0.seriesID == seriesID }.sorted {
+            ($0.scheduledStartTime ?? $0.createdAt) < ($1.scheduledStartTime ?? $1.createdAt)
+        }
+    }
+
+    var body: some View {
+        List {
+            Section("Upcoming") {
+                ForEach(occurrences.filter { $0.status == .scheduled }) { row($0) }
+            }
+            Section("Past meetings") {
+                ForEach(occurrences.filter { $0.status != .scheduled }.reversed()) { row($0) }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(occurrences.first?.seriesName ?? "Meeting Series")
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+    }
+
+    private func row(_ meeting: Meeting) -> some View {
+        NavigationLink {
+            MeetingDetailContainerView(meetingId: meeting.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(meeting.title)
+                Text(meeting.figmaFormattedSubtitle).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+    }
 }
