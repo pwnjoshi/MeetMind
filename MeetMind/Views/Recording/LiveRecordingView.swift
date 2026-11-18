@@ -13,6 +13,7 @@ public struct LiveRecordingView: View {
     @State private var isFinishConfirmationPresented = false
     @State private var isFinishing = false
     @State private var showsLiveTranscript = true
+    @ScaledMetric(relativeTo: .largeTitle) private var timerSize = 60
     public let meetingId: UUID
     
     public init(meetingId: UUID, viewModel: LiveRecordingViewModel? = nil) {
@@ -45,7 +46,11 @@ public struct LiveRecordingView: View {
                         .foregroundStyle(viewModel.isPaused ? .orange : .red)
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background((viewModel.isPaused ? Color.orange : Color.red).opacity(0.15), in: Capsule())
-                    Text(viewModel.formattedDuration).font(.system(size: 60, weight: .medium)).monospacedDigit()
+                    Text(viewModel.formattedDuration)
+                        .font(.system(size: timerSize, weight: .medium)).monospacedDigit()
+                        .minimumScaleFactor(0.6).lineLimit(1)
+                        .accessibilityLabel("Recording duration")
+                        .accessibilityValue(viewModel.formattedDuration)
                     if viewModel.isPaused {
                         Rectangle().fill(.secondary.opacity(0.5)).frame(height: 1)
                             .frame(height: 60)
