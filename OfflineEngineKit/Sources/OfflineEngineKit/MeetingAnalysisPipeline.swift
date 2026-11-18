@@ -119,6 +119,13 @@ public actor MeetingAnalysisPipeline {
         if let data = try? Data(contentsOf: checkpointURL),
            let saved = try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data),
            saved.sourceSignature == signature { checkpoint = saved }
+        // ASR and diarization consume the same finished audio but have no data
+        // dependency. On a cool, normally-powered device we start diarization
+        // while transcription is running, then retain the normal checkpoint
+        // boundary after transcription. This shortens finalization without
+        // sacrificing resumability or competing when the phone is constrained.
+        var overlappingDiarization: Task<[SpeakerSpan], Error>?
+        defer { overlappingDiarization?.cancel() }
         func save() throws {
             if discardActiveCheckpoint { throw CancellationError() }
             try JSONEncoder().encode(checkpoint).write(to: checkpointURL,
@@ -127,6 +134,14 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .transcription {
             try checkConditions()
             await progress(.transcription)
+            if ProcessInfo.processInfo.thermalState == .nominal,
+               !ProcessInfo.processInfo.isLowPowerModeEnabled {
+                let backend = self.backend
+                let diarizationFolder = folders[1]
+                overlappingDiarization = Task {
+                    try await backend.diarize(audio: audio, folder: diarizationFolder)
+                }
+            }
             checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: folders[0], languageCode: languageCode))
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
@@ -135,7 +150,13 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .speakers {
             try checkConditions()
             await progress(.speakers)
-            checkpoint.speakers = Self.stabilizeSpeakerSpans(try await backend.diarize(audio: audio, folder: folders[1]))
+            let rawSpans: [SpeakerSpan]
+            if let overlappingDiarization {
+                rawSpans = try await overlappingDiarization.value
+            } else {
+                rawSpans = try await backend.diarize(audio: audio, folder: folders[1])
+            }
+            checkpoint.speakers = Self.stabilizeSpeakerSpans(rawSpans)
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)
             checkpoint.stage = .analysis
             try save()
