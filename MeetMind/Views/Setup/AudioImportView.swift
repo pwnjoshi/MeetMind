@@ -20,29 +20,35 @@ public struct AudioImportView: View {
     
     public var body: some View {
         NavigationStack {
-            VStack(spacing: Spacing.xl) {
-                AudioImportHeaderView()
-                
-                AudioDropZoneView(
-                    selectedURL: selectedURL,
-                    onSelect: { isPickerPresented = true },
-                    onClear: { selectedURL = nil }
-                )
-                .disabled(isProcessing)
-                
-                if isProcessing {
-                    ProgressView("Saving audio on this iPhone…")
-                        .tint(Theme.Colors.liveBlue)
-                        .padding()
+            Form {
+                Section {
+                    Text("Bring a recording from Files into MeetMind.")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
-                
-                Spacer()
-                
-                processButton
+                .listRowBackground(Color.clear)
+                Section("Audio File") {
+                    if let selectedURL {
+                        Label(selectedURL.lastPathComponent, systemImage: "waveform")
+                            .foregroundStyle(.primary)
+                    }
+                    Button(selectedURL == nil ? "Choose Audio File..." : "Choose Another File...") {
+                        isPickerPresented = true
+                    }
+                    .disabled(isProcessing)
+                }
+                Section("Title") {
+                    TextField("Meeting title", text: $viewModel.title)
+                        .disabled(isProcessing)
+                }
+                Section {
+                    if isProcessing { ProgressView("Saving audio on this iPhone...") }
+                    processButton
+                } footer: {
+                    Text("Audio stays on this iPhone. MeetMind creates a meeting with a transcript and speakers to review.")
+                }
             }
-            .padding(Spacing.lg)
             .navigationTitle("Import Audio")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -57,6 +63,10 @@ public struct AudioImportView: View {
                 switch res {
                 case .success(let urls):
                     selectedURL = urls.first
+                    if viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       let url = urls.first {
+                        viewModel.title = url.deletingPathExtension().lastPathComponent
+                    }
                 case .failure(let error):
                     errorMessage = error.localizedDescription
                     showErrorAlert = true
