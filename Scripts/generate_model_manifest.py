@@ -38,6 +38,10 @@ def main():
         for f in files:
             f["path"] = f["path"][len(folder) + 1:]
         tok_rev, tok_files = snapshot(tokenizer, lambda p: p in ("tokenizer.json", "tokenizer_config.json", "config.json"))
+        # The model export may also contain config.json. Tokenizer configuration
+        # owns these root paths; never download two different files to one path.
+        tokenizer_paths = {f["path"] for f in tok_files}
+        files = [f for f in files if f["path"] not in tokenizer_paths]
         entries.append(dict(id=identifier, name=folder, revision=revision + ":" + tok_rev, files=files + tok_files))
     revision, files = snapshot("FluidInference/speaker-diarization-coreml", lambda p: p.startswith(tuple(n + ".mlmodelc/" for n in ("Segmentation", "Embedding", "FBank", "PldaRho"))) or p == "plda-parameters.json")
     entries.append(dict(id="diarization", name="FluidAudio offline VBx", revision=revision, files=files))

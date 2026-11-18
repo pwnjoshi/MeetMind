@@ -36,6 +36,9 @@ public struct LocalAnalysisResult: Codable, Sendable {
     public let tasks: [SuggestedTask]
 
     public func validate(against turns: [AnalysisTurn]) throws {
+        guard Set(turns.map(\.id)).count == turns.count else {
+            throw OfflineError.unavailable("Transcript turn IDs must be unique.")
+        }
         let sources = Dictionary(uniqueKeysWithValues: turns.map { ($0.id, $0.text) })
         let categories = Set(["Follow-up", "Research", "Create/Update", "Review/Approve", "Coordination", "Other"])
         let priorities = Set(["low", "medium", "high", "urgent"])

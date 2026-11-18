@@ -64,7 +64,7 @@ final class LocalLanguageModel {
         defer { llama_batch_ext_free(batch) }
         func decode(_ input: [llama_token], offset: Int) throws {
             try Task.checkCancellation()
-            guard ProcessInfo.processInfo.thermalState != .critical else {
+            guard ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue else {
                 throw OfflineError.unavailable("iPhone is too warm. Let it cool down and retry.")
             }
             llama_batch_ext_clear(batch)

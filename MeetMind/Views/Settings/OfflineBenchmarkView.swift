@@ -58,6 +58,12 @@ struct OfflineBenchmarkView: View {
                     status = "Synthetic text selected. This cannot establish real meeting accuracy."
                 }.disabled(busy)
             }
+            Section {
+                NavigationLink("Model and engine licenses") {
+                    ScrollView { Text(OfflineModelStore.notices).font(.footnote).textSelection(.enabled).padding() }
+                        .navigationTitle("Licenses")
+                }
+            }
             if !output.isEmpty {
                 Section("Result — requires human review") {
                     Text(output).font(.footnote).textSelection(.enabled)
@@ -75,6 +81,7 @@ struct OfflineBenchmarkView: View {
                 let destination = try OfflineModelStore.privateDirectory("Inputs")
                     .appendingPathComponent(UUID().uuidString).appendingPathExtension(source.pathExtension)
                 try FileManager.default.copyItem(at: source, to: destination)
+                try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
                 audio = destination
                 isSyntheticAudio = false
                 status = "Local recording ready. Run a speech or speaker benchmark."

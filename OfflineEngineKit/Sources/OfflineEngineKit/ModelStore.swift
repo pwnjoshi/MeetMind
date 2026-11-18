@@ -33,6 +33,12 @@ public actor OfflineModelStore {
         return try JSONDecoder().decode([ModelProfile].self, from: Data(contentsOf: url))
     }
 
+    public static var notices: String {
+        guard let url = Bundle.module.url(forResource: "notices", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "Notices unavailable." }
+        return text
+    }
+
     public static func privateDirectory(_ name: String) throws -> URL {
         var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("OfflineIntelligence", isDirectory: true)

@@ -9,6 +9,10 @@ private final class LocalOnlyWhisper: WhisperKit {
     override func loadTokenizerIfNeeded() async throws {
         guard tokenizer == nil else { return }
         guard let modelFolder else { throw OfflineError.unavailable("Missing local tokenizer folder.") }
+        guard let logits = textDecoder.logitsSize, ModelUtilities.isModelMultilingual(logitsDim: logits) else {
+            throw OfflineError.unavailable("A multilingual speech model is required for Hindi–English meetings.")
+        }
+        textDecoder.isModelMultilingual = true
         tokenizer = try await LocalWhisperTokenizer(folder: modelFolder)
     }
 }
