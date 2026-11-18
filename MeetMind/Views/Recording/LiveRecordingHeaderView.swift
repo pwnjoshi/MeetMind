@@ -21,12 +21,12 @@ public struct LiveRecordingHeaderView: View {
     public var body: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
             Button(action: onDismiss) {
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .frame(width: 44, height: 44)
             }
-            .accessibilityLabel("Dismiss Recording Console")
+            .accessibilityLabel("Finish or continue recording")
             
             VStack(alignment: .leading, spacing: 2) {
                 if isEditingTitle {
