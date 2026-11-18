@@ -1,6 +1,16 @@
 import CryptoKit
 import Foundation
 
+private final class ModelDownloadProgress: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    let update: @Sendable (Int64) -> Void
+    init(update: @escaping @Sendable (Int64) -> Void) { self.update = update }
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                    didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        update(totalBytesWritten)
+    }
+}
+
 public struct ModelAsset: Codable, Sendable {
     public let path: String
     public let url: URL
@@ -95,11 +105,6 @@ public actor OfflineModelStore {
         guard available > profile.downloadBytes + 500_000_000 else {
             throw OfflineError.unavailable("Not enough storage. Free space for the model plus 500 MB of working space.")
         }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.urlCache = nil
-        configuration.httpCookieStorage = nil
-        let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel() }
         var complete: Int64 = 0
         for asset in profile.files {
             try Task.checkCancellation()
@@ -110,6 +115,15 @@ public actor OfflineModelStore {
             let target = staging.appendingPathComponent(asset.path)
             if (try? hash(target)) != asset.sha256 {
                 try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let offset = complete, total = max(1, profile.downloadBytes)
+                let delegate = ModelDownloadProgress { written in
+                    progress(min(1, Double(offset + written) / Double(total)))
+                }
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.urlCache = nil
+                configuration.httpCookieStorage = nil
+                let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+                defer { session.invalidateAndCancel() }
                 let (download, response) = try await session.download(from: asset.url)
                 defer { try? FileManager.default.removeItem(at: download) }
                 guard (response as? HTTPURLResponse)?.statusCode == 200,

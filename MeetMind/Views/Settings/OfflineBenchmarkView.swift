@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import OfflineEngineKit
+import Darwin
 
 /// Qualification lab only. Results never write to Meeting/ActionItem entities.
 @MainActor
@@ -122,11 +123,13 @@ struct OfflineBenchmarkView: View {
             catch is CancellationError {
                 status = "Cancelled. Downloaded model files can be reused on retry."
                 print("MEETMIND_BENCHMARK cancelled")
+                fflush(stdout)
             }
             catch {
                 status = error.localizedDescription
                 // No error payload: a library error could contain input text.
                 print("MEETMIND_BENCHMARK failed; inspect the on-device status")
+                fflush(stdout)
             }
             await refresh()
         }
@@ -135,6 +138,7 @@ struct OfflineBenchmarkView: View {
     private func install(_ profile: ModelProfile) async throws {
         status = "Downloading \(profile.name)…"
         print("MEETMIND_BENCHMARK download \(profile.id)")
+        fflush(stdout)
         try await OfflineModelStore.shared.install(profile) { value in
             Task { @MainActor in progress = value }
         }
@@ -145,6 +149,7 @@ struct OfflineBenchmarkView: View {
     private func run(_ profile: ModelProfile) async throws {
         status = "Running \(profile.name) on this iPhone. Keep the app open."
         print("MEETMIND_BENCHMARK running \(profile.id)")
+        fflush(stdout)
         let result = try await runner.run(profile: profile, audio: audio, turns: turns)
         try OfflineBenchmarkRunner.save(result)
         if !result.turns.isEmpty { turns = result.turns }
@@ -153,5 +158,6 @@ struct OfflineBenchmarkView: View {
         progress = 1
         status = "Finished in \(Int(result.elapsedSeconds)) seconds. This is a benchmark, not a quality qualification."
         print("MEETMIND_BENCHMARK completed \(profile.id) seconds=\(result.elapsedSeconds) sampledPeakBytes=\(result.sampledPeakFootprintBytes) thermal=\(result.thermalState)")
+        fflush(stdout)
     }
 }

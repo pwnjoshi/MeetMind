@@ -18,6 +18,14 @@ For automated smoke testing from this Windows workspace, after signing/installin
 build 4 through Sideloadly:
 
 ```powershell
+build/device-tools/Scripts/python.exe Scripts/device_benchmark.py --status
+build/device-tools/Scripts/python.exe Scripts/device_benchmark.py --run qwen-1.7b
+```
+
+The helper filters device output to content-free benchmark markers. The underlying
+developer launch command is:
+
+```powershell
 build/device-tools/Scripts/python.exe -m pymobiledevice3 developer dvt launch 'com.meetmind.app.JK2M3K5ACG --offline-benchmark --benchmark-model=qwen-1.7b' --userspace --stream
 ```
 
@@ -34,6 +42,10 @@ peak. Neither short synthetic clips nor these metrics satisfy held-out quality
 or one-hour performance gates. The analysis lab emits per-chunk drafts; final
 cross-chunk reconciliation, speaker-name mapping, accepted-task review, and
 production checkpointing remain gated on qualification.
+Language-model benchmarks use a 4,096-token context, at most 3,072 prompt tokens,
+and at most 1,024 generated tokens to limit KV-cache memory on the 6 GB phone.
+The tokenizer checks the actual prompt budget; an oversized chunk fails visibly
+rather than truncating evidence. Long-meeting reconciliation is not qualified yet.
 
 The 1.7B Q4_K_M asset is bartowski's pinned quantization of Qwen3-1.7B, since
 the official 1.7B GGUF repository exposes Q8_0 rather than the planned Q4_K_M.

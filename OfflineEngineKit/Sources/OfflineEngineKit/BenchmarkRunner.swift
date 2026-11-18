@@ -72,8 +72,8 @@ public actor OfflineBenchmarkRunner {
             let model = try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"))
             var chunks: [[AnalysisTurn]] = [], chunk: [AnalysisTurn] = [], characters = 0
             for turn in input {
-                guard turn.text.count <= 4000 else { throw OfflineError.unavailable("One transcript turn is too long. Split it before analysis.") }
-                if characters + turn.text.count > 4000 && !chunk.isEmpty {
+                guard turn.text.count <= 2000 else { throw OfflineError.unavailable("One transcript turn is too long. Split it before analysis.") }
+                if characters + turn.text.count > 2000 && !chunk.isEmpty {
                     chunks.append(chunk)
                     chunk = Array(chunk.suffix(2))
                     characters = chunk.reduce(0) { $0 + $1.text.count }

@@ -19,7 +19,7 @@ final class LocalLanguageModel {
             throw OfflineError.unavailable("Unable to load the local language model.")
         }
         var options = llama_context_default_params()
-        options.n_ctx = 8192
+        options.n_ctx = 4096
         options.n_batch = 512
         options.n_ubatch = 128
         options.n_threads = 4
@@ -55,7 +55,7 @@ final class LocalLanguageModel {
         let prompt = "<|im_start|>system\n\(system)<|im_end|>\n<|im_start|>user\n\(input)<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
         var tokens = [llama_token](repeating: 0, count: prompt.utf8.count + 16)
         let count = llama_tokenize(vocab, prompt, Int32(prompt.utf8.count), &tokens, Int32(tokens.count), false, true)
-        guard count > 0, count <= 6144 else {
+        guard count > 0, count <= 3072 else {
             throw OfflineError.unavailable("Transcript chunk exceeds the local model context limit.")
         }
         tokens = Array(tokens.prefix(Int(count)))
@@ -94,7 +94,7 @@ final class LocalLanguageModel {
         llama_sampler_chain_add(sampler, grammarSampler)
         llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
         var output = Data()
-        for index in 0..<1536 {
+        for index in 0..<1024 {
             try Task.checkCancellation()
             let token = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, token) {

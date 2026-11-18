@@ -27,6 +27,19 @@ jobs:
       - name: Test offline qualification scorer (synthetic data only)
         run: python3 -m unittest discover -s Scripts -p test_evaluate_offline.py
 
+      - name: Identify native toolchain
+        id: native-toolchain
+        run: echo "version=$(xcodebuild -version | tr '\n' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pinned native runtime
+        uses: actions/cache@v5
+        with:
+          path: OfflineEngineKit/Artifacts
+          key: llama-b12491-arm64-simulator-${{ runner.os }}-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('Scripts/prepare_llama.sh') }}
+
+      - name: Prepare native runtime with simulator support
+        run: bash Scripts/prepare_llama.sh
+
       - name: Verify Xcode Environment
         run: |
           xcodebuild -version
