@@ -162,22 +162,31 @@ private struct LocalSeriesTimeline: View {
     var body: some View {
         List {
             Section("Upcoming") {
+                if occurrences.allSatisfy({ $0.status != .scheduled }) {
+                    Text("No upcoming meetings").foregroundStyle(.secondary)
+                }
                 ForEach(occurrences.filter { $0.status == .scheduled }) { row($0) }
             }
             Section("Past meetings") {
+                if occurrences.allSatisfy({ $0.status == .scheduled }) {
+                    Text("No past meetings").foregroundStyle(.secondary)
+                }
                 ForEach(occurrences.filter { $0.status != .scheduled }.reversed()) { row($0) }
             }
         }
         .listStyle(.insetGrouped)
+        .headerProminence(.increased)
         .navigationTitle(occurrences.first?.seriesName ?? "Meeting Series")
         .safeAreaInset(edge: .bottom) {
-            Button("Add Meeting") {
+            Button {
                 let model = MeetingSetupViewModel(modelContext: modelContext)
                 model.scheduledSeriesID = seriesID
                 model.scheduledSeriesName = occurrences.first?.seriesName
                 model.title = occurrences.first?.seriesName ?? ""
                 setup = model
                 showsSchedule = true
+            } label: {
+                Text("Add Meeting").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
