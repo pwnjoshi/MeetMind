@@ -412,9 +412,15 @@ public final class LiveRecordingViewModel {
     }
     
     public func updateMeetingTitle(_ newTitle: String) {
+        let previousTitle = meeting?.title ?? meetingTitle
         meetingTitle = newTitle
         meeting?.title = newTitle
-        try? modelContext?.save()
+        do { try modelContext?.save() }
+        catch {
+            meetingTitle = previousTitle
+            meeting?.title = previousTitle
+            errorMessage = "The meeting title could not be saved. Your recording continues."
+        }
     }
     
     public func simulateSpeechChunk(text: String, isFinal: Bool, confidence: Float = 0.95) {
