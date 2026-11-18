@@ -13,7 +13,7 @@ checks, and a working navigation path before it can be marked verified.
 | Create menu | 1376:3223 | Quick Meet, Schedule Meet, Import Audio wired; verify native menu placement |
 | Search | 1359:2430, 1361:2387, 1361:2712 | Native search field wired; match idle, focused, scopes, results, and no results |
 | Import audio | 231:727 | Native form, file replacement, editable title, recorded date, local series selection/creation and save protection implemented; native and visual validation pending |
-| Meeting series | 788:1580, 788:1659, 788:1685, 788:1709 | Implement timeline, selection, options, rename, and persistent relationships |
+| Meeting series | 788:1580, 788:1659, 788:1685, 788:1709 | Local membership, import selection/creation, timeline, Add Meeting and rename implemented; native, migration and visual checks pending |
 | Meeting details | 161:844 | Match title, agenda, date/time, participants, series, repeat, coordinator, save and discard |
 | Participants | 673:1591, 1563:14, 1563:863 | Match add, search, create person, and inline edits |
 | Follow-up | 1552:408 | Implement date/time, series selection, and saved occurrence |
