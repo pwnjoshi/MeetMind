@@ -9,11 +9,11 @@ repairs, verification evidence, and remaining limitations.
 ## Features
 
 - AAC recording, live microphone metering, pause/resume, and persistent audio.
-- Apple Speech transcription restricted to on-device recognition.
-- Local extractive summaries, decisions, and suggested action items.
+- Offline multilingual Whisper transcription after recording; optional on-device Apple Speech live preview.
+- Local Qwen-generated English discussion points, decisions, and source-linked task suggestions requiring review.
 - Transcript editing, manual speaker attribution, playback, notes, and photos.
 - Meeting scheduling, audio import, filtering, and cross-meeting search services.
-- Action checklists and optional Apple Reminders export through EventKit.
+- Action checklists, categories, and optional export to on-device Apple Reminders lists.
 - PDF sharing, Markdown export, and email-draft text.
 
 On-device recognition depends on device/language support and installed speech

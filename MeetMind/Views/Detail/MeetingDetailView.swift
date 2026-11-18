@@ -282,7 +282,11 @@ private struct SuggestedTaskEditor: View {
                     Text("Unspecified").tag("")
                     ForEach(ActionPriority.allCases, id: \.self) { Text($0.displayName).tag($0.rawValue) }
                 }
-                if let deadline = suggestion.task.deadlineText { Text("Spoken deadline: \(deadline)") }
+                if let deadline = suggestion.task.deadlineText {
+                    Text("Spoken deadline: \(deadline)")
+                    Text("Meeting date: \((meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Toggle("Set confirmed due date", isOn: $hasDueDate)
                 if hasDueDate { DatePicker("Due date", selection: $dueDate, displayedComponents: .date) }
             }
@@ -310,7 +314,7 @@ private struct SuggestedTaskEditor: View {
     private func save(accept: Bool) {
         do {
             try meeting.reviewTask(suggestion, title: title, owner: owner, category: category,
-                priority: priority, dueDate: hasDueDate ? dueDate : nil, accept: accept, context: context)
+                priority: priority, dueDate: hasDueDate ? Calendar.current.startOfDay(for: dueDate) : nil, accept: accept, context: context)
             dismiss()
         } catch { errorMessage = error.localizedDescription }
     }

@@ -243,24 +243,26 @@ F1 for analysis; ties use lower processing time, then lower memory. Run each eng
 sequentially and unload before loading the next. If none passes, report failures;
 do not substitute cloud processing or call heuristic output qualified.
 
-## Remaining device work before production integration
+## Remaining device work before production release
 
-Compile the benchmark-enabled iOS app using Mac/Xcode (including the existing
-GitHub Actions runner), then sign/install it through Sideloadly. The connected
-iPhone executes Core ML/Metal; Windows can launch it and collect process metrics
-through pymobiledevice3's USB userspace developer tunnel. This transport was
-verified on the connected iPhone15,4 running iOS 26.5.2 with MeetMind build 3.
-App queries, DVT process listing, app launch, running-state checks, and a memory
-snapshot succeeded. This corrects the earlier assumption that Windows could not
-control target-device tests. The replacement models and benchmark entrypoint are
-not installed yet; startup measurements are not inference benchmarks.
-Simulator success is not an iPhone memory, speed, thermal, diarization, or
-Hinglish accuracy measurement.
+Build 7 is an integrated evaluation build. Whisper large-v3 and Qwen3-1.7B are
+trial defaults selected for testing, not winners of the held-out quality gates.
+The setup, local inference, additive persistence, checkpoint recovery, source-linked
+task review, and explicit accepted-task reminder export are implemented in source.
+Physical-device regression against the existing populated store and the complete
+pipeline must pass before distributing it as a validated update.
 
-After qualification, implement structured analysis interfaces, resumable processing,
-protected local storage/backup exclusion, additive SwiftData migrations, source-linked
-task review, and explicit accepted-task reminder export. Regression-test an existing
-populated database and interrupted processing before distributing a new IPA.
+Windows launches the iPhone's Core ML/Metal engines over pymobiledevice3's USB
+userspace developer tunnel. Short synthetic engine smoke tests and existing-store
+opening have been measured on the regular iPhone 15. Simulator success does not
+establish iPhone memory, speed, thermal, diarization, or Hinglish accuracy results.
+
+Before production qualification, collect the consented held-out corpus and reference
+annotations on the iPhone, implement content-free aggregate evaluation export, and
+measure every gate above. Semantic reconciliation of cross-chunk cancellations and
+contradictions is not implemented by deterministic title/owner deduplication.
+Generated drafts therefore still require human review. Do not describe this build
+as fully qualified or infer task accuracy from valid substring quotes alone.
 
 Synthetic scorer unit tests are only tests of scoring logic. They must never be
-included in the quality corpus or cited as model benchmarks.
+included in the quality corpus or cited as real-meeting accuracy benchmarks.

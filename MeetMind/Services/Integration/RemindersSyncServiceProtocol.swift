@@ -92,7 +92,11 @@ public final class SystemRemindersSyncService: RemindersSyncServiceProtocol, @un
                 reminder.notes = item.taskDescription
                 reminder.isCompleted = item.isCompleted
                 reminder.priority = item.priorityRaw.isEmpty ? 0 : (item.priority == .urgent ? 1 : (item.priority == .high ? 3 : (item.priority == .medium ? 5 : 9)))
-                reminder.dueDateComponents = item.dueDate.map { Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: $0) }
+                reminder.dueDateComponents = item.dueDate.map {
+                    let components: Set<Calendar.Component> = item.sourceSuggestionID == nil
+                        ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day]
+                    return Calendar.current.dateComponents(components, from: $0)
+                }
                 try store.save(reminder, commit: true)
                 item.reminderIdentifier = reminder.calendarItemIdentifier
                 try item.modelContext?.save()
