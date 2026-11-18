@@ -39,6 +39,12 @@ microphone_pid="${microphone_output##*: }"
 sleep 5
 kill -0 "$microphone_pid"
 simctl io "$device_id" screenshot build/smoke/microphone-idle.png
+simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
+microphone_sample_output=$(simctl launch "$device_id" "$bundle_id" --ui-microphone-sample)
+microphone_sample_pid="${microphone_sample_output##*: }"
+sleep 3
+kill -0 "$microphone_sample_pid"
+simctl io "$device_id" screenshot build/smoke/microphone-sample.png
 for recording_state in active paused finish; do
     simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
     recording_output=$(simctl launch "$device_id" "$bundle_id" "--ui-recording-$recording_state")

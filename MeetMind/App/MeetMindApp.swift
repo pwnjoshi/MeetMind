@@ -99,7 +99,9 @@ struct MeetMindApp: App {
     @ViewBuilder
     private var appContent: some View {
         #if targetEnvironment(simulator)
-        if ProcessInfo.processInfo.arguments.contains("--ui-microphone") {
+        if ProcessInfo.processInfo.arguments.contains("--ui-microphone-sample") {
+            MicrophoneCheckView(onStartRecording: {}, visualSampleDuration: 6)
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-microphone") {
             MicrophoneCheckView(onStartRecording: {})
         } else if ProcessInfo.processInfo.arguments.contains("--ui-recording-finish") {
             recordingVisualFixture(paused: true, showsFinishConfirmation: true)

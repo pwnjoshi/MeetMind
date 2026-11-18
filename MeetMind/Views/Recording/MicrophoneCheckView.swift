@@ -18,8 +18,17 @@ public struct MicrophoneCheckView: View {
     @State private var sampleDuration: TimeInterval = 0
     @State private var showsTroubleshooting = false
     
-    public init(onStartRecording: @escaping () -> Void) {
+    public init(onStartRecording: @escaping () -> Void, visualSampleDuration: TimeInterval? = nil) {
         self.onStartRecording = onStartRecording
+        if let visualSampleDuration {
+            self._sampleReady = State(initialValue: true)
+            self._sampleDuration = State(initialValue: visualSampleDuration)
+            self._inputDetected = State(initialValue: true)
+            self._levels = State(initialValue: [0.18, 0.42, 0.24, 0.54, 0.31, 0.66, 0.38, 0.51,
+                                                0.28, 0.73, 0.34, 0.61, 0.44, 0.69, 0.32, 0.57,
+                                                0.41, 0.77, 0.36, 0.62, 0.29, 0.70, 0.45, 0.58,
+                                                0.33, 0.67, 0.39, 0.74, 0.30, 0.55, 0.43, 0.64])
+        }
     }
     
     public var body: some View {
@@ -46,7 +55,12 @@ public struct MicrophoneCheckView: View {
                     .foregroundStyle(Color(uiColor: .secondaryLabel))
             }
             
-            MicWaveformCardView(levels: levels)
+            MicWaveformCardView(
+                levels: levels,
+                durationText: sampleReady
+                    ? Duration.seconds(sampleDuration).formatted(.time(pattern: .minuteSecond))
+                    : nil
+            )
             
             HStack(spacing: 12) {
                 Circle()
@@ -74,7 +88,6 @@ public struct MicrophoneCheckView: View {
             if sampleReady {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Your Sample").font(.body)
-                    Text(Duration.seconds(sampleDuration).formatted(.time(pattern: .minuteSecond))).font(.footnote).foregroundStyle(.secondary)
                     Text("Does it sound clear?").font(.subheadline).foregroundStyle(.secondary)
                     Button("Play Sample", systemImage: "play.fill") {
                         do { playback.seek(to: 0); try playback.play() }

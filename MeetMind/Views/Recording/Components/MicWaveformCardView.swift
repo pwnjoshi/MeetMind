@@ -3,8 +3,12 @@ import SwiftUI
 /// Dark waveform visualization card matching Figma node 161:1089
 public struct MicWaveformCardView: View {
     public let levels: [Float]
+    public let durationText: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    public init(levels: [Float] = Array(repeating: 0, count: 32)) { self.levels = levels }
+    public init(levels: [Float] = Array(repeating: 0, count: 32), durationText: String? = nil) {
+        self.levels = levels
+        self.durationText = durationText
+    }
     
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -32,6 +36,12 @@ public struct MicWaveformCardView: View {
                 }
             }
             .padding(.horizontal, 16)
+            }
+            if let durationText {
+                Text(durationText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
         }
         .padding(20)
