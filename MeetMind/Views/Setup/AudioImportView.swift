@@ -18,6 +18,7 @@ public struct AudioImportView: View {
     @State private var selectedSeriesID: UUID?
     @State private var newSeriesID: UUID?
     @State private var newSeriesName = ""
+    @State private var seriesNameDraft = ""
     @State private var isNewSeriesPresented = false
     
     public init(viewModel: MeetingSetupViewModel = MeetingSetupViewModel(), onImportComplete: ((Meeting) -> Void)? = nil) {
@@ -58,7 +59,10 @@ public struct AudioImportView: View {
                         }
                     }
                     .disabled(isProcessing)
-                    Button("New Series...") { isNewSeriesPresented = true }
+                    Button("New Series...") {
+                        seriesNameDraft = newSeriesName
+                        isNewSeriesPresented = true
+                    }
                         .disabled(isProcessing)
                 }
                 Section {
@@ -95,15 +99,15 @@ public struct AudioImportView: View {
             }
             .interactiveDismissDisabled(isProcessing)
             .alert("New Series", isPresented: $isNewSeriesPresented) {
-                TextField("Series name", text: $newSeriesName)
+                TextField("Series name", text: $seriesNameDraft)
                 Button("Cancel", role: .cancel) { }
                 Button("Save") {
-                    newSeriesName = newSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    newSeriesName = seriesNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                     let id = newSeriesID ?? UUID()
                     newSeriesID = id
                     selectedSeriesID = id
                 }
-                .disabled(newSeriesName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(seriesNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .alert("Import Failed", isPresented: $showErrorAlert) {
                 Button("OK", role: .cancel) {}
