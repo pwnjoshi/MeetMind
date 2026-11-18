@@ -1,6 +1,10 @@
 # Native screen implementation and verification
 
-Reference: https://www.figma.com/design/Tar6q6zhuhMDIOBlSKzkdI/MeetMind?node-id=161-552
+Primary reference: the eight iPhone screenshots supplied in this chat (welcome, empty/populated Meetings, microphone idle/sample, recording/paused/finish).
+
+The welcome layout uses local Continue and Not Now actions, as explicitly confirmed by the user. No sign-in is added.
+
+Secondary reference: https://www.figma.com/design/Tar6q6zhuhMDIOBlSKzkdI/MeetMind?node-id=161-552
 
 Status: in progress. Existing views and passing unit tests do not prove visual fidelity.
 Each flow needs reference inspection, implementation, simulator comparison, accessibility
@@ -18,8 +22,8 @@ checks, and a working navigation path before it can be marked verified.
 | Participants | 673:1591, 1563:14, 1563:863 | Match add, search, create person, and inline edits |
 | Follow-up | 1552:408 | Implement date/time, series selection, and saved occurrence |
 | Calendar | 161:1005, 161:1034 | Inspect integration against local-only requirement; system permission UI must be native |
-| Microphone | 161:1089, 161:1151 | Match input check, denied/unavailable recovery and notes-only entry |
-| Recording | 161:1171, 161:1328 | Match timer, real waveform, provisional transcript, pause/resume, bookmark, finish confirmation |
+| Microphone | User screenshots 4–5; 161:1089, 161:1151 | Temporary record/play/retry, actual input route and error recovery implemented; simulator render and physical playback checks pending |
+| Recording | User screenshots 6–8; 161:1171, 161:1328 | Dark console, timer, real waveform, transcript toggle, pause/resume, bookmark and native Finish alert implemented; rendered comparison and device checks pending |
 | Recording tools | 161:1234, 161:1270, 161:1287, 161:1308 | Match notes, parked topics, and photo attachment with persistence |
 | Notes only | 161:1372 | Implement complete manual minutes flow |
 | Speakers | 161:1482, 161:1524, 1568:183 | Match anonymous speaker review, sample playback, name selection and search |

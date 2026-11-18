@@ -71,8 +71,6 @@ public struct MicrophoneCheckView: View {
                     .frame(minHeight: 44)
             }
             
-            Spacer()
-
             if sampleReady {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Your Sample").font(.body)
@@ -86,10 +84,14 @@ public struct MicrophoneCheckView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
                 .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
-            } else {
+            }
+
+            Spacer(minLength: 24)
+
+            if !sampleReady {
                 Text("Deleted after the test.").font(.footnote).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
-                Button(capturingSample ? "Stop Sample" : "Record Sample") {
+                Button {
                     if !capturingSample {
                         playback.stop()
                         try? recorder.cancelRecording()
@@ -118,6 +120,10 @@ public struct MicrophoneCheckView: View {
                             try? recorder.cancelRecording()
                         }
                     }
+                }
+                label: {
+                    Text(capturingSample ? "Stop Sample" : "Record Sample")
+                        .frame(maxWidth: .infinity)
                 }
                 .disabled(stoppingSample || (capturingSample && !microphoneReady))
                 .buttonStyle(.borderedProminent)
