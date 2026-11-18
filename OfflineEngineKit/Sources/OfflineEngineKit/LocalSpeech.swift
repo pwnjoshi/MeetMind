@@ -9,7 +9,9 @@ private final class LocalOnlyWhisper: WhisperKit {
     override func loadTokenizerIfNeeded() async throws {
         guard tokenizer == nil else { return }
         guard let modelFolder else { throw OfflineError.unavailable("Missing local tokenizer folder.") }
-        guard let logits = textDecoder.logitsSize, ModelUtilities.isModelMultilingual(logitsDim: logits) else {
+        // Whisper's English-only vocabulary has 51,864 logits; multilingual
+        // small has 51,865 and large-v3 has 51,866. SDK helper is internal.
+        guard let logits = textDecoder.logitsSize, logits >= 51865 else {
             throw OfflineError.unavailable("A multilingual speech model is required for Hindi–English meetings.")
         }
         textDecoder.isModelMultilingual = true

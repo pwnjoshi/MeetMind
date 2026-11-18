@@ -119,14 +119,22 @@ struct OfflineBenchmarkView: View {
         operation = Task { @MainActor in
             defer { busy = false; UIApplication.shared.isIdleTimerDisabled = false }
             do { try await work() }
-            catch is CancellationError { status = "Cancelled. Downloaded model files can be reused on retry." }
-            catch { status = error.localizedDescription }
+            catch is CancellationError {
+                status = "Cancelled. Downloaded model files can be reused on retry."
+                print("MEETMIND_BENCHMARK cancelled")
+            }
+            catch {
+                status = error.localizedDescription
+                // No error payload: a library error could contain input text.
+                print("MEETMIND_BENCHMARK failed; inspect the on-device status")
+            }
             await refresh()
         }
     }
 
     private func install(_ profile: ModelProfile) async throws {
         status = "Downloading \(profile.name)…"
+        print("MEETMIND_BENCHMARK download \(profile.id)")
         try await OfflineModelStore.shared.install(profile) { value in
             Task { @MainActor in progress = value }
         }
@@ -136,6 +144,7 @@ struct OfflineBenchmarkView: View {
 
     private func run(_ profile: ModelProfile) async throws {
         status = "Running \(profile.name) on this iPhone. Keep the app open."
+        print("MEETMIND_BENCHMARK running \(profile.id)")
         let result = try await runner.run(profile: profile, audio: audio, turns: turns)
         try OfflineBenchmarkRunner.save(result)
         if !result.turns.isEmpty { turns = result.turns }
@@ -143,5 +152,6 @@ struct OfflineBenchmarkView: View {
         output = String(decoding: try encoder.encode(result), as: UTF8.self)
         progress = 1
         status = "Finished in \(Int(result.elapsedSeconds)) seconds. This is a benchmark, not a quality qualification."
+        print("MEETMIND_BENCHMARK completed \(profile.id) seconds=\(result.elapsedSeconds) sampledPeakBytes=\(result.sampledPeakFootprintBytes) thermal=\(result.thermalState)")
     }
 }
