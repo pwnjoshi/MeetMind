@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Welcome and sign-in screen matching Figma node 161:554 exactly
+/// Screenshot-based welcome screen with local, account-free entry.
 public struct WelcomeAndSignInView: View {
     @Bindable public var viewModel: OnboardingViewModel
     
@@ -54,17 +54,11 @@ public struct WelcomeAndSignInView: View {
             }
             .padding(.top, Spacing.lg)
             
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Your name (optional)").font(.caption).foregroundStyle(.secondary)
-                TextField("How should we call you?", text: $viewModel.name)
-                    .textContentType(.name)
-                    .textInputAutocapitalization(.words)
-                    .submitLabel(.continue)
-                    .onSubmit { viewModel.continueLocally() }
-            }
-            .padding(16)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-            
+            Text("Your recordings stay on this iPhone.")
+                .font(.footnote).foregroundStyle(.secondary)
+                .padding(.top, 16)
+            Spacer(minLength: 80)
+
             Button {
                 viewModel.continueLocally()
             } label: {
@@ -78,10 +72,9 @@ public struct WelcomeAndSignInView: View {
             }
             .padding(.top, Spacing.xs)
             
-            Label("No account required", systemImage: "iphone")
-                .font(.subheadline).foregroundStyle(.secondary)
-            Text("Your meetings are saved on this iPhone. You choose what to share.")
-                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Not Now") { viewModel.continueLocally() }
+                .frame(minHeight: 44)
+                .padding(.top, 8)
             Spacer(minLength: Spacing.md)
         }
         .padding(.horizontal, Spacing.lg)
