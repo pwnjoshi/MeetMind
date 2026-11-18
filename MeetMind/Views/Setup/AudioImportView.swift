@@ -12,6 +12,7 @@ public struct AudioImportView: View {
     @State private var isProcessing: Bool = false
     @State private var errorMessage: String? = nil
     @State private var showErrorAlert: Bool = false
+    @State private var recordedAt = Date()
     
     public init(viewModel: MeetingSetupViewModel = MeetingSetupViewModel(), onImportComplete: ((Meeting) -> Void)? = nil) {
         self.viewModel = viewModel
@@ -38,6 +39,11 @@ public struct AudioImportView: View {
                 }
                 Section("Title") {
                     TextField("Meeting title", text: $viewModel.title)
+                        .disabled(isProcessing)
+                }
+                Section("Details") {
+                    DatePicker("Recorded", selection: $recordedAt, in: ...Date(),
+                        displayedComponents: [.date, .hourAndMinute])
                         .disabled(isProcessing)
                 }
                 Section {
@@ -84,6 +90,7 @@ public struct AudioImportView: View {
     private var processButton: some View {
         Button("Import recording") {
             guard let url = selectedURL else { return }
+            viewModel.importedRecordingDate = recordedAt
             isProcessing = true
             Task {
                 do {

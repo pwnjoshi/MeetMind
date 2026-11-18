@@ -170,6 +170,8 @@ public final class MeetingSetupViewModel {
     
     public var title: String = ""
     public var startDate: Date = Date().addingTimeInterval(3600)
+    /// User-supplied date of imported audio; nil preserves the existing default.
+    public var importedRecordingDate: Date?
     public var endDate: Date = Date().addingTimeInterval(5400)
     public var agendaText: String = ""
     public var agenda: String {
@@ -746,11 +748,12 @@ public final class MeetingSetupViewModel {
         let meetingTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? url.deletingPathExtension().lastPathComponent
             : title
+        let recordedAt = importedRecordingDate ?? Date()
         
         let meeting = Meeting(
             title: meetingTitle,
-            createdAt: Date(),
-            scheduledStartTime: Date(),
+            createdAt: recordedAt,
+            scheduledStartTime: recordedAt,
             duration: duration,
             status: .processing,
             audioFileURL: persistentAudioURL,
