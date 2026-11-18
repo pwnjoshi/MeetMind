@@ -126,6 +126,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Smoke test onboarding and repeated main-tab launches
+        timeout-minutes: 8
         if: ${{ !cancelled() && env.DEVICE_ID != '' }}
         run: bash Scripts/smoke_launch.sh "$DEVICE_ID"
 
