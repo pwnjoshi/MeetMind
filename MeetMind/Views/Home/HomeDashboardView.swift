@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// Main Meetings home screen matching Figma node 161:777
+/// Main Meetings home screen matching Figma node 1408:3209
 public struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
@@ -17,23 +17,28 @@ public struct HomeDashboardView: View {
     
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    MeetingsSearchBarView(text: $viewModel.searchText) { isFilterPresented = true }
-                    
-                    HomeUpcomingSectionView(meetings: viewModel.filteredUpcomingMeetings) { meeting in
-                        router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
+            List {
+                Section("Upcoming meetings") {
+                    if viewModel.filteredUpcomingMeetings.isEmpty {
+                        Text("No upcoming meetings scheduled").foregroundStyle(.secondary)
                     }
-                    
-                    HomeRecentSectionView(meetings: viewModel.filteredRecentMeetings) { meeting in
-                        router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
+                    ForEach(viewModel.filteredUpcomingMeetings) { meeting in
+                        meetingRow(meeting, upcoming: true)
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-                .padding(.bottom, 80) // Space for FAB
+                Section("Recent meetings") {
+                    if viewModel.filteredRecentMeetings.isEmpty {
+                        Text("No recent meetings").foregroundStyle(.secondary)
+                    }
+                    ForEach(viewModel.filteredRecentMeetings) { meeting in
+                        meetingRow(meeting, upcoming: false)
+                    }
+                }
+                Section { Color.clear.frame(height: 56).listRowBackground(Color.clear) }
             }
-            
+            .listStyle(.insetGrouped)
+            .headerProminence(.increased)
+
             // Bottom Action FAB
             Menu {
                 Button("Quick Meet", systemImage: "mic.fill") { isMicrophoneCheckPresented = true }
@@ -95,4 +100,24 @@ public struct HomeDashboardView: View {
         }
         .onAppear { viewModel.setModelContext(modelContext); viewModel.fetchMeetings() }
     }
+    private func meetingRow(_ meeting: Meeting, upcoming: Bool) -> some View {
+        NavigationLink(value: NavigationDestination.meetingDetail(id: meeting.id)) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(meeting.title).font(.body).foregroundStyle(.primary)
+                    Text(upcoming
+                        ? "\((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))) \u{00B7} \(meeting.figmaBadgeText)"
+                        : meeting.figmaBadgeText)
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Text(upcoming
+                    ? (meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .omitted, time: .shortened)
+                    : meeting.createdAt.formatted(.dateTime.day().month(.abbreviated)))
+                    .font(.body).foregroundStyle(.secondary)
+            }
+            .frame(minHeight: 44)
+        }
+    }
+
 }

@@ -9,7 +9,7 @@ This is an integrated evaluation build, not a claim that the accuracy, one-hour
 performance, memory, or full production-readiness gates below have passed.
 The original 4B/4096 configuration remains excluded; compact 4B/2048 has a separate measured trial profile.
 
-## Integrated app flow (build 7)
+## Integrated app flow (current source; device qualification pending)
 
 - Record/import audio, then open processing. Missing models require an explicit
   one-time public download. Settings → Offline analysis models supports download,
@@ -32,14 +32,15 @@ The original 4B/4096 configuration remains excluded; compact 4B/2048 has a separ
   use normalized title/owner identity. Accepted/manual tasks survive reanalysis.
   This is deterministic duplicate suppression, not qualified semantic reconciliation
   of later cancellations, contradictions, or differently worded commitments.
-- Ask AI uses Qwen3-1.7B against bounded transcript chunks, with validated source
+- Ask AI uses the same compact Qwen3-4B profile against tokenizer-bounded transcript chunks, with validated source
   quotes and real timestamps. Hard-coded answers/citations have been removed.
   Question accuracy and cross-chunk answer reconciliation remain unqualified.
 - Optional Apple Reminders sync targets on-device local lists only, preserving the
   no-cloud requirement. If no local account exists, tasks stay in MeetMind and the
   app explains why sync is unavailable. Unspecified priority is not invented on export.
 - New persistence fields are optional additions; existing records keep legacy data.
-  Installation and a real existing-store open still need physical-device validation.
+  Build 9 opened the existing iPhone store. The added build 10 recording locator and
+  transcript ordering fields still require update and playback validation on-device.
 
 The content-free integrated smoke command is:
 
@@ -65,8 +66,8 @@ Build 6 opened the iPhone's existing production store and remained running. Its
 memory guard rejected both the unsafe 4B estimate and a 1.7B attempt with about
 1.91 GB available versus a 2.03 GB estimated requirement. Build 7 bounds Foundation
 FileHandle temporary buffers with a per-chunk autorelease pool during multi-GB
-model verification. The memory reserve and 3 GB cap are unchanged. Physical-device
-confirmation of this fix and the integrated pipeline is still pending.
+model verification. The memory reserve and 3 GB cap are unchanged. Build 7 subsequently confirmed the reduced sampled footprint on-device (see below);
+the integrated task-review persistence check remained unsuccessful through build 9.
 
 ## Build 7 physical integration findings
 
@@ -335,3 +336,15 @@ as fully qualified or infer task accuracy from valid substring quotes alone.
 
 Synthetic scorer unit tests are only tests of scoring logic. They must never be
 included in the quality corpus or cited as real-meeting accuracy benchmarks.
+
+## Build 10 verified integration result
+
+Source `0a397f1`, Actions run `44322096984`, passed 752 app tests,
+35 engine tests, and onboarding plus three repeated main-tab launches.
+The build 10 IPA was installed over build 9 using the same Sideloadly profile.
+The existing production store opened and remained running after five seconds.
+The public-audio pipeline completed: 2 transcript turns, 1 generated suggestion,
+0 automatically active tasks. Review saved 1 task; repeating confirmation produced
+0 duplicates, and a fresh model context reloaded the accepted task.
+Private Hindi-English accuracy and long-session gates remain outstanding.
+Subsequent UI source changes require separate validation.

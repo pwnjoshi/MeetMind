@@ -14,12 +14,6 @@ public struct SearchConsoleView: View {
     
     public var body: some View {
         VStack(spacing: Spacing.sm) {
-            SearchBar(text: $viewModel.searchQuery, placeholder: "Search transcripts, notes, tasks...") {
-                viewModel.performSearch(query: viewModel.searchQuery)
-            }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.top, Spacing.xs)
-            
             SearchScopeFilterBar(
                 selectedScope: viewModel.selectedScope,
                 onSelectScope: { viewModel.selectedScope = $0; viewModel.performSearch(query: viewModel.searchQuery) }
@@ -42,6 +36,7 @@ public struct SearchConsoleView: View {
         }
         .background(Theme.Colors.background)
         .navigationTitle("Search")
+        .searchable(text: $viewModel.searchQuery, prompt: "Meetings, transcripts, actions")
         .onAppear { viewModel.indexMeetings(allMeetings) }
         .onChange(of: allMeetings) { _, newMeetings in viewModel.indexMeetings(newMeetings) }
         .onChange(of: viewModel.searchQuery) { _, newQuery in viewModel.performSearch(query: newQuery) }
