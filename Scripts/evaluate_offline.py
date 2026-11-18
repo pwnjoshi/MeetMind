@@ -12,6 +12,16 @@ import sys
 import unicodedata
 
 
+# Refined Hinglish prompt for task extraction
+# Focus on identifying action items with explicit transcript source attribution.
+SYSTEM_PROMPT = """You are a precise meeting assistant. Extract actionable tasks.
+For every task, you must:
+1. Identify the task, owner, and due date.
+2. Quote the exact transcript segment (source) that justifies the task.
+3. If no clear owner or date is mentioned, label as 'Unassigned' or 'TBD'.
+DO NOT invent consensus. If the meeting did not explicitly agree on an action, do not extract it.
+"""
+
 def tokens(text, aliases):
     text = unicodedata.normalize("NFC", text).casefold()
     # Preserve Devanagari combining marks; strip punctuation, not vowel signs.
