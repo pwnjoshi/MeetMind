@@ -18,8 +18,13 @@ public struct ModelProfile: Codable, Identifiable, Sendable {
 
 public enum OfflineError: LocalizedError {
     case unavailable(String)
+    case memoryBudget(requiredEstimate: UInt64, budget: UInt64)
     public var errorDescription: String? {
-        switch self { case .unavailable(let message): return message }
+        switch self {
+        case .unavailable(let message): return message
+        case .memoryBudget:
+            return "This model exceeds the safe memory budget. Choose the smaller 1.7B model."
+        }
     }
 }
 
@@ -54,6 +59,10 @@ public actor OfflineModelStore {
     }
 
     private func directory(_ profile: ModelProfile) throws -> URL {
+        guard !profile.id.isEmpty, profile.id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "." }),
+              profile.id != ".", profile.id != ".." else {
+            throw OfflineError.unavailable("Invalid model identifier.")
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let digest = SHA256.hash(data: try encoder.encode(profile.files)).map { String(format: "%02x", $0) }.joined()
@@ -63,6 +72,13 @@ public actor OfflineModelStore {
     public func isInstalled(_ profile: ModelProfile) -> Bool {
         guard let root = try? directory(profile) else { return false }
         return FileManager.default.fileExists(atPath: root.appendingPathComponent("verified.json").path)
+    }
+
+    public func remove(_ profile: ModelProfile) throws {
+        let root = try directory(profile)
+        for path in [root, root.appendingPathExtension("download")] {
+            if FileManager.default.fileExists(atPath: path.path) { try FileManager.default.removeItem(at: path) }
+        }
     }
 
     private func hash(_ url: URL) throws -> String {

@@ -1,5 +1,6 @@
 import Foundation
 import llama
+import os
 
 /// One instance per stage; no HTTP client, no transcript logging, bounded context.
 final class LocalLanguageModel {
@@ -8,6 +9,10 @@ final class LocalLanguageModel {
     private let vocab: OpaquePointer
 
     init(url: URL) throws {
+        guard let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber else {
+            throw OfflineError.unavailable("Unable to determine the model's memory requirements.")
+        }
+        try ModelMemoryAdmission.check(modelBytes: size.uint64Value, availableBytes: UInt64(os_proc_available_memory()))
         llama_backend_init()
         llama_log_set({ _, _, _ in }, nil)
         var parameters = llama_model_default_params()

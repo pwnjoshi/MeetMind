@@ -1,15 +1,16 @@
 # Verification status
 
-Use the current GitHub Actions run for `codex/fix-launch-and-recording` as the
+Use the current GitHub Actions run for `codex/offline-intelligence` as the
 source of build/test results. A green Release build alone is not a passing suite.
 
 The old report of 646 passing executions described a separate Python simulation.
 It did not execute Swift or catch the device launch crash. It is not release
 acceptance evidence.
 
-Run native tests on macOS:
+Run native tests on macOS with Xcode 26+ / Swift 6.2+:
 
 ```sh
+bash Scripts/prepare_llama.sh
 xcodebuild test -project MeetMind.xcodeproj -scheme MeetMind \
   -destination 'platform=iOS Simulator,name=iPhone 15' \
   -resultBundlePath build/TestResults.xcresult

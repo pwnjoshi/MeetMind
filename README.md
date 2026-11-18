@@ -9,7 +9,7 @@ repairs, verification evidence, and remaining limitations.
 ## Features
 
 - AAC recording, live microphone metering, pause/resume, and persistent audio.
-- Apple Speech transcription with on-device recognition enabled by default.
+- Apple Speech transcription restricted to on-device recognition.
 - Local extractive summaries, decisions, and suggested action items.
 - Transcript editing, manual speaker attribution, playback, notes, and photos.
 - Meeting scheduling, audio import, filtering, and cross-meeting search services.
@@ -17,13 +17,26 @@ repairs, verification evidence, and remaining limitations.
 - PDF sharing, Markdown export, and email-draft text.
 
 On-device recognition depends on device/language support and installed speech
-models. Online recognition can be enabled explicitly in Settings and may send
-audio to Apple's speech service. Calendar sync, iCloud sync, and automatic speaker
-diarization are not provided.
+models; unavailable local recognition fails visibly rather than using cloud speech.
+Calendar and iCloud sync are not provided. Saved meeting storage is excluded from
+device backups; sharing and Reminders export are explicit user actions.
+
+Settings includes a separate offline-model qualification lab for WhisperKit,
+FluidAudio speaker separation, and local Qwen3 task analysis. These experimental
+engines have not replaced the normal meeting pipeline. See
+[OFFLINE_QUALIFICATION.md](OFFLINE_QUALIFICATION.md) for device measurements and
+outstanding Hinglish quality gates.
 
 ## Build and test
 
-Open `MeetMind.xcodeproj` with Xcode on macOS, select the MeetMind scheme and an
+Use Xcode 26+ with Swift 6.2+ on macOS. Before opening the project, prepare the
+checksummed native runtime and its matching simulator slice:
+
+```sh
+bash Scripts/prepare_llama.sh
+```
+
+Open `MeetMind.xcodeproj`, select the MeetMind scheme and an
 iOS 17+ simulator or signed iPhone destination. Build with Cmd+B; run Swift XCTest
 with Cmd+U. GitHub Actions also builds the Release app and runs simulator tests
 and repeated-launch checks. Inspect the complete workflow outcome, not just the
@@ -56,4 +69,5 @@ be used for verification. Do not commit IPA files or build outputs.
 - `MeetMind/ViewModels` and `MeetMind/Views`: app behavior and SwiftUI screens
 - `MeetMind/DesignSystem` and `MeetMind/Resources`: UI tokens and bundled assets
 - `MeetMindTests`: Swift XCTest unit and integration suites
+- `OfflineEngineKit`: pinned local engines, model manifests, and qualification tests
 - `Scripts`: project, package, and simulator launch checks

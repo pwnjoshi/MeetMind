@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import OSLog
+import Darwin
 
 @main
 struct MeetMindApp: App {
@@ -31,6 +32,11 @@ struct MeetMindApp: App {
         _appState = State(initialValue: state)
         _router = State(initialValue: navRouter)
         _settingsVM = State(initialValue: settings)
+        if ProcessInfo.processInfo.arguments.contains("--diagnose-storage") {
+            // Content-free verification of the actual production store open.
+            print("MEETMIND_STORAGE_READY \(initializedContainer != nil)")
+            fflush(stdout)
+        }
     }
     
     var body: some Scene {

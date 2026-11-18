@@ -66,7 +66,7 @@ integrity checks. Footprint is sampled every 200 ms and can miss short spikes.
 | Whisper multilingual small | 25.12 | 511018168 | Nominal |
 | Whisper compressed large-v3 | 77.28 | 651035952 | Nominal |
 | Qwen3-1.7B Q4_K_M | 18.30 | 1880722536 | Nominal |
-| Qwen3-4B Q4_K_M | Not measured | Not measured | Download connection lost twice |
+| Qwen3-4B Q4_K_M | Did not complete | No completed sample | Terminated by iOS memory pressure |
 
 Build 5 adds bounded, resumable HTTP range downloads with retries after the 4B
 download failure. Previously installed model directories remain compatible.
@@ -74,6 +74,26 @@ It also enforces on-device Apple Speech, removes the dormant cloud inference
 service, excludes legacy meeting storage from backups, and removes fabricated
 consensus from the legacy summary fallback. The normal meeting-analysis pipeline
 has not been replaced by the unqualified benchmark engines.
+
+After its download completed, the 4B configuration was terminated under memory
+pressure in two foreground attempts (`vm-pageshortage`, `proc-thrashing` in iOS
+jetsam reports). One report records approximately 2.60 GB of resident pages when
+terminated; this is not a completed inference peak and is not the footprint metric
+used above. Do not treat the failed attempt as a valid timing measurement.
+Build 6 adds a conservative pre-allocation budget check (weights + 750 MB reserve,
+capped at 3 GB and the OS-reported available process memory), a safe rejection of
+this configuration, and a user action to remove downloaded model files.
+The 1.7B candidate still requires real-meeting accuracy and headroom evaluation.
+
+Build 6 can verify that the actual production store opens without copying any
+meeting content off the phone:
+
+```powershell
+build/device-tools/Scripts/python.exe Scripts/device_benchmark.py --storage-check
+```
+
+The diagnostic prints only a success boolean and checks that the app remains alive
+after five seconds. It does not inspect or export saved meeting rows.
 
 ## Locked product requirements
 

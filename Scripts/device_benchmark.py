@@ -45,7 +45,28 @@ def run(model, timeout):
     app = query("apps", "query", BUNDLE).get(BUNDLE, {})
     if int(app.get("CFBundleVersion", "0")) < 4:
         raise RuntimeError("Install the benchmark-enabled build 4 before running engine tests. The installed build is older.")
+    if model == "qwen-4b" and int(app.get("CFBundleVersion", "0")) < 6:
+        raise RuntimeError("Install build 6 before testing 4B: earlier builds lack the memory admission guard.")
     args = f"{BUNDLE} --offline-benchmark --benchmark-model={model}"
+    print(f"Starting {model} synthetic smoke test; not a quality qualification.", flush=True)
+    watch(args, timeout)
+
+
+def storage_check(timeout):
+    app = query("apps", "query", BUNDLE).get(BUNDLE, {})
+    if int(app.get("CFBundleVersion", "0")) < 6:
+        raise RuntimeError("Install build 6 before running the content-free storage diagnostic.")
+    watch(f"{BUNDLE} --diagnose-storage", timeout, storage=True)
+    time.sleep(5)
+    snapshots = query("developer", "dvt", "sysmon", "process", "single", "--userspace",
+                      "--filter", "name=MeetMind", "--key", "pid", "--key", "physFootprint")
+    if not snapshots:
+        raise RuntimeError("MeetMind exited after opening its production store.")
+    print("Production store opened; MeetMind remained running after 5 seconds.", flush=True)
+
+
+def watch(args, timeout, storage=False):
+    marker = "MEETMIND_STORAGE_READY " if storage else "MEETMIND_BENCHMARK "
     process = subprocess.Popen(command("developer", "dvt", "launch", args, "--userspace", "--stream"),
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                text=True, encoding="utf-8", errors="replace", bufsize=1)
@@ -54,12 +75,11 @@ def run(model, timeout):
         for line in process.stdout:
             # Libraries may print internal diagnostics; never persist/forward
             # arbitrary stdout. Only our own content-free markers are emitted.
-            if "MEETMIND_BENCHMARK " in line:
-                lines.put(line[line.index("MEETMIND_BENCHMARK "):].strip())
+            if marker in line:
+                lines.put(line[line.index(marker):].strip())
         lines.put(None)
     threading.Thread(target=read, daemon=True).start()
     deadline = time.monotonic() + timeout
-    print(f"Starting {model} synthetic smoke test; not a quality qualification.", flush=True)
     try:
         while time.monotonic() < deadline:
             try:
@@ -69,8 +89,14 @@ def run(model, timeout):
             if line is None:
                 raise RuntimeError("Device stream ended before a benchmark result. Inspect the on-device status.")
             print(line, flush=True)
+            if storage:
+                if line == "MEETMIND_STORAGE_READY true":
+                    return
+                raise RuntimeError("The production meeting store did not open. Inspect the recovery message on the iPhone.")
             if "MEETMIND_BENCHMARK completed " in line:
                 return
+            if "MEETMIND_BENCHMARK rejected_memory" in line:
+                raise RuntimeError("Model rejected before allocation by the safe memory budget.")
             if "MEETMIND_BENCHMARK failed" in line or "MEETMIND_BENCHMARK cancelled" in line:
                 raise RuntimeError("Benchmark did not complete; inspect its status on the iPhone.")
         raise RuntimeError("Timed out waiting for the benchmark. The app may still be running on the iPhone.")
@@ -89,11 +115,14 @@ def main():
     choice = parser.add_mutually_exclusive_group(required=True)
     choice.add_argument("--status", action="store_true")
     choice.add_argument("--run", choices=MODELS)
+    choice.add_argument("--storage-check", action="store_true")
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args()
     try:
         if args.status:
             status()
+        elif args.storage_check:
+            storage_check(args.timeout)
         else:
             run(args.run, args.timeout)
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:

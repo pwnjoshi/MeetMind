@@ -47,6 +47,15 @@ struct OfflineBenchmarkView: View {
                                     .buttonStyle(.borderedProminent)
                             }
                         }.disabled(busy)
+                        if installed.contains(profile.id) {
+                            Button("Remove downloaded model", role: .destructive) {
+                                begin {
+                                    try await OfflineModelStore.shared.remove(profile)
+                                    status = "Model files removed. You can download them again."
+                                }
+                            }
+                            .font(.caption).buttonStyle(.borderless).disabled(busy)
+                        }
                     }.padding(.vertical, 4)
                 }
             }
@@ -127,6 +136,10 @@ struct OfflineBenchmarkView: View {
             }
             catch {
                 status = error.localizedDescription
+                if let offlineError = error as? OfflineError,
+                   case let .memoryBudget(requiredEstimate, budget) = offlineError {
+                    print("MEETMIND_BENCHMARK rejected_memory estimatedBytes=\(requiredEstimate) budgetBytes=\(budget)")
+                }
                 // No error payload: a library error could contain input text.
                 print("MEETMIND_BENCHMARK failed; inspect the on-device status")
                 fflush(stdout)
