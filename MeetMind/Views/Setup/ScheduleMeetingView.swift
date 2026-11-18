@@ -16,8 +16,16 @@ public struct ScheduleMeetingView: View {
         NavigationStack {
             Form {
                 Section("Meeting Info") {
-                    TextField("Meeting Title", text: $viewModel.title)
-                        .font(Typography.body)
+                    NavigationLink {
+                        Form {
+                            TextField("Meeting title", text: $viewModel.title)
+                                .submitLabel(.done)
+                        }
+                        .navigationTitle("Meeting Title")
+                        .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        LabeledContent("Title", value: viewModel.title.isEmpty ? "Required" : viewModel.title)
+                    }
                     DatePicker("Start Time", selection: $viewModel.startDate, displayedComponents: [.date, .hourAndMinute])
                     DatePicker("End Time", selection: $viewModel.endDate, displayedComponents: [.date, .hourAndMinute])
                     if let err = viewModel.dateValidationError {
@@ -36,9 +44,18 @@ public struct ScheduleMeetingView: View {
                 }
                 
                 Section("Agenda") {
-                    TextEditor(text: $viewModel.agendaText)
-                        .frame(minHeight: 80)
-                        .font(Typography.body)
+                    NavigationLink {
+                        Form {
+                            TextEditor(text: $viewModel.agendaText)
+                                .frame(minHeight: 240)
+                                .accessibilityLabel("Meeting agenda")
+                        }
+                        .navigationTitle("Meeting Agenda")
+                        .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        LabeledContent("Agenda", value: viewModel.agendaText.isEmpty ? "Add agenda" : viewModel.agendaText)
+                            .lineLimit(2)
+                    }
                 }
                 
                 Section("Participants") {
