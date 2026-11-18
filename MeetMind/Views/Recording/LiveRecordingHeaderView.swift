@@ -35,11 +35,16 @@ public struct LiveRecordingHeaderView: View {
                         .textFieldStyle(.plain)
                         .onSubmit { isEditingTitle = false }
                 } else {
-                    Text(title.isEmpty ? "Live Meeting" : title)
-                        .font(Typography.headline)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                        .lineLimit(1)
-                        .onTapGesture { isEditingTitle = true }
+                    Button { isEditingTitle = true } label: {
+                        Text(title.isEmpty ? "Live Meeting" : title)
+                            .font(Typography.headline)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(1)
+                            .frame(minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Edit meeting title")
+                    .accessibilityValue(title)
                 }
                 
                 HStack(spacing: 6) {
