@@ -16,7 +16,6 @@ public struct ActionItemsConsoleView: View {
     public var body: some View {
         @Bindable var vm = viewModel
         VStack(spacing: Spacing.sm) {
-            topControlBar
             ActionItemFilterHeaderView(
                 selectedScope: viewModel.selectedFilterScope,
                 selectedGrouping: viewModel.selectedGrouping,
@@ -35,7 +34,40 @@ public struct ActionItemsConsoleView: View {
             }
         }
         .background(Theme.Colors.background)
-        .navigationTitle("Action Items")
+        .navigationTitle("Actions")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    Section("Group actions") {
+                        ForEach(ActionItemGrouping.allCases, id: \.self) { grouping in
+                            Button {
+                                viewModel.selectedGrouping = grouping
+                            } label: {
+                                Label(groupingTitle(grouping), systemImage: viewModel.selectedGrouping == grouping ? "checkmark" : "circle")
+                            }
+                        }
+                    }
+                    Divider()
+                    Button {
+                        Task {
+                            do { try await viewModel.syncAllToAppleReminders() }
+                            catch { syncError = error.localizedDescription }
+                        }
+                    } label: {
+                        Label(viewModel.isSyncingReminders ? "Syncing Reminders" : "Sync Reminders", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(viewModel.isSyncingReminders)
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down.circle")
+                }
+                Button {
+                    viewModel.presentCreateSheet()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("New action")
+            }
+        }
         .sheet(isPresented: $vm.isShowingActionItemSheet) {
             CreateActionItemSheet(
                 onSave: { title, priority, due, assignee in
@@ -59,48 +91,35 @@ public struct ActionItemsConsoleView: View {
         } message: { Text(syncError ?? "") }
     }
     
-    private var topControlBar: some View {
-        HStack {
-            Button {
-                Task {
-                    do { try await viewModel.syncAllToAppleReminders() }
-                    catch { syncError = error.localizedDescription }
-                }
-            } label: {
-                HStack(spacing: Spacing.xs) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                    Text(viewModel.isSyncingReminders ? "Syncing..." : "Sync Reminders")
-                }
-                .font(Typography.caption)
-                .foregroundStyle(Theme.Colors.aiPurple)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(Theme.Colors.aiPurpleLight)
-                .clipShape(Capsule())
-            }
-            .disabled(viewModel.isSyncingReminders)
-            
-            Spacer()
-            
-            Button {
-                viewModel.presentCreateSheet()
-            } label: {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Theme.Colors.primarySlate)
-            }
-        }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.top, Spacing.xs)
-    }
-    
     private var emptyStateView: some View {
-        VStack(spacing: Spacing.sm) {
-            Image(systemName: "checklist.checked")
-                .font(.system(size: 40))
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "checklist")
+                .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(Theme.Colors.textTertiary)
-            Text("No action items match this filter").font(Typography.headline)
+                .frame(width: 72, height: 88)
+                .background(Theme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: Spacing.Radius.md))
+                .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+            Text(viewModel.allActionItems.isEmpty ? "No Actions Yet" : "No Actions Here")
+                .font(Typography.headline)
+            Text(viewModel.allActionItems.isEmpty
+                 ? "Record a meeting and its action items will appear here."
+                 : "Try a different filter to see your actions.")
+                .font(Typography.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.xl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func groupingTitle(_ grouping: ActionItemGrouping) -> String {
+        switch grouping {
+        case .none: return "No grouping"
+        case .priority: return "Priority"
+        case .meeting: return "Meeting"
+        case .assignee: return "Assignee"
+        case .dueDate: return "Due date"
+        case .category: return "Category"
+        }
     }
 }
