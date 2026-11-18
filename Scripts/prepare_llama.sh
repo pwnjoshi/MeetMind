@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Official b12491 ships macOS/device slices only. Build the missing ARM64
+# Official b12491 ships macOS/device slices only. Build the missing
 # simulator slice from that exact release, preserving the device binary tested.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$ROOT/build/NativeLlama"
@@ -29,25 +29,25 @@ fi
 git -C "$WORK/source" fetch --depth 1 origin "$REVISION"
 git -C "$WORK/source" checkout --detach FETCH_HEAD
 test "$(git -C "$WORK/source" rev-parse HEAD)" = "$REVISION"
-python3 - "$WORK/source/build-xcframework.sh" <<'PY'
-from pathlib import Path
-import sys
-p = Path(sys.argv[1])
-s = p.read_text()
-needle = '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"'
-assert needle in s, "Upstream simulator build flags changed"
-# The CI simulator runs ARM64. Avoid building an unused Intel simulator slice.
-p.write_text(s.replace(needle, '-DCMAKE_OSX_ARCHITECTURES="arm64"', 1))
-PY
 (
     cd "$WORK/source"
     bash build-xcframework.sh ios-sim
 )
 BASE="$WORK/base/build-apple/llama.xcframework"
+SIMULATOR="$WORK/source/build-apple/llama.xcframework"
+SIMULATOR_FRAMEWORK="$(python3 - "$SIMULATOR" <<'PY'
+import pathlib, plistlib, sys
+root = pathlib.Path(sys.argv[1])
+with (root / 'Info.plist').open('rb') as f:
+    slices = plistlib.load(f)['AvailableLibraries']
+simulator = next(s for s in slices if s['SupportedPlatform'] == 'ios' and s.get('SupportedPlatformVariant') == 'simulator')
+print(root / simulator['LibraryIdentifier'] / simulator['LibraryPath'])
+PY
+)"
 xcrun xcodebuild -create-xcframework \
     -framework "$BASE/macos-arm64_x86_64/llama.framework" \
     -framework "$BASE/ios-arm64/llama.framework" \
-    -framework "$WORK/source/build-apple/llama.xcframework/ios-arm64-simulator/llama.framework" \
+    -framework "$SIMULATOR_FRAMEWORK" \
     -output "$DEST"
 python3 - "$DEST/Info.plist" <<'PY'
 import plistlib, sys
