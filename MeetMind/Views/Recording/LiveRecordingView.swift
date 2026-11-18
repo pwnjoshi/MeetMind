@@ -28,6 +28,8 @@ public struct LiveRecordingView: View {
                 isPaused: viewModel.isPaused,
                 onDismiss: { handleStop() }
             )
+            ScrollView {
+                VStack(spacing: Spacing.md) {
             LiveRecordingTimerBadgeView(
                 formattedDuration: viewModel.formattedDuration,
                 isRecording: viewModel.isRecording,
@@ -54,8 +56,13 @@ public struct LiveRecordingView: View {
                     segments: viewModel.finalTranscriptSegments,
                     interimText: viewModel.interimTranscriptText
                 )
+                .frame(minHeight: 200, idealHeight: 260)
             } else {
                 Spacer(minLength: 0)
+            }
+                }
+                .padding()
+                .background(Theme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 24))
             }
             LiveActionToolDock(
                 bookmarkCount: viewModel.bookmarks.count,
@@ -74,7 +81,7 @@ public struct LiveRecordingView: View {
             )
         }
         .padding(.horizontal, Spacing.sm)
-        .background(Theme.Colors.background)
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationBarHidden(true)
         .disabled(isFinishing)
         .alert("Finish recording?", isPresented: $isFinishConfirmationPresented) {
