@@ -27,7 +27,6 @@ public struct MainTabView: View {
                         .badge(pendingActionItemsBadge.map { Text($0) })
                     Tab("Search", systemImage: "magnifyingglass", value: TabIdentifier.search, role: .search) { searchStack }
                 }
-                .searchable(text: Bindable(searchModel).searchQuery, prompt: "Meetings, transcripts, actions")
             } else {
                 TabView(selection: selection) {
                     meetingsStack.tabItem { Label("Meetings", systemImage: "calendar") }.tag(TabIdentifier.home)

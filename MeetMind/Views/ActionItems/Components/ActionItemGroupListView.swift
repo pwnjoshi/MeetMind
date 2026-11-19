@@ -5,15 +5,18 @@ public struct ActionItemGroupListView: View {
     public let sections: [ActionItemGroupSection]
     public let onToggle: (ActionItem) -> Void
     public let onSelectMeeting: ((UUID) -> Void)?
+    public let onOpenTask: ((ActionItem) -> Void)?
     
     public init(
         sections: [ActionItemGroupSection],
         onToggle: @escaping (ActionItem) -> Void,
-        onSelectMeeting: ((UUID) -> Void)? = nil
+        onSelectMeeting: ((UUID) -> Void)? = nil,
+        onOpenTask: ((ActionItem) -> Void)? = nil
     ) {
         self.sections = sections
         self.onToggle = onToggle
         self.onSelectMeeting = onSelectMeeting
+        self.onOpenTask = onOpenTask
     }
     
     public var body: some View {
@@ -33,7 +36,8 @@ public struct ActionItemGroupListView: View {
                                 onToggle: { onToggle(item) },
                                 onSelectMeeting: {
                                     if let id = item.meeting?.id { onSelectMeeting?(id) }
-                                }
+                                },
+                                onOpenTask: onOpenTask.map { open in { open(item) } }
                             )
                             .padding(.horizontal, Spacing.lg)
                         }

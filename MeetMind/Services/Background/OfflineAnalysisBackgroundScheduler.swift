@@ -13,6 +13,26 @@ enum OfflineAnalysisBackgroundScheduler {
     static let taskIdentifier = "com.meetmind.app.offline-analysis"
     private static let pendingMeetingIDsKey = "MeetMind.pendingOfflineAnalysisIDs"
     private static let modelSetupKey = "Manent.initialModelSetupComplete"
+    private static var activeMeetingID: UUID?
+    private static var activeStage: MeetingAnalysisStage?
+
+    static func stage(for meetingID: UUID) -> MeetingAnalysisStage? {
+        activeMeetingID == meetingID ? activeStage : nil
+    }
+
+    static func status(for meetingID: UUID) -> String? {
+        if activeMeetingID == meetingID {
+            switch activeStage {
+            case .transcription: return "Transcribing in background"
+            case .speakers: return "Identifying speakers in background"
+            case .analysis: return "Generating minutes in background"
+            case .completed: return "Saving results in background"
+            case nil: return "Preparing on-device models in background"
+            }
+        }
+        if pendingMeetingIDs.contains(meetingID.uuidString) { return "Queued for background processing" }
+        return nil
+    }
 
     static func scheduleInitialSetup() {
         guard !UserDefaults.standard.bool(forKey: modelSetupKey) else { return }
@@ -65,12 +85,16 @@ enum OfflineAnalysisBackgroundScheduler {
                 if !succeeded || !pendingMeetingIDs.isEmpty { submit() }
             }
             do {
+                let meetingID = pendingMeetingIDs.first.flatMap { UUID(uuidString: $0) }
+                activeMeetingID = meetingID
+                activeStage = nil
+                defer { activeMeetingID = nil; activeStage = nil }
                 for profile in try await MeetingAnalysisPipeline.shared.missingModels(model: VidurModel.selected) {
                     try Task.checkCancellation()
                     try await OfflineModelStore.shared.install(profile) { _ in }
                 }
                 UserDefaults.standard.set(true, forKey: modelSetupKey)
-                guard let rawID = pendingMeetingIDs.first, let meetingID = UUID(uuidString: rawID) else {
+                guard let meetingID else {
                     succeeded = true
                     return
                 }
@@ -80,6 +104,7 @@ enum OfflineAnalysisBackgroundScheduler {
                 descriptor.fetchLimit = 1
                 guard let meeting = try context.fetch(descriptor).first else { remove(meetingID: meetingID); return }
                 let viewModel = ProcessingPipelineViewModel(meeting: meeting, modelContext: context)
+                viewModel.onOfflineStageChanged = { stage in activeStage = stage }
                 try viewModel.prepareForProduction(context: context, settings: SettingsViewModel())
                 guard try await viewModel.missingOfflineModels().isEmpty else { return }
                 try await viewModel.startPipeline()

@@ -5,11 +5,13 @@ public struct ActionItemRowView: View {
     public let item: ActionItem
     public let onToggle: () -> Void
     public let onSelectMeeting: (() -> Void)?
+    public var onOpenTask: (() -> Void)?
     
-    public init(item: ActionItem, onToggle: @escaping () -> Void, onSelectMeeting: (() -> Void)? = nil) {
+    public init(item: ActionItem, onToggle: @escaping () -> Void, onSelectMeeting: (() -> Void)? = nil, onOpenTask: (() -> Void)? = nil) {
         self.item = item
         self.onToggle = onToggle
         self.onSelectMeeting = onSelectMeeting
+        self.onOpenTask = onOpenTask
     }
     
     public var body: some View {
@@ -25,10 +27,20 @@ public struct ActionItemRowView: View {
             .accessibilityLabel(item.isCompleted ? "Reopen \(item.title)" : "Complete \(item.title)")
             
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(item.title)
-                    .font(Typography.headline)
-                    .strikethrough(item.isCompleted)
-                    .foregroundStyle(item.isCompleted ? Theme.Colors.textTertiary : Theme.Colors.textPrimary)
+                if let onOpenTask {
+                    Button(action: onOpenTask) {
+                        HStack {
+                            taskTitle
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    taskTitle
+                }
 
                 Label(
                     item.assignee.map { "Assigned to \($0.name)" } ?? "Unassigned",
@@ -70,5 +82,12 @@ public struct ActionItemRowView: View {
         .background(Theme.Colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.md))
         .overlay(RoundedRectangle(cornerRadius: Spacing.Radius.md).stroke(Theme.Colors.cardBorder, lineWidth: 1))
+    }
+
+    private var taskTitle: some View {
+        Text(item.title)
+            .font(Typography.headline)
+            .strikethrough(item.isCompleted)
+            .foregroundStyle(item.isCompleted ? Theme.Colors.textTertiary : Theme.Colors.textPrimary)
     }
 }

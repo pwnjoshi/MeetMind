@@ -22,6 +22,8 @@ public struct MeetingDetailView: View {
     @State private var showNoteSheet = false
     @State private var showTaskReview = false
     @State private var showAnalysisEvidence = false
+    @State private var showPeople = false
+    @State private var recordSection = "Minutes"
     
     public init(viewModel: MeetingDetailViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -29,40 +31,31 @@ public struct MeetingDetailView: View {
     
     public var body: some View {
         VStack(spacing: 0) {
-            MeetingDetailHeaderView(
-                title: viewModel.headerTitle,
-                durationText: viewModel.headerDurationText,
-                statusTitle: viewModel.statusBadgeTitle,
-                onRename: { renameText = viewModel.headerTitle; showRenameAlert = true },
-                onExport: { showExportSheet = true },
-                onAskAI: { showAskAISheet = true },
-                onDelete: { showDeleteConfirmation = true }
-            )
-            MeetingDetailTabBarView(selectedTab: viewModel.selectedTab) { viewModel.selectTab($0) }
+            recordHeader
             if let meeting = viewModel.meeting, !meeting.pendingTaskSuggestions.isEmpty {
                 Button("Review \(meeting.pendingTaskSuggestions.count) suggested tasks") { showTaskReview = true }
                     .buttonStyle(.borderedProminent).padding(.vertical, 8)
             }
-            if viewModel.selectedTab == .summary, viewModel.meeting?.offlineAnalysis != nil {
-                Button("Review summary evidence") { showAnalysisEvidence = true }
-                    .font(.subheadline).padding(.vertical, 4)
-            }
-            if let meeting = viewModel.meeting, meeting.status == .scheduled || meeting.status == .processing || meeting.status == .recording {
-                Button(meeting.status == .scheduled ? "Start recording" : "Process saved audio") {
-                    if meeting.status == .scheduled {
+            if let meeting = viewModel.meeting, meeting.status == .scheduled {
+                Button("Start recording") {
                         meeting.status = .recording
                         do {
                             try modelContext.save()
                             router.navigate(to: .liveRecording(id: meeting.id), in: .home)
                         } catch { deletionError = error.localizedDescription }
-                    } else {
-                        router.navigate(to: .meetingProcessing(id: meeting.id), in: .home)
-                    }
                 }
                 .buttonStyle(.borderedProminent).padding(.vertical, 8)
             }
             
-            MeetingDetailTabContentView(
+            if recordSection == "Decisions" {
+                List {
+                    let decisions = viewModel.summary?.keyDecisions ?? []
+                    if decisions.isEmpty { Text("No decisions recorded").foregroundStyle(.secondary) }
+                    ForEach(Array(decisions.enumerated()), id: \.offset) { entry in Text(entry.element) }
+                }
+                .listStyle(.insetGrouped)
+            } else {
+                MeetingDetailTabContentView(
                 selectedTab: viewModel.selectedTab,
                 summary: viewModel.summary,
                 transcriptSegments: viewModel.transcriptSegments,
@@ -96,8 +89,9 @@ public struct MeetingDetailView: View {
                 onSelectPhoto: { showPhotoModal = $0 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             
-            if let duration = viewModel.meeting?.duration, duration > 0 {
+            if recordSection == "Transcript", let duration = viewModel.meeting?.duration, duration > 0 {
                 StickyAudioPlayerBar(
                     currentTime: viewModel.currentPlayheadTime,
                     totalDuration: duration,
@@ -111,8 +105,42 @@ public struct MeetingDetailView: View {
                 )
             }
         }
-        .background(Color(hex: "#F7F7FC").ignoresSafeArea())
-        .tint(Color(hex: "#4B3FF0"))
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .tint(Theme.Colors.manentAccent)
+        .toolbar(.hidden, for: .tabBar)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button("Vidur", systemImage: "sparkles") { showAskAISheet = true }.labelStyle(.iconOnly)
+                Menu {
+                    Button("Rename Meeting", systemImage: "pencil") {
+                        renameText = viewModel.headerTitle
+                        showRenameAlert = true
+                    }
+                    Button("Show Transcript", systemImage: "doc.text") {
+                        recordSection = "Transcript"
+                        viewModel.selectTab(.transcript)
+                    }
+                    Button("Notes & Media", systemImage: "photo") {
+                        recordSection = "Notes & Media"
+                        viewModel.selectTab(.notesMedia)
+                    }
+                    Button("Share Minutes", systemImage: "square.and.arrow.up") { showExportSheet = true }
+                    if viewModel.meeting?.offlineAnalysis != nil {
+                        Button("Review Evidence") { showAnalysisEvidence = true }
+                    }
+                    Button("Delete Meeting", systemImage: "trash", role: .destructive) { showDeleteConfirmation = true }
+                } label: {
+                    Label("Meeting options", systemImage: "ellipsis").labelStyle(.iconOnly)
+                }
+            }
+        }
+        .sheet(isPresented: $showPeople) {
+            NavigationStack {
+                List(viewModel.meeting?.participants ?? [], id: \.id) { Text($0.name) }
+                    .navigationTitle("People")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showPeople = false } } }
+            }
+        }
         .sheet(isPresented: $showTaskReview) {
             if let meeting = viewModel.meeting { MeetingTaskReviewView(meeting: meeting) }
         }
@@ -176,6 +204,47 @@ public struct MeetingDetailView: View {
         } message: { Text(deletionError ?? "") }
     }
     
+    private var recordHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(viewModel.headerTitle).font(.title.bold())
+            if let meeting = viewModel.meeting {
+                Text((meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .long, time: .shortened))
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let series = meeting.seriesName {
+                    Text(series).font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                }
+                Button { showPeople = true } label: {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("People")
+                            Text("\(meeting.participants.count) listed").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                    }
+                    .padding(16)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                }
+                .buttonStyle(.plain)
+            }
+            Picker("Meeting section", selection: $recordSection) {
+                ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }
+                if recordSection == "Transcript" || recordSection == "Notes & Media" {
+                    Text(recordSection).tag(recordSection)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: recordSection) { _, section in
+                if section == "Minutes" { viewModel.selectTab(.summary) }
+                if section == "Actions" { viewModel.selectTab(.actionItems) }
+                if section != "Transcript" { viewModel.stopPlayback() }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+    }
+
     private func cyclePlaybackRate() {
         let rates: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
         let current = viewModel.playbackRate

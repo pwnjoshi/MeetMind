@@ -297,7 +297,9 @@ public final class MeetingDetailViewModel {
     }
     
     public func renameMeeting(newTitle: String) {
-        meeting?.title = newTitle
+        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        meeting?.title = title
         try? modelContext?.save()
     }
     

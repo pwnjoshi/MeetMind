@@ -13,11 +13,7 @@ public struct SearchConsoleView: View {
     }
     
     public var body: some View {
-        if #available(iOS 18, *) {
-            searchContent
-        } else {
-            searchContent.searchable(text: $viewModel.searchQuery, prompt: "Meetings, transcripts, actions")
-        }
+        searchContent.searchable(text: $viewModel.searchQuery, prompt: "Meetings, transcripts, actions")
     }
 
     private var searchContent: some View {

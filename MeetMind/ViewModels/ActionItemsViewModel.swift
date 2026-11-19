@@ -372,7 +372,7 @@ public final class ActionItemsViewModel {
             dueDate: dueDate,
             priority: priority
         )
-        if item.assignee != nil { item.assignedByLocalUser = true }
+        item.assignedByLocalUser = true
         if let context = modelContext {
             context.insert(item)
             try? context.save()

@@ -1,6 +1,93 @@
 import SwiftUI
 import SwiftData
 
+private struct TaskDetailSheet: View {
+    let task: ActionItem
+    let openMeeting: (UUID) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @State private var assignee: String
+    @State private var dueDate: Date
+    @State private var hasDueDate: Bool
+    @State private var errorMessage: String?
+
+    init(task: ActionItem, openMeeting: @escaping (UUID) -> Void) {
+        self.task = task
+        self.openMeeting = openMeeting
+        _assignee = State(initialValue: task.assignee?.name ?? "")
+        _dueDate = State(initialValue: task.dueDate ?? .now)
+        _hasDueDate = State(initialValue: task.dueDate != nil)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section { Text(task.title).font(.headline) }
+                    .listRowBackground(Color.clear)
+                Section {
+                    LabeledContent("Assigned To") {
+                        TextField("Unassigned", text: $assignee)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    if hasDueDate {
+                        DatePicker("Due", selection: $dueDate, displayedComponents: .date)
+                        Button("Remove Due Date") { hasDueDate = false }
+                    } else {
+                        Button("Add Due Date") { hasDueDate = true }
+                    }
+                }
+                if let meeting = task.meeting {
+                    Section("Meeting") {
+                        Button { openMeeting(meeting.id) } label: {
+                            HStack {
+                                Text(meeting.title)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", systemImage: "checkmark") { save() }.labelStyle(.iconOnly)
+                }
+            }
+            .alert("Could Not Save Action", isPresented: Binding(
+                get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK") { errorMessage = nil }
+            } message: { Text(errorMessage ?? "") }
+        }
+    }
+
+    private func save() {
+        let name = assignee.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = (task.assignee, task.assignedByLocalUser, task.dueDate)
+        let newSpeaker: Speaker? = name.isEmpty || name == previous.0?.name ? nil : Speaker(name: name)
+        if name != (previous.0?.name ?? "") {
+            task.assignee = newSpeaker
+            task.assignedByLocalUser = newSpeaker == nil ? nil : true
+        }
+        task.dueDate = hasDueDate ? dueDate : nil
+        do {
+            try context.save()
+            dismiss()
+        } catch {
+            task.assignee = previous.0
+            task.assignedByLocalUser = previous.1
+            task.dueDate = previous.2
+            if let newSpeaker, newSpeaker.modelContext != nil { context.delete(newSpeaker) }
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
 /// Dedicated Tab 2 console aggregating all action items across all meetings
 public struct ActionItemsConsoleView: View {
     @Environment(\.modelContext) private var modelContext
@@ -8,10 +95,11 @@ public struct ActionItemsConsoleView: View {
     @Environment(SettingsViewModel.self) private var settings: SettingsViewModel?
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var assignmentScope: AssignmentScope = .toMe
-    private enum AssignmentScope { case toMe, byMe, all }
+    private enum AssignmentScope { case toMe, byMe }
     @Query private var queriedItems: [ActionItem]
     @State public var viewModel: ActionItemsViewModel
     @State private var syncError: String?
+    @State private var selectedTask: ActionItem?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var documentRaised = false
     
@@ -31,9 +119,6 @@ public struct ActionItemsConsoleView: View {
             .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 24))
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            if assignmentScope == .all {
-                Text("Showing all actions").font(.footnote).foregroundStyle(.secondary)
-            }
             
             if visibleSections.isEmpty {
                 emptyStateView
@@ -41,7 +126,8 @@ public struct ActionItemsConsoleView: View {
                 ActionItemGroupListView(
                     sections: visibleSections,
                     onToggle: { viewModel.toggleCompletion(for: $0) },
-                    onSelectMeeting: { router.navigate(to: .meetingDetail(id: $0), in: .actionItems) }
+                    onSelectMeeting: { router.navigate(to: .meetingDetail(id: $0), in: .actionItems) },
+                    onOpenTask: { selectedTask = $0 }
                 )
             }
         }
@@ -57,7 +143,6 @@ public struct ActionItemsConsoleView: View {
                 }
                 .accessibilityLabel("New action")
                 Menu {
-                    Button("Show All Actions", systemImage: "checklist") { assignmentScope = .all }
                     Picker("Status", selection: $vm.selectedFilterScope) {
                         Text("All statuses").tag(ActionItemFilterScope.all)
                         Text("Open").tag(ActionItemFilterScope.pending)
@@ -87,11 +172,19 @@ public struct ActionItemsConsoleView: View {
                 }
             }
         }
+        .sheet(item: $selectedTask) { task in
+            TaskDetailSheet(task: task) { id in
+                selectedTask = nil
+                router.navigate(to: .meetingDetail(id: id), in: .actionItems)
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $vm.isShowingActionItemSheet) {
             CreateActionItemSheet(
                 onSave: { title, priority, due, assignee in
-                    let action = viewModel.createActionItem(title: title, priority: priority, dueDate: due, assigneeName: assignee)
-                    assignmentScope = action.assignedByLocalUser == true ? .byMe : .all
+                    viewModel.createActionItem(title: title, priority: priority, dueDate: due, assigneeName: assignee)
+                    assignmentScope = .byMe
                     viewModel.selectedFilterScope = .all
                     viewModel.isShowingActionItemSheet = false
                 },
@@ -139,9 +232,8 @@ public struct ActionItemsConsoleView: View {
                 case .toMe:
                     return item.assignee?.name.localizedCaseInsensitiveCompare(localName) == .orderedSame
                 case .byMe:
-                    return item.assignedByLocalUser == true
-                case .all:
-                    return true
+                    return item.assignedByLocalUser != false
+                        && (item.assignedByLocalUser == true || item.assignee?.name.localizedCaseInsensitiveCompare(localName) != .orderedSame)
                 }
             }
             guard !items.isEmpty else { return nil }
@@ -182,13 +274,6 @@ public struct ActionItemsConsoleView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Spacing.xl)
-            if assignmentScope != .all && !viewModel.allActionItems.isEmpty {
-                Button("Show All Actions") {
-                    assignmentScope = .all
-                    viewModel.selectedFilterScope = .all
-                }
-                .frame(minHeight: 44)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

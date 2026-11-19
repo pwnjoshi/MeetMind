@@ -13,6 +13,8 @@ public struct MeetingProcessingView: View {
     @Query private var meetings: [Meeting]
     @State private var selectedSection = "Minutes"
     @State private var showsPeople = false
+    @State private var showsRename = false
+    @State private var meetingTitleDraft = ""
     @State private var preparingSpeakers = false
     @State private var speakerSample: Task<Void, Never>?
     @State private var speakerPlayer: AVAudioPlayer?
@@ -45,7 +47,19 @@ public struct MeetingProcessingView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(meeting?.title ?? "Quick meeting").font(.title.bold())
+                HStack {
+                    Text(meeting?.title ?? "Quick meeting").font(.title.bold())
+                    Spacer()
+                    if let meeting {
+                        Button("Rename Meeting", systemImage: "pencil") {
+                            meetingTitleDraft = meeting.title
+                            showsRename = true
+                        }
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
+                        .disabled(busy)
+                    }
+                }
                 if let meeting {
                     Text(meeting.createdAt.formatted(date: .long, time: .shortened))
                         .font(.footnote).foregroundStyle(.secondary)
@@ -67,6 +81,26 @@ public struct MeetingProcessingView: View {
                 Picker("Meeting section", selection: $selectedSection) {
                     ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }
                 }.pickerStyle(.segmented)
+                TimelineView(.periodic(from: .now, by: 2)) { _ in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Processing Steps").font(.headline)
+                        if let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId), !busy {
+                            Label(backgroundStatus, systemImage: "clock")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        ForEach(Array(processingSteps.enumerated()), id: \.offset) { index, step in
+                            Label(step, systemImage: index < activeStep ? "checkmark.circle.fill" :
+                                  index == activeStep ? "circle.dotted" : "circle")
+                                .font(.subheadline)
+                                .foregroundStyle(index <= activeStep ? Color.primary : Color.secondary)
+                                .accessibilityValue(index < activeStep ? "Complete" :
+                                                    index == activeStep ? "Current stage" : "Pending")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                }
                 VStack(alignment: .leading, spacing: 12) {
                     if busy {
                         Text(processingTitle).font(.title3.bold())
@@ -224,6 +258,12 @@ public struct MeetingProcessingView: View {
                 if !name.isEmpty { saveSeries(id: UUID(), name: name) }
             }
         }
+        .alert("Rename Meeting", isPresented: $showsRename) {
+            TextField("Meeting title", text: $meetingTitleDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { saveMeetingTitle() }
+                .disabled(meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
         .onAppear {
             viewModel.onNavigateToDetail = { id in
                 OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
@@ -242,6 +282,49 @@ public struct MeetingProcessingView: View {
     }
 
     private var meeting: Meeting? { meetings.first { $0.id == meetingId } }
+
+    private let processingSteps = ["Prepare on-device models", "Create transcript", "Identify speakers", "Generate minutes", "Save results"]
+
+    private var activeStep: Int {
+        if downloading { return 0 }
+        if !busy, let stage = OfflineAnalysisBackgroundScheduler.stage(for: meetingId) {
+            switch stage {
+            case .transcription: return 1
+            case .speakers: return 2
+            case .analysis: return 3
+            case .completed: return 4
+            }
+        }
+        if busy {
+            switch viewModel.currentStep {
+            case .initial: return 0
+            case .audio: return 1
+            case .diarization: return 2
+            case .summarization: return 3
+            case .actions: return 4
+            case .completed: return 5
+            }
+        }
+        switch meeting?.analysisState {
+        case "transcription": return 1
+        case "speakers": return 2
+        case "speakerReview", "analysis": return 3
+        case "completed": return 5
+        default: return -1
+        }
+    }
+
+    private func saveMeetingTitle() {
+        let title = meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let meeting, !title.isEmpty else { return }
+        let previousTitle = meeting.title
+        meeting.title = title
+        do { try modelContext.save() }
+        catch {
+            meeting.title = previousTitle
+            processingError = error.localizedDescription
+        }
+    }
 
     private var processingTitle: String {
         if downloading { return "Preparing on-device models" }
