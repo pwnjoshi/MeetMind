@@ -4,6 +4,7 @@ import AVFoundation
 
 public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtocol, @unchecked Sendable {
     private let speechRecognizer: SFSpeechRecognizer?
+    private let liveFallbackRecognizer: SFSpeechRecognizer?
     private let onDeviceOnly = true
     private var activeRecognitionTask: SFSpeechRecognitionTask?
     private var activeRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -19,6 +20,7 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
     
     public init(locale: Locale = Locale(identifier: "en-US")) {
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
+        self.liveFallbackRecognizer = locale.identifier == "en-US" ? nil : SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     }
     
     deinit {
@@ -35,8 +37,11 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
     
     public func startLiveTranscription(audioBufferStream: AsyncStream<AVAudioPCMBuffer>) -> AsyncThrowingStream<LiveTranscriptChunk, Error> {
         AsyncThrowingStream { continuation in
-            guard let recognizer = speechRecognizer, recognizer.isAvailable else {
-                continuation.finish(throwing: SpeechTranscriptionError.recognizerUnavailable)
+            let candidates = [speechRecognizer, liveFallbackRecognizer].compactMap { $0 }
+            guard let recognizer = candidates.first(where: {
+                $0.supportsOnDeviceRecognition && $0.isAvailable
+            }) else {
+                continuation.finish(throwing: SpeechTranscriptionError.onDeviceRecognitionUnavailable)
                 return
             }
             

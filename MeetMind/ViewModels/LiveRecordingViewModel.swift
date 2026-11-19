@@ -268,14 +268,19 @@ public final class LiveRecordingViewModel {
                 }
                 if let transcriptionService {
                     speechTask = Task { [weak self] in
-                        guard await transcriptionService.requestAuthorization() == .authorized else { return }
+                        guard await transcriptionService.requestAuthorization() == .authorized else {
+                            guard !Task.isCancelled else { return }
+                            self?.interimTranscriptText = "Allow Speech Recognition in iPhone Settings to see a live transcript."
+                            return
+                        }
                         do {
                             for try await chunk in transcriptionService.startLiveTranscription(audioBufferStream: recordingService.audioBufferStream) {
                                 guard !Task.isCancelled else { break }
                                 self?.receiveLiveTranscriptChunk(chunk)
                             }
                         } catch {
-                            self?.interimTranscriptText = "Live transcription unavailable. Audio is still being saved."
+                            guard !Task.isCancelled else { return }
+                            self?.interimTranscriptText = "Live captions couldn’t start. You can transcribe the saved recording after you finish."
                         }
                     }
                 }
