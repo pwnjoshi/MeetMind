@@ -26,8 +26,6 @@ public struct MeetingProcessingView: View {
     @State private var transcriptDraft = ""
     @State private var audioPlayer: AVAudioPlayer?
     @State private var audioPlaying = false
-    @State private var showsNewSeries = false
-    @State private var seriesName = ""
     @State private var processingError: String?
     @State private var viewModel: ProcessingPipelineViewModel
     @State private var missingModels: [ModelProfile] = []
@@ -54,7 +52,7 @@ public struct MeetingProcessingView: View {
                 if let meeting {
                     Text(meeting.createdAt.formatted(date: .long, time: .shortened))
                         .font(.footnote).foregroundStyle(.secondary)
-                    seriesMenu
+                    MeetingSeriesMenu(meeting: meeting) { processingError = $0 }
                     Button { showsPeople = true } label: {
                         HStack {
                             VStack(alignment: .leading) {
@@ -324,14 +322,6 @@ public struct MeetingProcessingView: View {
                 }
             }
         }
-        .alert("New Series", isPresented: $showsNewSeries) {
-            TextField("Series name", text: $seriesName)
-            Button("Cancel", role: .cancel) {}
-            Button("Create") {
-                let name = seriesName.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !name.isEmpty { saveSeries(id: UUID(), name: name) }
-            }
-        }
         .alert("Rename Meeting", isPresented: $showsRename) {
             TextField("Meeting title", text: $meetingTitleDraft)
             Button("Cancel", role: .cancel) {}
@@ -424,38 +414,7 @@ public struct MeetingProcessingView: View {
         }
     }
 
-    private var seriesMenu: some View {
-        Menu {
-            ForEach(Set(meetings.compactMap(\.seriesID)).sorted { $0.uuidString < $1.uuidString }, id: \.self) { id in
-                if let name = meetings.first(where: { $0.seriesID == id })?.seriesName {
-                    Button(name) { saveSeries(id: id, name: name) }
-                }
-            }
-            Button("None") { saveSeries(id: nil, name: nil) }
-            Button("New Series…", systemImage: "plus") {
-                seriesName = ""
-                showsNewSeries = true
-            }
-        } label: {
-            Label(meeting?.seriesName ?? "Add to Series", systemImage: "chevron.down")
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
-        }
-    }
 
-    private func saveSeries(id: UUID?, name: String?) {
-        guard let meeting else { return }
-        let previous = (meeting.seriesID, meeting.seriesName)
-        meeting.seriesID = id
-        meeting.seriesName = name
-        do { try modelContext.save() }
-        catch {
-            meeting.seriesID = previous.0
-            meeting.seriesName = previous.1
-            processingError = error.localizedDescription
-        }
-    }
 
     private func toggleSavedAudio(_ url: URL) {
         do {
@@ -668,5 +627,57 @@ struct OfflinePipelineSmokeView: View {
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in if phase != .active { operation?.cancel() } }
+    }
+}
+
+struct MeetingSeriesMenu: View {
+    let meeting: Meeting
+    let onError: (String) -> Void
+    @Environment(\.modelContext) private var modelContext
+    @Query private var meetings: [Meeting]
+    @State private var showsNewSeries = false
+    @State private var seriesName = ""
+
+    var body: some View {
+        Menu {
+            ForEach(Set(meetings.compactMap(\.seriesID)).sorted { $0.uuidString < $1.uuidString }, id: \.self) { id in
+                if let name = meetings.first(where: { $0.seriesID == id })?.seriesName {
+                    Button(name) { saveSeries(id: id, name: name) }
+                }
+            }
+            Button("None") { saveSeries(id: nil, name: nil) }
+            Button("New Series…", systemImage: "plus") {
+                seriesName = ""
+                showsNewSeries = true
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(meeting.seriesName ?? "Add to Series")
+                Image(systemName: "chevron.down").font(.caption)
+            }
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+        }
+        .alert("New Series", isPresented: $showsNewSeries) {
+            TextField("Series name", text: $seriesName)
+            Button("Cancel", role: .cancel) {}
+            Button("Create") {
+                let name = seriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { saveSeries(id: UUID(), name: name) }
+            }
+        }
+    }
+
+    private func saveSeries(id: UUID?, name: String?) {
+        let previous = (meeting.seriesID, meeting.seriesName)
+        meeting.seriesID = id
+        meeting.seriesName = name
+        do { try modelContext.save() }
+        catch {
+            meeting.seriesID = previous.0
+            meeting.seriesName = previous.1
+            onError(error.localizedDescription)
+        }
     }
 }

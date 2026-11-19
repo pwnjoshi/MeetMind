@@ -277,10 +277,7 @@ public struct MeetingDetailView: View {
             if let meeting = viewModel.meeting {
                 Text((meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .long, time: .shortened))
                     .font(.footnote).foregroundStyle(.secondary)
-                if let series = meeting.seriesName {
-                    Text(series).font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.Colors.manentAccent)
-                }
+                MeetingSeriesMenu(meeting: meeting) { deletionError = $0 }
                 Button { showPeople = true } label: {
                     HStack {
                         VStack(alignment: .leading) {
