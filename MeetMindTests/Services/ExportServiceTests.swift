@@ -9,6 +9,7 @@
 
 import XCTest
 import Foundation
+import PDFKit
 @testable import MeetMind
 
 @MainActor
@@ -82,6 +83,31 @@ final class ExportServiceTests: XCTestCase {
         let md = exportService.generateMarkdown(for: sampleMeeting)
         XCTAssertTrue(md.contains("## Attendees"))
         XCTAssertTrue(md.contains("- Alice Johnson (Product Manager)"))
+    }
+
+    func testReviewedAttendanceAndAgendaAreIncludedInEveryExport() throws {
+        let absent = Speaker(name: "Sam Rivera")
+        sampleMeeting.addParticipant(absent)
+        sampleMeeting.agendaText = "Review the release checklist"
+        sampleMeeting.absentParticipantIDs = [absent.id]
+
+        let markdown = exportService.generateMarkdown(for: sampleMeeting)
+        XCTAssertTrue(markdown.contains("## Agenda\n- Review the release checklist"))
+        XCTAssertTrue(markdown.contains("## Present\n- Alice Johnson"))
+        XCTAssertTrue(markdown.contains("## Absent\n- Sam Rivera"))
+
+        let plainText = exportService.generatePlainText(for: sampleMeeting)
+        XCTAssertTrue(plainText.contains("AGENDA:\n• Review the release checklist"))
+        XCTAssertTrue(plainText.contains("PRESENT:\n• Alice Johnson"))
+        XCTAssertTrue(plainText.contains("ABSENT:\n• Sam Rivera"))
+
+        let data = try exportService.generatePDFReport(for: sampleMeeting)
+        let pdf = try XCTUnwrap(PDFDocument(data: data))
+        let pdfText = (pdf.string ?? "").components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }.joined(separator: " ")
+        XCTAssertTrue(pdfText.contains("AGENDA Review the release checklist"))
+        XCTAssertTrue(pdfText.contains("PRESENT Alice Johnson"))
+        XCTAssertTrue(pdfText.contains("ABSENT Sam Rivera"))
     }
     
     /// Tier 1: Feature 7 - Validates generateMarkdown contains executive summary and decisions.

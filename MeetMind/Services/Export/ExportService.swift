@@ -76,24 +76,31 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
             context.cgContext.strokePath()
             currentY += 16
             
-            // 3. Attendees Section
-            if !meeting.participants.isEmpty {
-                let attTitle = "ATTENDEES"
+            // 3. Agenda and attendance
+            for (heading, lines) in meetingContextSections(meeting) {
                 let secAttrs: [NSAttributedString.Key: Any] = [
                     .font: UIFont.systemFont(ofSize: 12, weight: .bold),
                     .foregroundColor: UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1.0)
                 ]
-                attTitle.draw(at: CGPoint(x: margin, y: currentY), withAttributes: secAttrs)
+                if currentY + 44 > maxContentY { startNewPage() }
+                heading.uppercased().draw(at: CGPoint(x: margin, y: currentY), withAttributes: secAttrs)
                 currentY += 16
                 
-                let attendeeList = meeting.participants.map { $0.displayLabel }.joined(separator: ", ")
                 let bodyAttrs: [NSAttributedString.Key: Any] = [
                     .font: UIFont.systemFont(ofSize: 11, weight: .regular),
                     .foregroundColor: UIColor.black
                 ]
-                let attRect = CGRect(x: margin, y: currentY, width: contentWidth, height: 30)
-                attendeeList.draw(in: attRect, withAttributes: bodyAttrs)
-                currentY += 26
+                for line in lines {
+                    let height = ceil(line.boundingRect(
+                        with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin, .usesFontLeading],
+                        attributes: bodyAttrs, context: nil
+                    ).height) + 4
+                    if currentY + height > maxContentY { startNewPage() }
+                    line.draw(in: CGRect(x: margin, y: currentY, width: contentWidth, height: height), withAttributes: bodyAttrs)
+                    currentY += height
+                }
+                currentY += 10
             }
             
             // 4. Executive Summary Section
@@ -211,16 +218,25 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
         return pdfData
     }
     
+    private func meetingContextSections(_ meeting: Meeting) -> [(String, [String])] {
+        let absentIDs = Set(meeting.absentParticipantIDs ?? [])
+        let present = meeting.participants.filter { !absentIDs.contains($0.id) }.map(\.displayLabel)
+        let absent = meeting.participants.filter { absentIDs.contains($0.id) }.map(\.displayLabel)
+        let agenda = (meeting.agendaText ?? "").split(whereSeparator: \.isNewline).map(String.init)
+        let presentHeading = meeting.absentParticipantIDs == nil ? "Attendees" : "Present"
+        return [("Agenda", agenda), (presentHeading, present), ("Absent", absent)].filter { !$0.1.isEmpty }
+    }
+
     public func generateMarkdown(for meeting: Meeting) -> String {
         var md = "# Meeting Minutes: \(meeting.title)\n\n"
         md += "**Date**: \(meeting.formattedDate)  \n"
         md += "**Duration**: \(meeting.formattedDuration)  \n"
         md += "**Status**: \(meeting.status.displayName)  \n\n"
         
-        if !meeting.participants.isEmpty {
-            md += "## Attendees\n"
-            for participant in meeting.participants {
-                md += "- \(participant.displayLabel)\n"
+        for (heading, lines) in meetingContextSections(meeting) {
+            md += "## \(heading)\n"
+            for line in lines {
+                md += "- \(line)\n"
             }
             md += "\n"
         }
@@ -265,10 +281,10 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
         text += "Duration: \(meeting.formattedDuration)\n"
         text += "Status: \(meeting.status.displayName)\n\n"
         
-        if !meeting.participants.isEmpty {
-            text += "ATTENDEES:\n"
-            for participant in meeting.participants {
-                text += "• \(participant.displayLabel)\n"
+        for (heading, lines) in meetingContextSections(meeting) {
+            text += "\(heading.uppercased()):\n"
+            for line in lines {
+                text += "• \(line)\n"
             }
             text += "\n"
         }
