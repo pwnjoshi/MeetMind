@@ -356,12 +356,26 @@ public final class Meeting: Identifiable {
     }
     
     public var figmaBadgeText: String {
+        if status == .processing {
+            switch analysisState {
+            case "speakerReview": return "Needs speaker review"
+            case "transcription": return "Creating transcript"
+            case "speakers": return "Identifying speakers"
+            case "analysis": return "Generating minutes"
+            case "paused": return "Processing paused"
+            case "failed": return "Processing needs attention"
+            default: return "Processing"
+            }
+        }
+        if status == .completed {
+            if minutesNeedFinalization == true { return "Minutes ready for review" }
+            if summary == nil, audioFileURL != nil { return "Minutes pending" }
+            return "Finalized"
+        }
         if let templateName = templateName, !templateName.isEmpty {
             return templateName
         }
-        if status == .completed {
-            return "Finalized"
-        } else if status == .scheduled {
+        if status == .scheduled {
             return "Scheduled"
         } else {
             return status.displayName
