@@ -21,34 +21,20 @@ public struct HomeDashboardView: View {
     
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            List {
-                Section("Upcoming meetings") {
-                    if viewModel.filteredUpcomingMeetings.isEmpty {
-                        Text("No upcoming meetings scheduled").foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    if viewModel.isEmptyState {
+                        emptyMeetingsState
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 150)
+                    } else {
+                        meetingSection("Upcoming meetings", meetings: viewModel.filteredUpcomingMeetings, upcoming: true)
+                        meetingSection("Recent meetings", meetings: viewModel.filteredRecentMeetings, upcoming: false)
                     }
-                    ForEach(viewModel.filteredUpcomingMeetings) { meeting in
-                        meetingRow(meeting, upcoming: true)
-                    }
+                    Color.clear.frame(height: 96)
                 }
-                Section("Recent meetings") {
-                    if viewModel.filteredRecentMeetings.isEmpty {
-                        Text("No recent meetings").foregroundStyle(.secondary)
-                    }
-                    ForEach(viewModel.filteredRecentMeetings) { meeting in
-                        meetingRow(meeting, upcoming: false)
-                    }
-                }
-                Section { Color.clear.frame(height: 56).listRowBackground(Color.clear) }
-            }
-            .listStyle(.insetGrouped)
-            .headerProminence(.increased)
-            .overlay {
-                if viewModel.isEmptyState {
-                    ContentUnavailableView("No Meetings Yet", systemImage: "mic",
-                        description: Text("Tap + to record your first meeting."))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(uiColor: .systemGroupedBackground))
-                }
+                .padding(.horizontal, 16)
+                .padding(.top, 18)
             }
 
             // Bottom Action FAB
@@ -61,7 +47,7 @@ public struct HomeDashboardView: View {
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 56, height: 56)
-                .background(Color(hex: "#0088FF"))
+                .background(Color(hex: "#4B3FF0"))
                 .clipShape(Circle())
                 .shadow(color: Color.black.opacity(0.15), radius: 8, y: 4)
             }
@@ -69,9 +55,9 @@ public struct HomeDashboardView: View {
             .accessibilityLabel("New meeting")
             .accessibilityHint("Choose Quick Meet, Schedule Meet, or Import Audio")
             .padding(.trailing, 20)
-            .padding(.bottom, 20)
+            .padding(.bottom, 18)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(Color(hex: "#F7F7FC"))
         .navigationTitle("Meetings")
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
@@ -117,6 +103,35 @@ public struct HomeDashboardView: View {
             "\($0.id)|\($0.title)|\($0.status.rawValue)|\($0.scheduledStartTime?.timeIntervalSince1970 ?? 0)|\($0.seriesName ?? "")|\($0.seriesID?.uuidString ?? "")"
         }.sorted()
     }
+    private var emptyMeetingsState: some View {
+        VStack(spacing: 14) {
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.white).frame(width: 142, height: 94)
+                    .shadow(color: .black.opacity(0.08), radius: 16, y: 8)
+                Image(systemName: "waveform").font(.system(size: 34, weight: .medium)).foregroundStyle(Color(hex: "#6D63FF"))
+                Image(systemName: "mic.fill").font(.caption.bold()).foregroundStyle(.white).padding(11).background(.red, in: Circle()).offset(x: 18, y: 14)
+            }
+            Text("No Meetings Yet").font(.title3.bold())
+            Text("Your recordings and minutes appear here.").font(.subheadline).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func meetingSection(_ title: String, meetings: [Meeting], upcoming: Bool) -> some View {
+        if !meetings.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title).font(.title3.bold()).padding(.horizontal, 12)
+                VStack(spacing: 0) {
+                    ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
+                        meetingRow(meeting, upcoming: upcoming)
+                        if index < meetings.count - 1 { Divider().padding(.leading, 14) }
+                    }
+                }
+                .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            }
+        }
+    }
+
     private func meetingRow(_ meeting: Meeting, upcoming: Bool) -> some View {
         NavigationLink(value: NavigationDestination.meetingDetail(id: meeting.id)) {
             HStack(spacing: 12) {
@@ -133,7 +148,7 @@ public struct HomeDashboardView: View {
                     : meeting.createdAt.formatted(.dateTime.day().month(.abbreviated)))
                     .font(.body).foregroundStyle(.secondary)
             }
-            .frame(minHeight: 44)
+            .padding(.horizontal, 14).padding(.vertical, 11).frame(minHeight: 62)
         }
         .contextMenu {
             if let id = meeting.seriesID {
