@@ -16,6 +16,9 @@ public struct MeetingSummaryTabView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 if let summary {
+                    if let meeting = summary.meeting {
+                        meetingContext(meeting)
+                    }
                     executiveSection(summary.executiveSummary)
                     if !summary.keyDecisions.isEmpty {
                         MeetingSummaryPointsCard(
@@ -51,6 +54,38 @@ public struct MeetingSummaryTabView: View {
                 }
             }
             .padding(Spacing.lg)
+        }
+    }
+
+    @ViewBuilder
+    private func meetingContext(_ meeting: Meeting) -> some View {
+        let absentIDs = Set(meeting.absentParticipantIDs ?? [])
+        if meeting.agendaText?.isEmpty == false || !meeting.participants.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                if let agenda = meeting.agendaText, !agenda.isEmpty {
+                    Text("Agenda").font(.headline)
+                    Text(agenda)
+                }
+                attendance("Present", people: meeting.participants.filter { !absentIDs.contains($0.id) })
+                attendance("Absent", people: meeting.participants.filter { absentIDs.contains($0.id) })
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(.background, in: RoundedRectangle(cornerRadius: 24))
+        }
+    }
+
+    @ViewBuilder
+    private func attendance(_ title: String, people: [Speaker]) -> some View {
+        if !people.isEmpty {
+            Text(title).font(.headline)
+            ForEach(people, id: \.id) { person in
+                Label {
+                    Text(person.name)
+                } icon: {
+                    Circle().fill(Color(hex: person.avatarColorHex)).frame(width: 10, height: 10)
+                }
+            }
         }
     }
     

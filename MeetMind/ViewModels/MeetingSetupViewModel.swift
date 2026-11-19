@@ -584,6 +584,7 @@ public final class MeetingSetupViewModel {
         meeting.seriesName = scheduledSeriesID == nil ? nil : scheduledSeriesName
         meeting.tags = selectedTags
         meeting.participants = participants
+        meeting.agendaText = agendaText.trimmingCharacters(in: .whitespacesAndNewlines)
         
         if let context = modelContext {
             context.insert(meeting)

@@ -23,6 +23,7 @@ public struct MeetingDetailView: View {
     @State private var showTaskReview = false
     @State private var showAnalysisEvidence = false
     @State private var showPeople = false
+    @State private var showMinutesEditor = false
     @State private var recordSection = "Minutes"
     
     public init(viewModel: MeetingDetailViewModel) {
@@ -125,6 +126,9 @@ public struct MeetingDetailView: View {
                         viewModel.selectTab(.notesMedia)
                     }
                     Button("Share Minutes", systemImage: "square.and.arrow.up") { showExportSheet = true }
+                    if viewModel.summary != nil {
+                        Button("Edit Minutes", systemImage: "pencil.line") { showMinutesEditor = true }
+                    }
                     if viewModel.meeting?.offlineAnalysis != nil {
                         Button("Review Evidence") { showAnalysisEvidence = true }
                     }
@@ -139,6 +143,13 @@ public struct MeetingDetailView: View {
                 List(viewModel.meeting?.participants ?? [], id: \.id) { Text($0.name) }
                     .navigationTitle("People")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showPeople = false } } }
+            }
+        }
+        .sheet(isPresented: $showMinutesEditor) {
+            if let summary = viewModel.summary, let meeting = viewModel.meeting {
+                EditSavedMinutesSheet(meeting: meeting, summary: summary)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
         }
         .sheet(isPresented: $showTaskReview) {
@@ -252,6 +263,112 @@ public struct MeetingDetailView: View {
             viewModel.setPlaybackRate(rates[(idx + 1) % rates.count])
         } else {
             viewModel.setPlaybackRate(1.0)
+        }
+    }
+}
+
+private struct EditSavedMinutesSheet: View {
+    let meeting: Meeting
+    let summary: Summary
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @State private var discussion: String
+    @State private var decisions: String
+    @State private var agenda: String
+    @State private var absentIDs: Set<UUID>
+    @State private var saveError: String?
+
+    init(meeting: Meeting, summary: Summary) {
+        self.meeting = meeting
+        self.summary = summary
+        _agenda = State(initialValue: meeting.agendaText ?? "")
+        _absentIDs = State(initialValue: Set(meeting.absentParticipantIDs ?? []))
+        _discussion = State(initialValue: summary.executiveSummary)
+        _decisions = State(initialValue: summary.keyDecisions.joined(separator: "\n"))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Agenda") {
+                    TextField("Agenda", text: $agenda, axis: .vertical)
+                }
+                if !meeting.participants.isEmpty {
+                    attendanceSection("Present", absent: false)
+                    attendanceSection("Absent", absent: true)
+                }
+                Section("Discussion") {
+                    TextEditor(text: $discussion)
+                        .frame(minHeight: 110)
+                        .accessibilityLabel("Discussion")
+                }
+                Section {
+                    TextEditor(text: $decisions)
+                        .frame(minHeight: 110)
+                        .accessibilityLabel("Decisions")
+                } header: {
+                    Text("Decisions")
+                } footer: {
+                    Text("Enter one decision per line.")
+                }
+            }
+            .navigationTitle("Edit Minutes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save Minutes", systemImage: "checkmark") { save() }.labelStyle(.iconOnly)
+                }
+            }
+            .alert("Could Not Save Minutes", isPresented: Binding(
+                get: { saveError != nil }, set: { if !$0 { saveError = nil } }
+            )) {
+                Button("OK") { saveError = nil }
+            } message: { Text(saveError ?? "") }
+        }
+    }
+
+    private func lines(_ text: String) -> [String] {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func attendanceSection(_ title: String, absent: Bool) -> some View {
+        Section(title) {
+            let people = meeting.participants.filter { absentIDs.contains($0.id) == absent }
+            if people.isEmpty { Text("No participants").foregroundStyle(.secondary) }
+            ForEach(people, id: \.id) { person in
+                Button {
+                    if absent { absentIDs.remove(person.id) }
+                    else { absentIDs.insert(person.id) }
+                } label: {
+                    Label(person.name, systemImage: absent ? "plus.circle.fill" : "minus.circle.fill")
+                }
+                .accessibilityLabel("Mark \(person.name) \(absent ? "present" : "absent")")
+            }
+        }
+    }
+
+    private func save() {
+        let previous = (summary.executiveSummary, summary.keyPoints, summary.keyDecisions)
+        let previousMeeting = (meeting.agendaText, meeting.absentParticipantIDs)
+        meeting.agendaText = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
+        meeting.absentParticipantIDs = absentIDs.sorted { $0.uuidString < $1.uuidString }
+        if discussion != previous.0 {
+            summary.executiveSummary = discussion.trimmingCharacters(in: .whitespacesAndNewlines)
+            summary.keyPoints = lines(discussion)
+        }
+        summary.keyDecisions = lines(decisions)
+        do {
+            try context.save()
+            dismiss()
+        } catch {
+            (summary.executiveSummary, summary.keyPoints, summary.keyDecisions) = previous
+            (meeting.agendaText, meeting.absentParticipantIDs) = previousMeeting
+            saveError = error.localizedDescription
         }
     }
 }
