@@ -53,23 +53,7 @@ public struct MeetingProcessingView: View {
                     Text(meeting.createdAt.formatted(date: .long, time: .shortened))
                         .font(.footnote).foregroundStyle(.secondary)
                     MeetingSeriesMenu(meeting: meeting) { processingError = $0 }
-                    Button { showsPeople = true } label: {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("People")
-                                let absentIDs = Set(meeting.absentParticipantIDs ?? [])
-                                let people = meeting.participants.filter { $0.name != $0.recordingVoiceLabel }
-                                let absent = people.filter { absentIDs.contains($0.id) }.count
-                                Text("\(people.count - absent) present · \(absent) absent")
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                    }.buttonStyle(.plain)
+                    MeetingPeopleRow(meeting: meeting) { showsPeople = true }
                 }
                 Picker("Meeting section", selection: $selectedSection) {
                     ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }

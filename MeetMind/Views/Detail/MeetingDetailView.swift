@@ -278,22 +278,7 @@ public struct MeetingDetailView: View {
                 Text((meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .long, time: .shortened))
                     .font(.footnote).foregroundStyle(.secondary)
                 MeetingSeriesMenu(meeting: meeting) { deletionError = $0 }
-                Button { showPeople = true } label: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("People")
-                            let absentIDs = Set(meeting.absentParticipantIDs ?? [])
-                            let absent = meeting.participants.filter { absentIDs.contains($0.id) }.count
-                            Text("\(meeting.participants.count - absent) present Â· \(absent) absent")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                    }
-                    .padding(16)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                }
-                .buttonStyle(.plain)
+                MeetingPeopleRow(meeting: meeting) { showPeople = true }
             }
             Picker("Meeting section", selection: $recordSection) {
                 ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }
@@ -662,5 +647,41 @@ private struct SuggestedTaskEditor: View {
                 priority: priority, dueDate: hasDueDate ? Calendar.current.startOfDay(for: dueDate) : nil, accept: accept, context: context)
             dismiss()
         } catch { errorMessage = error.localizedDescription }
+    }
+}
+
+struct MeetingPeopleRow: View {
+    let meeting: Meeting
+    let openPeople: () -> Void
+
+    var body: some View {
+        let absentIDs = Set(meeting.absentParticipantIDs ?? [])
+        let people = meeting.participants.filter { $0.name != $0.recordingVoiceLabel }
+        let present = people.filter { !absentIDs.contains($0.id) }
+        Button(action: openPeople) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("People")
+                    Text("\(present.count) present · \(people.count - present.count) absent")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                HStack(spacing: -6) {
+                    ForEach(present.prefix(4), id: \.id) { person in
+                        Text(person.initials)
+                            .font(.caption2.bold()).foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(Color(hex: person.colorHex), in: Circle())
+                            .overlay(Circle().strokeBorder(.background, lineWidth: 1))
+                    }
+                }
+                .accessibilityHidden(true)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .background(.background, in: RoundedRectangle(cornerRadius: 24))
+        }
+        .buttonStyle(.plain)
     }
 }
