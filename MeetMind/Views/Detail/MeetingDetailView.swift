@@ -17,6 +17,8 @@ public struct MeetingDetailView: View {
     @State private var showExportSheet: Bool = false
     @State private var confirmSendMinutes = false
     @State private var composeMinutes = false
+    @State private var showRecipientsSheet = false
+    @State private var selectedMinutesRecipientIDs = Set<UUID>()
     @State private var showAskAISheet: Bool = false
     @State private var showActionItemModal: Bool = false
     @State private var showPhotoModal: String? = nil
@@ -161,14 +163,30 @@ public struct MeetingDetailView: View {
             Button("Send to \(recipientCountLabel)") { composeMinutes = true }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(minutesRecipients.map(\.name).formatted(.list(type: .and)) + " will receive the minutes and action items.")
+            Text(recipientsForShare.map(\.name).formatted(.list(type: .and)) + " will receive the minutes and action items.")
         }
         .sheet(isPresented: $composeMinutes) {
-            MinutesMailComposer(recipients: minutesRecipients.compactMap(\.email),
+            MinutesMailComposer(recipients: recipientsForShare.compactMap(\.email),
                                 subject: viewModel.headerTitle, bodyText: viewModel.exportPlainText()) { error in
                 composeMinutes = false
                 if let error { deletionError = error.localizedDescription }
             }
+        }
+        .sheet(isPresented: $showRecipientsSheet) {
+            MinutesRecipientsSheet(
+                people: minutesRecipients,
+                selectedIDs: $selectedMinutesRecipientIDs,
+                onSend: {
+                    showRecipientsSheet = false
+                    sendSelectedMinutes()
+                },
+                onKeepPrivate: {
+                    showRecipientsSheet = false
+                    dismiss()
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showPeople) {
             NavigationStack {
@@ -273,11 +291,25 @@ public struct MeetingDetailView: View {
     }
 
     private var recipientCountLabel: String {
-        minutesRecipients.count == 1 ? "1 Person" : "\(minutesRecipients.count) People"
+        recipientsForShare.count == 1 ? "1 Person" : "\(recipientsForShare.count) People"
+    }
+
+    private var recipientsForShare: [Speaker] {
+        let selected = minutesRecipients.filter { selectedMinutesRecipientIDs.contains($0.id) }
+        return selected.isEmpty ? minutesRecipients : selected
     }
 
     private func beginSharingMinutes() {
-        if !minutesRecipients.isEmpty && MFMailComposeViewController.canSendMail() {
+        selectedMinutesRecipientIDs = Set(minutesRecipients.map(\.id))
+        showRecipientsSheet = true
+    }
+
+    private func sendSelectedMinutes() {
+        guard !recipientsForShare.isEmpty else {
+            showExportSheet = true
+            return
+        }
+        if MFMailComposeViewController.canSendMail(), recipientsForShare.contains(where: { $0.email?.isEmpty == false }) {
             confirmSendMinutes = true
         } else {
             showExportSheet = true
@@ -525,6 +557,85 @@ private struct MeetingDecisionDetail: View {
         } catch {
             summary.keyDecisions = previous
             saveError = error.localizedDescription
+        }
+    }
+}
+
+private struct MinutesRecipientsSheet: View {
+    let people: [Speaker]
+    @Binding var selectedIDs: Set<UUID>
+    let onSend: () -> Void
+    let onKeepPrivate: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var selectedCount: Int { people.filter { selectedIDs.contains($0.id) }.count }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Choose the attendees who should receive this version. Audio and transcript stay on this iPhone.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Attendees") {
+                    if people.isEmpty {
+                        ContentUnavailableView("No attendees to share with", systemImage: "person.2.slash")
+                    } else {
+                        ForEach(people, id: \.id) { person in
+                            Button {
+                                if selectedIDs.contains(person.id) {
+                                    selectedIDs.remove(person.id)
+                                } else {
+                                    selectedIDs.insert(person.id)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Text(person.initials)
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.white)
+                                        .frame(width: 30, height: 30)
+                                        .background(Color(hex: person.avatarColorHex), in: Circle())
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(person.name).foregroundStyle(.primary)
+                                        Text(person.email?.isEmpty == false ? person.email! : "No email address")
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: selectedIDs.contains(person.id) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(selectedIDs.contains(person.id) ? Theme.Colors.manentAccent : .secondary)
+                                }
+                                .contentShape(.rect)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityValue(selectedIDs.contains(person.id) ? "Selected" : "Not selected")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Send Minutes To")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 8) {
+                    Button("Send to \(selectedCount == 1 ? "1 Person" : "\(selectedCount) People")") { onSend() }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                        .disabled(selectedCount == 0)
+                    Button("Keep Private") { onKeepPrivate() }
+                        .frame(minHeight: 34)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.regularMaterial)
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
         }
     }
 }
