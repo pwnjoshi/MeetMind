@@ -77,7 +77,12 @@ public struct MeetingProcessingView: View {
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { operation?.cancel() }
+            if phase == .background, busy {
+                // Stop cleanly at the next checkpoint, then give iOS an
+                // opportunity to resume private on-device work later.
+                OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
+                operation?.cancel()
+            }
         }
     }
 

@@ -2,9 +2,19 @@ import SwiftUI
 import SwiftData
 import OSLog
 import Darwin
+import UIKit
+
+final class MeetMindAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        OfflineAnalysisBackgroundScheduler.register()
+        return true
+    }
+}
 
 @main
 struct MeetMindApp: App {
+    @UIApplicationDelegateAdaptor(MeetMindAppDelegate.self) private var appDelegate
     @State private var container: ModelContainer?
     @State private var startupError: String?
     @State private var appState: AppState

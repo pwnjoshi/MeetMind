@@ -45,7 +45,7 @@ public struct LiveRecordingView: View {
                 .buttonStyle(.bordered).controlSize(.large)
                 .fixedSize()
             }
-            Text(viewModel.meetingTitle).font(.largeTitle.bold())
+            Text(viewModel.meetingTitle).font(.largeTitle.bold()).foregroundStyle(.white)
                 .frame(maxWidth: .infinity, alignment: .leading)
             // The recording console is a fixed, glanceable surface. Only the
             // transcript itself scrolls; the timer and capture controls never
@@ -54,11 +54,11 @@ public struct LiveRecordingView: View {
                     Label(viewModel.isPaused ? "Paused" : "Recording",
                           systemImage: viewModel.isPaused ? "pause.fill" : "record.circle.fill")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(viewModel.isPaused ? .orange : .red)
+                        .foregroundStyle(viewModel.isPaused ? Color.orange : Color.red)
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background((viewModel.isPaused ? Color.orange : Color.red).opacity(0.15), in: Capsule())
                     Text(viewModel.formattedDuration)
-                        .font(.system(size: timerSize, weight: .medium)).monospacedDigit()
+                        .font(.system(size: timerSize, weight: .medium)).monospacedDigit().foregroundStyle(.white)
                         .minimumScaleFactor(0.6).lineLimit(1)
                         .accessibilityLabel("Recording duration")
                         .accessibilityValue(viewModel.formattedDuration)
@@ -71,7 +71,7 @@ public struct LiveRecordingView: View {
                             isRecording: viewModel.isRecording, showsBackground: false)
                     }
                     VStack(spacing: 16) {
-                        Toggle("Live transcript", isOn: $showsLiveTranscript).font(.subheadline)
+                        Toggle("Live transcript", isOn: $showsLiveTranscript).font(.subheadline).foregroundStyle(.white).tint(.green)
                         if showsLiveTranscript {
                             ScrollView {
                                 LazyVStack(alignment: .leading, spacing: 16) {
@@ -79,17 +79,17 @@ public struct LiveRecordingView: View {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text("\(segment.speakerName) · \(transcriptTimestamp(segment.startTime))")
                                                 .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(.white.opacity(0.72))
                                             Text(segment.text)
                                                 .font(.body)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(.white.opacity(0.94))
                                         }
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                     if !viewModel.interimTranscriptText.isEmpty {
                                         Text(viewModel.interimTranscriptText)
                                             .font(.body)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(.white.opacity(0.72))
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                 }
@@ -97,13 +97,13 @@ public struct LiveRecordingView: View {
                             .frame(minHeight: 140, idealHeight: 180)
                             Text("Preview only — the final Hindi–English transcript is checked after recording.")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.white.opacity(0.68))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         if viewModel.isBookmarkButtonHighlighted {
                             Label("Bookmarked · \(viewModel.formattedDuration)", systemImage: "flag")
                                 .font(.caption)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.yellow)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
                                 .background(Color.orange.opacity(0.16), in: Capsule())
@@ -111,11 +111,34 @@ public struct LiveRecordingView: View {
                         }
                 }
                 .padding(20)
-                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
+                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.white.opacity(0.12)))
+            }
+            if !viewModel.bookmarks.isEmpty {
+                HStack(spacing: 8) {
+                    Label("\(viewModel.bookmarks.count) bookmarked", systemImage: "flag.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.yellow)
+                    Spacer(minLength: 8)
+                    ForEach(Array(viewModel.bookmarks.suffix(3).reversed())) { bookmark in
+                        Text(transcriptTimestamp(bookmark.timestamp))
+                            .font(.caption.monospacedDigit()).foregroundStyle(.white)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(Color.white.opacity(0.14), in: Capsule())
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(viewModel.bookmarks.count) bookmarks recorded")
             }
             HStack(spacing: 36) {
-                Button { viewModel.addBookmark() } label: { Image(systemName: "flag").frame(width: 44, height: 44) }
-                    .buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("Bookmark")
+                Button { viewModel.addBookmark() } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: "flag.fill").font(.title3)
+                        Text("Bookmark").font(.caption2.weight(.semibold))
+                    }
+                    .foregroundStyle(.white).frame(width: 70, height: 58)
+                    .background(Color.white.opacity(0.14), in: Circle())
+                }
+                .accessibilityLabel("Add bookmark at \(viewModel.formattedDuration)")
                 Button { viewModel.isPaused ? viewModel.resume() : viewModel.pause() } label: {
                     Image(systemName: viewModel.isPaused ? "play.fill" : "pause.fill")
                         .font(.title2).foregroundStyle(.black).frame(width: 70, height: 70)
@@ -135,6 +158,8 @@ public struct LiveRecordingView: View {
         .preferredColorScheme(.dark)
         .toolbar(.hidden, for: .tabBar)
         .navigationBarHidden(true)
+        .statusBarHidden(true)
+        .sensoryFeedback(.success, trigger: viewModel.bookmarks.count)
         .disabled(isFinishing)
         .alert("Finish Recording?", isPresented: $isFinishConfirmationPresented) {
             Button("Cancel", role: .cancel) { }
