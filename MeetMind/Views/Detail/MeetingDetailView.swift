@@ -72,7 +72,7 @@ public struct MeetingDetailView: View {
                 transcriptSearch: $transcriptSearch,
                 actionItems: viewModel.actionItems,
                 notes: viewModel.notes,
-                onCopySummary: { UIPasteboard.general.string = viewModel.generateCopyableSummaryText() },
+                onDocumentFormat: { showExportSheet = true },
                 onSeekTranscript: { viewModel.tapToSeek(segment: $0) },
                 onEditTranscript: { viewModel.beginEditingTranscript(segment: $0) },
                 onReassignSpeaker: { showSpeakerReassign = $0 },
@@ -107,6 +107,27 @@ public struct MeetingDetailView: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .tint(Theme.Colors.manentAccent)
         .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom) {
+            if recordSection == "Minutes", let meeting = viewModel.meeting,
+               meeting.minutesNeedFinalization == true, meeting.summary != nil {
+                Button {
+                    meeting.minutesNeedFinalization = false
+                    do { try modelContext.save() }
+                    catch {
+                        meeting.minutesNeedFinalization = true
+                        deletionError = error.localizedDescription
+                    }
+                } label: {
+                    Text("Finalize minutes").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                .background(.regularMaterial)
+            }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Vidur", systemImage: "sparkles") { showAskAISheet = true }.labelStyle(.iconOnly)

@@ -332,11 +332,16 @@ public final class ProcessingPipelineViewModel {
         errorMessage = nil
         var committing = false
         do {
+            let segments = meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }
+            let reviewedTurns: [AnalysisTurn] = segments.contains(where: \.isEdited) ? segments.map { segment in
+                AnalysisTurn(id: segment.id.uuidString, text: segment.text, start: segment.startTime,
+                             end: segment.endTime, speaker: segment.speaker?.recordingVoiceLabel ?? segment.speaker?.name)
+            } : []
             let result = try await offlinePipeline.run(meetingID: meeting.id, audio: audio,
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
                 timezone: meeting.analysisTimezone ?? TimeZone.current.identifier,
                 languageCode: settings?.savedRecordingLanguage.whisperCode ?? SavedRecordingLanguage.hinglish.whisperCode,
-                model: analysisModel, stopAfterSpeakers: stopAfterSpeakers) { [weak self] stage in
+                model: analysisModel, stopAfterSpeakers: stopAfterSpeakers, reviewedTurns: reviewedTurns) { [weak self] stage in
                     await self?.updateOfflineStage(stage)
                 }
             try Task.checkCancellation()
@@ -388,6 +393,7 @@ public final class ProcessingPipelineViewModel {
             // Accepted tasks are never deleted or silently regenerated.
             meeting.status = .completed
             meeting.analysisState = "completed"
+            meeting.minutesNeedFinalization = true
             try modelContext?.save()
             for i in stages.indices { stages[i].state = .completed }
             overallProgress = 1

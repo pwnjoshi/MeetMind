@@ -234,6 +234,7 @@ public final class Meeting: Identifiable {
     public var offlineAnalysisData: Data?
     public var reviewedTaskIDsData: Data?
     public var analysisState: String?
+    public var minutesNeedFinalization: Bool?
     public var agendaText: String?
     public var absentParticipantIDs: [UUID]?
     public var analysisTimezone: String?

@@ -9,7 +9,7 @@ public struct MeetingDetailTabContentView: View {
     @Binding public var transcriptSearch: String
     public let actionItems: [ActionItem]
     public let notes: [Note]
-    public let onCopySummary: () -> Void
+    public let onDocumentFormat: () -> Void
     public let onSeekTranscript: (TranscriptSegment) -> Void
     public let onEditTranscript: (TranscriptSegment) -> Void
     public let onReassignSpeaker: (TranscriptSegment) -> Void
@@ -24,7 +24,8 @@ public struct MeetingDetailTabContentView: View {
         case .summary:
             MeetingSummaryTabView(
                 summary: summary,
-                onCopy: onCopySummary
+                actionItems: actionItems,
+                onDocumentFormat: onDocumentFormat
             )
         case .transcript:
             MeetingTranscriptTabView(

@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CryptoKit
 
 public enum VidurModel: String, CaseIterable, Sendable {
     case fast = "qwen-1.7b"
@@ -116,6 +117,7 @@ public actor MeetingAnalysisPipeline {
     public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String? = nil,
                     model: VidurModel = .large,
                     stopAfterSpeakers: Bool = false,
+                    reviewedTurns: [AnalysisTurn] = [],
                     progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
         guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Pause it before starting this one.") }
         running = true
@@ -129,10 +131,16 @@ public actor MeetingAnalysisPipeline {
         }
         let profiles = try requiredProfiles(model: model)
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
+        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
+        if !reviewedTurns.isEmpty {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            signature += "|reviewed:\(SHA256.hash(data: try encoder.encode(reviewedTurns)))"
+        }
         let checkpointURL = try self.checkpointURL(meetingID)
-        var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature, stage: .transcription,
-            turns: [], speakers: [], analysis: [], analyzedChunks: 0)
+        var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature,
+            stage: reviewedTurns.isEmpty ? .transcription : .analysis,
+            turns: reviewedTurns, speakers: [], analysis: [], analyzedChunks: 0)
         if let data = try? Data(contentsOf: checkpointURL),
            let saved = try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data),
            saved.sourceSignature == signature { checkpoint = saved }

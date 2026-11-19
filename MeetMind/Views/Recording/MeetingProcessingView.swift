@@ -3,6 +3,7 @@ import SwiftData
 import OfflineEngineKit
 import Darwin
 import AVFoundation
+import UserNotifications
 
 /// Post-recording review and on-device minutes generation.
 public struct MeetingProcessingView: View {
@@ -21,6 +22,8 @@ public struct MeetingProcessingView: View {
     @State private var renamingSpeaker: Speaker?
     @State private var speakerName = ""
     @State private var showsTranscript = false
+    @State private var editingSegment: TranscriptSegment?
+    @State private var transcriptDraft = ""
     @State private var audioPlayer: AVAudioPlayer?
     @State private var audioPlaying = false
     @State private var showsNewSeries = false
@@ -86,6 +89,7 @@ public struct MeetingProcessingView: View {
                     ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }
                 }.pickerStyle(.segmented)
                 TimelineView(.periodic(from: .now, by: 2)) { _ in
+                    if busy || OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Processing Steps").font(.headline)
                         if let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId), !busy {
@@ -104,6 +108,7 @@ public struct MeetingProcessingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
                     .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                    }
                 }
                 TimelineView(.periodic(from: .now, by: 2)) { _ in
                     VStack(alignment: .leading, spacing: 12) {
@@ -122,8 +127,13 @@ public struct MeetingProcessingView: View {
                                 .foregroundStyle(.secondary)
                         } else if selectedSection == "Minutes" {
                             Text("Who said what?").font(.title3.bold())
-                            Text("Name the voices before generating minutes so you can tell who said what.")
+                            Text("Name the voices so the minutes show who decided what and who owns each action.")
                                 .foregroundStyle(.secondary)
+                            if let meeting {
+                                let voices = meeting.participants.filter { $0.recordingVoiceLabel != nil }
+                                Text("\(voices.count) voices · \(voices.filter { $0.name != $0.recordingVoiceLabel }.count) named")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
                             Button("Name Speakers", systemImage: "chevron.right") {
                                 if meeting?.analysisState == "speakerReview" {
                                     showsPeople = true
@@ -262,7 +272,17 @@ public struct MeetingProcessingView: View {
                     Section("Transcript") {
                         if let segments = meeting?.transcriptSegments, !segments.isEmpty {
                             ForEach(segments.sorted { $0.startTime < $1.startTime }, id: \.id) { segment in
-                                Text(segment.text).textSelection(.enabled)
+                                Button {
+                                    transcriptDraft = segment.text
+                                    editingSegment = segment
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("\(segment.speaker?.name ?? "Speaker") · \(segment.formattedStartTime)")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                        Text(segment.text).foregroundStyle(.primary)
+                                    }
+                                }
+                                .disabled(OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId))
                             }
                         } else {
                             Text("The transcript will appear here after processing.")
@@ -276,6 +296,14 @@ public struct MeetingProcessingView: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") { showsTranscript = false }
                     }
+                }
+                .alert("Edit Transcript", isPresented: Binding(
+                    get: { editingSegment != nil }, set: { if !$0 { editingSegment = nil } }
+                )) {
+                    TextField("Transcript", text: $transcriptDraft)
+                    Button("Cancel", role: .cancel) {}
+                    Button("Save", action: saveTranscriptCorrection)
+                        .disabled(transcriptDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -310,6 +338,20 @@ public struct MeetingProcessingView: View {
     }
 
     private var meeting: Meeting? { meetings.first { $0.id == meetingId } }
+
+    private func saveTranscriptCorrection() {
+        let text = transcriptDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let segment = editingSegment, !text.isEmpty, text != segment.text,
+              !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) else { return }
+        let previous = (segment.text, segment.isEdited)
+        segment.text = text
+        segment.isEdited = true
+        do { try modelContext.save() }
+        catch {
+            (segment.text, segment.isEdited) = previous
+            processingError = error.localizedDescription
+        }
+    }
 
     private let processingSteps = ["Prepare on-device models", "Create transcript", "Identify speakers", "Generate minutes", "Save results"]
 
@@ -415,7 +457,13 @@ public struct MeetingProcessingView: View {
     private func queueAnalysis() {
         OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
         operation?.cancel()
-        dismiss()
+        Task { @MainActor in
+            let center = UNUserNotificationCenter.current()
+            if await center.notificationSettings().authorizationStatus == .notDetermined {
+                _ = try? await center.requestAuthorization(options: [.alert, .sound])
+            }
+            dismiss()
+        }
     }
 
     private func playSpeakerSample(_ segment: TranscriptSegment) {
