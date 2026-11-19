@@ -264,7 +264,7 @@ public final class MeetingDetailViewModel {
     ) {
         self.meeting = meeting
         self.questionAnswerer = questionAnswerer ?? { question, turns in
-            try await MeetingAnalysisPipeline.shared.answer(question: question, turns: turns)
+            try await MeetingAnalysisPipeline.shared.answer(question: question, turns: turns, model: VidurModel.selected)
         }
         self.modelContext = modelContext
         self.playbackService = playbackService ?? AudioPlaybackService()

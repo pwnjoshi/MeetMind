@@ -5,8 +5,6 @@ import SwiftData
 public struct SearchConsoleView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
-    @Environment(AppState.self) private var appState
-    @FocusState private var searchFocused: Bool
     @Query private var allMeetings: [Meeting]
     @State public var viewModel: SearchViewModel
     
@@ -15,6 +13,14 @@ public struct SearchConsoleView: View {
     }
     
     public var body: some View {
+        if #available(iOS 18, *) {
+            searchContent
+        } else {
+            searchContent.searchable(text: $viewModel.searchQuery, prompt: "Meetings, transcripts, actions")
+        }
+    }
+
+    private var searchContent: some View {
         VStack(spacing: Spacing.sm) {
             if viewModel.hasQuery {
                 SearchScopeFilterBar(
@@ -36,18 +42,20 @@ public struct SearchConsoleView: View {
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
         .tint(Color(hex: "#4B3FF0"))
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) { searchDock }
+        .onSubmit(of: .search) { viewModel.performSearch(query: viewModel.searchQuery) }
         .onAppear {
             viewModel.setModelContext(modelContext)
             viewModel.indexMeetings(allMeetings)
-            viewModel.performSearch(query: viewModel.searchQuery)
+            viewModel.search(query: viewModel.searchQuery, recordsHistory: false)
         }
         .onChange(of: allMeetings) { _, newMeetings in
             viewModel.indexMeetings(newMeetings)
-            viewModel.performSearch(query: viewModel.searchQuery)
+            viewModel.search(query: viewModel.searchQuery, recordsHistory: false)
         }
-        .onChange(of: viewModel.searchQuery) { _, newQuery in viewModel.performSearch(query: newQuery) }
+        .task(id: viewModel.searchQuery) {
+            do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+            viewModel.search(query: viewModel.searchQuery, recordsHistory: false)
+        }
     }
 
     private var discovery: some View {
@@ -97,50 +105,12 @@ public struct SearchConsoleView: View {
         }
     }
 
-    private var searchDock: some View {
-        HStack(spacing: 8) {
-            if !searchFocused {
-                Button {
-                    appState.activeTab = .home
-                } label: {
-                    Image(systemName: "calendar").frame(width: 46, height: 46)
-                        .background(.regularMaterial, in: Circle())
-                }
-                .accessibilityLabel("Meetings")
-            }
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").accessibilityHidden(true)
-                TextField("Meetings, transcripts, actions", text: $viewModel.searchQuery)
-                    .focused($searchFocused)
-                    .submitLabel(.search)
-                    .onSubmit { searchFocused = false }
-            }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 46)
-            .background(.regularMaterial, in: Capsule())
-            if searchFocused || viewModel.hasQuery {
-                Button {
-                    viewModel.searchQuery = ""
-                    viewModel.setScope(.all)
-                    searchFocused = false
-                } label: {
-                    Image(systemName: "xmark").foregroundStyle(.primary)
-                        .frame(width: 46, height: 46)
-                        .background(.regularMaterial, in: Circle())
-                }
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
-    }
-    
     private var resultsList: some View {
         ScrollView {
             LazyVStack(spacing: Spacing.sm) {
                 ForEach(viewModel.searchResults) { res in
                     SearchResultRowView(result: res) {
+                        viewModel.performSearch(query: viewModel.searchQuery)
                         router.navigate(to: .meetingDetail(id: res.meetingId), in: .search)
                     }
                 }
@@ -148,6 +118,7 @@ public struct SearchConsoleView: View {
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.sm)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
     
     private var emptyResultsView: some View {

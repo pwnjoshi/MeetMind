@@ -468,11 +468,16 @@ public final class SettingsViewModel {
 
     private func loadUserProfile() {
         guard let data = userDefaults.data(forKey: "MeetMind_UserProfile"),
-              let profile = try? JSONDecoder().decode(UserProfile.self, from: data) else {
+              var profile = try? JSONDecoder().decode(UserProfile.self, from: data) else {
             _userProfile = .defaultProfile
             return
         }
-        _userProfile = profile
+        if ["MeetMind User", "Manent User"].contains(profile.name) {
+            profile.name = UserProfile.defaultLocalName
+            saveUserProfile(profile)
+        } else {
+            _userProfile = profile
+        }
     }
 
     public func saveUserProfile(_ profile: UserProfile) {

@@ -2,6 +2,7 @@ import Foundation
 
 /// Persistent user identity and personalization profile
 public struct UserProfile: Codable, Sendable, Equatable {
+    public static let defaultLocalName = "Dr. Sachin Ghai"
     public var name: String
     public var email: String
     public var role: String
@@ -43,7 +44,7 @@ public struct UserProfile: Codable, Sendable, Equatable {
     
     public static var defaultProfile: UserProfile {
         UserProfile(
-            name: "MeetMind User",
+            name: defaultLocalName,
             email: "",
             role: "Team Member",
             avatarColorHex: "#3B82F6",

@@ -129,7 +129,9 @@ public struct MeetingDetailView: View {
         .sheet(isPresented: $showActionItemModal) {
             ActionItemEditModal(onSave: { title, priority, dueDate, assignee in
                 if let meeting = viewModel.meeting {
-                    meeting.addActionItem(ActionItem(title: title, assigneeName: assignee, dueDate: dueDate, priority: priority))
+                    let action = ActionItem(title: title, assigneeName: assignee, dueDate: dueDate, priority: priority)
+                    if action.assignee != nil { action.assignedByLocalUser = true }
+                    meeting.addActionItem(action)
                     do { try modelContext.save() } catch { deletionError = error.localizedDescription }
                 }
                 showActionItemModal = false

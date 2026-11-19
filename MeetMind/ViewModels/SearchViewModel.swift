@@ -103,7 +103,7 @@ public final class SearchViewModel {
     
     public func setScope(_ scope: SearchScope) {
         self.selectedScope = scope
-        performSearch(query: searchQuery)
+        search(query: searchQuery, recordsHistory: false)
     }
     
     public func destination(for result: SearchResultItem) -> NavigationDestination {
@@ -114,7 +114,7 @@ public final class SearchViewModel {
         search(query: query)
     }
     
-    public func search(query: String) {
+    public func search(query: String, recordsHistory: Bool = true) {
         self.searchQuery = query
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -124,7 +124,8 @@ public final class SearchViewModel {
         }
         
         isSearching = true
-        if !recentSearches.contains(trimmed) {
+        if recordsHistory {
+            recentSearches.removeAll { $0.localizedCaseInsensitiveCompare(trimmed) == .orderedSame }
             recentSearches.insert(trimmed, at: 0)
             if recentSearches.count > 10 {
                 recentSearches.removeLast()

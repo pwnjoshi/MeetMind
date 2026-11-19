@@ -7,6 +7,7 @@ public struct MainTabView: View {
     @Environment(AppState.self) private var appState
     @Environment(NavigationRouter.self) private var router
     @Query private var actionItems: [ActionItem]
+    @State private var searchModel = SearchViewModel()
     
     public init() {}
     
@@ -26,6 +27,7 @@ public struct MainTabView: View {
                         .badge(pendingActionItemsBadge.map { Text($0) })
                     Tab("Search", systemImage: "magnifyingglass", value: TabIdentifier.search, role: .search) { searchStack }
                 }
+                .searchable(text: Bindable(searchModel).searchQuery, prompt: "Meetings, transcripts, actions")
             } else {
                 TabView(selection: selection) {
                     meetingsStack.tabItem { Label("Meetings", systemImage: "calendar") }.tag(TabIdentifier.home)
@@ -35,7 +37,7 @@ public struct MainTabView: View {
                 }
             }
         }
-        .tint(Color(hex: "#4B3FF0"))
+        .tint(Theme.Colors.manentAccent)
     }
 
     private var meetingsStack: some View {
@@ -54,7 +56,7 @@ public struct MainTabView: View {
 
     private var searchStack: some View {
         NavigationStack(path: Bindable(router).searchPath) {
-            SearchConsoleView()
+            SearchConsoleView(viewModel: searchModel)
                 .navigationDestination(for: NavigationDestination.self) { destinationView(for: $0) }
         }
     }

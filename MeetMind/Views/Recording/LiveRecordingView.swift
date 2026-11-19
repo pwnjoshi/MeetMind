@@ -32,9 +32,9 @@ public struct LiveRecordingView: View {
     public var body: some View {
         VStack(spacing: 24) {
             HStack {
-                Button(action: handleStop) { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                Button(action: viewModel.requestDiscard) { Image(systemName: "xmark").frame(width: 44, height: 44) }
                     .buttonStyle(.bordered).buttonBorderShape(.circle)
-                    .accessibilityLabel("Finish recording")
+                    .accessibilityLabel("Delete recording")
                 Spacer()
                 HStack(spacing: 0) {
                     captureTool("Add live note", icon: "text.bubble") { viewModel.openNoteDock() }
@@ -165,10 +165,16 @@ public struct LiveRecordingView: View {
         .sheet(isPresented: $isPhotoSheetPresented) {
             LiveMediaCaptureSheet(timestamp: viewModel.elapsedDuration) { viewModel.captureWhiteboardPhoto(data: $0) }
         }
-        .alert("Discard Recording?", isPresented: $viewModel.isShowingDiscardAlert) {
-            Button("Discard", role: .destructive) { viewModel.confirmDiscard(); dismiss() }
-            Button("Cancel", role: .cancel) { viewModel.cancelDiscard() }
-        } message: { Text("Are you sure you want to discard this recording? All audio and notes will be deleted.") }
+        .sheet(isPresented: $viewModel.isShowingDiscardAlert) {
+            ViewThatFits(in: .vertical) {
+                deleteConfirmation
+                ScrollView { deleteConfirmation }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(uiColor: .secondarySystemBackground))
+            .preferredColorScheme(.dark)
+        }
         .alert("Short Recording", isPresented: $viewModel.isShowingShortRecordingAlert) {
             Button("Discard", role: .destructive) { viewModel.confirmDiscard(); dismiss() }
             Button("Save Anyway") { proceedToProcessing() }
@@ -207,6 +213,40 @@ public struct LiveRecordingView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
+    }
+
+    private var deleteConfirmation: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "trash")
+                .font(.title)
+                .foregroundStyle(.red)
+                .frame(width: 62, height: 62)
+                .background(.red.opacity(0.15), in: Circle())
+                .accessibilityHidden(true)
+            Text("Delete This Recording?").font(.title3.bold())
+            Text("You’ve recorded \(viewModel.formattedDuration) so far. Deleting is permanent. The audio won’t be saved anywhere.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button(role: .destructive) {
+                viewModel.confirmDiscard()
+                dismiss()
+            } label: {
+                Text("Yes, Delete")
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .foregroundStyle(.white)
+                    .background(.red, in: Capsule())
+            }
+            .padding(.top, 12)
+            Button(action: viewModel.cancelDiscard) {
+                Text("No, Keep Recording")
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .foregroundStyle(Color(hex: "#A9A2FF"))
+                    .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(20)
     }
 
     private func handleStop() {

@@ -1,6 +1,23 @@
 import Foundation
 import AVFoundation
 
+public enum VidurModel: String, CaseIterable, Sendable {
+    case fast = "qwen-1.7b"
+    case large = "qwen-4b"
+
+    public static let preferenceKey = "Manent.vidurModel"
+    public static var selected: Self {
+        UserDefaults.standard.string(forKey: preferenceKey).flatMap(Self.init(rawValue:)) ?? .fast
+    }
+
+    public var title: String {
+        switch self {
+        case .fast: return "Qwen3 1.7B · 1.28 GB"
+        case .large: return "Qwen3 4B · 2.50 GB"
+        }
+    }
+}
+
 public enum MeetingAnalysisStage: String, Codable, Sendable {
     case transcription, speakers, analysis, completed
 }
@@ -45,7 +62,7 @@ public actor MeetingAnalysisPipeline {
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
 
-    public func answer(question: String, turns: [AnalysisTurn]) async throws -> [SupportedPoint] {
+    public func answer(question: String, turns: [AnalysisTurn], model: VidurModel = .large) async throws -> [SupportedPoint] {
         guard !running else { throw OfflineError.unavailable("Wait for the current analysis to finish or pause it first.") }
         guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               question.utf8.count <= 300, !turns.isEmpty else {
@@ -54,7 +71,7 @@ public actor MeetingAnalysisPipeline {
         running = true
         defer { running = false }
         try checkConditions()
-        guard let profile = try OfflineModelStore.profiles().first(where: { $0.id == Self.analysisModelID }) else {
+        guard let profile = try OfflineModelStore.profiles().first(where: { $0.id == model.rawValue }) else {
             throw OfflineError.unavailable("The offline analysis model is unavailable.")
         }
         let folder = try await backend.verifiedFolder(profile)
@@ -77,17 +94,17 @@ public actor MeetingAnalysisPipeline {
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
 
-    public func missingModels() async throws -> [ModelProfile] {
+    public func missingModels(model: VidurModel = .large) async throws -> [ModelProfile] {
         var missing: [ModelProfile] = []
-        for profile in try requiredProfiles() {
+        for profile in try requiredProfiles(model: model) {
             if !(await OfflineModelStore.shared.isInstalled(profile)) { missing.append(profile) }
         }
         return missing
     }
 
-    private func requiredProfiles() throws -> [ModelProfile] {
+    private func requiredProfiles(model: VidurModel) throws -> [ModelProfile] {
         let profiles = try OfflineModelStore.profiles()
-        return try Self.requiredModelIDs.map { id in
+        return try ["whisper-large", "diarization", model.rawValue].map { id in
             guard let profile = profiles.first(where: { $0.id == id }) else {
                 throw OfflineError.unavailable("Required offline model is missing from the manifest.")
             }
@@ -96,6 +113,7 @@ public actor MeetingAnalysisPipeline {
     }
 
     public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String? = nil,
+                    model: VidurModel = .large,
                     progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
         guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Pause it before starting this one.") }
         running = true
@@ -107,7 +125,7 @@ public actor MeetingAnalysisPipeline {
         guard duration.isFinite, duration > 0, duration <= 3600 else {
             throw OfflineError.unavailable("Offline analysis supports recordings up to 60 minutes. Your audio is preserved.")
         }
-        let profiles = try requiredProfiles()
+        let profiles = try requiredProfiles(model: model)
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
         let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         let checkpointURL = try self.checkpointURL(meetingID)
@@ -131,7 +149,6 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .transcription {
             try checkConditions()
             await progress(.transcription)
-            let transcriptionFolder = try await backend.verifiedFolder(profiles[0])
             if ProcessInfo.processInfo.thermalState == .nominal,
                !ProcessInfo.processInfo.isLowPowerModeEnabled {
                 let backend = self.backend
@@ -141,6 +158,7 @@ public actor MeetingAnalysisPipeline {
                     return try await backend.diarize(audio: audio, folder: diarizationFolder)
                 }
             }
+            let transcriptionFolder = try await backend.verifiedFolder(profiles[0])
             checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: transcriptionFolder, languageCode: languageCode))
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers

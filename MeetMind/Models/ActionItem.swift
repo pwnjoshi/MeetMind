@@ -65,6 +65,7 @@ public final class ActionItem: Identifiable {
     public var category: String?
     public var sourceEvidence: String?
     public var sourceSuggestionID: String?
+    public var assignedByLocalUser: Bool?
     
     // Relationships
     public var meeting: Meeting?

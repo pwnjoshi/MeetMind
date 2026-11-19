@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import OfflineEngineKit
 import Darwin
+import AVFoundation
 
 /// Post-recording review and on-device minutes generation.
 public struct MeetingProcessingView: View {
@@ -12,6 +13,9 @@ public struct MeetingProcessingView: View {
     @Query private var meetings: [Meeting]
     @State private var selectedSection = "Minutes"
     @State private var showsPeople = false
+    @State private var showsTranscript = false
+    @State private var audioPlayer: AVAudioPlayer?
+    @State private var audioPlaying = false
     @State private var showsNewSeries = false
     @State private var seriesName = ""
     @State private var processingError: String?
@@ -81,7 +85,7 @@ public struct MeetingProcessingView: View {
                 .padding(20)
                 .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 if selectedSection == "Minutes" {
-                    Button("Transcript and audio", systemImage: "waveform") { openMeeting() }
+                    Button("Transcript and audio", systemImage: "waveform") { showsTranscript = true }
                         .buttonStyle(.bordered)
                         .disabled(busy)
                 }
@@ -122,6 +126,42 @@ public struct MeetingProcessingView: View {
                 .navigationTitle("People")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsPeople = false } } }
+            }
+        }
+        .sheet(isPresented: $showsTranscript, onDismiss: {
+            audioPlayer?.stop()
+            audioPlayer = nil
+            audioPlaying = false
+        }) {
+            NavigationStack {
+                List {
+                    if let url = meeting?.resolvedAudioFileURL {
+                        Button(audioPlaying ? "Pause audio" : "Play audio",
+                               systemImage: audioPlaying ? "pause.fill" : "play.fill") {
+                            toggleSavedAudio(url)
+                        }
+                        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+                            audioPlaying = audioPlayer?.isPlaying == true
+                        }
+                    }
+                    Section("Transcript") {
+                        if let segments = meeting?.transcriptSegments, !segments.isEmpty {
+                            ForEach(segments.sorted { $0.startTime < $1.startTime }, id: \.id) { segment in
+                                Text(segment.text).textSelection(.enabled)
+                            }
+                        } else {
+                            Text("The transcript will appear here after processing.")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .navigationTitle("Transcript and Audio")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showsTranscript = false }
+                    }
+                }
             }
         }
         .alert("New Series", isPresented: $showsNewSeries) {
@@ -193,14 +233,26 @@ public struct MeetingProcessingView: View {
         }
     }
 
-    private func openMeeting() {
-        router.homePath = [.meetingDetail(id: meetingId)]
+    private func toggleSavedAudio(_ url: URL) {
+        do {
+            if audioPlayer == nil { audioPlayer = try AVAudioPlayer(contentsOf: url) }
+            guard let audioPlayer else { return }
+            if audioPlayer.isPlaying {
+                audioPlayer.pause()
+                audioPlaying = false
+            } else {
+                audioPlaying = audioPlayer.play()
+            }
+        } catch {
+            processingError = error.localizedDescription
+            showsTranscript = false
+        }
     }
 
     private func queueAnalysis() {
         OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
         operation?.cancel()
-        openMeeting()
+        router.homePath.removeAll()
     }
 
     private func start(download: Bool = false) {

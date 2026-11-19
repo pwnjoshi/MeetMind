@@ -5,6 +5,10 @@ import SwiftData
 public struct ActionItemsConsoleView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
+    @Environment(SettingsViewModel.self) private var settings: SettingsViewModel?
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var assignmentScope: AssignmentScope = .toMe
+    private enum AssignmentScope { case toMe, byMe, all }
     @Query private var queriedItems: [ActionItem]
     @State public var viewModel: ActionItemsViewModel
     @State private var syncError: String?
@@ -18,18 +22,24 @@ public struct ActionItemsConsoleView: View {
     public var body: some View {
         @Bindable var vm = viewModel
         VStack(spacing: 14) {
-            ActionItemFilterHeaderView(
-                selectedScope: viewModel.selectedFilterScope,
-                selectedGrouping: viewModel.selectedGrouping,
-                onSelectScope: { viewModel.selectedFilterScope = $0 },
-                onSelectGrouping: { viewModel.selectedGrouping = $0 }
-            )
+            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
+            layout {
+                assignmentTab("Assigned to Me", scope: .toMe)
+                assignmentTab("Assigned by Me", scope: .byMe)
+            }
+            .padding(3)
+            .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 24))
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            if assignmentScope == .all {
+                Text("Showing all actions").font(.footnote).foregroundStyle(.secondary)
+            }
             
-            if viewModel.filteredActionItems.isEmpty {
+            if visibleSections.isEmpty {
                 emptyStateView
             } else {
                 ActionItemGroupListView(
-                    sections: viewModel.groupedActionItems,
+                    sections: visibleSections,
                     onToggle: { viewModel.toggleCompletion(for: $0) },
                     onSelectMeeting: { router.navigate(to: .meetingDetail(id: $0), in: .actionItems) }
                 )
@@ -47,6 +57,12 @@ public struct ActionItemsConsoleView: View {
                 }
                 .accessibilityLabel("New action")
                 Menu {
+                    Button("Show All Actions", systemImage: "checklist") { assignmentScope = .all }
+                    Picker("Status", selection: $vm.selectedFilterScope) {
+                        Text("All statuses").tag(ActionItemFilterScope.all)
+                        Text("Open").tag(ActionItemFilterScope.pending)
+                        Text("Done").tag(ActionItemFilterScope.completed)
+                    }
                     Section("Group actions") {
                         ForEach(ActionItemGrouping.allCases, id: \.self) { grouping in
                             Button {
@@ -74,7 +90,9 @@ public struct ActionItemsConsoleView: View {
         .sheet(isPresented: $vm.isShowingActionItemSheet) {
             CreateActionItemSheet(
                 onSave: { title, priority, due, assignee in
-                    viewModel.createActionItem(title: title, priority: priority, dueDate: due, assigneeName: assignee)
+                    let action = viewModel.createActionItem(title: title, priority: priority, dueDate: due, assigneeName: assignee)
+                    assignmentScope = action.assignedByLocalUser == true ? .byMe : .all
+                    viewModel.selectedFilterScope = .all
                     viewModel.isShowingActionItemSheet = false
                 },
                 onDismiss: { viewModel.isShowingActionItemSheet = false }
@@ -92,6 +110,43 @@ public struct ActionItemsConsoleView: View {
         .alert("Reminders sync failed", isPresented: Binding(get: { syncError != nil }, set: { if !$0 { syncError = nil } })) {
             Button("OK") { syncError = nil }
         } message: { Text(syncError ?? "") }
+    }
+
+    private func assignmentTab(_ title: String, scope: AssignmentScope) -> some View {
+        Button {
+            assignmentScope = scope
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background {
+                    if assignmentScope == scope { Capsule().fill(.background) }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(assignmentScope == scope ? .isSelected : [])
+    }
+
+    private var visibleSections: [ActionItemGroupSection] {
+        let localName = settings?.userProfile?.name ?? UserProfile.defaultLocalName
+        return viewModel.groupedActionItems.compactMap { section in
+            let items = section.items.filter { item in
+                switch assignmentScope {
+                case .toMe:
+                    return item.assignee?.name.localizedCaseInsensitiveCompare(localName) == .orderedSame
+                case .byMe:
+                    return item.assignedByLocalUser == true
+                case .all:
+                    return true
+                }
+            }
+            guard !items.isEmpty else { return nil }
+            return ActionItemGroupSection(id: section.id, title: section.title, items: items)
+        }
     }
     
     private var emptyStateView: some View {
@@ -127,6 +182,13 @@ public struct ActionItemsConsoleView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Spacing.xl)
+            if assignmentScope != .all && !viewModel.allActionItems.isEmpty {
+                Button("Show All Actions") {
+                    assignmentScope = .all
+                    viewModel.selectedFilterScope = .all
+                }
+                .frame(minHeight: 44)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

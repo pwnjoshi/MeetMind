@@ -29,6 +29,13 @@ public struct ActionItemRowView: View {
                     .font(Typography.headline)
                     .strikethrough(item.isCompleted)
                     .foregroundStyle(item.isCompleted ? Theme.Colors.textTertiary : Theme.Colors.textPrimary)
+
+                Label(
+                    item.assignee.map { "Assigned to \($0.name)" } ?? "Unassigned",
+                    systemImage: "person"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 
                 if let meetingTitle = item.meeting?.title {
                     Button {
@@ -46,9 +53,6 @@ public struct ActionItemRowView: View {
                 
                 HStack(spacing: Spacing.xs) {
                     if !item.priorityRaw.isEmpty { PriorityBadge(priorityText: item.priority.rawValue) }
-                    if let assignee = item.assignee?.name {
-                        Text(assignee).font(Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                    }
                     if let due = item.dueDate {
                         Text(due.formatted(date: .abbreviated, time: .omitted))
                             .font(Typography.caption2).foregroundStyle(Theme.Colors.textTertiary)

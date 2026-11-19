@@ -265,6 +265,7 @@ public final class ProcessingPipelineViewModel {
     }
     
     public func prepareForProduction(context: ModelContext, settings: SettingsViewModel? = nil) throws {
+        analysisModel = VidurModel.selected
         modelContext = context
         self.settings = settings
         usesOfflinePipeline = true
@@ -290,8 +291,10 @@ public final class ProcessingPipelineViewModel {
     }
 
     public func missingOfflineModels() async throws -> [ModelProfile] {
-        try await offlinePipeline.missingModels()
+        try await offlinePipeline.missingModels(model: analysisModel)
     }
+
+    private var analysisModel = VidurModel.selected
 
     private func updateOfflineStage(_ stage: MeetingAnalysisStage) {
         if let context = modelContext, let id = meetingId {
@@ -328,7 +331,8 @@ public final class ProcessingPipelineViewModel {
             let result = try await offlinePipeline.run(meetingID: meeting.id, audio: audio,
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
                 timezone: meeting.analysisTimezone ?? TimeZone.current.identifier,
-                languageCode: settings?.savedRecordingLanguage.whisperCode ?? SavedRecordingLanguage.hinglish.whisperCode) { [weak self] stage in
+                languageCode: settings?.savedRecordingLanguage.whisperCode ?? SavedRecordingLanguage.hinglish.whisperCode,
+                model: analysisModel) { [weak self] stage in
                     await self?.updateOfflineStage(stage)
                 }
             try Task.checkCancellation()

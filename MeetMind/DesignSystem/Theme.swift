@@ -6,6 +6,12 @@ public enum Theme {
     
     // MARK: - Brand Core Colors
     public struct Colors {
+        public static let manentAccent = Color(uiColor: UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(red: 0.62, green: 0.59, blue: 1, alpha: 1)
+            }
+            return UIColor(red: 79.0 / 255, green: 70.0 / 255, blue: 229.0 / 255, alpha: 1)
+        })
         /// Primary brand slate dark forest green (#1E2E28)
         public static let primarySlate = Color(hex: 0x1E2E28)
         

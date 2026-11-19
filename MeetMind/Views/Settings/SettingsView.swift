@@ -3,15 +3,16 @@ import SwiftData
 import OfflineEngineKit
 import PhotosUI
 import UIKit
+import EventKit
 
 /// Main Settings configuration console for Manent.
 public struct SettingsView: View {
     @Environment(SettingsViewModel.self) private var environmentViewModel: SettingsViewModel?
     @State private var localViewModel = SettingsViewModel()
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
-    @AppStorage("Manent.workspaceName") private var workspace = ""
+    @AppStorage("Manent.workspaceName") private var workspace = "iOS Center"
+    @AppStorage(VidurModel.preferenceKey) private var vidurModel: VidurModel = .fast
     @Environment(\.openURL) private var openURL
-    @Environment(\.dismiss) private var dismiss
     
     private var viewModel: SettingsViewModel {
         environmentViewModel ?? localViewModel
@@ -26,7 +27,7 @@ public struct SettingsView: View {
                     HStack(spacing: 12) {
                         SettingsProfileAvatar(profile: viewModel.userProfile ?? .defaultProfile, size: 52)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(viewModel.userProfile?.name ?? "Manent User").foregroundStyle(.primary)
+                            Text(viewModel.userProfile?.name ?? UserProfile.defaultLocalName).font(.headline).foregroundStyle(.primary)
                             Text(viewModel.userProfile?.email.isEmpty == false ? viewModel.userProfile!.email : "Local profile")
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
@@ -40,7 +41,9 @@ public struct SettingsView: View {
                 } label: {
                     LabeledContent("Workspace", value: workspace.isEmpty ? "Local workspace" : workspace)
                 }
-                Button("Apple Calendar") { openSystemSettings() }.foregroundStyle(.primary)
+                Button { openSystemSettings() } label: {
+                    LabeledContent("Apple Calendar", value: calendarAccess)
+                }.foregroundStyle(.primary)
                 Button("Notifications") { openSystemSettings() }.foregroundStyle(.primary)
             }
             Section {
@@ -62,6 +65,17 @@ public struct SettingsView: View {
                 }
                 NavigationLink("Vidur") {
                     Form {
+                        Section {
+                            Picker("Analysis model", selection: $vidurModel) {
+                                ForEach(VidurModel.allCases, id: \.self) { model in
+                                    Text(model.title).tag(model)
+                                }
+                            }
+                        } header: {
+                            Text("Model")
+                        } footer: {
+                            Text("Used for new minutes and Vidur answers. Download either model below. Saved minutes stay available until you regenerate them.")
+                        }
                         SettingsSpeechAndAISection(viewModel: viewModel)
                         Section { NavigationLink("Offline analysis models") { OfflineAnalysisModelsView() } }
                     }
@@ -86,18 +100,21 @@ public struct SettingsView: View {
             SettingsThemeAndAppearanceSection(viewModel: viewModel)
         }
         .navigationTitle("Settings")
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button { dismiss() } label: { Image(systemName: "chevron.left") }
-                    .accessibilityLabel("Close Settings")
-            }
-        }
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.hidden, for: .tabBar)
         .tint(Color(hex: "#4B3FF0"))
-        .background(Color(hex: "#F7F7FC"))
     }
 
     private func openSystemSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+    }
+
+    private var calendarAccess: String {
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess: return "Allowed"
+        case .writeOnly: return "Add Only"
+        default: return "Not Allowed"
+        }
     }
 }
 
@@ -237,7 +254,8 @@ struct OfflineAnalysisModelsView: View {
         .navigationTitle("Offline models")
         .task {
             do {
-                profiles = try OfflineModelStore.profiles().filter { MeetingAnalysisPipeline.requiredModelIDs.contains($0.id) }
+                let ids = Set(MeetingAnalysisPipeline.requiredModelIDs + VidurModel.allCases.map(\.rawValue))
+                profiles = try OfflineModelStore.profiles().filter { ids.contains($0.id) }
                 await refresh()
             } catch { message = error.localizedDescription }
         }

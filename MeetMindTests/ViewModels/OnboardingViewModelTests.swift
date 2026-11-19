@@ -124,7 +124,7 @@ final class OnboardingViewModelTests: XCTestCase {
     func test_skipProfileSetupAppliesDefaults() {
         sut.skipProfileSetup()
         XCTAssertEqual(sut.currentStage, .permissionsPrimer)
-        XCTAssertEqual(sut.currentUserProfile.name, "MeetMind User")
+        XCTAssertEqual(sut.currentUserProfile.name, "Dr. Sachin Ghai")
         XCTAssertEqual(sut.currentUserProfile.role, "Team Member")
         XCTAssertNil(sut.currentUserProfile.voiceProfileURL)
     }

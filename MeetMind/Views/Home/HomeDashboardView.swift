@@ -11,7 +11,6 @@ public struct HomeDashboardView: View {
     @Query private var savedMeetings: [Meeting]
     @State public var viewModel: HomeViewModel
     
-    @State private var isShowingSettings: Bool = false
     @State private var isMicrophoneCheckPresented: Bool = false
     @State private var selectedSeriesID: UUID?
     @State private var showsSeries = false
@@ -42,7 +41,7 @@ public struct HomeDashboardView: View {
 
             if savedMeetings.isEmpty && !dismissedFirstMeetingTip {
                 HStack(spacing: 12) {
-                    Image(systemName: "mic").foregroundStyle(Color.accentColor)
+                    Image(systemName: "mic").foregroundStyle(Theme.Colors.manentAccent)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Record Your First Meeting").font(.subheadline.bold())
@@ -73,7 +72,7 @@ public struct HomeDashboardView: View {
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 56, height: 56)
-                .background(Color(hex: "#4B3FF0"))
+                .background(Theme.Colors.manentAccent)
                 .clipShape(Circle())
                 .shadow(color: Color.black.opacity(0.15), radius: 8, y: 4)
             }
@@ -83,18 +82,21 @@ public struct HomeDashboardView: View {
             .padding(.trailing, 20)
             .padding(.bottom, 18)
         }
-        .background(Color(hex: "#F7F7FC"))
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Meetings")
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: { isShowingSettings = true }) {
-                    profileAvatar
+            if #available(iOS 26.0, *) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    profileButton
                 }
-                .accessibilityLabel("Profile and settings")
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarTrailing) {
+                    profileButton
+                }
             }
         }
-        .sheet(isPresented: $isShowingSettings) { NavigationStack { SettingsView() } }
         .sheet(isPresented: $showsSeries) {
             if let id = selectedSeriesID {
                 NavigationStack { LocalSeriesTimeline(seriesID: id) }
@@ -111,14 +113,28 @@ public struct HomeDashboardView: View {
         .onChange(of: savedMeetingRevision) { _, _ in viewModel.fetchMeetings() }
     }
 
+    private var profileButton: some View {
+        Button {
+            router.navigate(to: .settings, in: .home)
+        } label: {
+            profileAvatar
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Profile and settings")
+    }
+
     @ViewBuilder
     private var profileAvatar: some View {
         if let data = settings.userProfile?.avatarImageData, let image = UIImage(data: data) {
             Image(uiImage: image).resizable().scaledToFill().frame(width: 36, height: 36).clipShape(Circle())
         } else {
-            Text(settings.userProfile?.initials ?? "MM")
-                .font(.caption.bold()).foregroundStyle(.white)
-                .frame(width: 36, height: 36).background(Color.accentColor, in: Circle())
+            Image(systemName: "person.crop.circle.fill")
+                .resizable()
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(Color(uiColor: .systemBackground), Color(uiColor: .systemGray))
+                .frame(width: 36, height: 36)
         }
     }
 

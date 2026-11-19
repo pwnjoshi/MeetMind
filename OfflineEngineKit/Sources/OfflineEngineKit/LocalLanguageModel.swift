@@ -84,7 +84,8 @@ final class LocalLanguageModel {
         var system = """
         You analyze in-person Hindi-English meetings. Output English JSON only, using exactly this structure:
         {"discussion":[{"text":"...","evidence":[{"turnID":"t1","quote":"exact source substring"}]}],"decisions":[],"tasks":[{"title":"...","category":"Other","owner":null,"deadlineText":null,"priority":null,"evidence":[{"turnID":"t1","quote":"exact source substring"}]}]}
-        Every discussion point, decision, and task needs exact quoted source evidence and turn IDs.
+        Keep output concise and deduplicate. Discussion captures substantive context and unresolved issues. Decisions require explicit agreement, approval, rejection, or deferral. A proposal alone is not a decision.
+        Cite the shortest exact source substring that proves each claim, with its turn ID. Use additional quotes only when needed to establish context or ownership.
         Categories: Follow-up, Research, Create/Update, Review/Approve, Coordination, Other.
         Extract clear commitments, accepted requests, and definite future assignments. For example, "Maya will send the budget on Friday" is a task assigned to Maya.
         Evaluate each action separately: a negation about one action does not cancel an unrelated commitment.

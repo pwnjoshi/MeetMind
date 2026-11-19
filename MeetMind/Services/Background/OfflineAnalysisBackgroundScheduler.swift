@@ -65,7 +65,7 @@ enum OfflineAnalysisBackgroundScheduler {
                 if !succeeded || !pendingMeetingIDs.isEmpty { submit() }
             }
             do {
-                for profile in try await MeetingAnalysisPipeline.shared.missingModels() {
+                for profile in try await MeetingAnalysisPipeline.shared.missingModels(model: VidurModel.selected) {
                     try Task.checkCancellation()
                     try await OfflineModelStore.shared.install(profile) { _ in }
                 }

@@ -366,13 +366,13 @@ public final class ActionItemsViewModel {
         dueDate: Date? = nil,
         assigneeName: String? = nil
     ) -> ActionItem {
-        let speaker = assigneeName != nil && !assigneeName!.isEmpty ? Speaker(name: assigneeName!) : nil
         let item = ActionItem(
             title: title,
             assigneeName: assigneeName,
             dueDate: dueDate,
             priority: priority
         )
+        if item.assignee != nil { item.assignedByLocalUser = true }
         if let context = modelContext {
             context.insert(item)
             try? context.save()
