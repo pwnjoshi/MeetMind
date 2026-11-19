@@ -30,7 +30,7 @@ public struct AudioImportView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Bring a recording from Files into MeetMind.")
+                    Text("Bring a recording from Files into Manent.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 .listRowBackground(Color.clear)
@@ -69,7 +69,7 @@ public struct AudioImportView: View {
                     if isProcessing { ProgressView("Saving audio on this iPhone...") }
                     processButton
                 } footer: {
-                    Text("Audio stays on this iPhone. MeetMind creates a meeting with a transcript and speakers to review.")
+                    Text("Audio stays on this iPhone. Manent creates a meeting with a transcript and speakers to review.")
                 }
             }
             .navigationTitle("Import Audio")

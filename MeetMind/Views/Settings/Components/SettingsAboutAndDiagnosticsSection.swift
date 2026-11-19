@@ -14,7 +14,7 @@ public struct SettingsAboutAndDiagnosticsSection: View {
             HStack {
                 Text("Application")
                 Spacer()
-                Text("MeetMind iOS")
+                Text("Manent iOS")
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
             

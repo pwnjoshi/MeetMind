@@ -189,7 +189,7 @@ public struct MicrophoneCheckView: View {
         .alert("Troubleshoot Input", isPresented: $showsTroubleshooting) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Check that microphone access is enabled for MeetMind in Settings. Move closer to the iPhone, keep its microphones uncovered, and disconnect an unwanted Bluetooth audio input. Then record another sample.")
+            Text("Check that microphone access is enabled for Manent in Settings. Move closer to the iPhone, keep its microphones uncovered, and disconnect an unwanted Bluetooth audio input. Then record another sample.")
         }
         .task(id: testRun) {
             guard capturingSample else { return }

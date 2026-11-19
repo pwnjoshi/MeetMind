@@ -42,7 +42,7 @@ public struct SettingsSpeechAndAISection: View {
                 }
             }
             
-            Text("The live preview is provisional. When recording ends, MeetMind replaces it with the selected-language offline transcript before generating minutes and tasks.")
+            Text("The live preview is provisional. When recording ends, Manent replaces it with the selected-language offline transcript before generating minutes and tasks.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
     }

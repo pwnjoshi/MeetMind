@@ -35,7 +35,7 @@ public struct MainTabView: View {
                 }
             }
         }
-        .tint(Color(hex: "#0088FF"))
+        .tint(Color(hex: "#4B3FF0"))
     }
 
     private var meetingsStack: some View {

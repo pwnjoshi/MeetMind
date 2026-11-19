@@ -4,7 +4,7 @@ import OfflineEngineKit
 import PhotosUI
 import UIKit
 
-/// Main Settings configuration console for MeetMind application
+/// Main Settings configuration console for Manent.
 public struct SettingsView: View {
     @Environment(SettingsViewModel.self) private var environmentViewModel: SettingsViewModel?
     @State private var localViewModel = SettingsViewModel()
@@ -42,7 +42,8 @@ public struct SettingsView: View {
             SettingsAboutAndDiagnosticsSection(viewModel: viewModel)
         }
         .navigationTitle("Settings")
-        .background(Theme.Colors.background)
+        .tint(Color(hex: "#4B3FF0"))
+        .background(Color(hex: "#F7F7FC"))
     }
 }
 
