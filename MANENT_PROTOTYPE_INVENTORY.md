@@ -159,6 +159,15 @@ Source: Manent canvas `161:552`. Frame names and IDs are from Figma metadata. Pr
 
 ## Navigation contract
 
+Prototype link checked: [Manent onboarding flow](https://www.figma.com/proto/Tar6q6zhuhMDIOBlSKzkdI/Manent?node-id=1797-12&page-id=161%3A552&starting-point-node-id=1797%3A12).
+
+Verified via Figma interaction data:
+
+- Record Continue → Minutes; Minutes Continue → Vidur; Vidur Get Started → Welcome. Skip on Record or Minutes goes directly to Welcome.
+- Welcome Not Now → Meetings. The app chooses empty or populated Meetings from its local store.
+- Recording × → delete sheet; red Stop → finish confirmation. Keep Recording closes the delete sheet.
+- Record and Minutes illustrations have timed component transitions. Vidur has no timed transition in the inspected frame.
+
 - Onboarding Continue advances one page. Get Started and Skip lead to local entry. Apple and email authentication frames conflict with account-free use.
 - Meetings profile pushes Settings. The profile row pushes the local profile editor. Sign-out, account deletion, and verification screens do not apply to a local profile.
 - Meetings plus opens the create menu. Quick Meet opens microphone check, then pushes recording. Schedule and Import open sheets.

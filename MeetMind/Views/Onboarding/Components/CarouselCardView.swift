@@ -5,6 +5,7 @@ public struct CarouselCardView: View {
     public let slide: OnboardingSlide
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var waveformPhase = 0
+    @State private var showsMinutesCheck = false
 
     private let waveformPhases: [[CGFloat]] = [
         [10, 22, 34, 18, 40, 26, 14, 30, 12],
@@ -56,7 +57,16 @@ public struct CarouselCardView: View {
         }
         .task(id: reduceMotion) {
             waveformPhase = 0
-            guard !reduceMotion, slide.id == 0 else { return }
+            showsMinutesCheck = reduceMotion
+            guard !reduceMotion else { return }
+            if slide.id == 1 {
+                do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                    showsMinutesCheck = true
+                }
+                return
+            }
+            guard slide.id == 0 else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
                 withAnimation(.easeInOut(duration: 0.32)) {
@@ -115,6 +125,7 @@ public struct CarouselCardView: View {
                 .resizable()
                 .frame(width: 50, height: 50)
                 .overlay { Image(systemName: "checkmark").foregroundStyle(.white) }
+                .scaleEffect(showsMinutesCheck ? 1 : 0.04)
                 .offset(x: 16, y: 16)
         }
     }
@@ -137,7 +148,7 @@ public struct CarouselCardView: View {
             .background(.white, in: RoundedRectangle(cornerRadius: 22))
             .frame(maxWidth: .infinity, alignment: .leading)
             Label("Stays on this iPhone", systemImage: "doc.text")
-                .font(.footnote.semibold())
+                .font(.footnote.weight(.semibold))
                 .padding(12)
                 .background(.white, in: Capsule())
                 .padding(.top, 8)

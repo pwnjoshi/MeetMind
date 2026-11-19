@@ -47,7 +47,7 @@ public struct WelcomeAndSignInView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.black)
                         .controlSize(.large)
-                        Button("Not Now") { viewModel.continueLocally() }
+                        Button("Not Now") { viewModel.completeOnboarding() }
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .padding(.top, 16)

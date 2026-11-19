@@ -150,12 +150,11 @@ public struct LiveRecordingView: View {
         .preferredColorScheme(.dark)
         .toolbar(.hidden, for: .tabBar)
         .navigationBarHidden(true)
-        .statusBarHidden(true)
         .sensoryFeedback(.success, trigger: viewModel.bookmarks.count)
         .disabled(isFinishing)
         .alert("Finish Recording?", isPresented: $isFinishConfirmationPresented) {
             Button("Cancel", role: .cancel) { }
-            Button("Finish") { proceedToProcessing() }
+            Button("Finish and Save") { proceedToProcessing() }
         } message: {
             Text("Your recording will be saved on this iPhone.")
         }
