@@ -7,38 +7,36 @@ public struct MeetingSummaryTabView: View {
     public let onDocumentFormat: () -> Void
 
     public var body: some View {
-        ScrollView {
-            if let summary {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let meeting = summary.meeting {
-                        meetingContext(meeting)
-                    }
-                    documentSection("Discussion", lines: summary.discussionLines)
-                    documentSection("Decision", lines: summary.keyDecisions)
-                    if !actionItems.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Action items").font(.headline)
-                            ForEach(actionItems) { action in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(action.title)
-                                    Text(actionDetails(action)).font(.subheadline).foregroundStyle(.secondary)
-                                }
+        if let summary {
+            VStack(alignment: .leading, spacing: 16) {
+                if let meeting = summary.meeting {
+                    meetingContext(meeting)
+                }
+                documentSection("Discussion", lines: summary.discussionLines)
+                documentSection("Decision", lines: summary.keyDecisions)
+                if !actionItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Action items").font(.headline)
+                        ForEach(actionItems) { action in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(action.title)
+                                Text(actionDetails(action)).font(.subheadline).foregroundStyle(.secondary)
                             }
                         }
                     }
-                    Button(action: onDocumentFormat) {
-                        Text("Document format").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
-                .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                .padding(.horizontal, 24)
-                .padding(.bottom, 16)
+                Button(action: onDocumentFormat) {
+                    Text("Document format").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(.background, in: RoundedRectangle(cornerRadius: 24))
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
         }
     }
 

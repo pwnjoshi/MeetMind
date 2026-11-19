@@ -39,80 +39,12 @@ public struct MeetingDetailView: View {
     }
     
     public var body: some View {
-        VStack(spacing: 0) {
-            recordHeader
-            if recordSection == "Minutes", let meeting = viewModel.meeting,
-               viewModel.summary == nil, meeting.resolvedAudioFileURL != nil || !meeting.transcriptSegments.isEmpty {
-                Button(action: openTranscript) {
-                    HStack {
-                        Text("Transcript and audio").font(.headline)
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(16)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 16))
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
-            }
-            if let meeting = viewModel.meeting, !meeting.pendingTaskSuggestions.isEmpty {
-                Button("Review \(meeting.pendingTaskSuggestions.count) suggested tasks") { showTaskReview = true }
-                    .buttonStyle(.borderedProminent).padding(.vertical, 8)
-            }
-            if let meeting = viewModel.meeting, meeting.status == .scheduled {
-                Button("Start recording") {
-                        meeting.status = .recording
-                        do {
-                            try modelContext.save()
-                            router.navigate(to: .liveRecording(id: meeting.id), in: .home)
-                        } catch { deletionError = error.localizedDescription }
-                }
-                .buttonStyle(.borderedProminent).padding(.vertical, 8)
-            }
-            
-            if recordSection == "Decisions" {
-                List {
-                    let decisions = viewModel.summary?.keyDecisions ?? []
-                    if decisions.isEmpty { Text("No decisions recorded").foregroundStyle(.secondary) }
-                    ForEach(Array(decisions.enumerated()), id: \.offset) { entry in
-                        NavigationLink {
-                            MeetingDecisionDetail(viewModel: viewModel, index: entry.offset)
-                        } label: {
-                            Text(entry.element)
-                        }
-                    }
-                }
-                .listStyle(.insetGrouped)
+        Group {
+            if recordSection == "Minutes", viewModel.summary != nil {
+                ScrollView { recordContent }
             } else {
-                MeetingDetailTabContentView(
-                selectedTab: viewModel.selectedTab,
-                summary: viewModel.summary,
-                transcriptSegments: viewModel.transcriptSegments,
-                activeSegmentId: viewModel.activeSegmentId,
-                transcriptSearch: $transcriptSearch,
-                actionItems: viewModel.actionItems,
-                notes: viewModel.notes,
-                onDocumentFormat: { showExportSheet = true },
-                onSeekTranscript: { viewModel.tapToSeek(segment: $0) },
-                onEditTranscript: { viewModel.beginEditingTranscript(segment: $0) },
-                onReassignSpeaker: { showSpeakerReassign = $0 },
-                onToggleAction: { viewModel.toggleActionItemCompletion($0) },
-                onAddAction: { showActionItemModal = true },
-                onSyncReminders: {
-                    Task {
-                        do { try await viewModel.syncReviewedTasksToReminders() }
-                        catch { deletionError = error.localizedDescription }
-                    }
-                },
-                onAddNote: { showNoteSheet = true },
-                onSelectPhoto: { showPhotoModal = $0 }
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                recordContent
             }
-            
-
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .tint(Theme.Colors.manentAccent)
@@ -346,6 +278,84 @@ public struct MeetingDetailView: View {
             confirmSendMinutes = true
         } else {
             showExportSheet = true
+        }
+    }
+
+    private var recordContent: some View {
+        VStack(spacing: 0) {
+            recordHeader
+            if recordSection == "Minutes", let meeting = viewModel.meeting,
+               viewModel.summary == nil, meeting.resolvedAudioFileURL != nil || !meeting.transcriptSegments.isEmpty {
+                Button(action: openTranscript) {
+                    HStack {
+                        Text("Transcript and audio").font(.headline)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+            }
+            if let meeting = viewModel.meeting, !meeting.pendingTaskSuggestions.isEmpty {
+                Button("Review \(meeting.pendingTaskSuggestions.count) suggested tasks") { showTaskReview = true }
+                    .buttonStyle(.borderedProminent).padding(.vertical, 8)
+            }
+            if let meeting = viewModel.meeting, meeting.status == .scheduled {
+                Button("Start recording") {
+                        meeting.status = .recording
+                        do {
+                            try modelContext.save()
+                            router.navigate(to: .liveRecording(id: meeting.id), in: .home)
+                        } catch { deletionError = error.localizedDescription }
+                }
+                .buttonStyle(.borderedProminent).padding(.vertical, 8)
+            }
+            
+            if recordSection == "Decisions" {
+                List {
+                    let decisions = viewModel.summary?.keyDecisions ?? []
+                    if decisions.isEmpty { Text("No decisions recorded").foregroundStyle(.secondary) }
+                    ForEach(Array(decisions.enumerated()), id: \.offset) { entry in
+                        NavigationLink {
+                            MeetingDecisionDetail(viewModel: viewModel, index: entry.offset)
+                        } label: {
+                            Text(entry.element)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            } else {
+                MeetingDetailTabContentView(
+                selectedTab: viewModel.selectedTab,
+                summary: viewModel.summary,
+                transcriptSegments: viewModel.transcriptSegments,
+                activeSegmentId: viewModel.activeSegmentId,
+                transcriptSearch: $transcriptSearch,
+                actionItems: viewModel.actionItems,
+                notes: viewModel.notes,
+                onDocumentFormat: { showExportSheet = true },
+                onSeekTranscript: { viewModel.tapToSeek(segment: $0) },
+                onEditTranscript: { viewModel.beginEditingTranscript(segment: $0) },
+                onReassignSpeaker: { showSpeakerReassign = $0 },
+                onToggleAction: { viewModel.toggleActionItemCompletion($0) },
+                onAddAction: { showActionItemModal = true },
+                onSyncReminders: {
+                    Task {
+                        do { try await viewModel.syncReviewedTasksToReminders() }
+                        catch { deletionError = error.localizedDescription }
+                    }
+                },
+                onAddNote: { showNoteSheet = true },
+                onSelectPhoto: { showPhotoModal = $0 }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            
+
         }
     }
 
