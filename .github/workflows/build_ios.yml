@@ -76,7 +76,12 @@ jobs:
             CODE_SIGN_STYLE="Manual"
 
       - name: Validate compiled app privacy keys
-        run: python3 Scripts/validate_ipa.py build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
+        run: |
+          APP_PLIST=build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
+          SOURCE_COMMIT=$(git rev-parse HEAD)
+          /usr/libexec/PlistBuddy -c "Set :ManentBuildCommit $SOURCE_COMMIT" "$APP_PLIST" 2>/dev/null ||
+            /usr/libexec/PlistBuddy -c "Add :ManentBuildCommit string $SOURCE_COMMIT" "$APP_PLIST"
+          python3 Scripts/validate_ipa.py "$APP_PLIST"
 
       - name: Package into IPA
         run: |

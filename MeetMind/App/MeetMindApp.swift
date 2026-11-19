@@ -63,7 +63,8 @@ struct MeetMindApp: App {
         _settingsVM = State(initialValue: settings)
         if ProcessInfo.processInfo.arguments.contains("--diagnose-storage") {
             // Content-free verification of the actual production store open.
-            print("MEETMIND_STORAGE_READY \(initializedContainer != nil)")
+            let commit = Bundle.main.object(forInfoDictionaryKey: "ManentBuildCommit") as? String ?? "unknown"
+            print("MEETMIND_STORAGE_READY \(initializedContainer != nil) commit=\(commit)")
             fflush(stdout)
         }
     }

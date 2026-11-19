@@ -97,7 +97,7 @@ def watch(args, timeout, storage=False, pipeline=False):
                 raise RuntimeError("Device stream ended before a benchmark result. Inspect the on-device status.")
             print(line, flush=True)
             if storage:
-                if line == "MEETMIND_STORAGE_READY true":
+                if line.split()[:2] == ["MEETMIND_STORAGE_READY", "true"]:
                     return
                 raise RuntimeError("The production meeting store did not open. Inspect the recovery message on the iPhone.")
             if pipeline:
