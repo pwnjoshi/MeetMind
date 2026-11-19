@@ -142,9 +142,11 @@ struct MeetMindApp: App {
     private var appContent: some View {
         #if targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("--ui-meeting-review") {
-            meetingVisualFixture(draft: false)
+            meetingVisualFixture(.review)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-meeting-draft") {
-            meetingVisualFixture(draft: true)
+            meetingVisualFixture(.draft)
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-meeting-finalized") {
+            meetingVisualFixture(.finalized)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-microphone-sample") {
             MicrophoneCheckView(onStartRecording: {}, visualSampleDuration: 6)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-microphone") {
@@ -164,11 +166,13 @@ struct MeetMindApp: App {
     }
 
     #if targetEnvironment(simulator)
-    private func meetingVisualFixture(draft: Bool) -> some View {
+    private enum MeetingFixtureState { case review, draft, finalized }
+
+    private func meetingVisualFixture(_ state: MeetingFixtureState) -> some View {
         // An isolated store lets the smoke run exercise the production detail router.
         let store = try! ModelContainerFactory.createInMemoryContainer()
         let meeting = Meeting(title: "October planning", createdAt: Date(timeIntervalSince1970: 1791979200),
-                              duration: 948, status: draft ? .completed : .processing)
+                              duration: 948, status: state == .review ? .processing : .completed)
         store.mainContext.insert(meeting)
         meeting.seriesID = UUID()
         meeting.seriesName = "Product planning"
@@ -179,13 +183,14 @@ struct MeetMindApp: App {
         let absent = Speaker(name: "Aaditya Uniyal", avatarColorHex: "#34C759")
         meeting.addParticipant(absent)
         meeting.absentParticipantIDs = [absent.id]
-        if draft {
+        if state != .review {
+            meeting.agendaText = "Launch timing and budget"
             let summary = Summary(executiveSummary: "Launch timing and budget",
-                                      keyPoints: ["The team discussed a November launch."],
+                                      keyPoints: ["The team proposed 20 November for launch.", "A budget of about ₹12 lakh was discussed.", "Finance follow-up remained open."],
                                       keyDecisions: ["Budget approval awaits the Finance estimate."])
             store.mainContext.insert(summary)
             meeting.summary = summary
-            meeting.minutesNeedFinalization = true
+            meeting.minutesNeedFinalization = state == .draft
         } else {
             meeting.analysisState = "speakerReview"
         }

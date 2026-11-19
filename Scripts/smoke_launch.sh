@@ -45,7 +45,7 @@ microphone_sample_pid="${microphone_sample_output##*: }"
 sleep 3
 kill -0 "$microphone_sample_pid"
 simctl io "$device_id" screenshot build/smoke/microphone-sample.png
-for screen in recording-active recording-paused recording-finish meeting-review meeting-draft; do
+for screen in recording-active recording-paused recording-finish meeting-review meeting-draft meeting-finalized; do
     simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
     recording_output=$(simctl launch "$device_id" "$bundle_id" "--ui-$screen")
     recording_pid="${recording_output##*: }"
