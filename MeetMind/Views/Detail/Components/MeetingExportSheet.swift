@@ -44,7 +44,7 @@ public struct MeetingExportSheet: View {
                                     exportError = "Could not generate the PDF. Please try again."
                                     return
                                 }
-                                let url = FileManager.default.temporaryDirectory.appendingPathComponent("MeetMind-\(UUID().uuidString).pdf")
+                                let url = FileManager.default.temporaryDirectory.appendingPathComponent("Manent-\(UUID().uuidString).pdf")
                                 try data.write(to: url, options: .atomic)
                                 exportedURL = url
                             } catch { exportError = error.localizedDescription }

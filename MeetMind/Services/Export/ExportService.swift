@@ -13,8 +13,8 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
         let format = UIGraphicsPDFRendererFormat()
         let metadata: [String: Any] = [
             kCGPDFContextTitle as String: meeting.title,
-            kCGPDFContextAuthor as String: "MeetMind Intelligence",
-            kCGPDFContextCreator as String: "MeetMind iOS"
+            kCGPDFContextAuthor as String: "Manent",
+            kCGPDFContextCreator as String: "Manent iOS"
         ]
         format.documentInfo = metadata
         
@@ -29,7 +29,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
                 currentY = margin
                 
                 // Draw running page footer
-                let footerText = "MeetMind  |  \(meeting.title)  |  Page \(pageIndex)"
+                let footerText = "Manent  |  \(meeting.title)  |  Page \(pageIndex)"
                 let footerAttributes: [NSAttributedString.Key: Any] = [
                     .font: UIFont.systemFont(ofSize: 9, weight: .regular),
                     .foregroundColor: UIColor.systemGray
@@ -43,7 +43,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
             startNewPage()
             
             // 1. Header Banner
-            let appName = "MEETMIND MINUTES"
+            let appName = "MANENT MINUTES"
             let appAttrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 10, weight: .bold),
                 .foregroundColor: UIColor(red: 0.12, green: 0.18, blue: 0.16, alpha: 1.0)
@@ -77,7 +77,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
             currentY += 16
             
             // 3. Agenda and attendance
-            for (heading, lines) in meetingContextSections(meeting) {
+            for (heading, lines) in meetingContextSections(meeting) + summarySections(meeting) {
                 let secAttrs: [NSAttributedString.Key: Any] = [
                     .font: UIFont.systemFont(ofSize: 12, weight: .bold),
                     .foregroundColor: UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1.0)
@@ -101,41 +101,6 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
                     currentY += height
                 }
                 currentY += 10
-            }
-            
-            // 4. Executive Summary Section
-            if let summary = meeting.summary, !summary.executiveSummary.isEmpty {
-                if currentY + 100 > maxContentY { startNewPage() }
-                
-                let sumTitle = "EXECUTIVE SUMMARY"
-                let sumAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .bold),
-                    .foregroundColor: UIColor(red: 0.96, green: 0.62, blue: 0.04, alpha: 1.0)
-                ]
-                sumTitle.draw(at: CGPoint(x: margin, y: currentY), withAttributes: sumAttrs)
-                currentY += 16
-                
-                let bodyAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 11, weight: .regular),
-                    .foregroundColor: UIColor.black
-                ]
-                let sumBounding = summary.executiveSummary.boundingRect(
-                    with: CGSize(width: contentWidth - 16, height: 1000),
-                    options: .usesLineFragmentOrigin,
-                    attributes: bodyAttrs,
-                    context: nil
-                )
-                
-                // Draw background callout box
-                let boxRect = CGRect(x: margin, y: currentY, width: contentWidth, height: sumBounding.height + 16)
-                context.cgContext.setFillColor(UIColor(white: 0.96, alpha: 1.0).cgColor)
-                context.cgContext.fill(boxRect)
-                
-                summary.executiveSummary.draw(
-                    in: CGRect(x: margin + 8, y: currentY + 8, width: contentWidth - 16, height: sumBounding.height),
-                    withAttributes: bodyAttrs
-                )
-                currentY += sumBounding.height + 26
             }
             
             // 5. Action Items Section
@@ -220,11 +185,20 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
     
     private func meetingContextSections(_ meeting: Meeting) -> [(String, [String])] {
         let absentIDs = Set(meeting.absentParticipantIDs ?? [])
-        let present = meeting.participants.filter { !absentIDs.contains($0.id) }.map(\.displayLabel)
-        let absent = meeting.participants.filter { absentIDs.contains($0.id) }.map(\.displayLabel)
+        let present = meeting.namedAttendees.filter { !absentIDs.contains($0.id) }.map(\.displayLabel)
+        let absent = meeting.namedAttendees.filter { absentIDs.contains($0.id) }.map(\.displayLabel)
         let agenda = (meeting.agendaText ?? "").split(whereSeparator: \.isNewline).map(String.init)
         let presentHeading = meeting.absentParticipantIDs == nil ? "Attendees" : "Present"
         return [("Agenda", agenda), (presentHeading, present), ("Absent", absent)].filter { !$0.1.isEmpty }
+    }
+
+    private func summarySections(_ meeting: Meeting) -> [(String, [String])] {
+        guard let summary = meeting.summary else { return [] }
+        let overview = summary.executiveSummary
+        let points = summary.discussionLines
+        let discussion = points.joined(separator: "\n") == overview ? [] : points
+        return [("Executive Summary", overview.isEmpty ? [] : [overview]),
+                ("Discussion", discussion), ("Key Decisions", summary.keyDecisions)].filter { !$0.1.isEmpty }
     }
 
     public func generateMarkdown(for meeting: Meeting) -> String {
@@ -233,24 +207,12 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
         md += "**Duration**: \(meeting.formattedDuration)  \n"
         md += "**Status**: \(meeting.status.displayName)  \n\n"
         
-        for (heading, lines) in meetingContextSections(meeting) {
+        for (heading, lines) in meetingContextSections(meeting) + summarySections(meeting) {
             md += "## \(heading)\n"
             for line in lines {
                 md += "- \(line)\n"
             }
             md += "\n"
-        }
-        
-        if let summary = meeting.summary {
-            md += "## Executive Summary\n\(summary.executiveSummary)\n\n"
-            
-            if !summary.keyDecisions.isEmpty {
-                md += "## Key Decisions\n"
-                for decision in summary.keyDecisions {
-                    md += "- \(decision)\n"
-                }
-                md += "\n"
-            }
         }
         
         if !meeting.actionItems.isEmpty {
@@ -275,13 +237,13 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
     }
     
     public func generatePlainText(for meeting: Meeting) -> String {
-        var text = "MEETMIND MINUTES: \(meeting.title)\n"
+        var text = "MANENT MINUTES: \(meeting.title)\n"
         text += "========================================\n"
         text += "Date: \(meeting.formattedDate)\n"
         text += "Duration: \(meeting.formattedDuration)\n"
         text += "Status: \(meeting.status.displayName)\n\n"
         
-        for (heading, lines) in meetingContextSections(meeting) {
+        for (heading, lines) in meetingContextSections(meeting) + summarySections(meeting) {
             text += "\(heading.uppercased()):\n"
             for line in lines {
                 text += "• \(line)\n"
@@ -289,22 +251,12 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
             text += "\n"
         }
         
-        if let summary = meeting.summary {
-            text += "EXECUTIVE SUMMARY:\n\(summary.executiveSummary)\n\n"
-            if !summary.keyDecisions.isEmpty {
-                text += "KEY DECISIONS:\n"
-                for decision in summary.keyDecisions {
-                    text += "• \(decision)\n"
-                }
-                text += "\n"
-            }
-        }
-        
         if !meeting.actionItems.isEmpty {
             text += "ACTION ITEMS:\n"
             for item in meeting.actionItems {
                 let mark = item.isCompleted ? "[X]" : "[ ]"
-                text += "\(mark) \(item.title) (\(item.assigneeName)) [\(item.priorityDisplayName)]\n"
+                let due = item.formattedDueDate.map { " (Due: \($0))" } ?? ""
+                text += "\(mark) \(item.title) (\(item.assigneeName))\(due) [\(item.priorityDisplayName)]\n"
             }
             text += "\n"
         }

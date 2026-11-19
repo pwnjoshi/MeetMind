@@ -137,10 +137,11 @@ final class ExportServiceTests: XCTestCase {
     /// Tier 1: Feature 7 - Validates generatePlainText produces clean ASCII formatted text.
     func test_tier1_feature7_generatePlainTextFormatting() throws {
         let text = exportService.generatePlainText(for: sampleMeeting)
-        XCTAssertTrue(text.contains("MEETMIND MINUTES: Sprint Review & Release"))
+        XCTAssertTrue(text.contains("MANENT MINUTES: Sprint Review & Release"))
         XCTAssertTrue(text.contains("ATTENDEES:"))
         XCTAssertTrue(text.contains("EXECUTIVE SUMMARY:"))
         XCTAssertTrue(text.contains("KEY DECISIONS:"))
+        XCTAssertTrue(text.contains("Model migrations verified"))
         XCTAssertTrue(text.contains("ACTION ITEMS:"))
         XCTAssertTrue(text.contains("[X] Publish App Store build"))
     }
@@ -199,7 +200,7 @@ final class ExportServiceTests: XCTestCase {
         let sparseMeeting = Meeting(title: "Quick Check")
         let text = exportService.generatePlainText(for: sparseMeeting)
         
-        XCTAssertTrue(text.contains("MEETMIND MINUTES: Quick Check"))
+        XCTAssertTrue(text.contains("MANENT MINUTES: Quick Check"))
         XCTAssertFalse(text.contains("ATTENDEES:"))
         XCTAssertFalse(text.contains("EXECUTIVE SUMMARY:"))
     }
