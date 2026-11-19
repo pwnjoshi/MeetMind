@@ -24,6 +24,8 @@ public struct MeetingDetailView: View {
     @State private var showAnalysisEvidence = false
     @State private var showPeople = false
     @State private var showMinutesEditor = false
+    @State private var followUpDraft: MeetingSetupViewModel?
+    @State private var showFollowUp = false
     @State private var recordSection = "Minutes"
     
     public init(viewModel: MeetingDetailViewModel) {
@@ -107,6 +109,16 @@ public struct MeetingDetailView: View {
                         renameText = viewModel.headerTitle
                         showRenameAlert = true
                     }
+                    if let meeting = viewModel.meeting, meeting.status == .completed {
+                        Button("Schedule Follow-Up", systemImage: "calendar") {
+                            let draft = MeetingSetupViewModel(modelContext: modelContext)
+                            draft.title = meeting.seriesName ?? "\(meeting.title) follow-up"
+                            draft.scheduledSeriesID = meeting.seriesID
+                            draft.scheduledSeriesName = meeting.seriesName
+                            followUpDraft = draft
+                            showFollowUp = true
+                        }
+                    }
                     Button("Show Transcript", systemImage: "doc.text") {
                         recordSection = "Transcript"
                         viewModel.selectTab(.transcript)
@@ -139,6 +151,12 @@ public struct MeetingDetailView: View {
             if let summary = viewModel.summary, let meeting = viewModel.meeting {
                 EditSavedMinutesSheet(meeting: meeting, summary: summary)
                     .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+        .sheet(isPresented: $showFollowUp, onDismiss: { followUpDraft = nil }) {
+            if let followUpDraft {
+                ScheduleMeetingView(viewModel: followUpDraft)
                     .presentationDragIndicator(.visible)
             }
         }
