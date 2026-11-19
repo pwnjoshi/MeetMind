@@ -23,14 +23,14 @@ public struct MainTabView: View {
             if #available(iOS 18, *) {
                 TabView(selection: selection) {
                     Tab("Meetings", systemImage: "calendar", value: TabIdentifier.home) { meetingsStack }
-                    Tab("Actions", systemImage: "flag.fill", value: TabIdentifier.actionItems) { actionsStack }
+                    Tab("Actions", systemImage: "checklist", value: TabIdentifier.actionItems) { actionsStack }
                         .badge(pendingActionItemsBadge.map { Text($0) })
                     Tab("Search", systemImage: "magnifyingglass", value: TabIdentifier.search, role: .search) { searchStack }
                 }
             } else {
                 TabView(selection: selection) {
                     meetingsStack.tabItem { Label("Meetings", systemImage: "calendar") }.tag(TabIdentifier.home)
-                    actionsStack.tabItem { Label("Actions", systemImage: "flag.fill") }
+                    actionsStack.tabItem { Label("Actions", systemImage: "checklist") }
                         .badge(pendingActionItemsBadge).tag(TabIdentifier.actionItems)
                     searchStack.tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(TabIdentifier.search)
                 }

@@ -32,7 +32,11 @@ public struct LiveRecordingView: View {
     public var body: some View {
         VStack(spacing: 24) {
             HStack {
-                Button(action: viewModel.requestDiscard) { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                Button(action: viewModel.requestDiscard) {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                }
                     .buttonStyle(.bordered).buttonBorderShape(.circle)
                     .accessibilityLabel("Delete recording")
                 Spacer()
