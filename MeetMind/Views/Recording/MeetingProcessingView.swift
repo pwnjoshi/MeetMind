@@ -6,6 +6,7 @@ import AVFoundation
 
 /// Post-recording review and on-device minutes generation.
 public struct MeetingProcessingView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
     @Environment(SettingsViewModel.self) private var settings
@@ -33,14 +34,17 @@ public struct MeetingProcessingView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloading = false
     public let meetingId: UUID
+    private let embeddedInMeetingRecord: Bool
 
-    public init(meetingId: UUID, viewModel: ProcessingPipelineViewModel? = nil) {
+    public init(meetingId: UUID, viewModel: ProcessingPipelineViewModel? = nil, embeddedInMeetingRecord: Bool = false) {
         self.meetingId = meetingId
+        self.embeddedInMeetingRecord = embeddedInMeetingRecord
         self._viewModel = State(initialValue: viewModel ?? ProcessingPipelineViewModel(meetingId: meetingId))
     }
 
     public init(viewModel: ProcessingPipelineViewModel, meetingId: UUID? = nil) {
         self.meetingId = meetingId ?? UUID()
+        self.embeddedInMeetingRecord = false
         self._viewModel = State(initialValue: viewModel)
     }
 
@@ -267,7 +271,9 @@ public struct MeetingProcessingView: View {
         .onAppear {
             viewModel.onNavigateToDetail = { id in
                 OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
-                router.homePath = [.meetingDetail(id: id)]
+                if !embeddedInMeetingRecord {
+                    router.homePath = [.meetingDetail(id: id)]
+                }
             }
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
@@ -387,7 +393,11 @@ public struct MeetingProcessingView: View {
     private func queueAnalysis() {
         OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
         operation?.cancel()
-        router.homePath.removeAll()
+        if embeddedInMeetingRecord {
+            dismiss()
+        } else {
+            router.homePath.removeAll()
+        }
     }
 
     private func playSpeakerSample(_ segment: TranscriptSegment) {
