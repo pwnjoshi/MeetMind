@@ -13,6 +13,19 @@ import SwiftData
 
 @MainActor
 final class MeetingModelTests: XCTestCase {
+    func testAttendanceIncludesNamedPeopleAndExcludesUnidentifiedVoices() {
+        let meeting = Meeting(title: "Planning")
+        let voice = Speaker(name: "Speaker 1")
+        voice.recordingVoiceLabel = "Speaker 1"
+        let attendee = Speaker(name: "Pawan Joshi")
+        meeting.addParticipant(voice)
+        meeting.addParticipant(attendee)
+        XCTAssertEqual(meeting.namedAttendees.map(\.id), [attendee.id])
+
+        voice.name = "Sachin Ghai"
+        XCTAssertEqual(Set(meeting.namedAttendees.map(\.id)), Set([voice.id, attendee.id]))
+    }
+
     @MainActor
     func testStandaloneViewModelsRetainTheirStoresAfterInitialization() async throws {
         // Device crash reports trapped in fetchActionItems after its local container died.

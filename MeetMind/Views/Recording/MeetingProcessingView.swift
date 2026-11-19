@@ -221,7 +221,7 @@ public struct MeetingProcessingView: View {
                             }
                         }
                         Section("Who Was There") {
-                            ForEach(meeting.participants.filter { $0.name != $0.recordingVoiceLabel }, id: \.id) { person in
+                            ForEach(meeting.namedAttendees, id: \.id) { person in
                                 let absent = meeting.absentParticipantIDs?.contains(person.id) == true
                                 Button {
                                     toggleAttendance(for: person, in: meeting)

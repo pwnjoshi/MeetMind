@@ -182,7 +182,7 @@ public struct MeetingDetailView: View {
         }
         .sheet(isPresented: $showPeople) {
             NavigationStack {
-                List(viewModel.meeting?.participants ?? [], id: \.id) { person in
+                List(viewModel.meeting?.namedAttendees ?? [], id: \.id) { person in
                     let absent = viewModel.meeting?.absentParticipantIDs?.contains(person.id) == true
                     LabeledContent(person.name, value: absent ? "Absent" : "Present")
                 }
@@ -434,7 +434,7 @@ private struct EditSavedMinutesSheet: View {
                 Section("Agenda") {
                     TextField("Agenda", text: $agenda, axis: .vertical)
                 }
-                if !meeting.participants.isEmpty {
+                if !meeting.namedAttendees.isEmpty {
                     attendanceSection("Present", absent: false)
                     attendanceSection("Absent", absent: true)
                 }
@@ -479,7 +479,7 @@ private struct EditSavedMinutesSheet: View {
 
     private func attendanceSection(_ title: String, absent: Bool) -> some View {
         Section(title) {
-            let people = meeting.participants.filter { absentIDs.contains($0.id) == absent }
+            let people = meeting.namedAttendees.filter { absentIDs.contains($0.id) == absent }
             if people.isEmpty { Text("No participants").foregroundStyle(.secondary) }
             ForEach(people, id: \.id) { person in
                 Button {
@@ -656,7 +656,7 @@ struct MeetingPeopleRow: View {
 
     var body: some View {
         let absentIDs = Set(meeting.absentParticipantIDs ?? [])
-        let people = meeting.participants.filter { $0.name != $0.recordingVoiceLabel }
+        let people = meeting.namedAttendees
         let present = people.filter { !absentIDs.contains($0.id) }
         Button(action: openPeople) {
             HStack {

@@ -460,6 +460,10 @@ public final class Meeting: Identifiable {
         return String(path.dropFirst(root.count))
     }
     
+    public var namedAttendees: [Speaker] {
+        participants.filter { $0.name != $0.recordingVoiceLabel }
+    }
+
     public func addParticipant(_ speaker: Speaker) {
         if !participants.contains(where: { $0.id == speaker.id }) {
             participants.append(speaker)

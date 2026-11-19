@@ -170,6 +170,15 @@ struct MeetMindApp: App {
         let meeting = Meeting(title: "October planning", createdAt: Date(timeIntervalSince1970: 1791979200),
                               duration: 948, status: draft ? .completed : .processing)
         store.mainContext.insert(meeting)
+        meeting.seriesID = UUID()
+        meeting.seriesName = "Product planning"
+        for (name, color) in [("Sachin Ghai", "#22AFC4"), ("Pawan Joshi", "#FF9500"),
+                              ("Vaishnavi Shukla", "#FF2D55"), ("Garima Pant", "#AF52DE")] {
+            meeting.addParticipant(Speaker(name: name, avatarColorHex: color))
+        }
+        let absent = Speaker(name: "Aaditya Uniyal", avatarColorHex: "#34C759")
+        meeting.addParticipant(absent)
+        meeting.absentParticipantIDs = [absent.id]
         if draft {
             meeting.summary = Summary(executiveSummary: "Launch timing and budget",
                                       keyPoints: ["The team discussed a November launch."],

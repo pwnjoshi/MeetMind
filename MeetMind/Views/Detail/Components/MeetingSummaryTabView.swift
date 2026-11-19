@@ -49,8 +49,8 @@ public struct MeetingSummaryTabView: View {
         if let agenda = meeting.agendaText, !agenda.isEmpty {
             documentSection("Agenda", lines: [agenda])
         }
-        attendance("Present", people: meeting.participants.filter { !absentIDs.contains($0.id) })
-        attendance("Absent", people: meeting.participants.filter { absentIDs.contains($0.id) })
+        attendance("Present", people: meeting.namedAttendees.filter { !absentIDs.contains($0.id) })
+        attendance("Absent", people: meeting.namedAttendees.filter { absentIDs.contains($0.id) })
     }
 
     @ViewBuilder
