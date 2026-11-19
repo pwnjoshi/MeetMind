@@ -85,6 +85,9 @@ struct MeetMindApp: App {
                     .padding()
                 }
             }
+                .task(id: container != nil) {
+                    OfflineAnalysisBackgroundScheduler.useApplicationContainer(container)
+                }
                 .environment(appState)
                 .environment(router)
                 .environment(settingsVM)

@@ -423,6 +423,10 @@ public struct MeetingProcessingView: View {
 
     private func start(download: Bool = false, speakersOnly: Bool = false) {
         guard !busy else { return }
+        guard !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) else {
+            processingError = "This meeting is already running in the background. Follow its progress above."
+            return
+        }
         busy = true
         preparingSpeakers = speakersOnly
         processingError = nil

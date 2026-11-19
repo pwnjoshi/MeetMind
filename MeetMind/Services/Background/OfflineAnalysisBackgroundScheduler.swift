@@ -15,9 +15,18 @@ enum OfflineAnalysisBackgroundScheduler {
     private static let modelSetupKey = "Manent.initialModelSetupComplete"
     private static var activeMeetingID: UUID?
     private static var activeStage: MeetingAnalysisStage?
+    private static var applicationContainer: ModelContainer?
+
+    static func useApplicationContainer(_ container: ModelContainer?) {
+        applicationContainer = container
+    }
 
     static func stage(for meetingID: UUID) -> MeetingAnalysisStage? {
         activeMeetingID == meetingID ? activeStage : nil
+    }
+
+    static func isRunning(meetingID: UUID) -> Bool {
+        activeMeetingID == meetingID
     }
 
     static func status(for meetingID: UUID) -> String? {
@@ -98,11 +107,16 @@ enum OfflineAnalysisBackgroundScheduler {
                     succeeded = true
                     return
                 }
-                let container = try ModelContainerFactory.createProductionContainer()
+                let container = try applicationContainer ?? ModelContainerFactory.createProductionContainer()
                 let context = container.mainContext
                 var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == meetingID })
                 descriptor.fetchLimit = 1
                 guard let meeting = try context.fetch(descriptor).first else { remove(meetingID: meetingID); return }
+                if meeting.analysisState == "completed" {
+                    remove(meetingID: meetingID)
+                    succeeded = true
+                    return
+                }
                 let viewModel = ProcessingPipelineViewModel(meeting: meeting, modelContext: context)
                 viewModel.onOfflineStageChanged = { stage in activeStage = stage }
                 try viewModel.prepareForProduction(context: context, settings: SettingsViewModel())
