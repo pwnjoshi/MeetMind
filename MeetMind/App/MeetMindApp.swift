@@ -166,9 +166,17 @@ struct MeetMindApp: App {
     }
 
     #if targetEnvironment(simulator)
-    private enum MeetingFixtureState { case review, draft, finalized }
+    private enum MeetingFixtureState: Hashable { case review, draft, finalized }
 
-    private func meetingVisualFixture(_ state: MeetingFixtureState) -> some View {
+    @MainActor private static var fixtureStores: [MeetingFixtureState: (ModelContainer, UUID)] = [:]
+
+    @MainActor private func meetingVisualFixture(_ state: MeetingFixtureState) -> some View {
+        let (store, meetingID) = Self.fixtureStores[state] ?? Self.createMeetingFixture(state)
+        return NavigationStack { MeetingDetailContainerView(meetingId: meetingID) }
+            .modelContainer(store)
+    }
+
+    @MainActor private static func createMeetingFixture(_ state: MeetingFixtureState) -> (ModelContainer, UUID) {
         // An isolated store lets the smoke run exercise the production detail router.
         let store = try! ModelContainerFactory.createInMemoryContainer()
         let meeting = Meeting(title: "October planning", createdAt: Date(timeIntervalSince1970: 1791979200),
@@ -195,8 +203,9 @@ struct MeetMindApp: App {
             meeting.analysisState = "speakerReview"
         }
         try! store.mainContext.save()
-        return NavigationStack { MeetingDetailContainerView(meetingId: meeting.id) }
-            .modelContainer(store)
+        let fixture = (store, meeting.id)
+        fixtureStores[state] = fixture
+        return fixture
     }
 
     private func recordingVisualFixture(paused: Bool, showsFinishConfirmation: Bool = false) -> some View {
