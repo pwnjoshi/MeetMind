@@ -352,31 +352,34 @@ public final class ProcessingPipelineViewModel {
             }
             let data = try JSONEncoder().encode(result)
             committing = true
-            let previousSegments = meeting.transcriptSegments
-            meeting.transcriptSegments.removeAll()
-            for segment in previousSegments { modelContext?.delete(segment) }
-            var speakers: [String: Speaker] = [:]
-            for (index, turn) in result.turns.enumerated() {
-                var speaker: Speaker?
-                if let label = turn.speaker {
-                    if let existing = speakers[label] ?? meeting.participants.first(where: {
-                        $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
-                    }) {
-                        existing.recordingVoiceLabel = label
-                        speaker = existing
-                        speakers[label] = existing
+            // Reviewed input already lives in SwiftData. Keep its edits, identities and speaker links.
+            if reviewedTurns.isEmpty {
+                let previousSegments = meeting.transcriptSegments
+                meeting.transcriptSegments.removeAll()
+                for segment in previousSegments { modelContext?.delete(segment) }
+                var speakers: [String: Speaker] = [:]
+                for (index, turn) in result.turns.enumerated() {
+                    var speaker: Speaker?
+                    if let label = turn.speaker {
+                        if let existing = speakers[label] ?? meeting.participants.first(where: {
+                            $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
+                        }) {
+                            existing.recordingVoiceLabel = label
+                            speaker = existing
+                            speakers[label] = existing
+                        }
+                        else {
+                            let created = Speaker(name: label)
+                            created.recordingVoiceLabel = label
+                            modelContext?.insert(created)
+                            meeting.addParticipant(created)
+                            speakers[label] = created
+                            speaker = created
+                        }
                     }
-                    else {
-                        let created = Speaker(name: label)
-                        created.recordingVoiceLabel = label
-                        modelContext?.insert(created)
-                        meeting.addParticipant(created)
-                        speakers[label] = created
-                        speaker = created
-                    }
+                    meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
+                        endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
                 }
-                meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
-                    endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
             }
             if stopAfterSpeakers {
                 meeting.analysisState = "speakerReview"
