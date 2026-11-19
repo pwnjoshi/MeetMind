@@ -101,37 +101,43 @@ public struct MeetingProcessingView: View {
                     .padding(16)
                     .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 }
-                VStack(alignment: .leading, spacing: 12) {
-                    if busy {
-                        Text(processingTitle).font(.title3.bold())
-                        ProgressView(value: downloading ? downloadProgress : viewModel.overallProgress)
-                        Text("Your audio is saved on this iPhone.").foregroundStyle(.secondary)
-                        if preparingSpeakers {
-                            Button("Pause speaker review") { operation?.cancel() }
-                        } else {
-                            Button("Keep in Background", systemImage: "clock") { queueAnalysis() }
-                        }
-                    } else if selectedSection == "Minutes" {
-                        Text("Who said what?").font(.title3.bold())
-                        Text("Name the voices before generating minutes so you can tell who said what.")
-                            .foregroundStyle(.secondary)
-                        Button("Name Speakers", systemImage: "chevron.right") {
-                            if meeting?.analysisState == "speakerReview" {
-                                showsPeople = true
+                TimelineView(.periodic(from: .now, by: 2)) { _ in
+                    VStack(alignment: .leading, spacing: 12) {
+                        if busy {
+                            Text(processingTitle).font(.title3.bold())
+                            ProgressView(value: downloading ? downloadProgress : viewModel.overallProgress)
+                            Text("Your audio is saved on this iPhone.").foregroundStyle(.secondary)
+                            if preparingSpeakers {
+                                Button("Pause speaker review") { operation?.cancel() }
                             } else {
-                                start(download: true, speakersOnly: true)
+                                Button("Keep in Background", systemImage: "clock") { queueAnalysis() }
+                            }
+                        } else if let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId) {
+                            Text(backgroundStatus).font(.title3.bold())
+                            Text("Your audio is saved. You can leave and return to this meeting.")
+                                .foregroundStyle(.secondary)
+                        } else if selectedSection == "Minutes" {
+                            Text("Who said what?").font(.title3.bold())
+                            Text("Name the voices before generating minutes so you can tell who said what.")
+                                .foregroundStyle(.secondary)
+                            Button("Name Speakers", systemImage: "chevron.right") {
+                                if meeting?.analysisState == "speakerReview" {
+                                    showsPeople = true
+                                } else {
+                                    start(download: true, speakersOnly: true)
+                                }
+                            }
+                        } else {
+                            Text("\(selectedSection) will appear after minutes are generated.").font(.headline)
+                            if selectedSection == "Actions" {
+                                Text("Review suggested actions before saving them.").foregroundStyle(.secondary)
                             }
                         }
-                    } else {
-                        Text("\(selectedSection) will appear after minutes are generated.").font(.headline)
-                        if selectedSection == "Actions" {
-                            Text("Review suggested actions before saving them.").foregroundStyle(.secondary)
-                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
-                .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 if selectedSection == "Minutes" {
                     Button { showsTranscript = true } label: {
                         HStack {
