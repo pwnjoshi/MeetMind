@@ -328,7 +328,14 @@ public struct MeetingDetailView: View {
 
     private var recordHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(viewModel.headerTitle).font(.title.bold())
+            Button {
+                renameText = viewModel.headerTitle
+                showRenameAlert = true
+            } label: {
+                Text(viewModel.headerTitle).font(.title.bold()).multilineTextAlignment(.leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Rename this meeting")
             if let meeting = viewModel.meeting {
                 Text((meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .long, time: .shortened))
                     .font(.footnote).foregroundStyle(.secondary)

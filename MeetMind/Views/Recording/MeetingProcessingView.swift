@@ -49,7 +49,15 @@ public struct MeetingProcessingView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(meeting?.title ?? "Quick meeting").font(.title.bold())
+                Button {
+                    meetingTitleDraft = meeting?.title ?? ""
+                    showsRename = true
+                } label: {
+                    Text(meeting?.title ?? "Quick meeting").font(.title.bold()).multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
+                .disabled(meeting == nil)
+                .accessibilityHint("Rename this meeting")
                 if let meeting {
                     Text(meeting.createdAt.formatted(date: .long, time: .shortened))
                         .font(.footnote).foregroundStyle(.secondary)
