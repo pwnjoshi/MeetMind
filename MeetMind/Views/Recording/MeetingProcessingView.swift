@@ -188,18 +188,22 @@ public struct MeetingProcessingView: View {
         }
         .tint(Color(hex: "#4B3FF0"))
         .safeAreaInset(edge: .bottom) {
-            Button {
-                start(download: true)
-            } label: {
-                Text("Generate Minutes")
-                    .frame(maxWidth: .infinity)
+            TimelineView(.periodic(from: .now, by: 2)) { _ in
+                let backgroundRunning = OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
+                let queued = OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil
+                Button {
+                    start(download: true)
+                } label: {
+                    Text(queued && !backgroundRunning ? "Process Now" : "Generate Minutes")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .disabled(busy || backgroundRunning)
+                .padding()
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity)
-            .disabled(busy)
-            .padding()
         }
         .sheet(isPresented: $showsPeople, onDismiss: {
             speakerSample?.cancel()
@@ -530,6 +534,7 @@ public struct MeetingProcessingView: View {
             processingError = "This meeting is already running in the background. Follow its progress above."
             return
         }
+        OfflineAnalysisBackgroundScheduler.remove(meetingID: meetingId)
         busy = true
         preparingSpeakers = speakersOnly
         processingError = nil
