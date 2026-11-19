@@ -94,9 +94,10 @@ public actor MeetingAnalysisPipeline {
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
 
-    public func missingModels(model: VidurModel = .large) async throws -> [ModelProfile] {
+    public func missingModels(model: VidurModel = .large, speakersOnly: Bool = false) async throws -> [ModelProfile] {
         var missing: [ModelProfile] = []
-        for profile in try requiredProfiles(model: model) {
+        let profiles = try requiredProfiles(model: model)
+        for profile in profiles.prefix(speakersOnly ? 2 : profiles.count) {
             if !(await OfflineModelStore.shared.isInstalled(profile)) { missing.append(profile) }
         }
         return missing
@@ -114,6 +115,7 @@ public actor MeetingAnalysisPipeline {
 
     public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String? = nil,
                     model: VidurModel = .large,
+                    stopAfterSpeakers: Bool = false,
                     progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
         guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Pause it before starting this one.") }
         running = true
@@ -178,6 +180,11 @@ public actor MeetingAnalysisPipeline {
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)
             checkpoint.stage = .analysis
             try save()
+        }
+        if stopAfterSpeakers {
+            try Task.checkCancellation()
+            if discardActiveCheckpoint { throw CancellationError() }
+            return checkpoint
         }
         if checkpoint.stage == .analysis {
             try checkConditions()

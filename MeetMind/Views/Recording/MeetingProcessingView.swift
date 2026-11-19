@@ -13,6 +13,11 @@ public struct MeetingProcessingView: View {
     @Query private var meetings: [Meeting]
     @State private var selectedSection = "Minutes"
     @State private var showsPeople = false
+    @State private var preparingSpeakers = false
+    @State private var speakerSample: Task<Void, Never>?
+    @State private var speakerPlayer: AVAudioPlayer?
+    @State private var renamingSpeaker: Speaker?
+    @State private var speakerName = ""
     @State private var showsTranscript = false
     @State private var audioPlayer: AVAudioPlayer?
     @State private var audioPlaying = false
@@ -67,13 +72,22 @@ public struct MeetingProcessingView: View {
                         Text(processingTitle).font(.title3.bold())
                         ProgressView(value: downloading ? downloadProgress : viewModel.overallProgress)
                         Text("Your audio is saved on this iPhone.").foregroundStyle(.secondary)
-                        Button("Keep in Background", systemImage: "clock") {
-                            queueAnalysis()
+                        if preparingSpeakers {
+                            Button("Pause speaker review") { operation?.cancel() }
+                        } else {
+                            Button("Keep in Background", systemImage: "clock") { queueAnalysis() }
                         }
                     } else if selectedSection == "Minutes" {
-                        Text("Generate meeting minutes").font(.title3.bold())
-                        Text("Manent will create a transcript, identify voices, and look for decisions and suggested actions on this iPhone.")
+                        Text("Who said what?").font(.title3.bold())
+                        Text("Name the voices before generating minutes so you can tell who said what.")
                             .foregroundStyle(.secondary)
+                        Button("Name Speakers", systemImage: "chevron.right") {
+                            if meeting?.analysisState == "speakerReview" {
+                                showsPeople = true
+                            } else {
+                                start(download: true, speakersOnly: true)
+                            }
+                        }
                     } else {
                         Text("\(selectedSection) will appear after minutes are generated.").font(.headline)
                         if selectedSection == "Actions" {
@@ -112,12 +126,43 @@ public struct MeetingProcessingView: View {
             .disabled(busy)
             .padding()
         }
-        .sheet(isPresented: $showsPeople) {
+        .sheet(isPresented: $showsPeople, onDismiss: {
+            speakerSample?.cancel()
+            speakerPlayer?.stop()
+            speakerPlayer = nil
+        }) {
             NavigationStack {
                 List {
                     if let meeting, !meeting.participants.isEmpty {
+                        Section("Voices") {
+                            ForEach(meeting.participants.filter { $0.recordingVoiceLabel != nil }, id: \.id) { speaker in
+                                HStack(spacing: 12) {
+                                    if let segment = meeting.transcriptSegments.filter({ $0.speaker?.id == speaker.id })
+                                        .min(by: { $0.startTime < $1.startTime }) {
+                                        Button { playSpeakerSample(segment) } label: {
+                                            Image(systemName: "play.circle.fill").font(.title2)
+                                                .frame(width: 44, height: 44)
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .accessibilityLabel("Play sample for \(speaker.name)")
+                                        VStack(alignment: .leading) {
+                                            Text(speaker.recordingVoiceLabel ?? speaker.name)
+                                            Text(segment.text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }
+                                    Spacer()
+                                    Button(speaker.name == speaker.recordingVoiceLabel ? "Unknown" : speaker.name) {
+                                        speakerName = speaker.name == speaker.recordingVoiceLabel ? "" : speaker.name
+                                        renamingSpeaker = speaker
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                            }
+                        }
                         Section("Who Was There") {
-                            ForEach(meeting.participants, id: \.id) { Text($0.name) }
+                            ForEach(meeting.participants.filter { $0.name != $0.recordingVoiceLabel }, id: \.id) {
+                                Label($0.name, systemImage: "checkmark")
+                            }
                         }
                     } else {
                         ContentUnavailableView("No People Listed", systemImage: "person.2")
@@ -126,6 +171,13 @@ public struct MeetingProcessingView: View {
                 .navigationTitle("People")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsPeople = false } } }
+                .alert("Name Speaker", isPresented: Binding(
+                    get: { renamingSpeaker != nil }, set: { if !$0 { renamingSpeaker = nil } }
+                )) {
+                    TextField("Name", text: $speakerName)
+                    Button("Cancel", role: .cancel) {}
+                    Button("Save") { saveSpeakerName() }
+                }
             }
         }
         .sheet(isPresented: $showsTranscript, onDismiss: {
@@ -183,7 +235,7 @@ public struct MeetingProcessingView: View {
             if phase == .background, busy {
                 // Stop cleanly at the next checkpoint, then give iOS an
                 // opportunity to resume private on-device work later.
-                OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
+                if !preparingSpeakers { OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId) }
                 operation?.cancel()
             }
         }
@@ -255,20 +307,53 @@ public struct MeetingProcessingView: View {
         router.homePath.removeAll()
     }
 
-    private func start(download: Bool = false) {
+    private func playSpeakerSample(_ segment: TranscriptSegment) {
+        guard let url = meeting?.resolvedAudioFileURL else { return }
+        speakerSample?.cancel()
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            speakerPlayer?.stop()
+            speakerPlayer = player
+            player.currentTime = max(0, segment.startTime)
+            guard player.play() else { return }
+            let length = min(8, max(0.5, segment.endTime - segment.startTime))
+            speakerSample = Task { @MainActor in
+                do { try await Task.sleep(for: .seconds(length)) } catch { return }
+                player.stop()
+            }
+        } catch {
+            processingError = error.localizedDescription
+        }
+    }
+
+    private func saveSpeakerName() {
+        guard let speaker = renamingSpeaker else { return }
+        let previous = speaker.name
+        let name = speakerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        speaker.name = name.isEmpty ? speaker.recordingVoiceLabel ?? previous : name
+        do { try modelContext.save() }
+        catch {
+            speaker.name = previous
+            processingError = error.localizedDescription
+        }
+    }
+
+    private func start(download: Bool = false, speakersOnly: Bool = false) {
         guard !busy else { return }
         busy = true
+        preparingSpeakers = speakersOnly
         processingError = nil
         UIApplication.shared.isIdleTimerDisabled = true
         operation = Task { @MainActor in
             defer {
                 busy = false
+                preparingSpeakers = false
                 downloading = false
                 UIApplication.shared.isIdleTimerDisabled = false
             }
             do {
                 try viewModel.prepareForProduction(context: modelContext, settings: settings)
-                missingModels = try await viewModel.missingOfflineModels()
+                missingModels = try await viewModel.missingOfflineModels(speakersOnly: speakersOnly)
                 if !missingModels.isEmpty {
                     guard download else { return }
                     downloading = true
@@ -278,11 +363,16 @@ public struct MeetingProcessingView: View {
                             Task { @MainActor in downloadProgress = value }
                         }
                     }
-                    missingModels = try await viewModel.missingOfflineModels()
+                    missingModels = try await viewModel.missingOfflineModels(speakersOnly: speakersOnly)
                     downloading = false
                 }
                 try Task.checkCancellation()
-                try await viewModel.startPipeline()
+                if speakersOnly {
+                    try await viewModel.prepareSpeakerReview()
+                    showsPeople = true
+                } else {
+                    try await viewModel.startPipeline()
+                }
             } catch is CancellationError {
                 processingError = "Paused. Your audio, completed steps, and partial model downloads are saved. Tap Resume when you return."
             } catch {

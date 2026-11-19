@@ -263,6 +263,10 @@ public final class ProcessingPipelineViewModel {
             onNavigateToDetail?(id)
         }
     }
+
+    public func prepareSpeakerReview() async throws {
+        try await runOfflinePipeline(stopAfterSpeakers: true)
+    }
     
     public func prepareForProduction(context: ModelContext, settings: SettingsViewModel? = nil) throws {
         analysisModel = VidurModel.selected
@@ -290,8 +294,8 @@ public final class ProcessingPipelineViewModel {
         try context.save()
     }
 
-    public func missingOfflineModels() async throws -> [ModelProfile] {
-        try await offlinePipeline.missingModels(model: analysisModel)
+    public func missingOfflineModels(speakersOnly: Bool = false) async throws -> [ModelProfile] {
+        try await offlinePipeline.missingModels(model: analysisModel, speakersOnly: speakersOnly)
     }
 
     private var analysisModel = VidurModel.selected
@@ -322,7 +326,7 @@ public final class ProcessingPipelineViewModel {
         try? modelContext?.save()
     }
 
-    private func runOfflinePipeline() async throws {
+    private func runOfflinePipeline(stopAfterSpeakers: Bool = false) async throws {
         guard let meeting, let audio = meeting.resolvedAudioFileURL else { throw MeetingError.meetingNotFound }
         preparePipeline()
         errorMessage = nil
@@ -332,7 +336,7 @@ public final class ProcessingPipelineViewModel {
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
                 timezone: meeting.analysisTimezone ?? TimeZone.current.identifier,
                 languageCode: settings?.savedRecordingLanguage.whisperCode ?? SavedRecordingLanguage.hinglish.whisperCode,
-                model: analysisModel) { [weak self] stage in
+                model: analysisModel, stopAfterSpeakers: stopAfterSpeakers) { [weak self] stage in
                     await self?.updateOfflineStage(stage)
                 }
             try Task.checkCancellation()
@@ -350,12 +354,16 @@ public final class ProcessingPipelineViewModel {
             for (index, turn) in result.turns.enumerated() {
                 var speaker: Speaker?
                 if let label = turn.speaker {
-                    if let existing = speakers[label] ?? meeting.participants.first(where: { $0.name == label }) {
+                    if let existing = speakers[label] ?? meeting.participants.first(where: {
+                        $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
+                    }) {
+                        existing.recordingVoiceLabel = label
                         speaker = existing
                         speakers[label] = existing
                     }
                     else {
                         let created = Speaker(name: label)
+                        created.recordingVoiceLabel = label
                         modelContext?.insert(created)
                         meeting.addParticipant(created)
                         speakers[label] = created
@@ -364,6 +372,12 @@ public final class ProcessingPipelineViewModel {
                 }
                 meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
                     endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
+            }
+            if stopAfterSpeakers {
+                meeting.analysisState = "speakerReview"
+                try modelContext?.save()
+                pipelineStatus = .idle
+                return
             }
             let points = uniqueTexts(result.analysis.flatMap { $0.discussion.map(\.text) })
             let decisions = uniqueTexts(result.analysis.flatMap { $0.decisions.map(\.text) })
