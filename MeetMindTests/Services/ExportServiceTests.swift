@@ -108,6 +108,8 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertTrue(pdfText.contains("AGENDA Review the release checklist"))
         XCTAssertTrue(pdfText.contains("PRESENT Alice Johnson"))
         XCTAssertTrue(pdfText.contains("ABSENT Sam Rivera"))
+        XCTAssertTrue(pdfText.contains("DISCUSSION Model migrations verified Audio pipeline hardened"))
+        XCTAssertTrue(pdfText.contains("KEY DECISIONS Approved release v1.0.0 for App Store"))
     }
     
     /// Tier 1: Feature 7 - Validates generateMarkdown contains executive summary and decisions.
