@@ -114,9 +114,16 @@ public struct MeetingProcessingView: View {
                             Text("Your audio is saved. You can leave and return to this meeting.")
                                 .foregroundStyle(.secondary)
                         } else if selectedSection == "Minutes" {
-                            Text("Who said what?").font(.title3.bold())
-                            Text("Name the voices so the minutes show who decided what and who owns each action.")
-                                .foregroundStyle(.secondary)
+                            if meeting?.analysisState == "failed" || meeting?.analysisState == "paused" {
+                                Text(meeting?.analysisState == "failed" ? "Processing needs attention" : "Processing paused")
+                                    .font(.title3.bold())
+                                Text("Your audio is saved. You can continue from the last completed step.")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Who said what?").font(.title3.bold())
+                                Text("Name the voices so the minutes show who decided what and who owns each action.")
+                                    .foregroundStyle(.secondary)
+                            }
                             if let meeting {
                                 let voices = meeting.participants.filter { $0.recordingVoiceLabel != nil }
                                 Text("\(voices.count) voices · \(voices.filter { $0.name != $0.recordingVoiceLabel }.count) named")
@@ -405,9 +412,11 @@ public struct MeetingProcessingView: View {
     private var processingTitle: String {
         if downloading { return "Preparing on-device models" }
         switch viewModel.currentStep {
+        case .initial: return "Preparing on-device models"
         case .audio: return "Creating transcript"
         case .diarization: return "Identifying speakers"
-        default: return "Creating minutes"
+        case .summarization: return "Creating minutes"
+        case .actions, .completed: return "Saving results"
         }
     }
 
