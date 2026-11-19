@@ -13,8 +13,7 @@ public struct MeetingSummaryTabView: View {
                     if let meeting = summary.meeting {
                         meetingContext(meeting)
                     }
-                    let discussion = summary.keyPoints.isEmpty ? [summary.executiveSummary] : summary.keyPoints
-                    documentSection("Discussion", lines: discussion.filter { !$0.isEmpty })
+                    documentSection("Discussion", lines: summary.discussionLines)
                     documentSection("Decision", lines: summary.keyDecisions)
                     if !actionItems.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {

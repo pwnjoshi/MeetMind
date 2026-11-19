@@ -424,7 +424,7 @@ private struct EditSavedMinutesSheet: View {
         self.summary = summary
         _agenda = State(initialValue: meeting.agendaText ?? "")
         _absentIDs = State(initialValue: Set(meeting.absentParticipantIDs ?? []))
-        _discussion = State(initialValue: summary.executiveSummary)
+        _discussion = State(initialValue: summary.discussionLines.joined(separator: "\n"))
         _decisions = State(initialValue: summary.keyDecisions.joined(separator: "\n"))
     }
 
@@ -498,7 +498,7 @@ private struct EditSavedMinutesSheet: View {
         let previousMeeting = (meeting.agendaText, meeting.absentParticipantIDs)
         meeting.agendaText = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
         meeting.absentParticipantIDs = absentIDs.sorted { $0.uuidString < $1.uuidString }
-        if discussion != previous.0 {
+        if discussion != summary.discussionLines.joined(separator: "\n") {
             summary.executiveSummary = discussion.trimmingCharacters(in: .whitespacesAndNewlines)
             summary.keyPoints = lines(discussion)
         }

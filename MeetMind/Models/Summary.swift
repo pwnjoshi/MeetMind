@@ -31,6 +31,10 @@ public final class Summary: Identifiable {
         self.meeting = meeting
     }
     
+    public var discussionLines: [String] {
+        (keyPoints.isEmpty ? [executiveSummary] : keyPoints).filter { !$0.isEmpty }
+    }
+
     public var keyPointsCount: Int {
         keyPoints.count
     }
