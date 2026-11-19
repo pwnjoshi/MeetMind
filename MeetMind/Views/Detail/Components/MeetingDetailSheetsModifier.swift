@@ -27,7 +27,10 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
                     meetingTitle: viewModel.headerTitle,
                     isBusy: viewModel.isAnsweringQuestion
                 )
-                .onDisappear { viewModel.cancelQuestion() }
+                .onDisappear {
+                viewModel.cancelQuestion()
+                viewModel.stopPlayback()
+            }
             }
             .sheet(isPresented: $viewModel.isEditingTranscript) {
                 TranscriptEditSheet(

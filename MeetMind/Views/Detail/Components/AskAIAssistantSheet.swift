@@ -36,6 +36,10 @@ public struct AskAIAssistantSheet: View {
                         ForEach(0..<history.count, id: \.self) { idx in
                             chatPairView(history[idx])
                         }
+                        if !history.isEmpty {
+                            Button("Open Meeting", action: onDismiss)
+                                .frame(maxWidth: .infinity).padding(.vertical, 16)
+                        }
                     }
                     .padding(Spacing.lg)
                 }
@@ -90,25 +94,37 @@ public struct AskAIAssistantSheet: View {
     }
 
     private func chatPairView(_ pair: (prompt: String, response: AIAnswerResponse)) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(pair.prompt).font(Typography.headline).foregroundStyle(Theme.Colors.primarySlate)
-                .padding(Spacing.sm).background(Theme.Colors.secondaryBackground).clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.md))
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(pair.response.answer).font(Typography.body).foregroundStyle(Theme.Colors.textPrimary)
-                ForEach(pair.response.citations) { cit in
-                    Button { onSeekToCitation(cit) } label: {
-                        HStack(spacing: Spacing.xxs) {
-                            Image(systemName: "play.circle.fill")
-                            Text("[\(cit.formattedTimecode)] \(cit.snippet)")
-                        }
-                        .font(Typography.caption).foregroundStyle(Theme.Colors.liveBlue)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 16) {
+            Text(pair.prompt)
+                .font(.subheadline.weight(.semibold))
+                .padding(16)
+                .background(Theme.Colors.manentAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 22))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Manent").font(.caption).foregroundStyle(.secondary)
+                Text(pair.response.answer).textSelection(.enabled)
             }
-            .padding(Spacing.sm).background(Theme.Colors.aiPurpleLight.opacity(0.3)).clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.md))
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background, in: RoundedRectangle(cornerRadius: 22))
+            ForEach(pair.response.citations) { citation in
+                Button { onSeekToCitation(citation) } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(meetingTitle) · \(citation.formattedTimecode)")
+                            Text(citation.snippet.isEmpty ? "Play the supporting passage" : citation.snippet)
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "play.circle").foregroundStyle(Theme.Colors.manentAccent)
+                    }
+                    .padding(16).background(.background, in: RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Play the recording at this passage")
+            }
         }
     }
-    
+
     private var inputBar: some View {
         HStack(spacing: Spacing.sm) {
             TextField("Ask about this meeting", text: $queryText)

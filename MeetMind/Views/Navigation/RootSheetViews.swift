@@ -91,6 +91,9 @@ public struct RootAskAISheet: View {
             meetingTitle: viewModel.headerTitle,
             isBusy: viewModel.isAnsweringQuestion
         )
-        .onDisappear { viewModel.cancelQuestion() }
+        .onDisappear {
+                viewModel.cancelQuestion()
+                viewModel.stopPlayback()
+            }
     }
 }
