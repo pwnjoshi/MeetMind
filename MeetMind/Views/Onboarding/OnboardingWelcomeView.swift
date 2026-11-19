@@ -37,7 +37,7 @@ public struct OnboardingWelcomeView: View {
             .padding(.horizontal, Spacing.lg)
             .padding(.bottom, Spacing.xl)
         }
-        .background(Theme.Colors.background.ignoresSafeArea())
+        .background(LinearGradient(colors: [Color(hex: "#F0F0FF"), .white], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
     }
     
     @ViewBuilder

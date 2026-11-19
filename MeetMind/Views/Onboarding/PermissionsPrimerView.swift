@@ -33,7 +33,7 @@ public struct PermissionsPrimerView: View {
             Button("Open Settings") { openSettings() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Access was previously declined. Please open iOS Settings to enable access for MeetMind.")
+            Text("Access was previously declined. Please open iOS Settings to enable access for Manent.")
         }
     }
     
@@ -43,7 +43,7 @@ public struct PermissionsPrimerView: View {
                 .font(Typography.title1)
                 .fontWeight(.bold)
                 .foregroundStyle(Theme.Colors.textPrimary)
-            Text("MeetMind needs access to on-device capabilities to record, transcribe, and organize meetings.")
+            Text("Manent needs access to on-device capabilities to record, transcribe, and organize meetings.")
                 .font(Typography.subheadline)
                 .foregroundStyle(Theme.Colors.textSecondary)
                 .multilineTextAlignment(.center)
@@ -78,7 +78,7 @@ public struct PermissionsPrimerView: View {
                 onRequest: { Task { await viewModel.requestPermission(.reminders) } }, onOpenSettings: openSettings
             )
             PermissionRowView(
-                permission: .notifications, title: "Notifications", description: "Lets MeetMind tell you when private on-device minutes are ready",
+                permission: .notifications, title: "Notifications", description: "Lets Manent tell you when private on-device minutes are ready",
                 iconName: "bell.badge", iconColor: Theme.Colors.liveBlue,
                 status: viewModel.permissionStatus(for: .notifications),
                 onRequest: { Task { await viewModel.requestPermission(.notifications) } }, onOpenSettings: openSettings
@@ -87,7 +87,7 @@ public struct PermissionsPrimerView: View {
     }
     
     private var enterAppButton: some View {
-        PrimaryButton(title: "Enter MeetMind", icon: "sparkles") {
+        PrimaryButton(title: "Enter Manent", icon: "sparkles") {
             viewModel.completeOnboarding()
         }
         .padding(.top, Spacing.md)

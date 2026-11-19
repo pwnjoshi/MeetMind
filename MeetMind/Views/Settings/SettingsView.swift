@@ -22,7 +22,7 @@ public struct SettingsView: View {
                     HStack(spacing: 12) {
                         SettingsProfileAvatar(profile: viewModel.userProfile ?? .defaultProfile, size: 52)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(viewModel.userProfile?.name ?? "MeetMind User").foregroundStyle(.primary)
+                            Text(viewModel.userProfile?.name ?? "Manent User").foregroundStyle(.primary)
                             Text(viewModel.userProfile?.email.isEmpty == false ? viewModel.userProfile!.email : "Local profile")
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }

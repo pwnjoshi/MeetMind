@@ -77,7 +77,7 @@ public final class OnboardingViewModel {
 
     public func continueLocally() {
         name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
-        if name.isEmpty { name = "MeetMind User" }
+        if name.isEmpty { name = "Manent User" }
         email = ""
         role = ""
         currentStage = .permissionsPrimer
@@ -126,7 +126,7 @@ public final class OnboardingViewModel {
     
     public var currentUserProfile: UserProfile {
         UserProfile(
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "MeetMind User" : name.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Manent User" : name.trimmingCharacters(in: .whitespacesAndNewlines),
             email: email.trimmingCharacters(in: .whitespacesAndNewlines),
             role: role.trimmingCharacters(in: .whitespacesAndNewlines),
             avatarColorHex: selectedAvatarColorHex,
@@ -164,7 +164,7 @@ public final class OnboardingViewModel {
     }
     
     public func skipProfileSetup() {
-        name = "MeetMind User"
+        name = "Manent User"
         role = "Team Member"
         email = ""
         voiceProfileURL = nil
