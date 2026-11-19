@@ -31,6 +31,8 @@ public struct MeetingDetailView: View {
     @State private var followUpDraft: MeetingSetupViewModel?
     @State private var showFollowUp = false
     @State private var recordSection = "Minutes"
+    @State private var showsTranscriptPage = false
+    @State private var showsMediaPage = false
     
     public init(viewModel: MeetingDetailViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -110,22 +112,45 @@ public struct MeetingDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             
-            if recordSection == "Transcript", let duration = viewModel.meeting?.duration, duration > 0 {
-                StickyAudioPlayerBar(
-                    currentTime: viewModel.currentPlayheadTime,
-                    totalDuration: duration,
-                    isPlaying: viewModel.isPlaying,
-                    playbackRate: viewModel.playbackRate,
-                    onTogglePlayPause: { viewModel.togglePlayPause() },
-                    onSeek: { viewModel.seek(to: $0) },
-                    onSkipBackward: { viewModel.seek(to: max(0, viewModel.currentPlayheadTime - 15)) },
-                    onSkipForward: { viewModel.seek(to: min(duration, viewModel.currentPlayheadTime + 15)) },
-                    onCycleRate: { cyclePlaybackRate() }
-                )
-            }
+
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .tint(Theme.Colors.manentAccent)
+        .navigationDestination(isPresented: $showsTranscriptPage) {
+            VStack(spacing: 0) {
+                MeetingTranscriptTabView(
+                    segments: viewModel.transcriptSegments,
+                    activeSegmentId: viewModel.activeSegmentId,
+                    searchText: $transcriptSearch,
+                    onSeek: { viewModel.tapToSeek(segment: $0) },
+                    onEdit: { viewModel.beginEditingTranscript(segment: $0) },
+                    onReassign: { showSpeakerReassign = $0 }
+                )
+                if let duration = viewModel.meeting?.duration, duration > 0 {
+                    StickyAudioPlayerBar(
+                        currentTime: viewModel.currentPlayheadTime,
+                        totalDuration: duration,
+                        isPlaying: viewModel.isPlaying,
+                        playbackRate: viewModel.playbackRate,
+                        onTogglePlayPause: { viewModel.togglePlayPause() },
+                        onSeek: { viewModel.seek(to: $0) },
+                        onSkipBackward: { viewModel.seek(to: max(0, viewModel.currentPlayheadTime - 15)) },
+                        onSkipForward: { viewModel.seek(to: min(duration, viewModel.currentPlayheadTime + 15)) },
+                        onCycleRate: { cyclePlaybackRate() }
+                    )
+                }
+            }
+            .navigationTitle("Transcript and audio")
+            .toolbar(.hidden, for: .tabBar)
+            .onDisappear { viewModel.stopPlayback() }
+        }
+        .navigationDestination(isPresented: $showsMediaPage) {
+            MeetingNotesMediaTabView(notes: viewModel.notes,
+                                     onAddNote: { showNoteSheet = true },
+                                     onSelectPhoto: { showPhotoModal = $0 })
+                .navigationTitle("Notes & Media")
+                .toolbar(.hidden, for: .tabBar)
+        }
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom) {
             if recordSection == "Minutes", let meeting = viewModel.meeting,
@@ -182,8 +207,7 @@ public struct MeetingDetailView: View {
                     }
                     Button("Show Transcript", systemImage: "doc.text", action: openTranscript)
                     Button("Notes & Media", systemImage: "photo") {
-                        recordSection = "Notes & Media"
-                        viewModel.selectTab(.notesMedia)
+                        showsMediaPage = true
                     }
                     Button("Share Minutes", systemImage: "square.and.arrow.up", action: beginSharingMinutes)
                     if viewModel.summary != nil {
@@ -300,8 +324,7 @@ public struct MeetingDetailView: View {
     }
     
     private func openTranscript() {
-        recordSection = "Transcript"
-        viewModel.selectTab(.transcript)
+        showsTranscriptPage = true
     }
 
     private var minutesRecipients: [Speaker] {
@@ -344,15 +367,11 @@ public struct MeetingDetailView: View {
             }
             Picker("Meeting section", selection: $recordSection) {
                 ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }
-                if recordSection == "Transcript" || recordSection == "Notes & Media" {
-                    Text(recordSection).tag(recordSection)
-                }
             }
             .pickerStyle(.segmented)
             .onChange(of: recordSection) { _, section in
                 if section == "Minutes" { viewModel.selectTab(.summary) }
                 if section == "Actions" { viewModel.selectTab(.actionItems) }
-                if section != "Transcript" { viewModel.stopPlayback() }
             }
         }
         .padding(.horizontal, 24)
