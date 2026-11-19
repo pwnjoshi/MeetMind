@@ -39,8 +39,9 @@ public struct SearchConsoleView: View {
                 resultsList
             }
         }
-        .background(Theme.Colors.background)
+        .background(Color(hex: "#F7F7FC"))
         .navigationTitle("Search")
+        .tint(Color(hex: "#4B3FF0"))
         .searchable(text: $viewModel.searchQuery, prompt: "Meetings, transcripts, actions")
         .onAppear {
             viewModel.setModelContext(modelContext)
