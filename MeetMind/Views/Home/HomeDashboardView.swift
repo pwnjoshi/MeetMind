@@ -24,7 +24,7 @@ public struct HomeDashboardView: View {
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 34) {
                     if savedMeetings.isEmpty || viewModel.isEmptyState {
                         emptyMeetingsState
                             .frame(maxWidth: .infinity)
@@ -71,16 +71,16 @@ public struct HomeDashboardView: View {
                 Image(systemName: "plus")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 56, height: 56)
+                .frame(width: 48, height: 48)
                 .background(Theme.Colors.manentAccent)
                 .clipShape(Circle())
-                .shadow(color: Color.black.opacity(0.15), radius: 8, y: 4)
+                .overlay(Circle().strokeBorder(.white.opacity(0.2), lineWidth: 1))
             }
             .menuOrder(.fixed)
             .accessibilityLabel("New meeting")
             .accessibilityHint("Choose Quick Meet, Schedule Meet, or Import Audio")
-            .padding(.trailing, 20)
-            .padding(.bottom, 18)
+            .padding(.trailing, 28)
+            .padding(.bottom, 8)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Meetings")
@@ -199,11 +199,11 @@ public struct HomeDashboardView: View {
     private func meetingSection(_ title: String, meetings: [Meeting], upcoming: Bool) -> some View {
         if !meetings.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                Text(title).font(.title3.bold()).padding(.horizontal, 12)
+                Text(title).font(.title3.weight(.semibold)).padding(.horizontal, 16)
                 VStack(spacing: 0) {
                     ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
                         meetingRow(meeting, upcoming: upcoming)
-                        if index < meetings.count - 1 { Divider().padding(.leading, 14) }
+                        if index < meetings.count - 1 { Divider().padding(.horizontal, 16) }
                     }
                 }
                 .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -218,7 +218,7 @@ public struct HomeDashboardView: View {
                     Text(meeting.title).font(.body).foregroundStyle(.primary)
                     Text(upcoming
                         ? "\((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))) \u{00B7} \(seriesSubtitle(meeting))"
-                        : meeting.figmaBadgeText)
+                        : recentSubtitle(meeting))
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
@@ -226,9 +226,13 @@ public struct HomeDashboardView: View {
                     ? (meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .omitted, time: .shortened)
                     : meeting.createdAt.formatted(.dateTime.day().month(.abbreviated)))
                     .font(.body).foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 14).padding(.vertical, 11).frame(minHeight: 62)
+            .padding(.horizontal, 16).padding(.vertical, 11).frame(minHeight: 66)
         }
+        .buttonStyle(.plain)
         .contextMenu {
             if let id = meeting.seriesID {
                 Button("View Series", systemImage: "calendar") {
@@ -237,6 +241,12 @@ public struct HomeDashboardView: View {
                 }
             }
         }
+    }
+
+    private func recentSubtitle(_ meeting: Meeting) -> String {
+        let open = meeting.actionItems.filter { !$0.isCompleted }.count
+        guard meeting.figmaBadgeText == "Finalized", open > 0 else { return meeting.figmaBadgeText }
+        return "Finalized \u{00B7} \(open) open \(open == 1 ? "action" : "actions")"
     }
 
     private func seriesSubtitle(_ meeting: Meeting) -> String {
