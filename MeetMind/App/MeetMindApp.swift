@@ -3,12 +3,31 @@ import SwiftData
 import OSLog
 import Darwin
 import UIKit
+import UserNotifications
 
-final class MeetMindAppDelegate: NSObject, UIApplicationDelegate {
+final class MeetMindAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    @Published private(set) var completedMeetingID: UUID?
+
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         OfflineAnalysisBackgroundScheduler.register()
+        UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+    ) async {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+              let value = response.notification.request.content.userInfo["analysisMeetingID"] as? String,
+              let id = UUID(uuidString: value) else { return }
+        await MainActor.run { completedMeetingID = id }
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        notification.request.content.userInfo["analysisMeetingID"] == nil ? [] : [.banner, .list, .sound]
     }
 }
 
@@ -93,6 +112,13 @@ struct MeetMindApp: App {
                 .environment(settingsVM)
                 .onOpenURL { url in
                     _ = router.handleDeepLink(url: url, appState: appState)
+                }
+                .onReceive(appDelegate.$completedMeetingID.compactMap { $0 }) { id in
+                    guard let container else { return }
+                    let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+                    guard let count = try? container.mainContext.fetchCount(descriptor), count > 0 else { return }
+                    appState.activeTab = .home
+                    router.homePath = [.meetingDetail(id: id)]
                 }
         }
         .onChange(of: scenePhase) { _, newPhase in

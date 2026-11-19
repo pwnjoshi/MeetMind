@@ -125,7 +125,7 @@ enum OfflineAnalysisBackgroundScheduler {
                 guard viewModel.pipelineStatus == .completed else { return }
                 remove(meetingID: meetingID)
                 succeeded = true
-                await postCompletionNotification(for: meeting.title)
+                await postCompletionNotification(meetingID: meetingID, title: meeting.title)
             } catch is CancellationError {
                 // The engine wrote a checkpoint before interruption. Leave it
                 // queued so the user or a later iOS window can resume safely.
@@ -137,15 +137,15 @@ enum OfflineAnalysisBackgroundScheduler {
         await worker?.value
     }
 
-    private static func postCompletionNotification(for title: String) async {
+    private static func postCompletionNotification(meetingID: UUID, title: String) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
         let content = UNMutableNotificationContent()
         content.title = "Meeting ready"
         content.body = "\(title) has been transcribed and its minutes are ready to review."
         content.sound = .default
-        content.userInfo = ["meetingTitle": title]
-        let request = UNNotificationRequest(identifier: "MeetMind.analysis.\(UUID().uuidString)", content: content, trigger: nil)
+        content.userInfo = ["analysisMeetingID": meetingID.uuidString]
+        let request = UNNotificationRequest(identifier: "MeetMind.analysis.\(meetingID.uuidString)", content: content, trigger: nil)
         try? await UNUserNotificationCenter.current().add(request)
     }
 }
