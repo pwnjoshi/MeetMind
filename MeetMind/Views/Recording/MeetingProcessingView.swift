@@ -68,7 +68,11 @@ public struct MeetingProcessingView: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text("People")
-                                Text("\(meeting.participants.count) listed").font(.subheadline).foregroundStyle(.secondary)
+                                let absentIDs = Set(meeting.absentParticipantIDs ?? [])
+                                let people = meeting.participants.filter { $0.name != $0.recordingVoiceLabel }
+                                let absent = people.filter { absentIDs.contains($0.id) }.count
+                                Text("\(people.count - absent) present · \(absent) absent")
+                                    .font(.subheadline).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
@@ -208,8 +212,19 @@ public struct MeetingProcessingView: View {
                             }
                         }
                         Section("Who Was There") {
-                            ForEach(meeting.participants.filter { $0.name != $0.recordingVoiceLabel }, id: \.id) {
-                                Label($0.name, systemImage: "checkmark")
+                            ForEach(meeting.participants.filter { $0.name != $0.recordingVoiceLabel }, id: \.id) { person in
+                                let absent = meeting.absentParticipantIDs?.contains(person.id) == true
+                                Button {
+                                    toggleAttendance(for: person, in: meeting)
+                                } label: {
+                                    HStack {
+                                        Text(person.name).foregroundStyle(.primary)
+                                        Spacer()
+                                        if !absent { Image(systemName: "checkmark") }
+                                    }
+                                    .contentShape(.rect)
+                                }
+                                .accessibilityValue(absent ? "Absent" : "Present")
                             }
                         }
                     } else {
@@ -430,6 +445,18 @@ public struct MeetingProcessingView: View {
         do { try modelContext.save() }
         catch {
             speaker.name = previous
+            processingError = error.localizedDescription
+        }
+    }
+
+    private func toggleAttendance(for person: Speaker, in meeting: Meeting) {
+        let previous = meeting.absentParticipantIDs
+        var absentIDs = Set(previous ?? [])
+        if absentIDs.remove(person.id) == nil { absentIDs.insert(person.id) }
+        meeting.absentParticipantIDs = absentIDs.sorted { $0.uuidString < $1.uuidString }
+        do { try modelContext.save() }
+        catch {
+            meeting.absentParticipantIDs = previous
             processingError = error.localizedDescription
         }
     }

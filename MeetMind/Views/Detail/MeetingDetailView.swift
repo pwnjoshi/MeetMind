@@ -142,7 +142,10 @@ public struct MeetingDetailView: View {
         }
         .sheet(isPresented: $showPeople) {
             NavigationStack {
-                List(viewModel.meeting?.participants ?? [], id: \.id) { Text($0.name) }
+                List(viewModel.meeting?.participants ?? [], id: \.id) { person in
+                    let absent = viewModel.meeting?.absentParticipantIDs?.contains(person.id) == true
+                    LabeledContent(person.name, value: absent ? "Absent" : "Present")
+                }
                     .navigationTitle("People")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showPeople = false } } }
             }
@@ -237,7 +240,10 @@ public struct MeetingDetailView: View {
                     HStack {
                         VStack(alignment: .leading) {
                             Text("People")
-                            Text("\(meeting.participants.count) listed").font(.subheadline).foregroundStyle(.secondary)
+                            let absentIDs = Set(meeting.absentParticipantIDs ?? [])
+                            let absent = meeting.participants.filter { absentIDs.contains($0.id) }.count
+                            Text("\(meeting.participants.count - absent) present · \(absent) absent")
+                                .font(.subheadline).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Image(systemName: "chevron.right").foregroundStyle(.tertiary)
