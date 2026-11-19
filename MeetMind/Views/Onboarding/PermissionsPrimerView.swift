@@ -77,6 +77,12 @@ public struct PermissionsPrimerView: View {
                 status: viewModel.permissionStatus(for: .reminders),
                 onRequest: { Task { await viewModel.requestPermission(.reminders) } }, onOpenSettings: openSettings
             )
+            PermissionRowView(
+                permission: .notifications, title: "Notifications", description: "Lets MeetMind tell you when private on-device minutes are ready",
+                iconName: "bell.badge", iconColor: Theme.Colors.liveBlue,
+                status: viewModel.permissionStatus(for: .notifications),
+                onRequest: { Task { await viewModel.requestPermission(.notifications) } }, onOpenSettings: openSettings
+            )
         }
     }
     
