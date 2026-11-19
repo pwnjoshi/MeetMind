@@ -69,10 +69,8 @@ public struct MainTabView: View {
     @ViewBuilder
     private func destinationView(for destination: NavigationDestination) -> some View {
         switch destination {
-        case .meetingDetail(let id):
+        case .meetingDetail(let id), .meetingProcessing(let id):
             MeetingDetailContainerView(meetingId: id)
-        case .meetingProcessing(let id):
-            MeetingProcessingView(meetingId: id)
         case .liveRecording(let id):
             LiveRecordingView(meetingId: id)
         case .settings:

@@ -263,7 +263,14 @@ public struct LiveRecordingView: View {
             defer { isFinishing = false }
             do {
                 _ = try await viewModel.finishSession()
-                router.navigate(to: .meetingProcessing(id: meetingId), in: .home)
+                if router.homePath.last == .liveRecording(id: meetingId) {
+                    let record = NavigationDestination.meetingDetail(id: meetingId)
+                    if router.homePath.dropLast().last == record {
+                        router.homePath.removeLast()
+                    } else {
+                        router.homePath[router.homePath.count - 1] = record
+                    }
+                }
             } catch { viewModel.errorMessage = error.localizedDescription }
         }
     }

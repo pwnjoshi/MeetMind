@@ -65,16 +65,6 @@ public struct MeetingDetailView: View {
                 actionItems: viewModel.actionItems,
                 notes: viewModel.notes,
                 onCopySummary: { UIPasteboard.general.string = viewModel.generateCopyableSummaryText() },
-                onRegenerateSummary: {
-                    if let meeting = viewModel.meeting {
-                        Task {
-                            do {
-                                try await MeetingAnalysisPipeline.shared.removeCheckpoint(meetingID: meeting.id)
-                                router.navigate(to: .meetingProcessing(id: meeting.id), in: .home)
-                            } catch { deletionError = error.localizedDescription }
-                        }
-                    }
-                },
                 onSeekTranscript: { viewModel.tapToSeek(segment: $0) },
                 onEditTranscript: { viewModel.beginEditingTranscript(segment: $0) },
                 onReassignSpeaker: { showSpeakerReassign = $0 },

@@ -19,8 +19,10 @@ public struct MeetingDetailContainerView: View {
     public var body: some View {
         Group {
             if let meeting = targetMeeting,
-               meeting.status == .processing || (meeting.status == .recording && meeting.audioFileURL != nil) {
-                MeetingProcessingView(meetingId: meetingId, embeddedInMeetingRecord: true)
+               meeting.status == .processing ||
+                (meeting.status == .recording && meeting.audioFileURL != nil) ||
+                (meeting.status == .completed && meeting.summary == nil && meeting.audioFileURL != nil) {
+                MeetingProcessingView(meetingId: meetingId)
             } else if let meeting = targetMeeting, meeting.status == .recording, meeting.audioFileURL == nil {
                 LiveRecordingView(meetingId: meetingId, viewModel: LiveRecordingViewModel(meeting: meeting, meetingId: meetingId, modelContext: modelContext))
             } else {

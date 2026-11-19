@@ -4,12 +4,10 @@ import SwiftUI
 public struct MeetingSummaryTabView: View {
     public let summary: Summary?
     public let onCopy: () -> Void
-    public let onRegenerate: () -> Void
     
-    public init(summary: Summary?, onCopy: @escaping () -> Void, onRegenerate: @escaping () -> Void) {
+    public init(summary: Summary?, onCopy: @escaping () -> Void) {
         self.summary = summary
         self.onCopy = onCopy
-        self.onRegenerate = onRegenerate
     }
     
     public var body: some View {
@@ -38,19 +36,6 @@ public struct MeetingSummaryTabView: View {
                             items: summary.keyPoints
                         )
                     }
-                } else {
-                    emptySummaryView
-                }
-                
-                Button(action: onRegenerate) {
-                    HStack(spacing: Spacing.xs) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text("Reanalyze saved recording")
-                    }
-                    .font(Typography.subheadline)
-                    .foregroundStyle(Theme.Colors.aiPurple)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.md)
                 }
             }
             .padding(Spacing.lg)
@@ -102,13 +87,5 @@ public struct MeetingSummaryTabView: View {
             Text(text).font(Typography.body).foregroundStyle(Theme.Colors.textPrimary)
         }
         .padding(Spacing.md).background(Theme.Colors.cardBackground).clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.lg))
-    }
-    
-    private var emptySummaryView: some View {
-        VStack(spacing: Spacing.sm) {
-            Image(systemName: "doc.text.magnifyingglass").font(.system(size: 32)).foregroundStyle(Theme.Colors.textTertiary)
-            Text("No summary generated yet").font(Typography.headline)
-        }
-        .frame(maxWidth: .infinity, minHeight: 180)
     }
 }

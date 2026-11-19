@@ -10,7 +10,6 @@ public struct MeetingDetailTabContentView: View {
     public let actionItems: [ActionItem]
     public let notes: [Note]
     public let onCopySummary: () -> Void
-    public let onRegenerateSummary: () -> Void
     public let onSeekTranscript: (TranscriptSegment) -> Void
     public let onEditTranscript: (TranscriptSegment) -> Void
     public let onReassignSpeaker: (TranscriptSegment) -> Void
@@ -25,8 +24,7 @@ public struct MeetingDetailTabContentView: View {
         case .summary:
             MeetingSummaryTabView(
                 summary: summary,
-                onCopy: onCopySummary,
-                onRegenerate: onRegenerateSummary
+                onCopy: onCopySummary
             )
         case .transcript:
             MeetingTranscriptTabView(

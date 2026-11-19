@@ -8,7 +8,6 @@ import AVFoundation
 public struct MeetingProcessingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Environment(NavigationRouter.self) private var router
     @Environment(SettingsViewModel.self) private var settings
     @Environment(\.scenePhase) private var scenePhase
     @Query private var meetings: [Meeting]
@@ -34,17 +33,14 @@ public struct MeetingProcessingView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloading = false
     public let meetingId: UUID
-    private let embeddedInMeetingRecord: Bool
 
-    public init(meetingId: UUID, viewModel: ProcessingPipelineViewModel? = nil, embeddedInMeetingRecord: Bool = false) {
+    public init(meetingId: UUID, viewModel: ProcessingPipelineViewModel? = nil) {
         self.meetingId = meetingId
-        self.embeddedInMeetingRecord = embeddedInMeetingRecord
         self._viewModel = State(initialValue: viewModel ?? ProcessingPipelineViewModel(meetingId: meetingId))
     }
 
     public init(viewModel: ProcessingPipelineViewModel, meetingId: UUID? = nil) {
         self.meetingId = meetingId ?? UUID()
-        self.embeddedInMeetingRecord = false
         self._viewModel = State(initialValue: viewModel)
     }
 
@@ -137,9 +133,17 @@ public struct MeetingProcessingView: View {
                 .padding(20)
                 .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 if selectedSection == "Minutes" {
-                    Button("Transcript and audio", systemImage: "waveform") { showsTranscript = true }
-                        .buttonStyle(.bordered)
-                        .disabled(busy)
+                    Button { showsTranscript = true } label: {
+                        HStack {
+                            Text("Transcript and audio").font(.headline)
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                            Spacer()
+                        }
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
                 }
                 if let processingError {
                     Text(processingError).foregroundStyle(.secondary)
@@ -271,14 +275,6 @@ public struct MeetingProcessingView: View {
         .onAppear {
             viewModel.onNavigateToDetail = { id in
                 OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
-                if !embeddedInMeetingRecord {
-                    router.homePath = [.meetingDetail(id: id)]
-                }
-            }
-        }
-        .onChange(of: meeting?.status) { _, status in
-            if status == .completed, !busy, !embeddedInMeetingRecord {
-                router.homePath = [.meetingDetail(id: meetingId)]
             }
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
@@ -398,11 +394,7 @@ public struct MeetingProcessingView: View {
     private func queueAnalysis() {
         OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
         operation?.cancel()
-        if embeddedInMeetingRecord {
-            dismiss()
-        } else {
-            router.homePath.removeAll()
-        }
+        dismiss()
     }
 
     private func playSpeakerSample(_ segment: TranscriptSegment) {
