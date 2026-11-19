@@ -296,11 +296,16 @@ public final class MeetingDetailViewModel {
         selectedTab = tab
     }
     
-    public func renameMeeting(newTitle: String) {
+    public func renameMeeting(newTitle: String) throws {
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
-        meeting?.title = title
-        try? modelContext?.save()
+        guard let meeting, !title.isEmpty, meeting.title != title else { return }
+        let previousTitle = meeting.title
+        meeting.title = title
+        do { try modelContext?.save() }
+        catch {
+            meeting.title = previousTitle
+            throw error
+        }
     }
     
     public func generateCopyableSummaryText() -> String {

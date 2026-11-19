@@ -7,6 +7,7 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
     @Binding public var showAskAISheet: Bool
     @Binding public var showRenameAlert: Bool
     @Binding public var renameText: String
+    var onRenameError: (Error) -> Void
     
     public func body(content: Content) -> some View {
         content
@@ -42,7 +43,11 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
             .alert("Rename Meeting", isPresented: $showRenameAlert) {
                 TextField("Meeting Title", text: $renameText)
                 Button("Cancel", role: .cancel) {}
-                Button("Save") { viewModel.renameMeeting(newTitle: renameText) }
+                Button("Save") {
+                    do { try viewModel.renameMeeting(newTitle: renameText) }
+                    catch { onRenameError(error) }
+                }
+                .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
     }
 }

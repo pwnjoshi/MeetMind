@@ -171,7 +171,8 @@ final class MeetingDetailViewModelTests: XCTestCase {
     
     /// Tier 1: Feature 40 - Validates inline title rename updates meeting record and persistence.
     func test_tier1_feature40_inlineTitleRename() throws {
-        sut.renameMeeting(newTitle: "Updated Q4 Architecture Plan")
+        try sut.renameMeeting(newTitle: "  Updated Q4 Architecture Plan  ")
+        try sut.renameMeeting(newTitle: "  ")
         
         XCTAssertEqual(sut.headerTitle, "Updated Q4 Architecture Plan")
         let updated = fetchMeeting(id: meetingId)

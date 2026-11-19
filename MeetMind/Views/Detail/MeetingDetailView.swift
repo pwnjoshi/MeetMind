@@ -245,7 +245,8 @@ public struct MeetingDetailView: View {
             showExportSheet: $showExportSheet,
             showAskAISheet: $showAskAISheet,
             showRenameAlert: $showRenameAlert,
-            renameText: $renameText
+            renameText: $renameText,
+            onRenameError: { deletionError = $0.localizedDescription }
         ))
         .sheet(isPresented: $showActionItemModal) {
             ActionItemEditModal(onSave: { title, priority, dueDate, assignee in
