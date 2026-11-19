@@ -276,6 +276,11 @@ public struct MeetingProcessingView: View {
                 }
             }
         }
+        .onChange(of: meeting?.status) { _, status in
+            if status == .completed, !busy, !embeddedInMeetingRecord {
+                router.homePath = [.meetingDetail(id: meetingId)]
+            }
+        }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background, busy {
