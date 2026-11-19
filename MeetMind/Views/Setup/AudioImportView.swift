@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AVFoundation
 import UniformTypeIdentifiers
 
 /// Audio file import view with drop-zone, fileImporter, status indicator, and transcription trigger
@@ -13,6 +14,7 @@ public struct AudioImportView: View {
     @State private var isProcessing: Bool = false
     @State private var errorMessage: String? = nil
     @State private var showErrorAlert: Bool = false
+    @State private var fileDetails = ""
     @State private var recordedAt = Date()
     @Query private var savedMeetings: [Meeting]
     @State private var selectedSeriesID: UUID?
@@ -36,8 +38,10 @@ public struct AudioImportView: View {
                 .listRowBackground(Color.clear)
                 Section("Audio File") {
                     if let selectedURL {
-                        Label(selectedURL.lastPathComponent, systemImage: "waveform")
-                            .foregroundStyle(.primary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(selectedURL.lastPathComponent)
+                            if !fileDetails.isEmpty { Text(fileDetails).font(.subheadline).foregroundStyle(.secondary) }
+                        }
                     }
                     Button(selectedURL == nil ? "Choose Audio File..." : "Choose Another File...") {
                         isPickerPresented = true
@@ -48,35 +52,43 @@ public struct AudioImportView: View {
                     TextField("Meeting title", text: $viewModel.title)
                         .disabled(isProcessing)
                 }
-                Section("Details") {
+                Section {
                     DatePicker("Recorded", selection: $recordedAt, in: ...Date(),
                         displayedComponents: [.date, .hourAndMinute])
                         .disabled(isProcessing)
-                    Picker("Series", selection: $selectedSeriesID) {
-                        Text("None").tag(nil as UUID?)
-                        ForEach(seriesOptions, id: \.id) { series in
-                            Text(series.name).tag(Optional(series.id))
+                    Menu {
+                        Picker("Series", selection: $selectedSeriesID) {
+                            Text("None").tag(nil as UUID?)
+                            ForEach(seriesOptions, id: \.id) { series in Text(series.name).tag(Optional(series.id)) }
                         }
-                    }
-                    .disabled(isProcessing)
-                    Button("New Series...") {
-                        seriesNameDraft = newSeriesName
-                        isNewSeriesPresented = true
-                    }
-                        .disabled(isProcessing)
+                        Button("New Series…", systemImage: "plus") {
+                            seriesNameDraft = ""
+                            isNewSeriesPresented = true
+                        }
+                    } label: {
+                        LabeledContent("Series") {
+                            Text(seriesOptions.first { $0.id == selectedSeriesID }?.name ?? "None")
+                            Image(systemName: "chevron.up.chevron.down").font(.caption)
+                        }
+                    }.disabled(isProcessing)
+                } header: {
+                    Text("Details")
+                } footer: {
+                    Text("Audio stays on this iPhone. Manent creates a meeting with a transcript and speakers to review.")
                 }
                 Section {
                     if isProcessing { ProgressView("Saving audio on this iPhone...") }
                     processButton
-                } footer: {
-                    Text("Audio stays on this iPhone. Manent creates a meeting with a transcript and speakers to review.")
-                }
+                }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             }
+            .textCase(nil)
+            .tint(Theme.Colors.manentAccent)
+            .task(id: selectedURL) { await loadFileDetails() }
             .navigationTitle("Import Audio")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Back", systemImage: "chevron.left") { dismiss() }.labelStyle(.iconOnly)
                         .disabled(isProcessing)
                 }
             }
@@ -87,8 +99,9 @@ public struct AudioImportView: View {
             ) { res in
                 switch res {
                 case .success(let urls):
+                    let oldTitle = selectedURL?.deletingPathExtension().lastPathComponent
                     selectedURL = urls.first
-                    if viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    if viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.title == oldTitle,
                        let url = urls.first {
                         viewModel.title = url.deletingPathExtension().lastPathComponent
                     }
@@ -117,6 +130,24 @@ public struct AudioImportView: View {
         }
     }
     
+    @MainActor
+    private func loadFileDetails() async {
+        fileDetails = ""
+        guard let url = selectedURL else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        var parts: [String] = []
+        if let time = try? await AVURLAsset(url: url).load(.duration), time.seconds.isFinite, time.seconds > 0 {
+            let seconds = Int(time.seconds.rounded())
+            parts.append("\(seconds / 60) min \(seconds % 60) sec")
+        }
+        parts.append(url.pathExtension.uppercased())
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            parts.append(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+        }
+        if !Task.isCancelled, selectedURL == url { fileDetails = parts.joined(separator: " \u{00B7} ") }
+    }
+
     private var seriesOptions: [(id: UUID, name: String)] {
         var names: [UUID: String] = [:]
         if let id = newSeriesID { names[id] = newSeriesName }
@@ -130,7 +161,7 @@ public struct AudioImportView: View {
     }
 
     private var processButton: some View {
-        Button("Import recording") {
+        Button {
             guard let url = selectedURL else { return }
             viewModel.importedRecordingDate = recordedAt
             viewModel.importedSeriesID = selectedSeriesID
@@ -149,8 +180,13 @@ public struct AudioImportView: View {
                 }
             }
         }
+        label: {
+            Text("Import Recording").frame(maxWidth: .infinity, minHeight: 50)
+                .foregroundStyle(.white).background(Theme.Colors.manentAccent, in: Capsule())
+        }
         .disabled(selectedURL == nil || isProcessing)
-        .buttonStyle(.borderedProminent)
+        .opacity(selectedURL == nil || isProcessing ? 0.5 : 1)
+        .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
         .frame(height: 50)
     }

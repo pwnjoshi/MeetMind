@@ -36,7 +36,7 @@ public struct MeetingDetailView: View {
         VStack(spacing: 0) {
             recordHeader
             if recordSection == "Minutes", let meeting = viewModel.meeting,
-               meeting.resolvedAudioFileURL != nil || !meeting.transcriptSegments.isEmpty {
+               viewModel.summary == nil, meeting.resolvedAudioFileURL != nil || !meeting.transcriptSegments.isEmpty {
                 Button(action: openTranscript) {
                     HStack {
                         Text("Transcript and audio").font(.headline)
@@ -141,6 +141,20 @@ public struct MeetingDetailView: View {
                 .controlSize(.large)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
+                .background(.regularMaterial)
+            } else if recordSection == "Minutes", viewModel.summary != nil {
+                VStack(spacing: 6) {
+                    Button { showExportSheet = true } label: {
+                        Text("Share Minutes").frame(maxWidth: .infinity, minHeight: 50)
+                            .foregroundStyle(.white)
+                            .background(Theme.Colors.manentAccent, in: Capsule())
+                    }
+                    Button("Continue Without Sharing") { dismiss() }
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.Colors.manentAccent)
+                .padding(.horizontal, 16)
                 .background(.regularMaterial)
             }
         }
@@ -294,8 +308,8 @@ public struct MeetingDetailView: View {
                 if section != "Transcript" { viewModel.stopPlayback() }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 16)
     }
 
     private func cyclePlaybackRate() {

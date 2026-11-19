@@ -36,7 +36,7 @@ public struct MeetingSummaryTabView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
                 .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 24)
                 .padding(.bottom, 16)
             }
         }
