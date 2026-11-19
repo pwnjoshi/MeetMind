@@ -10,6 +10,7 @@ public struct MeetingProcessingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(SettingsViewModel.self) private var settings
+    @Environment(AppState.self) private var appState
     @Environment(\.scenePhase) private var scenePhase
     @Query private var meetings: [Meeting]
     @State private var selectedSection = "Minutes"
@@ -112,11 +113,16 @@ public struct MeetingProcessingView: View {
                                 Text("\(voices.count) voices · \(voices.filter { $0.name != $0.recordingVoiceLabel }.count) named")
                                     .font(.subheadline).foregroundStyle(.secondary)
                             }
-                            Button("Name Speakers", systemImage: "chevron.right") {
+                            Button {
                                 if meeting?.analysisState == "speakerReview" {
                                     showsPeople = true
                                 } else {
                                     start(download: true, speakersOnly: true)
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("Name Speakers")
+                                    Image(systemName: "chevron.right").font(.caption)
                                 }
                             }
                         } else {
@@ -154,6 +160,11 @@ public struct MeetingProcessingView: View {
         .toolbar {
             if let meeting {
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button("Vidur", systemImage: "sparkles") {
+                        appState.activeSheet = .askAIAssistant(meetingId: meeting.id)
+                    }.labelStyle(.iconOnly)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("Rename Meeting", systemImage: "pencil") {
                             meetingTitleDraft = meeting.title
@@ -169,7 +180,7 @@ public struct MeetingProcessingView: View {
                 }
             }
         }
-        .tint(Color(hex: "#4B3FF0"))
+        .tint(Theme.Colors.manentAccent)
         .safeAreaInset(edge: .bottom) {
             TimelineView(.periodic(from: .now, by: 2)) { _ in
                 let backgroundRunning = OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
@@ -181,6 +192,7 @@ public struct MeetingProcessingView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(Theme.Colors.manentAccent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
                 .frame(maxWidth: .infinity)
