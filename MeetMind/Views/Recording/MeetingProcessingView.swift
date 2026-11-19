@@ -66,13 +66,14 @@ public struct MeetingProcessingView: View {
                             Label(backgroundStatus, systemImage: "clock")
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
+                        let stageIsRunning = busy || OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
                         ForEach(Array(processingSteps.enumerated()), id: \.offset) { index, step in
                             Label(step, systemImage: index < activeStep ? "checkmark.circle.fill" :
-                                  index == activeStep ? "circle.dotted" : "circle")
+                                  index == activeStep && stageIsRunning ? "circle.dotted" : "circle")
                                 .font(.subheadline)
-                                .foregroundStyle(index <= activeStep ? Color.primary : Color.secondary)
+                                .foregroundStyle(index < activeStep || (index == activeStep && stageIsRunning) ? Color.primary : Color.secondary)
                                 .accessibilityValue(index < activeStep ? "Complete" :
-                                                    index == activeStep ? "Current stage" : "Pending")
+                                                    index == activeStep && stageIsRunning ? "Current stage" : "Pending")
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -344,10 +345,15 @@ public struct MeetingProcessingView: View {
         }
     }
 
-    private let processingSteps = ["Prepare on-device models", "Create transcript", "Identify speakers", "Generate minutes", "Save results"]
+    private var processingSteps: [String] {
+        let preparation = ["Prepare on-device models", "Create transcript", "Identify speakers"]
+        return preparingSpeakers ? preparation : preparation + ["Generate minutes", "Save results"]
+    }
 
     private var activeStep: Int {
         if downloading { return 0 }
+        if !busy, OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId),
+           OfflineAnalysisBackgroundScheduler.stage(for: meetingId) == nil { return 0 }
         if !busy, let stage = OfflineAnalysisBackgroundScheduler.stage(for: meetingId) {
             switch stage {
             case .transcription: return 1
