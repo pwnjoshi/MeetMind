@@ -8,6 +8,10 @@ import UIKit
 public struct SettingsView: View {
     @Environment(SettingsViewModel.self) private var environmentViewModel: SettingsViewModel?
     @State private var localViewModel = SettingsViewModel()
+    @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
+    @AppStorage("Manent.workspaceName") private var workspace = ""
+    @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     
     private var viewModel: SettingsViewModel {
         environmentViewModel ?? localViewModel
@@ -29,21 +33,71 @@ public struct SettingsView: View {
                     }
                 }
             }
-            SettingsAudioQualitySection(viewModel: viewModel)
-            SettingsSpeechAndAISection(viewModel: viewModel)
-            Section("On-device intelligence") {
-                NavigationLink("Offline analysis models") { OfflineAnalysisModelsView() }
-                DisclosureGroup("Diagnostics") {
+            Section("Meetings") {
+                NavigationLink {
+                    Form { TextField("Workspace name", text: $workspace) }
+                        .navigationTitle("Workspace")
+                } label: {
+                    LabeledContent("Workspace", value: workspace.isEmpty ? "Local workspace" : workspace)
+                }
+                Button("Apple Calendar") { openSystemSettings() }.foregroundStyle(.primary)
+                Button("Notifications") { openSystemSettings() }.foregroundStyle(.primary)
+            }
+            Section {
+                NavigationLink {
+                    List {
+                        if meetings.isEmpty {
+                            ContentUnavailableView("No Meetings Yet", systemImage: "calendar")
+                        }
+                        ForEach(meetings) { meeting in
+                            VStack(alignment: .leading) {
+                                Text(meeting.title)
+                                Text(meeting.figmaBadgeText).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .navigationTitle("Local Recordings")
+                } label: {
+                    LabeledContent("Local Recordings", value: meetings.filter { $0.resolvedAudioFileURL != nil }.count.formatted())
+                }
+                NavigationLink("Vidur") {
+                    Form {
+                        SettingsSpeechAndAISection(viewModel: viewModel)
+                        Section { NavigationLink("Offline analysis models") { OfflineAnalysisModelsView() } }
+                    }
+                    .navigationTitle("Vidur")
+                }
+            } header: {
+                Text("Recordings & Vidur")
+            } footer: {
+                Text("Manent · Recordings stay on this iPhone.")
+            }
+            Section("Developer Settings") {
+                NavigationLink("Diagnostics") {
+                    Form {
                     NavigationLink("Offline model benchmarks") { OfflineBenchmarkView() }
+                        SettingsAboutAndDiagnosticsSection(viewModel: viewModel)
+                    }
+                    .navigationTitle("Diagnostics")
                 }
             }
+            SettingsAudioQualitySection(viewModel: viewModel)
             SettingsStorageAndCacheSection(viewModel: viewModel)
             SettingsThemeAndAppearanceSection(viewModel: viewModel)
-            SettingsAboutAndDiagnosticsSection(viewModel: viewModel)
         }
         .navigationTitle("Settings")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button { dismiss() } label: { Image(systemName: "chevron.left") }
+                    .accessibilityLabel("Close Settings")
+            }
+        }
         .tint(Color(hex: "#4B3FF0"))
         .background(Color(hex: "#F7F7FC"))
+    }
+
+    private func openSystemSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
     }
 }
 

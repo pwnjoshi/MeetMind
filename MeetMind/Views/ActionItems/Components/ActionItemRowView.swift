@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Universal action item row with round checkmark toggle, meeting link, and metadata pills
+/// Checklist row with a completion control, meeting link, and task metadata.
 public struct ActionItemRowView: View {
     public let item: ActionItem
     public let onToggle: () -> Void
@@ -15,11 +15,14 @@ public struct ActionItemRowView: View {
     public var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
             Button(action: onToggle) {
-                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
                     .font(.system(size: 22))
-                    .foregroundStyle(item.isCompleted ? Theme.Colors.mintGreenDark : Theme.Colors.cardBorder)
+                    .foregroundStyle(item.isCompleted ? Color.accentColor : Theme.Colors.textSecondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(item.isCompleted ? "Reopen \(item.title)" : "Complete \(item.title)")
             
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(item.title)

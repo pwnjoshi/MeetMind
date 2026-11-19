@@ -108,9 +108,6 @@ public actor MeetingAnalysisPipeline {
             throw OfflineError.unavailable("Offline analysis supports recordings up to 60 minutes. Your audio is preserved.")
         }
         let profiles = try requiredProfiles()
-        // Verify all dependencies before modifying any saved result.
-        var folders: [URL] = []
-        for profile in profiles { folders.append(try await backend.verifiedFolder(profile)) }
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
         let signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         let checkpointURL = try self.checkpointURL(meetingID)
@@ -134,15 +131,17 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .transcription {
             try checkConditions()
             await progress(.transcription)
+            let transcriptionFolder = try await backend.verifiedFolder(profiles[0])
             if ProcessInfo.processInfo.thermalState == .nominal,
                !ProcessInfo.processInfo.isLowPowerModeEnabled {
                 let backend = self.backend
-                let diarizationFolder = folders[1]
+                let diarizationProfile = profiles[1]
                 overlappingDiarization = Task {
-                    try await backend.diarize(audio: audio, folder: diarizationFolder)
+                    let diarizationFolder = try await backend.verifiedFolder(diarizationProfile)
+                    return try await backend.diarize(audio: audio, folder: diarizationFolder)
                 }
             }
-            checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: folders[0], languageCode: languageCode))
+            checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: transcriptionFolder, languageCode: languageCode))
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
             try save()
@@ -154,7 +153,8 @@ public actor MeetingAnalysisPipeline {
             if let overlappingDiarization {
                 rawSpans = try await overlappingDiarization.value
             } else {
-                rawSpans = try await backend.diarize(audio: audio, folder: folders[1])
+                let folder = try await backend.verifiedFolder(profiles[1])
+                rawSpans = try await backend.diarize(audio: audio, folder: folder)
             }
             checkpoint.speakers = Self.stabilizeSpeakerSpans(rawSpans)
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)
@@ -164,7 +164,8 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .analysis {
             try checkConditions()
             await progress(.analysis)
-            let model = try backend.makeSession(folder: folders[2], configuration: Self.modelConfiguration)
+            let folder = try await backend.verifiedFolder(profiles[2])
+            let model = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
             if checkpoint.chunkTurnIDs == nil {
                 let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: model,
                     meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes)

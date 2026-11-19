@@ -97,7 +97,9 @@ struct MeetMindApp: App {
             case .active:
                 settingsVM.recalculateStorageUsage()
             case .background:
-                break
+                if container != nil, appState.hasCompletedOnboarding {
+                    OfflineAnalysisBackgroundScheduler.scheduleInitialSetup()
+                }
             case .inactive:
                 break
             @unknown default:

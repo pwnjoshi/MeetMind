@@ -3,6 +3,7 @@ import SwiftUI
 /// Paged horizontal TabView with animated capsule indicators and hero illustrations
 public struct OnboardingWelcomeView: View {
     @Bindable public var viewModel: OnboardingViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     public init(viewModel: OnboardingViewModel) {
         self.viewModel = viewModel
@@ -12,9 +13,13 @@ public struct OnboardingWelcomeView: View {
         VStack(spacing: 0) {
             HStack {
                 Spacer()
-                GhostButton(title: "Skip") {
+                Button("Skip") {
                     viewModel.skipCarousel()
                 }
+                .frame(minWidth: 44, minHeight: 44)
+                .opacity(viewModel.currentSlideIndex == viewModel.totalSlides - 1 ? 0 : 1)
+                .disabled(viewModel.currentSlideIndex == viewModel.totalSlides - 1)
+                .accessibilityHidden(viewModel.currentSlideIndex == viewModel.totalSlides - 1)
             }
             .padding(.horizontal, Spacing.lg)
             .padding(.top, Spacing.md)
@@ -38,27 +43,21 @@ public struct OnboardingWelcomeView: View {
             .padding(.bottom, Spacing.xl)
         }
         .background(LinearGradient(colors: [Color(hex: "#F0F0FF"), .white], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .tint(Color(hex: "#4B3FF0"))
+        .environment(\.colorScheme, .light)
     }
     
-    @ViewBuilder
     private var bottomActionBar: some View {
-        if viewModel.currentSlideIndex == viewModel.totalSlides - 1 {
-            PrimaryButton(title: "Get Started", icon: "arrow.right") {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
                 viewModel.advanceSlide()
             }
-        } else {
-            HStack(spacing: Spacing.md) {
-                if viewModel.currentSlideIndex > 0 {
-                    GhostButton(title: "Back") {
-                        viewModel.regressSlide()
-                    }
-                    .frame(maxWidth: 100)
-                }
-                
-                PrimaryButton(title: "Continue", icon: "chevron.right") {
-                    viewModel.advanceSlide()
-                }
-            }
+        } label: {
+            Text(viewModel.currentSlideIndex == viewModel.totalSlides - 1 ? "Get Started" : "Continue")
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(Color(hex: "#4B3FF0"), in: Capsule())
         }
+        .buttonStyle(.plain)
     }
 }

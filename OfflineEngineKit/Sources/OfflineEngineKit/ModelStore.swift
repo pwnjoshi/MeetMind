@@ -35,6 +35,7 @@ public enum OfflineError: LocalizedError {
 
 /// The only network-capable component. Engines receive verified local paths.
 public actor OfflineModelStore {
+    private var installingModelIDs: Set<String> = []
     public static let shared = OfflineModelStore()
     public static func profiles() throws -> [ModelProfile] {
         guard let url = Bundle.module.url(forResource: "models", withExtension: "json") else {
@@ -114,6 +115,12 @@ public actor OfflineModelStore {
     }
 
     public func install(_ profile: ModelProfile, progress: @Sendable @escaping (Double) -> Void) async throws {
+        while installingModelIDs.contains(profile.id) {
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        try Task.checkCancellation()
+        installingModelIDs.insert(profile.id)
+        defer { installingModelIDs.remove(profile.id) }
         if isInstalled(profile) {
             do {
                 _ = try verifiedFolder(profile)

@@ -3,12 +3,17 @@ import SwiftData
 import OfflineEngineKit
 import Darwin
 
-/// Foreground-only offline analysis with explicit model setup and safe retry.
+/// Post-recording review and on-device minutes generation.
 public struct MeetingProcessingView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
     @Environment(SettingsViewModel.self) private var settings
     @Environment(\.scenePhase) private var scenePhase
+    @Query private var meetings: [Meeting]
+    @State private var selectedSection = "Minutes"
+    @State private var showsPeople = false
+    @State private var showsNewSeries = false
+    @State private var seriesName = ""
     @State private var processingError: String?
     @State private var viewModel: ProcessingPipelineViewModel
     @State private var missingModels: [ModelProfile] = []
@@ -30,50 +35,108 @@ public struct MeetingProcessingView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                Text(missingModels.isEmpty ? "Analyze meeting" : "Set up offline analysis")
-                    .font(.title2.bold())
-                Text("Audio and meeting content stay on this iPhone. Keep MeetMind open during analysis. Suggested tasks need your review before saving.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                if !missingModels.isEmpty {
-                    ForEach(missingModels) { profile in
-                        LabeledContent(profile.name, value: ByteCountFormatter.string(fromByteCount: profile.downloadBytes, countStyle: .file))
-                    }
-                    Text("One-time public model downloads require internet and free storage. Recognition and analysis then run offline.")
+            VStack(alignment: .leading, spacing: 16) {
+                Text(meeting?.title ?? "Quick meeting").font(.title.bold())
+                if let meeting {
+                    Text(meeting.createdAt.formatted(date: .long, time: .shortened))
                         .font(.footnote).foregroundStyle(.secondary)
-                    Button("Download models and analyze") { start(download: true) }
-                        .buttonStyle(.borderedProminent).disabled(busy)
+                    seriesMenu
+                    Button { showsPeople = true } label: {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("People")
+                                Text("\(meeting.participants.count) listed").font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                    }.buttonStyle(.plain)
                 }
-                if downloading {
-                    ProgressView("Downloading models", value: downloadProgress)
-                } else {
-                    ProcessingProgressRingView(progress: viewModel.overallProgress)
-                    ForEach(viewModel.stages) { stage in
-                        ProcessingStageRowView(stage: stage) { start() }
+                Picker("Meeting section", selection: $selectedSection) {
+                    ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }
+                }.pickerStyle(.segmented)
+                VStack(alignment: .leading, spacing: 12) {
+                    if busy {
+                        Text(processingTitle).font(.title3.bold())
+                        ProgressView(value: downloading ? downloadProgress : viewModel.overallProgress)
+                        Text("Your audio is saved on this iPhone.").foregroundStyle(.secondary)
+                        Button("Keep in Background", systemImage: "clock") {
+                            queueAnalysis()
+                        }
+                    } else if selectedSection == "Minutes" {
+                        Text("Generate meeting minutes").font(.title3.bold())
+                        Text("Manent will create a transcript, identify voices, and look for decisions and suggested actions on this iPhone.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("\(selectedSection) will appear after minutes are generated.").font(.headline)
+                        if selectedSection == "Actions" {
+                            Text("Review suggested actions before saving them.").foregroundStyle(.secondary)
+                        }
                     }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                if selectedSection == "Minutes" {
+                    Button("Transcript and audio", systemImage: "waveform") { openMeeting() }
+                        .buttonStyle(.bordered)
+                        .disabled(busy)
                 }
                 if let processingError {
                     Text(processingError).foregroundStyle(.secondary)
-                    if !busy && missingModels.isEmpty {
-                        Button("Resume analysis") { start() }.buttonStyle(.borderedProminent)
+                }
+            }.padding(20)
+        }
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .tint(Color(hex: "#4B3FF0"))
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                start(download: true)
+            } label: {
+                Text("Generate Minutes")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+            .disabled(busy)
+            .padding()
+        }
+        .sheet(isPresented: $showsPeople) {
+            NavigationStack {
+                List {
+                    if let meeting, !meeting.participants.isEmpty {
+                        Section("Who Was There") {
+                            ForEach(meeting.participants, id: \.id) { Text($0.name) }
+                        }
+                    } else {
+                        ContentUnavailableView("No People Listed", systemImage: "person.2")
                     }
                 }
-                if busy {
-                    Button("Pause analysis", role: .cancel) { operation?.cancel() }
-                }
-                Button("Back to meeting") {
-                    operation?.cancel()
-                    router.homePath = [.meetingDetail(id: meetingId)]
-                }
-            }.padding(24)
+                .navigationTitle("People")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsPeople = false } } }
+            }
         }
-        .background(Theme.Colors.background)
-        .navigationBarBackButtonHidden(true)
+        .alert("New Series", isPresented: $showsNewSeries) {
+            TextField("Series name", text: $seriesName)
+            Button("Cancel", role: .cancel) {}
+            Button("Create") {
+                let name = seriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { saveSeries(id: UUID(), name: name) }
+            }
+        }
         .onAppear {
             viewModel.onNavigateToDetail = { id in
+                OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
                 router.homePath = [.meetingDetail(id: id)]
             }
-            if operation == nil { start() }
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in
@@ -84,6 +147,60 @@ public struct MeetingProcessingView: View {
                 operation?.cancel()
             }
         }
+    }
+
+    private var meeting: Meeting? { meetings.first { $0.id == meetingId } }
+
+    private var processingTitle: String {
+        if downloading { return "Preparing on-device models" }
+        switch viewModel.currentStep {
+        case .audio: return "Creating transcript"
+        case .diarization: return "Identifying speakers"
+        default: return "Creating minutes"
+        }
+    }
+
+    private var seriesMenu: some View {
+        Menu {
+            ForEach(Set(meetings.compactMap(\.seriesID)).sorted { $0.uuidString < $1.uuidString }, id: \.self) { id in
+                if let name = meetings.first(where: { $0.seriesID == id })?.seriesName {
+                    Button(name) { saveSeries(id: id, name: name) }
+                }
+            }
+            Button("None") { saveSeries(id: nil, name: nil) }
+            Button("New Series…", systemImage: "plus") {
+                seriesName = ""
+                showsNewSeries = true
+            }
+        } label: {
+            Label(meeting?.seriesName ?? "Add to Series", systemImage: "chevron.down")
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+        }
+    }
+
+    private func saveSeries(id: UUID?, name: String?) {
+        guard let meeting else { return }
+        let previous = (meeting.seriesID, meeting.seriesName)
+        meeting.seriesID = id
+        meeting.seriesName = name
+        do { try modelContext.save() }
+        catch {
+            meeting.seriesID = previous.0
+            meeting.seriesName = previous.1
+            processingError = error.localizedDescription
+        }
+    }
+
+    private func openMeeting() {
+        router.homePath = [.meetingDetail(id: meetingId)]
+    }
+
+    private func queueAnalysis() {
+        OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
+        operation?.cancel()
+        openMeeting()
     }
 
     private func start(download: Bool = false) {

@@ -306,7 +306,12 @@ public final class ProcessingPipelineViewModel {
         case .analysis: index = 2
         case .completed: index = 3
         }
-        currentStep = stage == .analysis ? .summarization : (stage == .completed ? .actions : .diarization)
+        switch stage {
+        case .transcription: currentStep = .audio
+        case .speakers: currentStep = .diarization
+        case .analysis: currentStep = .summarization
+        case .completed: currentStep = .actions
+        }
         for i in stages.indices { stages[i].state = i < index ? .completed : (i == index ? .inProgress : .pending) }
         currentStageIndex = index
         overallProgress = Double(index) / Double(stages.count)

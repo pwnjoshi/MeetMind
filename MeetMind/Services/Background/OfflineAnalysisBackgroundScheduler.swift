@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import OfflineEngineKit
 import SwiftData
 import UserNotifications
 
@@ -11,6 +12,12 @@ import UserNotifications
 enum OfflineAnalysisBackgroundScheduler {
     static let taskIdentifier = "com.meetmind.app.offline-analysis"
     private static let pendingMeetingIDsKey = "MeetMind.pendingOfflineAnalysisIDs"
+    private static let modelSetupKey = "Manent.initialModelSetupComplete"
+
+    static func scheduleInitialSetup() {
+        guard !UserDefaults.standard.bool(forKey: modelSetupKey) else { return }
+        submit()
+    }
 
     static func register() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
@@ -26,9 +33,12 @@ enum OfflineAnalysisBackgroundScheduler {
         var ids = pendingMeetingIDs
         if !ids.contains(meetingID.uuidString) { ids.append(meetingID.uuidString) }
         UserDefaults.standard.set(ids, forKey: pendingMeetingIDsKey)
+        submit()
+    }
 
+    private static func submit() {
         let request = BGProcessingTaskRequest(identifier: taskIdentifier)
-        request.requiresNetworkConnectivity = false
+        request.requiresNetworkConnectivity = !UserDefaults.standard.bool(forKey: modelSetupKey)
         request.requiresExternalPower = false
         // Begin promptly if iOS has thermal and battery headroom; there is no
         // promise of an exact start time under iOS background scheduling.
@@ -50,9 +60,20 @@ enum OfflineAnalysisBackgroundScheduler {
         task.expirationHandler = { worker?.cancel() }
         worker = Task { @MainActor in
             var succeeded = false
-            defer { task.setTaskCompleted(success: succeeded) }
-            guard let rawID = pendingMeetingIDs.first, let meetingID = UUID(uuidString: rawID) else { return }
+            defer {
+                task.setTaskCompleted(success: succeeded)
+                if !succeeded || !pendingMeetingIDs.isEmpty { submit() }
+            }
             do {
+                for profile in try await MeetingAnalysisPipeline.shared.missingModels() {
+                    try Task.checkCancellation()
+                    try await OfflineModelStore.shared.install(profile) { _ in }
+                }
+                UserDefaults.standard.set(true, forKey: modelSetupKey)
+                guard let rawID = pendingMeetingIDs.first, let meetingID = UUID(uuidString: rawID) else {
+                    succeeded = true
+                    return
+                }
                 let container = try ModelContainerFactory.createProductionContainer()
                 let context = container.mainContext
                 var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == meetingID })

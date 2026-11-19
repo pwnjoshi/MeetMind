@@ -8,6 +8,8 @@ public struct ActionItemsConsoleView: View {
     @Query private var queriedItems: [ActionItem]
     @State public var viewModel: ActionItemsViewModel
     @State private var syncError: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var documentRaised = false
     
     public init(viewModel: ActionItemsViewModel = ActionItemsViewModel()) {
         _viewModel = State(initialValue: viewModel)
@@ -94,14 +96,30 @@ public struct ActionItemsConsoleView: View {
     
     private var emptyStateView: some View {
         VStack(spacing: Spacing.md) {
-            Image(systemName: "checklist")
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(Color(hex: "#B8BAC5"))
-                .frame(width: 70, height: 88)
-                .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .shadow(color: .black.opacity(0.10), radius: 14, y: 8)
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(0..<4) { index in
+                    Capsule()
+                        .fill(Color(uiColor: .systemGray3).opacity(index == 0 ? 1 : 0.7))
+                        .frame(width: [CGFloat(30), 44, 38, 26][index], height: index == 0 ? 6 : 4)
+                }
+            }
+            .padding(.top, 16)
+            .padding(.leading, 14)
+            .frame(width: 72, height: 90, alignment: .topLeading)
+            .background(.background, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
+            .offset(y: documentRaised ? -4 : 0)
+            .frame(width: 140, height: 140)
+            .accessibilityHidden(true)
+            .task(id: reduceMotion) {
+                documentRaised = false
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    documentRaised = true
+                }
+            }
             Text(viewModel.allActionItems.isEmpty ? "No Actions Yet" : "No Actions Here")
-                .font(Typography.headline)
+                .font(.title3.bold())
             Text(viewModel.allActionItems.isEmpty
                  ? "Record a meeting and its action items will appear here."
                  : "Try a different filter to see your actions.")

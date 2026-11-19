@@ -15,6 +15,9 @@ public struct HomeDashboardView: View {
     @State private var isMicrophoneCheckPresented: Bool = false
     @State private var selectedSeriesID: UUID?
     @State private var showsSeries = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var waveformPhase = 0
+    @AppStorage("Manent.dismissedFirstMeetingTip") private var dismissedFirstMeetingTip = false
     
     public init(viewModel: HomeViewModel = HomeViewModel()) { _viewModel = State(initialValue: viewModel) }
     public init(modelContext: ModelContext? = nil) { _viewModel = State(initialValue: HomeViewModel(modelContext: modelContext)) }
@@ -23,7 +26,7 @@ public struct HomeDashboardView: View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    if viewModel.isEmptyState {
+                    if savedMeetings.isEmpty || viewModel.isEmptyState {
                         emptyMeetingsState
                             .frame(maxWidth: .infinity)
                             .padding(.top, 150)
@@ -35,6 +38,29 @@ public struct HomeDashboardView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 18)
+            }
+
+            if savedMeetings.isEmpty && !dismissedFirstMeetingTip {
+                HStack(spacing: 12) {
+                    Image(systemName: "mic").foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Record Your First Meeting").font(.subheadline.bold())
+                        Text("Tap + to record. Manent writes the minutes.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Button { dismissedFirstMeetingTip = true } label: {
+                        Image(systemName: "xmark").font(.caption)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss recording tip")
+                }
+                .padding(.leading, 16).padding(.vertical, 12)
+                .background(.background, in: RoundedRectangle(cornerRadius: 22))
+                .shadow(color: .black.opacity(0.10), radius: 14, y: 8)
+                .frame(maxWidth: 300)
+                .padding(.trailing, 16).padding(.bottom, 88)
             }
 
             // Bottom Action FAB
@@ -105,16 +131,53 @@ public struct HomeDashboardView: View {
     }
     private var emptyMeetingsState: some View {
         VStack(spacing: 14) {
-            ZStack(alignment: .bottomTrailing) {
-                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.white).frame(width: 142, height: 94)
-                    .shadow(color: .black.opacity(0.08), radius: 16, y: 8)
-                Image(systemName: "waveform").font(.system(size: 34, weight: .medium)).foregroundStyle(Color(hex: "#6D63FF"))
-                Image(systemName: "mic.fill").font(.caption.bold()).foregroundStyle(.white).padding(11).background(.red, in: Circle()).offset(x: 18, y: 14)
+            ZStack {
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(uiColor: .systemBackground).opacity(0.6))
+                    .frame(width: 132, height: 92)
+                    .rotationEffect(.degrees(-6))
+                    .position(x: 112, y: 61)
+                HStack(spacing: 6) {
+                    ForEach(0..<9) { index in
+                        Capsule()
+                            .fill(Color(hex: "#4F46E5").opacity(0.35 + Double(index) * 0.08125))
+                            .frame(width: 6, height: waveformHeights[waveformPhase][index])
+                    }
+                }
+                .frame(width: 140, height: 96)
+                .background(.background, in: RoundedRectangle(cornerRadius: 22))
+                .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
+                .position(x: 100, y: 82)
+                Image("MeetingEmptyBadge")
+                    .resizable()
+                    .frame(width: 44, height: 44)
+                    .overlay {
+                        Image(systemName: "mic").font(.system(size: 17)).foregroundStyle(.white)
+                    }
+                    .position(x: 164, y: 124)
+            }
+            .frame(width: 200, height: 150)
+            .accessibilityHidden(true)
+            .task(id: reduceMotion) {
+                waveformPhase = 0
+                guard !reduceMotion else { return }
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                    withAnimation(.easeInOut(duration: 0.32)) {
+                        waveformPhase = (waveformPhase + 1) % waveformHeights.count
+                    }
+                }
             }
             Text("No Meetings Yet").font(.title3.bold())
             Text("Your recordings and minutes appear here.").font(.subheadline).foregroundStyle(.secondary)
         }
     }
+
+    private let waveformHeights: [[CGFloat]] = [
+        [10, 22, 34, 18, 40, 26, 14, 30, 12],
+        [18, 34, 20, 38, 22, 36, 26, 16, 24],
+        [26, 14, 38, 28, 16, 30, 40, 20, 34]
+    ]
 
     @ViewBuilder
     private func meetingSection(_ title: String, meetings: [Meeting], upcoming: Bool) -> some View {
