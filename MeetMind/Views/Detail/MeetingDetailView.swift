@@ -35,6 +35,22 @@ public struct MeetingDetailView: View {
     public var body: some View {
         VStack(spacing: 0) {
             recordHeader
+            if recordSection == "Minutes", let meeting = viewModel.meeting,
+               meeting.resolvedAudioFileURL != nil || !meeting.transcriptSegments.isEmpty {
+                Button(action: openTranscript) {
+                    HStack {
+                        Text("Transcript and audio").font(.headline)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+            }
             if let meeting = viewModel.meeting, !meeting.pendingTaskSuggestions.isEmpty {
                 Button("Review \(meeting.pendingTaskSuggestions.count) suggested tasks") { showTaskReview = true }
                     .buttonStyle(.borderedProminent).padding(.vertical, 8)
@@ -146,10 +162,7 @@ public struct MeetingDetailView: View {
                             showFollowUp = true
                         }
                     }
-                    Button("Show Transcript", systemImage: "doc.text") {
-                        recordSection = "Transcript"
-                        viewModel.selectTab(.transcript)
-                    }
+                    Button("Show Transcript", systemImage: "doc.text", action: openTranscript)
                     Button("Notes & Media", systemImage: "photo") {
                         recordSection = "Notes & Media"
                         viewModel.selectTab(.notesMedia)
@@ -253,6 +266,11 @@ public struct MeetingDetailView: View {
         } message: { Text(deletionError ?? "") }
     }
     
+    private func openTranscript() {
+        recordSection = "Transcript"
+        viewModel.selectTab(.transcript)
+    }
+
     private var recordHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(viewModel.headerTitle).font(.title.bold())
