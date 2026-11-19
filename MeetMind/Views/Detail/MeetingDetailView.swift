@@ -662,7 +662,7 @@ struct MeetingPeopleRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("People")
-                    Text("\(present.count) present · \(people.count - present.count) absent")
+                    Text("\(present.count) present Â· \(people.count - present.count) absent")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
