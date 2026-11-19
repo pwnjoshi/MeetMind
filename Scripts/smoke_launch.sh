@@ -45,12 +45,12 @@ microphone_sample_pid="${microphone_sample_output##*: }"
 sleep 3
 kill -0 "$microphone_sample_pid"
 simctl io "$device_id" screenshot build/smoke/microphone-sample.png
-for recording_state in active paused finish; do
+for screen in recording-active recording-paused recording-finish meeting-review meeting-draft; do
     simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
-    recording_output=$(simctl launch "$device_id" "$bundle_id" "--ui-recording-$recording_state")
+    recording_output=$(simctl launch "$device_id" "$bundle_id" "--ui-$screen")
     recording_pid="${recording_output##*: }"
     sleep 3
     kill -0 "$recording_pid"
-    simctl io "$device_id" screenshot "build/smoke/recording-$recording_state.png"
+    simctl io "$device_id" screenshot "build/smoke/$screen.png"
 done
-echo "PASS: onboarding, main tabs, microphone, and recording visual states stayed alive"
+echo "PASS: onboarding, main tabs, microphone, recording, and post-meeting visual states stayed alive"

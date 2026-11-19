@@ -141,7 +141,11 @@ struct MeetMindApp: App {
     @ViewBuilder
     private var appContent: some View {
         #if targetEnvironment(simulator)
-        if ProcessInfo.processInfo.arguments.contains("--ui-microphone-sample") {
+        if ProcessInfo.processInfo.arguments.contains("--ui-meeting-review") {
+            meetingVisualFixture(draft: false)
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-meeting-draft") {
+            meetingVisualFixture(draft: true)
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-microphone-sample") {
             MicrophoneCheckView(onStartRecording: {}, visualSampleDuration: 6)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-microphone") {
             MicrophoneCheckView(onStartRecording: {})
@@ -160,6 +164,25 @@ struct MeetMindApp: App {
     }
 
     #if targetEnvironment(simulator)
+    private func meetingVisualFixture(draft: Bool) -> some View {
+        // An isolated store lets the smoke run exercise the production detail router.
+        let store = try! ModelContainerFactory.createInMemoryContainer()
+        let meeting = Meeting(title: "October planning", createdAt: Date(timeIntervalSince1970: 1791979200),
+                              duration: 948, status: draft ? .completed : .processing)
+        store.mainContext.insert(meeting)
+        if draft {
+            meeting.summary = Summary(executiveSummary: "Launch timing and budget",
+                                      keyPoints: ["The team discussed a November launch."],
+                                      keyDecisions: ["Budget approval awaits the Finance estimate."])
+            meeting.minutesNeedFinalization = true
+        } else {
+            meeting.analysisState = "speakerReview"
+        }
+        try! store.mainContext.save()
+        return NavigationStack { MeetingDetailContainerView(meetingId: meeting.id) }
+            .modelContainer(store)
+    }
+
     private func recordingVisualFixture(paused: Bool, showsFinishConfirmation: Bool = false) -> some View {
         let meeting = Meeting(title: "Quick meeting", createdAt: Date(), duration: 948, status: .recording)
         let viewModel = LiveRecordingViewModel(meeting: meeting, updatesFromRecordingClock: false)
