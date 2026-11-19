@@ -120,8 +120,11 @@ public struct MeetingDetailView: View {
             }
         }
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("Vidur", systemImage: "sparkles") { showAskAISheet = true }.labelStyle(.iconOnly)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Vidur", systemImage: "sparkles") { showAskAISheet = true }
+                    .labelStyle(.iconOnly)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Rename Meeting", systemImage: "pencil") {
                         renameText = viewModel.headerTitle
