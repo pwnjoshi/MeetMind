@@ -111,7 +111,8 @@ public struct MeetingDetailView: View {
                 )
             }
         }
-        .background(Theme.Colors.background.ignoresSafeArea())
+        .background(Color(hex: "#F7F7FC").ignoresSafeArea())
+        .tint(Color(hex: "#4B3FF0"))
         .sheet(isPresented: $showTaskReview) {
             if let meeting = viewModel.meeting { MeetingTaskReviewView(meeting: meeting) }
         }
