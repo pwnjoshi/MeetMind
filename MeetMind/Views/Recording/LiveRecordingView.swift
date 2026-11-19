@@ -30,125 +30,48 @@ public struct LiveRecordingView: View {
     }
     
     public var body: some View {
-        VStack(spacing: 24) {
-            HStack {
-                Button(action: viewModel.requestDiscard) {
-                    Image(systemName: "xmark")
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                }
-                    .buttonStyle(.bordered).buttonBorderShape(.circle)
-                    .accessibilityLabel("Delete recording")
-                Spacer()
-                HStack(spacing: 0) {
-                    captureTool("Add live note", icon: "text.bubble") { viewModel.openNoteDock() }
-                    captureTool("Insert image", icon: "photo") { isPhotoSheetPresented = true }
-                }
-                .background(Color.white.opacity(0.12), in: Capsule())
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                recordingTopBar
+                Text(viewModel.meetingTitle)
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 18)
+
+                Spacer(minLength: 24)
+
+                recordingStatus
+                Text(viewModel.formattedDuration)
+                    .font(.system(size: timerSize, weight: .medium, design: .default))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                    .padding(.top, 14)
+                    .accessibilityLabel("Recording duration")
+                    .accessibilityValue(viewModel.formattedDuration)
+
+                WaveformVisualizerView(
+                    levels: viewModel.isPaused ? [] : viewModel.waveformLevels,
+                    isRecording: viewModel.isRecording && !viewModel.isPaused,
+                    showsBackground: false
+                )
+                .frame(height: 86)
+                .padding(.top, 8)
+
+                liveTranscriptCard(height: min(218, max(158, proxy.size.height * 0.27)))
+                    .padding(.top, 8)
+
+                Spacer(minLength: 20)
+                recordingControls
+                    .padding(.bottom, 10)
             }
-            Text(viewModel.meetingTitle).font(.largeTitle.bold()).foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            // The recording console is a fixed, glanceable surface. Only the
-            // transcript itself scrolls; the timer and capture controls never
-            // drift away from the user's thumb while recording.
-            VStack(spacing: 20) {
-                    Label(viewModel.isPaused ? "Paused" : "Recording",
-                          systemImage: viewModel.isPaused ? "pause.fill" : "record.circle.fill")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(viewModel.isPaused ? Color.orange : Color.red)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background((viewModel.isPaused ? Color.orange : Color.red).opacity(0.15), in: Capsule())
-                    Text(viewModel.formattedDuration)
-                        .font(.system(size: timerSize, weight: .medium)).monospacedDigit().foregroundStyle(.white)
-                        .minimumScaleFactor(0.6).lineLimit(1)
-                        .accessibilityLabel("Recording duration")
-                        .accessibilityValue(viewModel.formattedDuration)
-                    WaveformVisualizerView(
-                        levels: viewModel.isPaused ? [] : viewModel.waveformLevels,
-                        isRecording: viewModel.isRecording && !viewModel.isPaused,
-                        showsBackground: false
-                    )
-                    VStack(spacing: 16) {
-                        Toggle("Live transcript", isOn: $showsLiveTranscript).font(.subheadline).foregroundStyle(.white).tint(.green)
-                        Group {
-                            if showsLiveTranscript {
-                                ScrollView {
-                                LazyVStack(alignment: .leading, spacing: 16) {
-                                    ForEach(viewModel.finalTranscriptSegments) { segment in
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("\(segment.speakerName) · \(transcriptTimestamp(segment.startTime))")
-                                                .font(.caption)
-                                                .foregroundStyle(.white.opacity(0.72))
-                                            Text(segment.text)
-                                                .font(.body)
-                                                .foregroundStyle(.white.opacity(0.94))
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                    if !viewModel.interimTranscriptText.isEmpty {
-                                        Text(viewModel.interimTranscriptText)
-                                            .font(.body)
-                                            .foregroundStyle(.white.opacity(0.72))
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                }
-                                }
-                            } else {
-                                Color.clear.accessibilityHidden(true)
-                            }
-                        }
-                        .frame(minHeight: 0, maxHeight: .infinity)
-                        if viewModel.isBookmarkButtonHighlighted {
-                            Label("Bookmarked · \(viewModel.formattedDuration)", systemImage: "flag")
-                                .font(.caption)
-                                .foregroundStyle(.yellow)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.orange.opacity(0.16), in: Capsule())
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                }
-                .padding(20)
-                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.white.opacity(0.12)))
-            }
-            if !viewModel.bookmarks.isEmpty {
-                HStack(spacing: 8) {
-                    Label("\(viewModel.bookmarks.count) bookmarked", systemImage: "flag.fill")
-                        .font(.caption.weight(.semibold)).foregroundStyle(.yellow)
-                    Spacer(minLength: 8)
-                    ForEach(Array(viewModel.bookmarks.suffix(3).reversed())) { bookmark in
-                        Text(transcriptTimestamp(bookmark.timestamp))
-                            .font(.caption.monospacedDigit()).foregroundStyle(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Color.white.opacity(0.14), in: Capsule())
-                    }
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(viewModel.bookmarks.count) bookmarks recorded")
-            }
-            HStack(spacing: 36) {
-                Button { viewModel.addBookmark() } label: {
-                    Image(systemName: "flag.fill").font(.title3)
-                    .foregroundStyle(.white).frame(width: 70, height: 58)
-                    .background(Color.white.opacity(0.14), in: Circle())
-                }
-                .accessibilityLabel("Add bookmark at \(viewModel.formattedDuration)")
-                Button { viewModel.isPaused ? viewModel.resume() : viewModel.pause() } label: {
-                    Image(systemName: viewModel.isPaused ? "play.fill" : "pause.fill")
-                        .font(.title2).foregroundStyle(.black).frame(width: 70, height: 70)
-                        .background(.white, in: Circle())
-                }
-                .accessibilityLabel(viewModel.isPaused ? "Resume recording" : "Pause recording")
-                Button(action: handleStop) {
-                    Image(systemName: "stop.fill").foregroundStyle(.white).frame(width: 56, height: 56)
-                        .background(.red, in: Circle())
-                }
-                .accessibilityLabel("Finish recording")
-            }
-            .padding(.bottom, 36)
+            .padding(.horizontal, 28)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
         }
-        .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
@@ -206,13 +129,155 @@ public struct LiveRecordingView: View {
         }
     }
     
+    private var recordingTopBar: some View {
+        HStack(spacing: 12) {
+            Button(action: viewModel.requestDiscard) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 23, weight: .regular))
+                    .foregroundStyle(.white)
+                    .frame(width: 50, height: 50)
+                    .background(Color.white.opacity(0.12), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.45), lineWidth: 0.75))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete recording")
+
+            Spacer()
+
+            HStack(spacing: 0) {
+                captureTool("Add live note", icon: "text.bubble") { viewModel.openNoteDock() }
+                captureTool("Insert image", icon: "photo") { isPhotoSheetPresented = true }
+            }
+            .background(Color(hex: "#1D1D20"), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 0.75))
+        }
+        .frame(height: 50)
+    }
+
+    private var recordingStatus: some View {
+        Label(
+            viewModel.isPaused ? "Paused" : "Recording",
+            systemImage: viewModel.isPaused ? "pause.fill" : "circle.fill"
+        )
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(viewModel.isPaused ? Color.orange : Theme.Colors.coralRed)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 7)
+        .background(
+            (viewModel.isPaused ? Color.orange : Theme.Colors.coralRed).opacity(0.20),
+            in: Capsule()
+        )
+        .accessibilityLabel(viewModel.isPaused ? "Recording paused" : "Recording in progress")
+    }
+
+    private func liveTranscriptCard(height: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Live transcript")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
+                Spacer()
+                Toggle("Live transcript", isOn: $showsLiveTranscript)
+                    .labelsHidden()
+                    .tint(.green)
+                    .accessibilityLabel("Live transcript")
+            }
+
+            Group {
+                if showsLiveTranscript {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            ForEach(viewModel.finalTranscriptSegments) { segment in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("\(segment.speakerName) · \(transcriptTimestamp(segment.startTime))")
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.65))
+                                    Text(segment.text)
+                                        .font(.body)
+                                        .foregroundStyle(.white.opacity(0.92))
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if !viewModel.interimTranscriptText.isEmpty {
+                                Text(viewModel.interimTranscriptText)
+                                    .font(.body)
+                                    .foregroundStyle(.white.opacity(0.67))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if viewModel.finalTranscriptSegments.isEmpty && viewModel.interimTranscriptText.isEmpty {
+                                Text("Listening for the conversation…")
+                                    .font(.body)
+                                    .foregroundStyle(.white.opacity(0.58))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Image(systemName: "text.bubble")
+                            .font(.title3)
+                            .foregroundStyle(.white.opacity(0.58))
+                        Text("Live transcript is off")
+                            .font(.body)
+                            .foregroundStyle(.white.opacity(0.76))
+                        Text("Recording continues and the transcript can be created after you stop.")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(20)
+        .frame(height: height, alignment: .top)
+        .background(Color(hex: "#1E1E20"), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private var recordingControls: some View {
+        HStack(spacing: 36) {
+            Button { viewModel.addBookmark() } label: {
+                Image(systemName: viewModel.isBookmarkButtonHighlighted ? "flag.fill" : "flag")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(viewModel.isBookmarkButtonHighlighted ? Theme.Colors.warmAmber : .white)
+                    .frame(width: 56, height: 56)
+                    .background(Color.white.opacity(0.16), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.65), lineWidth: 0.75))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add bookmark at \(viewModel.formattedDuration)")
+            .accessibilityValue("\(viewModel.bookmarks.count) bookmarks")
+
+            Button { viewModel.isPaused ? viewModel.resume() : viewModel.pause() } label: {
+                Image(systemName: viewModel.isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 27, weight: .bold))
+                    .foregroundStyle(.black)
+                    .frame(width: 70, height: 70)
+                    .background(.white, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.isPaused ? "Resume recording" : "Pause recording")
+
+            Button(action: handleStop) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(Theme.Colors.coralRed, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Finish recording")
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func captureTool(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Color(hex: "#A9A2FF"))
-                .frame(width: 46, height: 44)
-                .contentShape(Rectangle())
+                .frame(width: 46, height: 48)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
