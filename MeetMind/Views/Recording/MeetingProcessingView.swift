@@ -50,19 +50,7 @@ public struct MeetingProcessingView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text(meeting?.title ?? "Quick meeting").font(.title.bold())
-                    Spacer()
-                    if let meeting {
-                        Button("Rename Meeting", systemImage: "pencil") {
-                            meetingTitleDraft = meeting.title
-                            showsRename = true
-                        }
-                        .labelStyle(.iconOnly)
-                        .frame(width: 44, height: 44)
-                        .disabled(busy)
-                    }
-                }
+                Text(meeting?.title ?? "Quick meeting").font(.title.bold())
                 if let meeting {
                     Text(meeting.createdAt.formatted(date: .long, time: .shortened))
                         .font(.footnote).foregroundStyle(.secondary)
@@ -173,6 +161,24 @@ public struct MeetingProcessingView: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .toolbar {
+            if let meeting {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Rename Meeting", systemImage: "pencil") {
+                            meetingTitleDraft = meeting.title
+                            showsRename = true
+                        }
+                        Button("Show Transcript", systemImage: "doc.text") {
+                            showsTranscript = true
+                        }
+                        .disabled(busy)
+                    } label: {
+                        Label("Meeting options", systemImage: "ellipsis").labelStyle(.iconOnly)
+                    }
+                }
+            }
+        }
         .tint(Color(hex: "#4B3FF0"))
         .safeAreaInset(edge: .bottom) {
             Button {
