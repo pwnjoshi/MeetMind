@@ -327,6 +327,8 @@ final class MeetingDetailViewModelTests: XCTestCase {
         
         XCTAssertEqual(sut.transcriptSegments[0].speakerName, "Sarah Connor")
         XCTAssertEqual(sut.transcriptSegments[2].speakerName, "Sarah Connor")
+        XCTAssertTrue(sut.transcriptSegments[0].isEdited)
+        XCTAssertTrue(sut.transcriptSegments[2].isEdited)
         // Speaker 2 should be unaffected
         XCTAssertEqual(sut.transcriptSegments[1].speakerName, "Speaker 2")
     }

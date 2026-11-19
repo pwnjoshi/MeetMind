@@ -551,6 +551,7 @@ public final class MeetingDetailViewModel {
         }
         for segment in transcriptSegments where segment.speakerName == oldName || segment.speaker?.name == oldName {
             segment.speaker = newSpeaker
+            segment.isEdited = true
         }
         try? modelContext?.save()
     }
@@ -558,13 +559,21 @@ public final class MeetingDetailViewModel {
     public func reassignSpeaker(from oldSpeaker: Speaker, to newSpeaker: Speaker) {
         for segment in transcriptSegments where segment.speaker?.id == oldSpeaker.id {
             segment.speaker = newSpeaker
+            segment.isEdited = true
         }
         try? modelContext?.save()
     }
     
-    public func reassignSpeaker(segment: TranscriptSegment, newSpeaker: Speaker) {
+    public func reassignSpeaker(segment: TranscriptSegment, newSpeaker: Speaker) throws {
+        guard segment.speaker?.id != newSpeaker.id else { return }
+        let previous = (segment.speaker, segment.isEdited)
         segment.speaker = newSpeaker
-        try? modelContext?.save()
+        segment.isEdited = true
+        do { try modelContext?.save() }
+        catch {
+            (segment.speaker, segment.isEdited) = previous
+            throw error
+        }
     }
     
     public func setTranscriptSegments(_ segments: [TranscriptSegment]) {

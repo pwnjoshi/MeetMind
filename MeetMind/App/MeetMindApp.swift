@@ -180,9 +180,11 @@ struct MeetMindApp: App {
         meeting.addParticipant(absent)
         meeting.absentParticipantIDs = [absent.id]
         if draft {
-            meeting.summary = Summary(executiveSummary: "Launch timing and budget",
+            let summary = Summary(executiveSummary: "Launch timing and budget",
                                       keyPoints: ["The team discussed a November launch."],
                                       keyDecisions: ["Budget approval awaits the Finance estimate."])
+            store.mainContext.insert(summary)
+            meeting.summary = summary
             meeting.minutesNeedFinalization = true
         } else {
             meeting.analysisState = "speakerReview"

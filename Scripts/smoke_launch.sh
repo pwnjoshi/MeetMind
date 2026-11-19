@@ -50,7 +50,11 @@ for screen in recording-active recording-paused recording-finish meeting-review 
     recording_output=$(simctl launch "$device_id" "$bundle_id" "--ui-$screen")
     recording_pid="${recording_output##*: }"
     sleep 3
-    kill -0 "$recording_pid"
+    if ! kill -0 "$recording_pid"; then
+        simctl spawn "$device_id" log show --last 1m --predicate 'process == "MeetMind"' > "build/smoke/$screen-failure.log" 2>&1 || true
+        find "$HOME/Library/Logs/DiagnosticReports" -name 'MeetMind*.ips' -mmin -5 -exec cp {} build/smoke/ \; || true
+        exit 1
+    fi
     simctl io "$device_id" screenshot "build/smoke/$screen.png"
 done
 echo "PASS: onboarding, main tabs, microphone, recording, and post-meeting visual states stayed alive"

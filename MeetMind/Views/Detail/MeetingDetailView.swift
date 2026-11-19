@@ -238,7 +238,8 @@ public struct MeetingDetailView: View {
         }
         .sheet(item: $showSpeakerReassign) { segment in
             SpeakerReassignSheet(availableSpeakers: viewModel.meeting?.participants ?? [], currentSpeaker: segment.speaker, onSelect: { speaker in
-                viewModel.reassignSpeaker(segment: segment, newSpeaker: speaker)
+                do { try viewModel.reassignSpeaker(segment: segment, newSpeaker: speaker) }
+                catch { deletionError = error.localizedDescription }
                 showSpeakerReassign = nil
             }, onDismiss: { showSpeakerReassign = nil })
         }
