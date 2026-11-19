@@ -10,7 +10,7 @@ public struct MeetingProcessingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(SettingsViewModel.self) private var settings
-    @Environment(AppState.self) private var appState
+    @State private var showsVidur = false
     @Environment(\.scenePhase) private var scenePhase
     @Query private var meetings: [Meeting]
     @State private var selectedSection = "Minutes"
@@ -161,7 +161,7 @@ public struct MeetingProcessingView: View {
             if let meeting {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Vidur", systemImage: "sparkles") {
-                        appState.activeSheet = .askAIAssistant(meetingId: meeting.id)
+                        showsVidur = true
                     }.labelStyle(.iconOnly)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -199,6 +199,9 @@ public struct MeetingProcessingView: View {
                 .disabled(busy || backgroundRunning)
                 .padding()
             }
+        }
+        .navigationDestination(isPresented: $showsVidur) {
+            RootAskAISheet(meetingId: meetingId, modelContext: modelContext) { showsVidur = false }
         }
         .sheet(isPresented: $showsPeople, onDismiss: {
             speakerSample?.cancel()

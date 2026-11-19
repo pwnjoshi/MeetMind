@@ -3,6 +3,7 @@ import SwiftUI
 /// Conversational Ask AI assistant sheet answering questions grounded in meeting transcripts
 public struct AskAIAssistantSheet: View {
     @Environment(\.scenePhase) private var scenePhase
+    public let meetingTitle: String
     public let history: [(prompt: String, response: AIAnswerResponse)]
     public let onAsk: (String) -> Void
     public let onSeekToCitation: (AICitation) -> Void
@@ -16,8 +17,10 @@ public struct AskAIAssistantSheet: View {
         onAsk: @escaping (String) -> Void,
         onSeekToCitation: @escaping (AICitation) -> Void,
         onDismiss: @escaping () -> Void,
+        meetingTitle: String = "this meeting",
         isBusy: Bool = false
     ) {
+        self.meetingTitle = meetingTitle
         self.history = history
         self.onAsk = onAsk
         self.onSeekToCitation = onSeekToCitation
@@ -26,8 +29,7 @@ public struct AskAIAssistantSheet: View {
     }
     
     public var body: some View {
-        NavigationStack {
-            VStack(spacing: Spacing.sm) {
+        VStack(spacing: Spacing.sm) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Spacing.md) {
                         if history.isEmpty { emptyStateView }
@@ -40,26 +42,53 @@ public struct AskAIAssistantSheet: View {
                 inputBar
                 if isBusy { ProgressView("Reading the transcript on this iPhone…").font(.footnote) }
             }
-            .navigationTitle("Ask AI Assistant")
+            .background(Color(uiColor: .systemGroupedBackground))
+            .tint(Theme.Colors.manentAccent)
+            .navigationTitle("Vidur")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Close", action: onDismiss) }
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 1) {
+                        Text("Vidur").font(.headline)
+                        Text(meetingTitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
-        }
         .onChange(of: scenePhase) { _, phase in if phase != .active { onDismiss() } }
         .onChange(of: isBusy) { _, busy in UIApplication.shared.isIdleTimerDisabled = busy }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: Spacing.sm) {
-            Image(systemName: "sparkles").font(.system(size: 32)).foregroundStyle(Theme.Colors.aiPurple)
-            Text("Ask questions about this meeting").font(Typography.headline)
-            Text("Answers are generated on this iPhone. Check the quoted transcript evidence for accuracy.").font(Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 200)
+        VStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.title).foregroundStyle(Theme.Colors.manentAccent)
+                .frame(width: 68, height: 68)
+                .background(Theme.Colors.manentAccent.opacity(0.08), in: Circle())
+            Text("Ask About \(meetingTitle)").font(.title3.bold())
+            Text("Answers come from this meeting’s transcript.")
+                .foregroundStyle(.secondary).font(.subheadline)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Suggested Questions").font(.subheadline).foregroundStyle(.secondary)
+                    .padding(.leading, 16)
+                VStack(spacing: 0) {
+                    ForEach(["What did we decide?", "Which actions did we agree on?", "What is still unresolved?"], id: \.self) { question in
+                        Button { onAsk(question) } label: {
+                            HStack {
+                                Text(question)
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            }.padding(16)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isBusy)
+                        if question != "What is still unresolved?" { Divider().padding(.horizontal, 16) }
+                    }
+                }.background(.background, in: RoundedRectangle(cornerRadius: 22))
+            }.padding(.top, 32)
+        }.frame(maxWidth: .infinity)
     }
-    
+
     private func chatPairView(_ pair: (prompt: String, response: AIAnswerResponse)) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(pair.prompt).font(Typography.headline).foregroundStyle(Theme.Colors.primarySlate)
@@ -82,16 +111,17 @@ public struct AskAIAssistantSheet: View {
     
     private var inputBar: some View {
         HStack(spacing: Spacing.sm) {
-            TextField("Ask a short question…", text: $queryText)
-                .textFieldStyle(.roundedBorder)
+            TextField("Ask about this meeting", text: $queryText)
+                .textFieldStyle(.plain)
             Button {
                 let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { onAsk(trimmed); queryText = "" }
             } label: {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.Colors.aiPurple)
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.Colors.manentAccent)
             }
             .disabled(isBusy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .padding(Spacing.md)
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule()).padding(.horizontal, 16)
     }
 }

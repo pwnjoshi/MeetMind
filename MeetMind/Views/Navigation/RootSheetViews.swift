@@ -88,6 +88,7 @@ public struct RootAskAISheet: View {
                 viewModel.seekToCitation(citation)
             },
             onDismiss: { viewModel.cancelQuestion(); onDismiss() },
+            meetingTitle: viewModel.headerTitle,
             isBusy: viewModel.isAnsweringQuestion
         )
         .onDisappear { viewModel.cancelQuestion() }

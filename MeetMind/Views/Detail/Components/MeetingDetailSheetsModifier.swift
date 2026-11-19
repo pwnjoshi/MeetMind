@@ -18,12 +18,13 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
                     onDismiss: { showExportSheet = false }
                 )
             }
-            .sheet(isPresented: $showAskAISheet) {
+            .navigationDestination(isPresented: $showAskAISheet) {
                 AskAIAssistantSheet(
                     history: viewModel.aiChatHistory,
                     onAsk: { prompt in viewModel.submitAIQuery(prompt) { _ in } },
                     onSeekToCitation: { viewModel.seekToCitation($0) },
                     onDismiss: { viewModel.cancelQuestion(); showAskAISheet = false },
+                    meetingTitle: viewModel.headerTitle,
                     isBusy: viewModel.isAnsweringQuestion
                 )
                 .onDisappear { viewModel.cancelQuestion() }

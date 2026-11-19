@@ -63,8 +63,9 @@ public struct RootView: View {
                 appState.activeSheet = nil
             }
         case .askAIAssistant(let id):
-            RootAskAISheet(meetingId: id, modelContext: modelContext) {
-                appState.activeSheet = nil
+            NavigationStack {
+                RootAskAISheet(meetingId: id, modelContext: modelContext) { appState.activeSheet = nil }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { appState.activeSheet = nil } } }
             }
         }
     }
