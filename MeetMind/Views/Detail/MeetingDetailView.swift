@@ -54,7 +54,13 @@ public struct MeetingDetailView: View {
                 List {
                     let decisions = viewModel.summary?.keyDecisions ?? []
                     if decisions.isEmpty { Text("No decisions recorded").foregroundStyle(.secondary) }
-                    ForEach(Array(decisions.enumerated()), id: \.offset) { entry in Text(entry.element) }
+                    ForEach(Array(decisions.enumerated()), id: \.offset) { entry in
+                        NavigationLink {
+                            MeetingDecisionDetail(viewModel: viewModel, index: entry.offset)
+                        } label: {
+                            Text(entry.element)
+                        }
+                    }
                 }
                 .listStyle(.insetGrouped)
             } else {
@@ -277,6 +283,106 @@ public struct MeetingDetailView: View {
             viewModel.setPlaybackRate(rates[(idx + 1) % rates.count])
         } else {
             viewModel.setPlaybackRate(1.0)
+        }
+    }
+}
+
+private struct MeetingDecisionDetail: View {
+    let viewModel: MeetingDetailViewModel
+    let index: Int
+    @Environment(\.modelContext) private var context
+    @State private var draft = ""
+    @State private var editing = false
+    @State private var saveError: String?
+    @State private var playingTurnID: String?
+
+    var body: some View {
+        List {
+            if let summary = viewModel.summary, summary.keyDecisions.indices.contains(index) {
+                let decision = summary.keyDecisions[index]
+                Section(viewModel.headerTitle) {
+                    Text(decision).font(.title2.bold())
+                }
+                if let result = viewModel.meeting?.offlineAnalysis,
+                   let point = result.analysis.lazy.flatMap(\.decisions).first(where: { $0.text == decision }) {
+                    Section("How It Was Decided") {
+                        ForEach(Array(point.evidence.enumerated()), id: \.offset) { entry in
+                            if let turn = result.turns.first(where: { $0.id == entry.element.turnID }) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("\(turn.speaker ?? "Speaker") · \(Duration.seconds(turn.start).formatted(.time(pattern: .minuteSecond)))")
+                                        .font(.subheadline).foregroundStyle(.secondary)
+                                    Text(entry.element.quote).textSelection(.enabled)
+                                    if viewModel.meeting?.resolvedAudioFileURL != nil {
+                                        let isPlaying = playingTurnID == turn.id && viewModel.isPlaying
+                                        Button(isPlaying ? "Pause Supporting Audio" : "Play Supporting Audio",
+                                               systemImage: isPlaying ? "pause.circle" : "play.circle") {
+                                            if isPlaying {
+                                                viewModel.stopPlayback()
+                                                playingTurnID = nil
+                                            } else {
+                                                viewModel.seek(to: turn.start)
+                                                if !viewModel.isPlaying { viewModel.togglePlayPause() }
+                                                playingTurnID = turn.id
+                                            }
+                                        }
+                                        .buttonStyle(.borderless)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                ContentUnavailableView("Decision Unavailable", systemImage: "doc.text")
+            }
+        }
+        .navigationTitle("Decision")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .toolbar {
+            if let summary = viewModel.summary, summary.keyDecisions.indices.contains(index) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit Decision", systemImage: "pencil") {
+                        draft = summary.keyDecisions[index]
+                        editing = true
+                    }
+                    .labelStyle(.iconOnly)
+                }
+            }
+        }
+        .sheet(isPresented: $editing) {
+            NavigationStack {
+                Form { TextField("Decision", text: $draft, axis: .vertical) }
+                    .navigationTitle("Edit Decision")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { editing = false } }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") { save() }
+                                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .alert("Could Not Save Decision", isPresented: Binding(
+                        get: { saveError != nil }, set: { if !$0 { saveError = nil } }
+                    )) {
+                        Button("OK") { saveError = nil }
+                    } message: { Text(saveError ?? "") }
+            }
+        }
+        .onDisappear { viewModel.stopPlayback() }
+    }
+
+    private func save() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let summary = viewModel.summary, summary.keyDecisions.indices.contains(index) else { return }
+        let previous = summary.keyDecisions
+        summary.keyDecisions[index] = text
+        do {
+            try context.save()
+            editing = false
+        } catch {
+            summary.keyDecisions = previous
+            saveError = error.localizedDescription
         }
     }
 }
