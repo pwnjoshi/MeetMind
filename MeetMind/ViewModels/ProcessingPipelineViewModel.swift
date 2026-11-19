@@ -340,7 +340,7 @@ public final class ProcessingPipelineViewModel {
             let result = try await offlinePipeline.run(meetingID: meeting.id, audio: audio,
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
                 timezone: meeting.analysisTimezone ?? TimeZone.current.identifier,
-                languageCode: settings?.savedRecordingLanguage.whisperCode ?? SavedRecordingLanguage.hinglish.whisperCode,
+                languageCode: (settings?.savedRecordingLanguage ?? .hinglish).whisperCode,
                 model: analysisModel, stopAfterSpeakers: stopAfterSpeakers, reviewedTurns: reviewedTurns) { [weak self] stage in
                     await self?.updateOfflineStage(stage)
                 }
