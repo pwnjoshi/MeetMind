@@ -15,7 +15,7 @@ public struct ActionItemsConsoleView: View {
     
     public var body: some View {
         @Bindable var vm = viewModel
-        VStack(spacing: Spacing.sm) {
+        VStack(spacing: 14) {
             ActionItemFilterHeaderView(
                 selectedScope: viewModel.selectedFilterScope,
                 selectedGrouping: viewModel.selectedGrouping,
@@ -33,8 +33,9 @@ public struct ActionItemsConsoleView: View {
                 )
             }
         }
-        .background(Theme.Colors.background)
+        .background(Color(hex: "#F7F7FC"))
         .navigationTitle("Actions")
+        .tint(Color(hex: "#4B3FF0"))
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
@@ -94,18 +95,18 @@ public struct ActionItemsConsoleView: View {
     private var emptyStateView: some View {
         VStack(spacing: Spacing.md) {
             Image(systemName: "checklist")
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(Theme.Colors.textTertiary)
-                .frame(width: 72, height: 88)
-                .background(Theme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: Spacing.Radius.md))
-                .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Color(hex: "#B8BAC5"))
+                .frame(width: 70, height: 88)
+                .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: .black.opacity(0.10), radius: 14, y: 8)
             Text(viewModel.allActionItems.isEmpty ? "No Actions Yet" : "No Actions Here")
                 .font(Typography.headline)
             Text(viewModel.allActionItems.isEmpty
                  ? "Record a meeting and its action items will appear here."
                  : "Try a different filter to see your actions.")
-                .font(Typography.caption)
-                .foregroundStyle(Theme.Colors.textSecondary)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Spacing.xl)
         }

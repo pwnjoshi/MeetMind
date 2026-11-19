@@ -26,7 +26,8 @@ public struct ActionItemFilterHeaderView: View {
             Text("Done").tag(ActionItemFilterScope.completed)
         }
         .pickerStyle(.segmented)
-        .padding(.horizontal, Spacing.lg)
+        .padding(.horizontal, 16)
+        .tint(Color(hex: "#4B3FF0"))
         .accessibilityHint("Choose which actions appear below")
     }
 }
