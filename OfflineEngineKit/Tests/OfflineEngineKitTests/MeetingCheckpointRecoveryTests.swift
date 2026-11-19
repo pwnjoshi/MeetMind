@@ -57,6 +57,26 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         XCTAssertEqual(backend.counts.2, chunks + 1)
     }
 
+    func testReviewedTranscriptFeedsMinutesAndInvalidatesStaleAnalysis() async throws {
+        let (root, audio) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let backend = CheckpointTestBackend(root: root)
+        let pipeline = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        let meetingID = UUID()
+        let date = Date(timeIntervalSince1970: 1700000000)
+
+        for text in ["Estimate due Monday.", "Estimate due Friday."] {
+            let turns = [AnalysisTurn(id: "reviewed-1", text: text, start: 0, end: 0.1, speaker: "Speaker 1")]
+            let result = try await pipeline.run(meetingID: meetingID, audio: audio, meetingDate: date,
+                                                timezone: "UTC", reviewedTurns: turns) { _ in }
+            XCTAssertEqual(result.stage, .completed)
+            XCTAssertEqual(result.analysis.first?.discussion.first?.evidence.first?.quote, text)
+        }
+        XCTAssertEqual(backend.counts.0, 0)
+        XCTAssertEqual(backend.counts.1, 0)
+        XCTAssertEqual(backend.counts.2, 2)
+    }
+
     func testChangedSourceInvalidatesCheckpointAndExplicitDiscardRemovesIt() async throws {
         let (root, audio) = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
