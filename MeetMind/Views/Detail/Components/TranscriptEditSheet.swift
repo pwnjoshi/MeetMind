@@ -3,12 +3,13 @@ import SwiftUI
 /// Modal sheet for correcting or editing transcript segment text inline
 public struct TranscriptEditSheet: View {
     public let initialText: String
-    public let onSave: (String) -> Void
+    public let onSave: (String) throws -> Void
     public let onDismiss: () -> Void
     
+    @State private var saveError: String?
     @State private var editedText: String
     
-    public init(initialText: String, onSave: @escaping (String) -> Void, onDismiss: @escaping () -> Void) {
+    public init(initialText: String, onSave: @escaping (String) throws -> Void, onDismiss: @escaping () -> Void) {
         self.initialText = initialText
         self.onSave = onSave
         self.onDismiss = onDismiss
@@ -40,12 +41,18 @@ public struct TranscriptEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let trimmed = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty { onSave(trimmed) }
+                        do { try onSave(trimmed) }
+                        catch { saveError = error.localizedDescription }
                     }
                     .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
+        .alert("Could Not Save Transcript", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK") { saveError = nil }
+        } message: { Text(saveError ?? "") }
         .presentationDetents([.height(300)])
     }
 }

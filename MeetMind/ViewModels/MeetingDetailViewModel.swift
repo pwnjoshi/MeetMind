@@ -243,7 +243,7 @@ public final class MeetingDetailViewModel {
     
     public var aiChatHistory: [(prompt: String, response: AIAnswerResponse)] = []
     
-    private var originalSegmentTexts: [UUID: String] = [:]
+    private var originalSegmentTexts: [UUID: (text: String, isEdited: Bool)] = [:]
     private var modelContext: ModelContext?
     private let playbackService: AudioPlaybackServiceProtocol?
     private let summarizationService: SummarizationServiceProtocol?
@@ -499,20 +499,28 @@ public final class MeetingDetailViewModel {
         isEditingTranscript = true
         editingSegmentText = segment.text
         editingSegmentId = segment.id
-        originalSegmentTexts[segment.id] = segment.text
+        originalSegmentTexts[segment.id] = (segment.text, segment.isEdited)
     }
     
     @discardableResult
-    public func saveTranscriptEdit(newText: String) -> Bool {
+    public func saveTranscriptEdit(newText: String) throws -> Bool {
         let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             isEditingTranscript = false
             editingSegmentId = nil
             return false
         }
-        if let id = editingSegmentId, let segment = transcriptSegments.first(where: { $0.id == id }) {
+        guard let id = editingSegmentId, let segment = transcriptSegments.first(where: { $0.id == id }) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        if segment.text != trimmed {
+            let previous = (segment.text, segment.isEdited)
             segment.updateText(trimmed)
-            try? modelContext?.save()
+            do { try modelContext?.save() }
+            catch {
+                (segment.text, segment.isEdited) = previous
+                throw error
+            }
         }
         isEditingTranscript = false
         editingSegmentId = nil
@@ -527,8 +535,8 @@ public final class MeetingDetailViewModel {
     public func undoTranscriptEdit(segmentId: UUID) {
         if let original = originalSegmentTexts[segmentId],
            let segment = transcriptSegments.first(where: { $0.id == segmentId }) {
-            segment.text = original
-            segment.isEdited = false
+            segment.text = original.text
+            segment.isEdited = original.isEdited
             try? modelContext?.save()
         }
     }

@@ -297,7 +297,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
         let segmentToEdit = sut.transcriptSegments[0]
         sut.beginEditingTranscript(segment: segmentToEdit)
         
-        sut.saveTranscriptEdit(newText: "Welcome to the Q4 architecture review kickoff.")
+        try sut.saveTranscriptEdit(newText: "Welcome to the Q4 architecture review kickoff.")
         
         XCTAssertFalse(sut.isEditingTranscript)
         XCTAssertEqual(sut.transcriptSegments[0].text, "Welcome to the Q4 architecture review kickoff.")
@@ -307,7 +307,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
     func test_tier1_feature44_editedTranscriptSegmentDisplaysEditedBadge() throws {
         let segment = sut.transcriptSegments[1]
         sut.beginEditingTranscript(segment: segment)
-        sut.saveTranscriptEdit(newText: "Corrected speech text.")
+        try sut.saveTranscriptEdit(newText: "Corrected speech text.")
         
         XCTAssertTrue(sut.transcriptSegments[1].isEdited)
     }
@@ -588,7 +588,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
         let segment = sut.transcriptSegments[0]
         sut.beginEditingTranscript(segment: segment)
         
-        let didSave = sut.saveTranscriptEdit(newText: "   \t \n ")
+        let didSave = try sut.saveTranscriptEdit(newText: "   \t \n ")
         XCTAssertFalse(didSave)
         XCTAssertEqual(sut.transcriptSegments[0].text, "Welcome to the architecture review.")
     }
@@ -597,7 +597,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
     func test_tier2_feature44_inlineEditPreservesOriginalTimestamp() throws {
         let segment = sut.transcriptSegments[1] // startTime = 5.0
         sut.beginEditingTranscript(segment: segment)
-        sut.saveTranscriptEdit(newText: "Corrected segment text.")
+        try sut.saveTranscriptEdit(newText: "Corrected segment text.")
         
         XCTAssertEqual(sut.transcriptSegments[1].startTime, 5.0)
         XCTAssertEqual(sut.transcriptSegments[1].endTime, 15.0)
@@ -607,7 +607,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
     func test_tier2_feature44_inlineEditUndoActionRevertsToOriginal() throws {
         let segment = sut.transcriptSegments[0]
         sut.beginEditingTranscript(segment: segment)
-        sut.saveTranscriptEdit(newText: "Temporary edit")
+        try sut.saveTranscriptEdit(newText: "Temporary edit")
         
         sut.undoTranscriptEdit(segmentId: segment.id)
         XCTAssertEqual(sut.transcriptSegments[0].text, "Welcome to the architecture review.")

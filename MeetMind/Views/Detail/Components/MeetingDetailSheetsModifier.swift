@@ -36,7 +36,7 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
             .sheet(isPresented: $viewModel.isEditingTranscript) {
                 TranscriptEditSheet(
                     initialText: viewModel.editingSegmentText,
-                    onSave: { viewModel.saveTranscriptEdit(newText: $0) },
+                    onSave: { try viewModel.saveTranscriptEdit(newText: $0) },
                     onDismiss: { viewModel.cancelTranscriptEdit() }
                 )
             }
