@@ -1,18 +1,22 @@
 import SwiftUI
 import SwiftData
 import OfflineEngineKit
+import MessageUI
 
 /// Master meeting cockpit displaying segmented tabs, audio synchronization, and action extraction
 public struct MeetingDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
+    @Environment(SettingsViewModel.self) private var settings
     @State public var viewModel: MeetingDetailViewModel
     
     @State private var transcriptSearch: String = ""
     @State private var showRenameAlert: Bool = false
     @State private var renameText: String = ""
     @State private var showExportSheet: Bool = false
+    @State private var confirmSendMinutes = false
+    @State private var composeMinutes = false
     @State private var showAskAISheet: Bool = false
     @State private var showActionItemModal: Bool = false
     @State private var showPhotoModal: String? = nil
@@ -144,7 +148,7 @@ public struct MeetingDetailView: View {
                 .background(.regularMaterial)
             } else if recordSection == "Minutes", viewModel.summary != nil {
                 VStack(spacing: 6) {
-                    Button { showExportSheet = true } label: {
+                    Button { beginSharingMinutes() } label: {
                         Text("Share Minutes").frame(maxWidth: .infinity, minHeight: 50)
                             .foregroundStyle(.white)
                             .background(Theme.Colors.manentAccent, in: Capsule())
@@ -181,7 +185,7 @@ public struct MeetingDetailView: View {
                         recordSection = "Notes & Media"
                         viewModel.selectTab(.notesMedia)
                     }
-                    Button("Share Minutes", systemImage: "square.and.arrow.up") { showExportSheet = true }
+                    Button("Share Minutes", systemImage: "square.and.arrow.up", action: beginSharingMinutes)
                     if viewModel.summary != nil {
                         Button("Edit Minutes", systemImage: "pencil.line") { showMinutesEditor = true }
                     }
@@ -192,6 +196,19 @@ public struct MeetingDetailView: View {
                 } label: {
                     Label("Meeting options", systemImage: "ellipsis").labelStyle(.iconOnly)
                 }
+            }
+        }
+        .confirmationDialog("Send Minutes to \(recipientCountLabel)?", isPresented: $confirmSendMinutes, titleVisibility: .visible) {
+            Button("Send to \(recipientCountLabel)") { composeMinutes = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(minutesRecipients.map(\.name).formatted(.list(type: .and)) + " will receive the minutes and action items.")
+        }
+        .sheet(isPresented: $composeMinutes) {
+            MinutesMailComposer(recipients: minutesRecipients.compactMap(\.email),
+                                subject: viewModel.headerTitle, bodyText: viewModel.exportPlainText()) { error in
+                composeMinutes = false
+                if let error { deletionError = error.localizedDescription }
             }
         }
         .sheet(isPresented: $showPeople) {
@@ -286,6 +303,28 @@ public struct MeetingDetailView: View {
         viewModel.selectTab(.transcript)
     }
 
+    private var minutesRecipients: [Speaker] {
+        var seen = Set<String>()
+        return (viewModel.meeting?.namedAttendees ?? []).filter { person in
+            guard person.name != settings.userProfile?.name,
+                  let email = person.email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                  !email.isEmpty else { return false }
+            return seen.insert(email).inserted
+        }
+    }
+
+    private var recipientCountLabel: String {
+        minutesRecipients.count == 1 ? "1 Person" : "\(minutesRecipients.count) People"
+    }
+
+    private func beginSharingMinutes() {
+        if !minutesRecipients.isEmpty && MFMailComposeViewController.canSendMail() {
+            confirmSendMinutes = true
+        } else {
+            showExportSheet = true
+        }
+    }
+
     private var recordHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(viewModel.headerTitle).font(.title.bold())
@@ -321,6 +360,33 @@ public struct MeetingDetailView: View {
             viewModel.setPlaybackRate(1.0)
         }
     }
+}
+
+private struct MinutesMailComposer: UIViewControllerRepresentable {
+    let recipients: [String]
+    let subject: String
+    let bodyText: String
+    let finished: (Error?) -> Void
+
+    final class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+        let finished: (Error?) -> Void
+        init(finished: @escaping (Error?) -> Void) { self.finished = finished }
+        func mailComposeController(_ controller: MFMailComposeViewController,
+                                   didFinishWith result: MFMailComposeResult, error: Error?) {
+            finished(error)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(finished: finished) }
+    func makeUIViewController(context: Context) -> MFMailComposeViewController {
+        let controller = MFMailComposeViewController()
+        controller.mailComposeDelegate = context.coordinator
+        controller.setToRecipients(recipients)
+        controller.setSubject(subject)
+        controller.setMessageBody(bodyText, isHTML: false)
+        return controller
+    }
+    func updateUIViewController(_ controller: MFMailComposeViewController, context: Context) {}
 }
 
 private struct MeetingDecisionDetail: View {
