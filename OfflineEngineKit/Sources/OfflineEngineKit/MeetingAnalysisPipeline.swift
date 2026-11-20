@@ -33,6 +33,17 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public var chunkTurnIDs: [[String]]? = nil
 }
 
+/// A local ASR checkpoint produced from a sealed recording window. It contains
+/// only text and timing in the protected app container; audio remains in the
+/// recording chunk directory. Speaker identity is deliberately finalized over
+/// the complete meeting, where cross-window voice clustering is reliable.
+private struct PreparedRecordingChunk: Codable, Sendable {
+    let sequence: Int
+    let contentStartTime: TimeInterval
+    let endTime: TimeInterval
+    let turns: [AnalysisTurn]
+}
+
 /// Production orchestration. Downloads are an explicit setup action, never an
 /// inference fallback. A checkpoint contains private meeting data and stays in
 /// the app's protected, backup-excluded application support directory.
@@ -40,6 +51,7 @@ public actor MeetingAnalysisPipeline {
     public static let shared = MeetingAnalysisPipeline()
     private var running = false
     private var activeMeetingID: UUID?
+    private var preparingChunks = Set<String>()
     private var discardActiveCheckpoint = false
     private let backend: any MeetingAnalysisBackend
     private let checkpointRoot: URL?
@@ -55,6 +67,72 @@ public actor MeetingAnalysisPipeline {
     private func checkpointURL(_ id: UUID) throws -> URL {
         let root = try checkpointRoot ?? OfflineModelStore.privateDirectory("MeetingCheckpoints")
         return root.appendingPathComponent(id.uuidString + ".json")
+    }
+
+    private func preparationURL(meetingID: UUID, sequence: Int) throws -> URL {
+        let root = try OfflineModelStore.privateDirectory("RecordingChunkPreparation")
+            .appendingPathComponent(meetingID.uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root.appendingPathComponent(String(format: "chunk-%04d.json", sequence))
+    }
+
+    /// Opportunistically transcribes a closed 30-second recording window while
+    /// capture continues. It never downloads models, never blocks recording,
+    /// and yields to the full-meeting pipeline. The final pass can reuse a
+    /// complete set of these timing-correct checkpoints and only has to run
+    /// global diarization plus minute generation.
+    @discardableResult
+    public func prepareRecordingChunk(meetingID: UUID, sequence: Int, audio: URL,
+                                      chunkStartTime: TimeInterval, contentStartTime: TimeInterval,
+                                      endTime: TimeInterval, languageCode: String? = nil) async throws -> Bool {
+        let key = "\(meetingID.uuidString)-\(sequence)"
+        guard !running, !preparingChunks.contains(key),
+              ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue,
+              !ProcessInfo.processInfo.isLowPowerModeEnabled else { return false }
+        let profiles = try requiredProfiles(model: .fast)
+        guard await OfflineModelStore.shared.isInstalled(profiles[0]) else { return false }
+        preparingChunks.insert(key)
+        defer { preparingChunks.remove(key) }
+        let folder = try await backend.verifiedFolder(profiles[0])
+        let rawTurns = try await backend.transcribe(audio: audio, folder: folder, languageCode: languageCode)
+        let turns = rawTurns.enumerated().compactMap { index, turn -> AnalysisTurn? in
+            let start = turn.start + chunkStartTime
+            let end = turn.end + chunkStartTime
+            // Discard the five-second duplicated prefix. The adjacent chunk
+            // owns that time range, so no repeated sentence reaches minutes.
+            guard end > contentStartTime else { return nil }
+            return AnalysisTurn(id: "live-\(sequence)-\(index)", text: turn.text,
+                                start: max(start, contentStartTime), end: end, speaker: nil)
+        }
+        guard !turns.isEmpty else { return false }
+        let checkpoint = PreparedRecordingChunk(sequence: sequence, contentStartTime: contentStartTime,
+                                                endTime: endTime, turns: turns)
+        let url = try preparationURL(meetingID: meetingID, sequence: sequence)
+        try JSONEncoder().encode(checkpoint).write(to: url,
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        return true
+    }
+
+    private func preparedTurns(meetingID: UUID, duration: TimeInterval) throws -> [AnalysisTurn]? {
+        let root = try OfflineModelStore.privateDirectory("RecordingChunkPreparation")
+            .appendingPathComponent(meetingID.uuidString, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else { return nil }
+        let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let windows = try files.map { try JSONDecoder().decode(PreparedRecordingChunk.self, from: Data(contentsOf: $0)) }
+            .sorted { $0.sequence < $1.sequence }
+        guard let first = windows.first, let last = windows.last,
+              first.contentStartTime <= 0.5, last.endTime >= duration - 0.5 else { return nil }
+        var coveredEnd = first.contentStartTime
+        for window in windows {
+            guard window.contentStartTime <= coveredEnd + 0.75 else { return nil }
+            coveredEnd = max(coveredEnd, window.endTime)
+        }
+        var seen = Set<String>()
+        return windows.flatMap(\.turns).sorted { $0.start < $1.start }.filter { turn in
+            let key = "\(Int(turn.start * 10))|\(turn.text.lowercased())"
+            return seen.insert(key).inserted
+        }
     }
 
     public func discardCheckpoint(meetingID: UUID) throws {
@@ -188,8 +266,12 @@ public actor MeetingAnalysisPipeline {
                     return try await backend.diarize(audio: audio, folder: diarizationFolder)
                 }
             }
-            let transcriptionFolder = try await backend.verifiedFolder(profiles[0])
-            checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: transcriptionFolder, languageCode: languageCode))
+            if let prepared = try preparedTurns(meetingID: meetingID, duration: duration), !prepared.isEmpty {
+                checkpoint.turns = Self.splitTurns(prepared)
+            } else {
+                let transcriptionFolder = try await backend.verifiedFolder(profiles[0])
+                checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: transcriptionFolder, languageCode: languageCode))
+            }
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
             try save()

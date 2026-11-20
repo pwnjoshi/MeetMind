@@ -16,12 +16,22 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
     private var lastPauseTime: Date?
     
     private var meterContinuation: AsyncStream<Float>.Continuation?
-    private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    // Both live captions and the rolling offline preprocessor consume audio.
+    // A single continuation made the most recently-subscribed consumer silently
+    // disconnect the other one, which is why captions could disappear as soon as
+    // background preparation started.
+    private var bufferContinuations: [UUID: AsyncStream<AVAudioPCMBuffer>.Continuation] = [:]
     public var audioBufferStream: AsyncStream<AVAudioPCMBuffer> {
         AsyncStream(bufferingPolicy: .bufferingNewest(16)) { continuation in
+            let id = UUID()
             lock.lock()
-            bufferContinuation = continuation
+            bufferContinuations[id] = continuation
             lock.unlock()
+            continuation.onTermination = { [weak self] _ in
+                self?.lock.lock()
+                self?.bufferContinuations.removeValue(forKey: id)
+                self?.lock.unlock()
+            }
         }
     }
     private var lastMeterYieldTime: Date = Date.distantPast
@@ -67,7 +77,8 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             engine.stop()
         }
         meterContinuation?.finish()
-        bufferContinuation?.finish()
+        let continuations = bufferContinuations.values
+        continuations.forEach { $0.finish() }
     }
     
     public func startRecording(destinationURL: URL) async throws {
@@ -228,7 +239,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
-        bufferContinuation?.finish()
+        finishBufferStreams()
         
         guard let finalURL = url else {
             throw AudioRecordingError.recordingFailed("Destination URL was missing.")
@@ -255,7 +266,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         }
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
-        bufferContinuation?.finish()
+        finishBufferStreams()
         
         if let url = url, FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.removeItem(at: url)
@@ -280,9 +291,9 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
 
         // Audio engine owns and reuses tap buffers. Copy before asynchronous recognition.
         lock.lock()
-        let speechContinuation = bufferContinuation
+        let speechContinuations = Array(bufferContinuations.values)
         lock.unlock()
-        if let speechContinuation,
+        if !speechContinuations.isEmpty,
            let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
             copy.frameLength = buffer.frameLength
             let sourceBuffers = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
@@ -292,7 +303,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
                     memcpy(destination, source, Int(sourceBuffers[index].mDataByteSize))
                 }
             }
-            speechContinuation.yield(copy)
+            speechContinuations.forEach { $0.yield(copy) }
         }
         
         // 60Hz Power Metering Calculation
@@ -336,5 +347,13 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         let finalPower = linearPower.isFinite ? max(0.0, min(1.0, linearPower)) : 0.0
         
         meter?.yield(finalPower)
+    }
+
+    private func finishBufferStreams() {
+        lock.lock()
+        let continuations = Array(bufferContinuations.values)
+        bufferContinuations.removeAll()
+        lock.unlock()
+        continuations.forEach { $0.finish() }
     }
 }

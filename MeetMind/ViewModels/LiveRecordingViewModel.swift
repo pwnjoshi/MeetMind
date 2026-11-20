@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Observation
+import OfflineEngineKit
 
 /// Segment item displayed in the live transcript stream
 public struct LiveTranscriptSegmentItem: Identifiable, Sendable, Equatable {
@@ -197,6 +198,10 @@ public final class LiveRecordingViewModel {
     
     public var isUsingOnDeviceSpeechFallback: Bool = false
     public var hasOfflineIndicatorPill: Bool = false
+    /// Number of durable 30-second audio windows saved while recording. These
+    /// are preparation checkpoints, not a user-visible transcript.
+    public private(set) var preparedAudioChunkCount: Int = 0
+    public private(set) var preprocessedTranscriptChunkCount: Int = 0
     
     public var isShowingCameraPermissionAlert: Bool = false
     public var cameraAlertMessage: String = ""
@@ -210,7 +215,10 @@ public final class LiveRecordingViewModel {
     private var meterTask: Task<Void, Never>?
     private var clockTask: Task<Void, Never>?
     private var speechTask: Task<Void, Never>?
+    private var recordingChunkTask: Task<Void, Never>?
+    private var chunkWriter: RollingAudioChunkWriter?
     private var destinationAudioURL: URL?
+    private var offlineLanguageCode: String? = "hi"
     private let updatesFromRecordingClock: Bool
     private var dataStore: Any?
     
@@ -265,6 +273,39 @@ public final class LiveRecordingViewModel {
                     meeting.setAudioFileURL(dest)
                     do { try modelContext?.save() }
                     catch { errorMessage = "Audio is recording, but its meeting record could not be saved: \(error.localizedDescription)" }
+                }
+                // Keep a separate low-priority consumer for durable rolling
+                // chunks. AudioRecordingService multicast streams mean this
+                // can never displace live captions.
+                do {
+                    let writer = try RollingAudioChunkWriter(meetingID: meetingId)
+                    chunkWriter = writer
+                    preparedAudioChunkCount = 0
+                    preprocessedTranscriptChunkCount = 0
+                    let id = meetingId
+                    let languageCode = offlineLanguageCode
+                    recordingChunkTask = Task.detached(priority: .utility) { [weak self, recordingService] in
+                        for await buffer in recordingService.audioBufferStream {
+                            guard !Task.isCancelled else { break }
+                            if let sealed = try? writer.append(buffer) {
+                                await MainActor.run { self?.preparedAudioChunkCount += 1 }
+                                // This is opportunistic: it runs only when the
+                                // local ASR model is already installed, gives
+                                // up under thermal/Low Power pressure, and
+                                // never delays audio capture or live captions.
+                                if let prepared = try? await MeetingAnalysisPipeline.shared.prepareRecordingChunk(
+                                    meetingID: id, sequence: sealed.sequence, audio: sealed.fileURL,
+                                    chunkStartTime: sealed.startTime, contentStartTime: sealed.contentStartTime,
+                                    endTime: sealed.endTime, languageCode: languageCode), prepared {
+                                    await MainActor.run { self?.preprocessedTranscriptChunkCount += 1 }
+                                }
+                            }
+                        }
+                    }
+                } catch {
+                    // The canonical recording is still safe. Chunking is an
+                    // acceleration feature and must never prevent capture.
+                    chunkWriter = nil
                 }
                 if let transcriptionService {
                     speechTask = Task { [weak self] in
@@ -325,6 +366,7 @@ public final class LiveRecordingViewModel {
         if transcriptionService == nil {
             transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"))
         }
+        offlineLanguageCode = (settings?.savedRecordingLanguage ?? .hinglish).whisperCode
     }
 
     public func leaveSession() {
@@ -699,6 +741,10 @@ public final class LiveRecordingViewModel {
         clockTask?.cancel()
         speechTask?.cancel()
         transcriptionService?.stopLiveTranscription()
+        if let recordingChunkTask { await recordingChunkTask.value }
+        if let writer = chunkWriter, let chunks = try? writer.finish() {
+            preparedAudioChunkCount = chunks.count
+        }
         
         if let meeting = meeting {
             meeting.setAudioFileURL(url)
@@ -729,10 +775,15 @@ public final class LiveRecordingViewModel {
         meterTask?.cancel()
         clockTask?.cancel()
         speechTask?.cancel()
+        recordingChunkTask?.cancel()
         transcriptionService?.stopLiveTranscription()
         isShowingDiscardAlert = false
         recordingState = .idle
         try? recordingService?.cancelRecording()
+        chunkWriter?.discard()
+        chunkWriter = nil
+        preparedAudioChunkCount = 0
+        preprocessedTranscriptChunkCount = 0
         elapsedDuration = 0
         finalTranscriptSegments.removeAll()
         capturedNotes.removeAll()
