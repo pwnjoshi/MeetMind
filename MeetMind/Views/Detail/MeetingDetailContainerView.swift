@@ -25,6 +25,8 @@ public struct MeetingDetailContainerView: View {
                 MeetingProcessingView(meetingId: meetingId)
             } else if let meeting = targetMeeting, meeting.status == .recording, meeting.audioFileURL == nil {
                 LiveRecordingView(meetingId: meetingId, viewModel: LiveRecordingViewModel(meeting: meeting, meetingId: meetingId, modelContext: modelContext))
+            } else if let meeting = targetMeeting, meeting.status == .scheduled {
+                ScheduledMeetingDetailView(meeting: meeting)
             } else {
                 MeetingDetailView(viewModel: MeetingDetailViewModel(meeting: targetMeeting, meetingId: meetingId, modelContext: modelContext))
             }
