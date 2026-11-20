@@ -105,6 +105,8 @@ public struct MeetingProcessingView: View {
                             Text(backgroundStatus).font(.title3.bold())
                             Text("Your audio is saved. You can leave and return to this meeting.")
                                 .foregroundStyle(.secondary)
+                        } else if isReadyForReview {
+                            reviewSection
                         } else if selectedSection == "Minutes" {
                             if meeting?.analysisState == "failed" || meeting?.analysisState == "paused" {
                                 Text(meeting?.analysisState == "failed" ? "Processing needs attention" : "Processing paused")
@@ -194,9 +196,10 @@ public struct MeetingProcessingView: View {
                 let backgroundRunning = OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
                 let queued = OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil
                 Button {
-                    start(download: true)
+                    if isReadyForReview { finalizeMinutes() }
+                    else { start(download: true) }
                 } label: {
-                    Text(queued && !backgroundRunning ? "Process Now" : "Generate Minutes")
+                    Text(isReadyForReview ? "Finalize Minutes" : (queued && !backgroundRunning ? "Process Now" : "Generate Minutes"))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -362,6 +365,50 @@ public struct MeetingProcessingView: View {
 
     private var meeting: Meeting? { meetings.first { $0.id == meetingId } }
 
+    private var isReadyForReview: Bool {
+        meeting?.analysisState == "completed" && meeting?.summary != nil
+    }
+
+    @ViewBuilder
+    private var reviewSection: some View {
+        switch selectedSection {
+        case "Minutes":
+            Text("Minutes ready for review").font(.title3.bold())
+            if let summary = meeting?.summary {
+                ForEach(Array(summary.keyPoints.prefix(4).enumerated()), id: \.offset) { _, point in
+                    Text(point).font(.body).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text("Review the transcript or name voices before finalizing.")
+                .font(.subheadline).foregroundStyle(.secondary)
+        case "Actions":
+            let actions = meeting?.actionItems ?? []
+            Text(actions.isEmpty ? "No action items found" : "Suggested actions").font(.title3.bold())
+            if actions.isEmpty {
+                Text("Minutes found no grounded commitments to turn into tasks.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                ForEach(actions.prefix(4), id: \.id) { action in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(action.title).font(.body.weight(.medium))
+                        Text(action.assignee?.name ?? "Unassigned").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        default:
+            let decisions = meeting?.summary?.keyDecisions ?? []
+            Text(decisions.isEmpty ? "No decisions found" : "Decisions").font(.title3.bold())
+            if decisions.isEmpty {
+                Text("No explicit decision was found in this meeting.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(decisions.prefix(4).enumerated()), id: \.offset) { _, decision in
+                    Text(decision).font(.body).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
     private func detectedVoices(in meeting: Meeting) -> [Speaker] {
         meeting.participants.filter { $0.recordingVoiceLabel != nil }
     }
@@ -424,6 +471,18 @@ public struct MeetingProcessingView: View {
         do { try modelContext.save() }
         catch {
             meeting.title = previousTitle
+            processingError = error.localizedDescription
+        }
+    }
+
+    private func finalizeMinutes() {
+        guard let meeting else { return }
+        let previous = meeting.minutesNeedFinalization
+        meeting.minutesNeedFinalization = false
+        do {
+            try modelContext.save()
+        } catch {
+            meeting.minutesNeedFinalization = previous
             processingError = error.localizedDescription
         }
     }
