@@ -3,6 +3,22 @@ import SwiftData
 import Observation
 import AVFoundation
 import OfflineEngineKit
+import OSLog
+
+/// The last on-device analysis failure or warning for one meeting.
+/// It contains the engine's message only, never transcript text.
+enum AnalysisProblemStore {
+    private static func key(_ id: UUID) -> String { "Manent_AnalysisProblem_\(id.uuidString)" }
+    static func save(_ message: String, for id: UUID) {
+        UserDefaults.standard.set(message, forKey: key(id))
+    }
+    static func message(for id: UUID) -> String? {
+        UserDefaults.standard.string(forKey: key(id))
+    }
+    static func clear(_ id: UUID) {
+        UserDefaults.standard.removeObject(forKey: key(id))
+    }
+}
 
 /// Status of the post-recording processing pipeline
 public enum PipelineStatus: String, Codable, Sendable {
@@ -354,37 +370,13 @@ public final class ProcessingPipelineViewModel {
             committing = true
             // Reviewed input already lives in SwiftData. Keep its edits, identities and speaker links.
             if reviewedTurns.isEmpty {
-                let previousSegments = meeting.transcriptSegments
-                meeting.transcriptSegments.removeAll()
-                for segment in previousSegments { modelContext?.delete(segment) }
-                var speakers: [String: Speaker] = [:]
-                for (index, turn) in result.turns.enumerated() {
-                    var speaker: Speaker?
-                    if let label = turn.speaker {
-                        if let existing = speakers[label] ?? meeting.participants.first(where: {
-                            $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
-                        }) {
-                            existing.recordingVoiceLabel = label
-                            speaker = existing
-                            speakers[label] = existing
-                        }
-                        else {
-                            let created = Speaker(name: label)
-                            created.recordingVoiceLabel = label
-                            modelContext?.insert(created)
-                            meeting.addParticipant(created)
-                            speakers[label] = created
-                            speaker = created
-                        }
-                    }
-                    meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
-                        endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
-                }
+                replaceTranscript(of: meeting, with: result.turns)
             }
             if stopAfterSpeakers {
                 meeting.analysisState = "speakerReview"
                 try modelContext?.save()
                 pipelineStatus = .idle
+                AnalysisProblemStore.clear(meeting.id)
                 return
             }
             let points = uniqueTexts(result.analysis.flatMap { $0.discussion.map(\.text) })
@@ -398,6 +390,7 @@ public final class ProcessingPipelineViewModel {
             meeting.analysisState = "completed"
             meeting.minutesNeedFinalization = true
             try modelContext?.save()
+            AnalysisProblemStore.clear(meeting.id)
             for i in stages.indices { stages[i].state = .completed }
             overallProgress = 1
             pipelineStatus = .completed
@@ -419,15 +412,52 @@ public final class ProcessingPipelineViewModel {
             } else {
                 pipelineStatus = .failed
                 stages[currentStageIndex].state = .failed
-                stages[currentStageIndex].errorMessage = error.localizedDescription
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                stages[currentStageIndex].errorMessage = message
                 meeting.analysisState = "failed"
-                errorMessage = error.localizedDescription
+                errorMessage = message
+                AnalysisProblemStore.save(message, for: meeting.id)
+                Logger(subsystem: "com.meetmind.app", category: "Analysis")
+                    .error("Meeting analysis failed: \(message, privacy: .public)")
+                if meeting.transcriptSegments.isEmpty,
+                   let saved = await offlinePipeline.savedCheckpoint(meetingID: meeting.id),
+                   !saved.turns.isEmpty {
+                    replaceTranscript(of: meeting, with: saved.turns)
+                }
             }
             try? modelContext?.save()
             throw error
         }
     }
 
+
+    private func replaceTranscript(of meeting: Meeting, with turns: [AnalysisTurn]) {
+        let previousSegments = meeting.transcriptSegments
+        meeting.transcriptSegments.removeAll()
+        for segment in previousSegments { modelContext?.delete(segment) }
+        var speakers: [String: Speaker] = [:]
+        for (index, turn) in turns.enumerated() {
+            var speaker: Speaker?
+            if let label = turn.speaker {
+                if let existing = speakers[label] ?? meeting.participants.first(where: {
+                    $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
+                }) {
+                    existing.recordingVoiceLabel = label
+                    speaker = existing
+                    speakers[label] = existing
+                } else {
+                    let created = Speaker(name: label)
+                    created.recordingVoiceLabel = label
+                    modelContext?.insert(created)
+                    meeting.addParticipant(created)
+                    speakers[label] = created
+                    speaker = created
+                }
+            }
+            meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
+                endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
+        }
+    }
 
     private func uniqueTexts(_ texts: [String]) -> [String] {
         var seen = Set<String>()

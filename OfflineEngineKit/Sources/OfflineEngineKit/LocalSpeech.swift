@@ -83,8 +83,9 @@ enum LocalSpeech {
         do {
             let results = try await engine.transcribe(audioPath: audio.path,
                 audioInputOptions: AudioInputOptions(audioLoadingMode: .incremental(chunkDurationSeconds: 30, maxBufferedChunks: 1)),
-                decodeOptions: DecodingOptions(task: .transcribe, language: languageCode, usePrefillPrompt: false,
-                    detectLanguage: languageCode == nil, skipSpecialTokens: true, wordTimestamps: true, concurrentWorkerCount: 1),
+                decodeOptions: DecodingOptions(task: .transcribe, language: languageCode,
+                    usePrefillPrompt: true, detectLanguage: languageCode == nil,
+                    skipSpecialTokens: true, wordTimestamps: true, concurrentWorkerCount: 1),
                 callback: { _ in !Task.isCancelled })
             var turns: [AnalysisTurn] = []
             for segment in results.flatMap(\.segments) {

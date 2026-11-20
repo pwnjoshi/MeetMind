@@ -51,6 +51,8 @@ public actor MeetingAnalysisPipeline {
     public static let shared = MeetingAnalysisPipeline()
     private var running = false
     private var activeMeetingID: UUID?
+    /// Set when speaker separation fails but transcription can still continue.
+    public private(set) var lastSpeakerWarning: String?
     private var preparingChunks = Set<String>()
     private var discardActiveCheckpoint = false
     private let backend: any MeetingAnalysisBackend
@@ -70,7 +72,9 @@ public actor MeetingAnalysisPipeline {
     }
 
     private func preparationDirectory(meetingID: UUID) throws -> URL {
-        try OfflineModelStore.privateDirectory("RecordingChunkPreparation")
+        // v2: chunks written before the decoder prefill fix are ignored.
+        // Those checkpoints could cover a recording with no recognized speech.
+        try OfflineModelStore.privateDirectory("RecordingChunkPreparation-v2")
             .appendingPathComponent(meetingID.uuidString, isDirectory: true)
     }
 
@@ -192,6 +196,12 @@ public actor MeetingAnalysisPipeline {
         }.prefix(limit).map(\.element)
     }
 
+    public func savedCheckpoint(meetingID: UUID) -> MeetingAnalysisCheckpoint? {
+        guard let url = try? checkpointURL(meetingID),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data)
+    }
+
     public func removeCheckpoint(meetingID: UUID) throws {
         guard !running else { throw OfflineError.unavailable("Wait for the current analysis to finish or pause it first.") }
         let url = try checkpointURL(meetingID)
@@ -229,6 +239,7 @@ public actor MeetingAnalysisPipeline {
         activeMeetingID = meetingID
         discardActiveCheckpoint = false
         defer { running = false; activeMeetingID = nil; discardActiveCheckpoint = false }
+        lastSpeakerWarning = nil
         guard audio.isFileURL else { throw OfflineError.unavailable("Choose a recording saved on this iPhone.") }
         let duration = try await AVURLAsset(url: audio).load(.duration).seconds
         guard duration.isFinite, duration > 0, duration <= 3600 else {
@@ -236,7 +247,7 @@ public actor MeetingAnalysisPipeline {
         }
         let profiles = try requiredProfiles(model: model)
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
+        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|asr-prefill-v2|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         if !reviewedTurns.isEmpty {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
@@ -277,7 +288,15 @@ public actor MeetingAnalysisPipeline {
                 checkpoint.turns = Self.splitTurns(prepared)
             } else {
                 let transcriptionFolder = try await backend.verifiedFolder(profiles[0])
-                checkpoint.turns = Self.splitTurns(try await backend.transcribe(audio: audio, folder: transcriptionFolder, languageCode: languageCode))
+                var recognized = Self.splitTurns(try await backend.transcribe(
+                    audio: audio, folder: transcriptionFolder, languageCode: languageCode))
+                // A forced language that yields nothing is retried with detection.
+                // The recording is unchanged; only the decoder anchor changes.
+                if recognized.isEmpty, languageCode != nil {
+                    recognized = Self.splitTurns(try await backend.transcribe(
+                        audio: audio, folder: transcriptionFolder, languageCode: nil))
+                }
+                checkpoint.turns = recognized
             }
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
@@ -287,11 +306,18 @@ public actor MeetingAnalysisPipeline {
             try checkConditions()
             await progress(.speakers)
             let rawSpans: [SpeakerSpan]
-            if let overlappingDiarization {
-                rawSpans = try await overlappingDiarization.value
-            } else {
-                let folder = try await backend.verifiedFolder(profiles[1])
-                rawSpans = try await backend.diarize(audio: audio, folder: folder)
+            do {
+                if let overlappingDiarization {
+                    rawSpans = try await overlappingDiarization.value
+                } else {
+                    let folder = try await backend.verifiedFolder(profiles[1])
+                    rawSpans = try await backend.diarize(audio: audio, folder: folder)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                rawSpans = []
+                lastSpeakerWarning = "Voices could not be separated (\(error.localizedDescription)). Minutes will still be written from the transcript."
             }
             checkpoint.speakers = Self.stabilizeSpeakerSpans(rawSpans)
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)

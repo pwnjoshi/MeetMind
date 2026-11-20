@@ -111,7 +111,7 @@ public struct MeetingProcessingView: View {
                             if meeting?.analysisState == "failed" || meeting?.analysisState == "paused" {
                                 Text(meeting?.analysisState == "failed" ? "Processing needs attention" : "Processing paused")
                                     .font(.title3.bold())
-                                Text("Your audio is saved. You can continue from the last completed step.")
+                                Text(processingError ?? "Your audio is saved. You can continue from the last completed step.")
                                     .foregroundStyle(.secondary)
                             } else {
                                 Text("Who said what?").font(.title3.bold())
@@ -340,6 +340,10 @@ public struct MeetingProcessingView: View {
                 .disabled(meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .onAppear {
+            if processingError == nil,
+               meeting?.analysisState == "failed" || meeting?.analysisState == "paused" {
+                processingError = AnalysisProblemStore.message(for: meetingId)
+            }
             viewModel.onNavigateToDetail = { id in
                 OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
             }
