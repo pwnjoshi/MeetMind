@@ -214,6 +214,7 @@ public struct HomeDashboardView: View {
     private func meetingRow(_ meeting: Meeting, upcoming: Bool) -> some View {
         NavigationLink(value: NavigationDestination.meetingDetail(id: meeting.id)) {
             HStack(spacing: 12) {
+                MeetingDateTile(date: upcoming ? (meeting.scheduledStartTime ?? meeting.createdAt) : meeting.createdAt)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(meeting.title).font(.body).foregroundStyle(.primary)
                     Text(upcoming
@@ -255,6 +256,22 @@ public struct HomeDashboardView: View {
         return "Series \u{00B7} \(count) \(count == 1 ? "meeting" : "meetings")"
     }
 
+}
+
+private struct MeetingDateTile: View {
+    let date: Date
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(date.formatted(.dateTime.month(.abbreviated)).uppercased())
+                .font(.system(size: 10, weight: .bold)).foregroundStyle(.red)
+            Text(date.formatted(.dateTime.day()))
+                .font(.system(size: 20, weight: .semibold)).foregroundStyle(.primary)
+        }
+        .frame(width: 40, height: 40)
+        .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
+    }
 }
 
 private struct LocalSeriesTimeline: View {

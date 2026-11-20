@@ -93,9 +93,6 @@ public struct ActionItemsConsoleView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
     @Environment(SettingsViewModel.self) private var settings: SettingsViewModel?
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var assignmentScope: AssignmentScope = .toMe
-    private enum AssignmentScope { case toMe, byMe }
     @Query private var queriedItems: [ActionItem]
     @State public var viewModel: ActionItemsViewModel
     @State private var syncError: String?
@@ -109,22 +106,13 @@ public struct ActionItemsConsoleView: View {
     
     public var body: some View {
         @Bindable var vm = viewModel
-        VStack(spacing: 14) {
-            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
-            layout {
-                assignmentTab("Assigned to Me", scope: .toMe)
-                assignmentTab("Assigned by Me", scope: .byMe)
-            }
-            .padding(3)
-            .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 24))
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            
-            if visibleSections.isEmpty {
+        Group {
+            if visibleActions.isEmpty {
                 emptyStateView
             } else {
-                ActionItemGroupListView(
-                    sections: visibleSections,
+                FigmaActionsList(
+                    yours: assignedToMe,
+                    waitingOnOthers: waitingOnOthers,
                     onToggle: { viewModel.toggleCompletion(for: $0) },
                     onSelectMeeting: { router.navigate(to: .meetingDetail(id: $0), in: .actionItems) },
                     onOpenTask: { selectedTask = $0 }
@@ -184,7 +172,6 @@ public struct ActionItemsConsoleView: View {
             CreateActionItemSheet(
                 onSave: { title, priority, due, assignee in
                     viewModel.createActionItem(title: title, priority: priority, dueDate: due, assigneeName: assignee)
-                    assignmentScope = .byMe
                     viewModel.selectedFilterScope = .all
                     viewModel.isShowingActionItemSheet = false
                 },
@@ -205,40 +192,24 @@ public struct ActionItemsConsoleView: View {
         } message: { Text(syncError ?? "") }
     }
 
-    private func assignmentTab(_ title: String, scope: AssignmentScope) -> some View {
-        Button {
-            assignmentScope = scope
-        } label: {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background {
-                    if assignmentScope == scope { Capsule().fill(.background) }
-                }
-                .contentShape(Rectangle())
+    private var visibleActions: [ActionItem] {
+        viewModel.allActionItems.filter { item in
+            switch viewModel.selectedFilterScope {
+            case .all: return true
+            case .pending: return !item.isCompleted
+            case .completed: return item.isCompleted
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(assignmentScope == scope ? .isSelected : [])
     }
 
-    private var visibleSections: [ActionItemGroupSection] {
+    private var assignedToMe: [ActionItem] {
         let localName = settings?.userProfile?.name ?? UserProfile.defaultLocalName
-        return viewModel.groupedActionItems.compactMap { section in
-            let items = section.items.filter { item in
-                switch assignmentScope {
-                case .toMe:
-                    return item.assignee?.name.localizedCaseInsensitiveCompare(localName) == .orderedSame
-                case .byMe:
-                    return item.assignedByLocalUser != false
-                        && (item.assignedByLocalUser == true || item.assignee?.name.localizedCaseInsensitiveCompare(localName) != .orderedSame)
-                }
-            }
-            guard !items.isEmpty else { return nil }
-            return ActionItemGroupSection(id: section.id, title: section.title, items: items)
-        }
+        return visibleActions.filter { $0.assignee?.name.localizedCaseInsensitiveCompare(localName) == .orderedSame }
+    }
+
+    private var waitingOnOthers: [ActionItem] {
+        let localName = settings?.userProfile?.name ?? UserProfile.defaultLocalName
+        return visibleActions.filter { $0.assignee?.name.localizedCaseInsensitiveCompare(localName) != .orderedSame }
     }
     
     private var emptyStateView: some View {
@@ -287,5 +258,79 @@ public struct ActionItemsConsoleView: View {
         case .dueDate: return "Due date"
         case .category: return "Category"
         }
+    }
+}
+
+private struct FigmaActionsList: View {
+    let yours: [ActionItem]
+    let waitingOnOthers: [ActionItem]
+    let onToggle: (ActionItem) -> Void
+    let onSelectMeeting: (UUID) -> Void
+    let onOpenTask: (ActionItem) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                if !yours.isEmpty { section("Yours", items: yours) }
+                if !waitingOnOthers.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        section("Waiting on others", items: waitingOnOthers)
+                        Text("They tick these off from their task link.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                            .padding(.horizontal, 16)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 110)
+        }
+    }
+
+    private func section(_ title: String, items: [ActionItem]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.title3.weight(.semibold)).padding(.horizontal, 16)
+            VStack(spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    FigmaActionRow(item: item, onToggle: { onToggle(item) }, onOpen: { onOpenTask(item) }, onSelectMeeting: onSelectMeeting)
+                    if index < items.count - 1 { Divider().padding(.leading, 56) }
+                }
+            }
+            .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        }
+    }
+}
+
+private struct FigmaActionRow: View {
+    let item: ActionItem
+    let onToggle: () -> Void
+    let onOpen: () -> Void
+    let onSelectMeeting: (UUID) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onToggle) {
+                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22)).foregroundStyle(item.isCompleted ? Theme.Colors.manentAccent : .secondary)
+                    .frame(width: 28, height: 44)
+            }.buttonStyle(.plain)
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title).foregroundStyle(.primary).strikethrough(item.isCompleted)
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }.buttonStyle(.plain)
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 16).frame(minHeight: 66)
+    }
+
+    private var subtitle: String {
+        let due = item.dueDate.map { $0 < .now ? "Overdue" : $0.formatted(date: .abbreviated, time: .omitted) }
+        let owner = item.assignee?.name
+        let meeting = item.meeting?.title
+        return [due, owner, meeting].compactMap { $0 }.joined(separator: " · ")
     }
 }
