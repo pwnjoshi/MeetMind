@@ -19,6 +19,7 @@ public struct MeetingDetailView: View {
     @State private var composeMinutes = false
     @State private var showMinutesSent = false
     @State private var minutesSentRecipientCount = 0
+    @State private var minutesSentRecipients: [String] = []
     @State private var showRecipientsSheet = false
     @State private var selectedMinutesRecipientIDs = Set<UUID>()
     @State private var showAskAISheet: Bool = false
@@ -89,6 +90,7 @@ public struct MeetingDetailView: View {
         }
         .navigationDestination(isPresented: $showMinutesSent) {
             MinutesSentView(recipientCount: minutesSentRecipientCount,
+                            recipientNames: minutesSentRecipients,
                             onPlanNextMeeting: { dismiss() },
                             onBackToMeetings: { dismiss() })
                 .toolbar(.hidden, for: .tabBar)
@@ -136,9 +138,8 @@ public struct MeetingDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Rename Meeting", systemImage: "pencil") {
-                        renameText = viewModel.headerTitle
-                        showRenameAlert = true
+                    Button("Meeting Details", systemImage: "info.circle") {
+                        recordSection = "Minutes"
                     }
                     if let meeting = viewModel.meeting, meeting.status == .completed {
                         Button("Schedule Follow-Up", systemImage: "calendar") {
@@ -151,27 +152,21 @@ public struct MeetingDetailView: View {
                         }
                     }
                     Button("Show Transcript", systemImage: "doc.text", action: openTranscript)
-                    Button("Notes & Media", systemImage: "photo") {
-                        showsMediaPage = true
-                    }
-                    Button("Share Minutes", systemImage: "square.and.arrow.up", action: beginSharingMinutes)
                     if viewModel.summary != nil {
                         Button("Edit Minutes", systemImage: "pencil.line") { showMinutesEditor = true }
                     }
-                    if viewModel.meeting?.offlineAnalysis != nil {
-                        Button("Review Evidence") { showAnalysisEvidence = true }
-                    }
-                    Button("Delete Meeting", systemImage: "trash", role: .destructive) { showDeleteConfirmation = true }
                 } label: {
                     Label("Meeting options", systemImage: "ellipsis").labelStyle(.iconOnly)
                 }
             }
         }
-        .confirmationDialog("Send Minutes to \(recipientCountLabel)?", isPresented: $confirmSendMinutes, titleVisibility: .visible) {
-            Button("Send to \(recipientCountLabel)") { composeMinutes = true }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(recipientsForShare.map(\.name).formatted(.list(type: .and)) + " will receive the minutes and action items.")
+        .sheet(isPresented: $confirmSendMinutes) {
+            MinutesShareConfirmationSheet(people: recipientsForShare) {
+                deliverMinutes()
+            }
+            .presentationDetents([.height(245)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
         }
         .sheet(isPresented: $composeMinutes) {
             MinutesMailComposer(recipients: recipientsForShare.compactMap(\.email),
@@ -180,6 +175,7 @@ public struct MeetingDetailView: View {
                 if let error { deletionError = error.localizedDescription }
                 else if result == .sent {
                     minutesSentRecipientCount = recipientsForShare.count
+                    minutesSentRecipients = recipientsForShare.map(\.name)
                     showMinutesSent = true
                 }
             }
@@ -321,8 +317,13 @@ public struct MeetingDetailView: View {
             showExportSheet = true
             return
         }
+        confirmSendMinutes = true
+    }
+
+    private func deliverMinutes() {
+        confirmSendMinutes = false
         if MFMailComposeViewController.canSendMail(), recipientsForShare.contains(where: { $0.email?.isEmpty == false }) {
-            confirmSendMinutes = true
+            composeMinutes = true
         } else {
             showExportSheet = true
         }
@@ -473,8 +474,44 @@ private struct MinutesMailComposer: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: MFMailComposeViewController, context: Context) {}
 }
 
+private struct MinutesShareConfirmationSheet: View {
+    let people: [Speaker]
+    let onSend: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var countLabel: String { people.count == 1 ? "1 Person" : "\(people.count) People" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Send Minutes to \(countLabel)?").font(.headline)
+            Text(people.map(\.name).formatted(.list(type: .and)) + " will get the minutes and their action items.")
+                .font(.subheadline).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: -7) {
+                ForEach(people.prefix(4), id: \.id) { person in
+                    Text(person.initials).font(.caption2.bold()).foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Color(hex: person.avatarColorHex), in: Circle())
+                        .overlay(Circle().strokeBorder(.background, lineWidth: 2))
+                }
+            }
+            Button("Send to \(countLabel)") { onSend() }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+            Button("Cancel") { dismiss() }
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 22)
+        .padding(.bottom, 16)
+    }
+}
+
 private struct MinutesSentView: View {
     let recipientCount: Int
+    let recipientNames: [String]
     let onPlanNextMeeting: () -> Void
     let onBackToMeetings: () -> Void
 
@@ -484,6 +521,14 @@ private struct MinutesSentView: View {
             ZStack {
                 Circle().fill(Theme.Colors.manentAccent.opacity(0.16)).frame(width: 154, height: 154)
                     .blur(radius: 22)
+                avatar(name: recipientNames.indices.contains(0) ? recipientNames[0] : "P", color: .orange)
+                    .offset(x: -73, y: -35)
+                avatar(name: recipientNames.indices.contains(1) ? recipientNames[1] : "V", color: .pink)
+                    .offset(x: 73, y: -35)
+                avatar(name: recipientNames.indices.contains(2) ? recipientNames[2] : "A", color: .green)
+                    .offset(x: -73, y: 45)
+                avatar(name: recipientNames.indices.contains(3) ? recipientNames[3] : "G", color: .purple)
+                    .offset(x: 73, y: 45)
                 Image(systemName: "checkmark")
                     .font(.system(size: 44, weight: .bold))
                     .foregroundStyle(.white)
@@ -510,6 +555,11 @@ private struct MinutesSentView: View {
         .padding(28)
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationBarBackButtonHidden()
+    }
+
+    private func avatar(name: String, color: Color) -> some View {
+        Text(name.prefix(2).uppercased()).font(.caption2.bold()).foregroundStyle(.white)
+            .frame(width: 28, height: 28).background(color, in: Circle())
     }
 }
 
