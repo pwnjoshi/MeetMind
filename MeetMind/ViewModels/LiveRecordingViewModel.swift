@@ -203,6 +203,9 @@ public final class LiveRecordingViewModel {
     public private(set) var preparedAudioChunkCount: Int = 0
     public private(set) var preprocessedTranscriptChunkCount: Int = 0
     
+    /// True when recording could not start because microphone access is denied.
+    public var isMicrophoneUnavailable: Bool = false
+
     public var isShowingCameraPermissionAlert: Bool = false
     public var cameraAlertMessage: String = ""
     
@@ -251,6 +254,7 @@ public final class LiveRecordingViewModel {
     public func startSession() {
         guard recordingState == .idle || recordingState == .stopped else { return }
         errorMessage = nil
+        isMicrophoneUnavailable = false
         guard let recordingService else {
             errorMessage = "Audio recording is unavailable. Please reopen this meeting."
             return
@@ -344,6 +348,9 @@ public final class LiveRecordingViewModel {
                 }
             } catch {
                 recordingState = .idle
+                if let recordingError = error as? AudioRecordingError, recordingError == .permissionDenied {
+                    isMicrophoneUnavailable = true
+                }
                 errorMessage = error.localizedDescription
             }
         }
@@ -626,19 +633,21 @@ public final class LiveRecordingViewModel {
         activeSpeaker = Speaker(name: name, avatarColorHex: colorHex)
     }
     
-    public func attachPhoto(url: URL, originalSizeBytes: Int? = nil) {
+    public func attachPhoto(url: URL, originalSizeBytes: Int? = nil, caption: String = "") {
         let isCompressed = (originalSizeBytes ?? 0) > 10 * 1024 * 1024
         let item = PhotoAttachmentItem(url: url, timestamp: elapsedDuration, isCompressed: isCompressed)
         capturedPhotos.append(item)
         whiteboardPhotos.append(url)
         if let meeting = meeting {
-            let note = Note(content: "Whiteboard photo: \(url.lastPathComponent)", timestamp: elapsedDuration, imageAttachmentPath: url.path, meeting: meeting)
+            let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+            let content = trimmedCaption.isEmpty ? "Whiteboard photo: \(url.lastPathComponent)" : trimmedCaption
+            let note = Note(content: content, timestamp: elapsedDuration, imageAttachmentPath: url.path, meeting: meeting)
             meeting.addNote(note)
             try? modelContext?.save()
         }
     }
     
-    public func captureWhiteboardPhoto(data: Data) {
+    public func captureWhiteboardPhoto(data: Data, caption: String = "") {
         let filename = "whiteboard_\(UUID().uuidString).jpg"
         do {
             let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -646,7 +655,7 @@ public final class LiveRecordingViewModel {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let url = directory.appendingPathComponent(filename)
             try data.write(to: url, options: .atomic)
-            attachPhoto(url: url, originalSizeBytes: data.count)
+            attachPhoto(url: url, originalSizeBytes: data.count, caption: caption)
         } catch { errorMessage = error.localizedDescription }
     }
     
@@ -794,6 +803,13 @@ public final class LiveRecordingViewModel {
         capturedPhotos.removeAll()
         didCompleteDismissal = true
         
+        // Deleting is permanent: remove the audio file and attached photos too.
+        let fileManager = FileManager.default
+        if let url = destinationAudioURL { try? fileManager.removeItem(at: url) }
+        for photoURL in whiteboardPhotos { try? fileManager.removeItem(at: photoURL) }
+        if let audioURL = (targetMeeting ?? meeting)?.resolvedAudioFileURL { try? fileManager.removeItem(at: audioURL) }
+        whiteboardPhotos.removeAll()
+
         let toDelete = targetMeeting ?? meeting ?? (modelContext != nil ? try? modelContext?.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == meetingId })).first : nil)
         if let m = toDelete {
             modelContext?.delete(m)

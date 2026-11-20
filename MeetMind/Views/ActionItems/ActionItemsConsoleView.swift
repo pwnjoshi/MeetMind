@@ -1,94 +1,9 @@
 import SwiftUI
 import SwiftData
 
-private struct TaskDetailSheet: View {
-    let task: ActionItem
-    let openMeeting: (UUID) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var context
-    @State private var assignee: String
-    @State private var dueDate: Date
-    @State private var hasDueDate: Bool
-    @State private var errorMessage: String?
-
-    init(task: ActionItem, openMeeting: @escaping (UUID) -> Void) {
-        self.task = task
-        self.openMeeting = openMeeting
-        _assignee = State(initialValue: task.assignee?.name ?? "")
-        _dueDate = State(initialValue: task.dueDate ?? .now)
-        _hasDueDate = State(initialValue: task.dueDate != nil)
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section { Text(task.title).font(.headline) }
-                    .listRowBackground(Color.clear)
-                Section {
-                    LabeledContent("Assigned To") {
-                        TextField("Unassigned", text: $assignee)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    if hasDueDate {
-                        DatePicker("Due", selection: $dueDate, displayedComponents: .date)
-                        Button("Remove Due Date") { hasDueDate = false }
-                    } else {
-                        Button("Add Due Date") { hasDueDate = true }
-                    }
-                }
-                if let meeting = task.meeting {
-                    Section("Meeting") {
-                        Button { openMeeting(meeting.id) } label: {
-                            HStack {
-                                Text(meeting.title)
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                            }
-                        }
-                        .foregroundStyle(.primary)
-                    }
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", systemImage: "checkmark") { save() }.labelStyle(.iconOnly)
-                }
-            }
-            .alert("Could Not Save Action", isPresented: Binding(
-                get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("OK") { errorMessage = nil }
-            } message: { Text(errorMessage ?? "") }
-        }
-    }
-
-    private func save() {
-        let name = assignee.trimmingCharacters(in: .whitespacesAndNewlines)
-        let previous = (task.assignee, task.assignedByLocalUser, task.dueDate)
-        let newSpeaker: Speaker? = name.isEmpty || name == previous.0?.name ? nil : Speaker(name: name)
-        if name != (previous.0?.name ?? "") {
-            task.assignee = newSpeaker
-            task.assignedByLocalUser = newSpeaker == nil ? nil : true
-        }
-        task.dueDate = hasDueDate ? dueDate : nil
-        do {
-            try context.save()
-            dismiss()
-        } catch {
-            task.assignee = previous.0
-            task.assignedByLocalUser = previous.1
-            task.dueDate = previous.2
-            if let newSpeaker, newSpeaker.modelContext != nil { context.delete(newSpeaker) }
-            errorMessage = error.localizedDescription
-        }
-    }
-}
-
-/// Dedicated Tab 2 console aggregating all action items across all meetings
+/// Actions tab: tasks from every meeting, split into "Yours" and "Waiting on others".
+/// Must not touch the SwiftData store during TabView construction. The injected
+/// context is adopted in `onAppear`.
 public struct ActionItemsConsoleView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
@@ -96,32 +11,59 @@ public struct ActionItemsConsoleView: View {
     @Query private var queriedItems: [ActionItem]
     @State public var viewModel: ActionItemsViewModel
     @State private var syncError: String?
-    @State private var selectedTask: ActionItem?
+    @State private var selectedTaskID: UUID?
+    @State private var pendingDone: ActionItem?
+    @State private var showsDoneAlert = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var documentRaised = false
-    
+
     public init(viewModel: ActionItemsViewModel = ActionItemsViewModel()) {
         _viewModel = State(initialValue: viewModel)
     }
-    
+
+    private var localName: String {
+        settings?.userProfile?.name ?? UserProfile.defaultLocalName
+    }
+
     public var body: some View {
         @Bindable var vm = viewModel
+        let sections = viewModel.actionSections
         Group {
-            if visibleActions.isEmpty {
+            if sections.isEmpty {
                 emptyStateView
             } else {
-                FigmaActionsList(
-                    yours: assignedToMe,
-                    waitingOnOthers: waitingOnOthers,
-                    onToggle: { viewModel.toggleCompletion(for: $0) },
-                    onSelectMeeting: { router.navigate(to: .meetingDetail(id: $0), in: .actionItems) },
-                    onOpenTask: { selectedTask = $0 }
-                )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        if !sections.yours.isEmpty {
+                            ActionsListSectionView(
+                                title: "Yours",
+                                items: sections.yours,
+                                showsOwner: false,
+                                footer: nil,
+                                onToggle: handleToggle,
+                                onOpen: { selectedTaskID = $0.id }
+                            )
+                        }
+                        if !sections.waitingOnOthers.isEmpty {
+                            ActionsListSectionView(
+                                title: "Waiting on others",
+                                items: sections.waitingOnOthers,
+                                showsOwner: true,
+                                footer: "Marking these done here only updates this iPhone.",
+                                onToggle: handleToggle,
+                                onOpen: { selectedTaskID = $0.id }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 110)
+                }
             }
         }
-        .background(Color(hex: "#F7F7FC"))
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Actions")
-        .tint(Color(hex: "#4B3FF0"))
+        .tint(Theme.Colors.manentAccent)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
@@ -131,18 +73,23 @@ public struct ActionItemsConsoleView: View {
                 }
                 .accessibilityLabel("New action")
                 Menu {
-                    Picker("Status", selection: $vm.selectedFilterScope) {
-                        Text("All statuses").tag(ActionItemFilterScope.all)
-                        Text("Open").tag(ActionItemFilterScope.pending)
-                        Text("Done").tag(ActionItemFilterScope.completed)
-                    }
-                    Section("Group actions") {
-                        ForEach(ActionItemGrouping.allCases, id: \.self) { grouping in
-                            Button {
-                                viewModel.selectedGrouping = grouping
-                            } label: {
-                                Label(groupingTitle(grouping), systemImage: viewModel.selectedGrouping == grouping ? "checkmark" : "circle")
+                    Section("Sort by") {
+                        Picker("Sort by", selection: $vm.selectedSort) {
+                            ForEach(ActionSortOrder.allCases) { order in
+                                Text(order.title).tag(order)
                             }
+                        }
+                    }
+                    Section("Show") {
+                        Picker("Owner", selection: $vm.selectedOwnerScope) {
+                            ForEach(ActionOwnerScope.allCases) { scope in
+                                Text(scope.title).tag(scope)
+                            }
+                        }
+                        Picker("Status", selection: $vm.selectedFilterScope) {
+                            Text("All statuses").tag(ActionItemFilterScope.all)
+                            Text("Open").tag(ActionItemFilterScope.pending)
+                            Text("Done").tag(ActionItemFilterScope.completed)
                         }
                     }
                     Divider()
@@ -158,28 +105,29 @@ public struct ActionItemsConsoleView: View {
                 } label: {
                     Image(systemName: "arrow.up.arrow.down")
                 }
+                .accessibilityLabel("Sort and filter")
             }
         }
-        .sheet(item: $selectedTask) { task in
-            TaskDetailSheet(task: task) { id in
-                selectedTask = nil
-                router.navigate(to: .meetingDetail(id: id), in: .actionItems)
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+        .navigationDestination(item: $selectedTaskID) { id in
+            taskDetail(for: id)
         }
         .sheet(isPresented: $vm.isShowingActionItemSheet) {
-            CreateActionItemSheet(
-                onSave: { title, priority, due, assignee in
-                    viewModel.createActionItem(title: title, priority: priority, dueDate: due, assigneeName: assignee)
+            NewActionSheet(
+                meetings: viewModel.availableMeetings(),
+                localName: localName,
+                defaultMeetingID: viewModel.sheetTargetMeetingId,
+                onSave: { draft in
+                    try viewModel.createAction(from: draft)
                     viewModel.selectedFilterScope = .all
+                    viewModel.selectedOwnerScope = .all
                     viewModel.isShowingActionItemSheet = false
                 },
-                onDismiss: { viewModel.isShowingActionItemSheet = false }
+                onCancel: { viewModel.cancelSheet() }
             )
         }
         .onAppear {
             viewModel.setModelContext(modelContext)
+            viewModel.localUserName = localName
             if viewModel.allActionItems.isEmpty && !queriedItems.isEmpty {
                 viewModel.allActionItems = queriedItems
             }
@@ -187,35 +135,47 @@ public struct ActionItemsConsoleView: View {
         .onChange(of: queriedItems) { _, newItems in
             viewModel.allActionItems = newItems
         }
+        .onChange(of: localName) { _, newName in
+            viewModel.localUserName = newName
+        }
+        .alert("Mark as done for \(pendingDone?.assignee?.name ?? "the owner")?", isPresented: $showsDoneAlert) {
+            Button("Mark as Done") {
+                if let item = pendingDone { viewModel.toggleCompletion(for: item) }
+                pendingDone = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDone = nil }
+        } message: {
+            Text("They usually mark this done themselves. Marking it here records it as done on this iPhone.")
+        }
         .alert("Reminders sync failed", isPresented: Binding(get: { syncError != nil }, set: { if !$0 { syncError = nil } })) {
             Button("OK") { syncError = nil }
         } message: { Text(syncError ?? "") }
     }
 
-    private var visibleActions: [ActionItem] {
-        viewModel.allActionItems.filter { item in
-            switch viewModel.selectedFilterScope {
-            case .all: return true
-            case .pending: return !item.isCompleted
-            case .completed: return item.isCompleted
-            case .urgent: return !item.isCompleted && item.priority == .urgent
-            case .dueSoon:
-                guard !item.isCompleted, let dueDate = item.dueDate else { return false }
-                return dueDate <= Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? dueDate
-            }
+    @ViewBuilder
+    private func taskDetail(for id: UUID) -> some View {
+        if let task = viewModel.allActionItems.first(where: { $0.id == id }) {
+            ActionTaskDetailView(
+                item: task,
+                meetings: viewModel.availableMeetings(),
+                localName: localName,
+                onDelete: { item in
+                    selectedTaskID = nil
+                    viewModel.deleteActionItem(item)
+                }
+            )
         }
     }
 
-    private var assignedToMe: [ActionItem] {
-        let localName = settings?.userProfile?.name ?? UserProfile.defaultLocalName
-        return visibleActions.filter { $0.assignee?.name.localizedCaseInsensitiveCompare(localName) == .orderedSame }
+    private func handleToggle(_ item: ActionItem) {
+        if !item.isCompleted && viewModel.isWaitingOnOthers(item) {
+            pendingDone = item
+            showsDoneAlert = true
+        } else {
+            viewModel.toggleCompletion(for: item)
+        }
     }
 
-    private var waitingOnOthers: [ActionItem] {
-        let localName = settings?.userProfile?.name ?? UserProfile.defaultLocalName
-        return visibleActions.filter { $0.assignee?.name.localizedCaseInsensitiveCompare(localName) != .orderedSame }
-    }
-    
     private var emptyStateView: some View {
         VStack(spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: 10) {
@@ -251,90 +211,5 @@ public struct ActionItemsConsoleView: View {
                 .padding(.horizontal, Spacing.xl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func groupingTitle(_ grouping: ActionItemGrouping) -> String {
-        switch grouping {
-        case .none: return "No grouping"
-        case .priority: return "Priority"
-        case .meeting: return "Meeting"
-        case .assignee: return "Assignee"
-        case .dueDate: return "Due date"
-        case .category: return "Category"
-        }
-    }
-}
-
-private struct FigmaActionsList: View {
-    let yours: [ActionItem]
-    let waitingOnOthers: [ActionItem]
-    let onToggle: (ActionItem) -> Void
-    let onSelectMeeting: (UUID) -> Void
-    let onOpenTask: (ActionItem) -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                if !yours.isEmpty { section("Yours", items: yours) }
-                if !waitingOnOthers.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        section("Waiting on others", items: waitingOnOthers)
-                        Text("They tick these off from their task link.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                            .padding(.horizontal, 16)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 110)
-        }
-    }
-
-    private func section(_ title: String, items: [ActionItem]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.title3.weight(.semibold)).padding(.horizontal, 16)
-            VStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    FigmaActionRow(item: item, onToggle: { onToggle(item) }, onOpen: { onOpenTask(item) }, onSelectMeeting: onSelectMeeting)
-                    if index < items.count - 1 { Divider().padding(.leading, 56) }
-                }
-            }
-            .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        }
-    }
-}
-
-private struct FigmaActionRow: View {
-    let item: ActionItem
-    let onToggle: () -> Void
-    let onOpen: () -> Void
-    let onSelectMeeting: (UUID) -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onToggle) {
-                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22)).foregroundStyle(item.isCompleted ? Theme.Colors.manentAccent : .secondary)
-                    .frame(width: 28, height: 44)
-            }.buttonStyle(.plain)
-            Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title).foregroundStyle(.primary).strikethrough(item.isCompleted)
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
-            }.buttonStyle(.plain)
-            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-        }
-        .padding(.horizontal, 16).frame(minHeight: 66)
-    }
-
-    private var subtitle: String {
-        let due = item.dueDate.map { $0 < .now ? "Overdue" : $0.formatted(date: .abbreviated, time: .omitted) }
-        let owner = item.assignee?.name
-        let meeting = item.meeting?.title
-        return [due, owner, meeting].compactMap { $0 }.joined(separator: " · ")
     }
 }

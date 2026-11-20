@@ -89,7 +89,8 @@ public struct RootAskAISheet: View {
             },
             onDismiss: { viewModel.cancelQuestion(); onDismiss() },
             meetingTitle: viewModel.headerTitle,
-            isBusy: viewModel.isAnsweringQuestion
+            isBusy: viewModel.isAnsweringQuestion,
+            meeting: viewModel.meeting
         )
         .onDisappear {
                 viewModel.cancelQuestion()

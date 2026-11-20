@@ -28,6 +28,12 @@ public enum SetupOption: String, CaseIterable, Sendable {
     }
 }
 
+/// Which Figma layout the schedule form uses.
+public enum MeetingPrepVariant: String, Sendable {
+    case newMeeting
+    case followUp
+}
+
 /// Active stage of the new meeting setup modal
 public enum SetupWorkflow: String, CaseIterable, Sendable {
     case launcher = "launcher"
@@ -176,6 +182,19 @@ public final class MeetingSetupViewModel {
     public var importedSeriesName: String?
     public var scheduledSeriesID: UUID?
     public var scheduledSeriesName: String?
+    // MARK: Preparation (Figma section 03)
+    public var variant: MeetingPrepVariant = .newMeeting
+    /// Repeat choice; nil means Never.
+    public var recurrence: MeetingRecurrence?
+    public var coordinatorID: UUID?
+    /// Completed meeting a follow-up is planned from.
+    public var followUpSource: Meeting?
+    public var carryOverOpenActions: Bool = true
+    /// Set when a calendar write failed after the meeting itself was saved.
+    public var calendarSyncMessage: String?
+    @ObservationIgnored public var prepStore: MeetingPrepStore = .shared
+    @ObservationIgnored public var calendarService: CalendarServicing = AppleCalendarService.shared
+    @ObservationIgnored var baselineSignature: String?
     public var endDate: Date = Date().addingTimeInterval(5400)
     public var agendaText: String = ""
     public var agenda: String {
@@ -332,6 +351,10 @@ public final class MeetingSetupViewModel {
         currentWorkflow = .launcher
         title = ""
         agendaText = ""
+        recurrence = nil
+        coordinatorID = nil
+        followUpSource = nil
+        variant = .newMeeting
         participants.removeAll()
         selectedTemplate = .general
         selectedFolder = nil
@@ -552,6 +575,115 @@ public final class MeetingSetupViewModel {
         return tag
     }
     
+    // MARK: - Preparation (Figma section 03)
+
+    /// Stable fingerprint of everything the user can edit on the Meeting details form.
+    public var draftSignature: String {
+        let people = participants.map { $0.id.uuidString }.sorted().joined(separator: ",")
+        let parts: [String] = [
+            title,
+            agendaText,
+            String(Int(startDate.timeIntervalSince1970)),
+            String(Int(endDate.timeIntervalSince1970)),
+            scheduledSeriesID?.uuidString ?? "",
+            scheduledSeriesName ?? "",
+            recurrence.map { "\($0.unit.rawValue)/\($0.interval)" } ?? "never",
+            coordinatorID?.uuidString ?? "",
+            carryOverOpenActions ? "carry" : "nocarry",
+            people
+        ]
+        return parts.joined(separator: "\u{1F}")
+    }
+
+    /// True when the form differs from the state captured by `captureDraftBaseline()`.
+    public var hasUnsavedChanges: Bool {
+        guard let baseline = baselineSignature else { return false }
+        return baseline != draftSignature
+    }
+
+    public func captureDraftBaseline() {
+        baselineSignature = draftSignature
+    }
+
+    /// Clears the template agenda that the initialiser pre-fills, then records the baseline.
+    public func prepareForEditing() {
+        if baselineSignature == nil {
+            if agendaText == MeetingTemplateType.general.defaultAgenda {
+                agendaText = ""
+            }
+            captureDraftBaseline()
+        }
+    }
+
+    /// Moves the start while keeping the meeting length.
+    public func setStart(_ newStart: Date) {
+        let length = max(900, endDate.timeIntervalSince(startDate))
+        startDate = newStart
+        endDate = newStart.addingTimeInterval(length)
+    }
+
+    /// Unfinished actions of the source meeting that a follow-up can carry over.
+    public var openActionsToCarry: [ActionItem] {
+        guard let source = followUpSource else { return [] }
+        return source.actionItems.filter { !$0.isCompleted }
+    }
+
+    /// Footnote under the Carry Over toggle.
+    public var carryOverFootnote: String {
+        let open = openActionsToCarry
+        guard !open.isEmpty else { return "There are no unfinished actions to carry over." }
+        let noun = open.count == 1 ? "action" : "actions"
+        let detail = open.prefix(2).map(Self.describeAction).joined(separator: "; ")
+        return "Puts \(open.count) unfinished \(noun) on this agenda: \(detail)."
+    }
+
+    private static func describeAction(_ item: ActionItem) -> String {
+        var extras: [String] = []
+        if let name = item.assignee?.name, !name.isEmpty { extras.append(name) }
+        if let due = item.dueDate { extras.append("due " + due.formatted(.dateTime.day().month(.abbreviated))) }
+        return extras.isEmpty ? item.title : "\(item.title) (\(extras.joined(separator: ", ")))"
+    }
+
+    func effectiveAgendaForSave() -> String {
+        var agenda = agendaText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if variant == .followUp && carryOverOpenActions {
+            let lines = openActionsToCarry.map { "\u{2022} Open action: " + Self.describeAction($0) }
+            if !lines.isEmpty {
+                agenda = ([agenda].filter { !$0.isEmpty } + lines).joined(separator: "\n")
+            }
+        }
+        return agenda
+    }
+
+    /// Persists recurrence/coordinator, generates the next occurrence and writes calendar events.
+    func finalizePreparation(for meeting: Meeting) {
+        let chosenRecurrence = recurrence
+        let chosenCoordinator = coordinatorID
+        if chosenRecurrence != nil || chosenCoordinator != nil {
+            prepStore.update(meeting.id) {
+                $0.recurrence = chosenRecurrence
+                $0.coordinatorID = chosenCoordinator
+            }
+        }
+        var toSync: [Meeting] = [meeting]
+        if let chosenRecurrence, let context = modelContext {
+            if let next = try? MeetingOccurrenceScheduler.scheduleNext(after: meeting, recurrence: chosenRecurrence, context: context, store: prepStore) {
+                toSync.append(next)
+            }
+        }
+        calendarSyncMessage = nil
+        guard calendarService.isConnected else { return }
+        for item in toSync {
+            do {
+                let existing = prepStore.record(for: item.id).calendarEventID
+                let identifier = try calendarService.upsertEvent(for: item, existingIdentifier: existing)
+                prepStore.update(item.id) { $0.calendarEventID = identifier }
+            } catch {
+                calendarSyncMessage = "The meeting was saved but could not be added to Apple Calendar."
+            }
+        }
+    }
+
     // MARK: - Meeting Persistence
     public func saveScheduledMeeting() throws -> Meeting {
         guard areDatesValid else {
@@ -584,12 +716,13 @@ public final class MeetingSetupViewModel {
         meeting.seriesName = scheduledSeriesID == nil ? nil : scheduledSeriesName
         meeting.tags = selectedTags
         meeting.participants = participants
-        meeting.agendaText = agendaText.trimmingCharacters(in: .whitespacesAndNewlines)
+        meeting.agendaText = effectiveAgendaForSave()
         
         if let context = modelContext {
             context.insert(meeting)
             try context.save()
         }
+        finalizePreparation(for: meeting)
         
         dismissSheet()
         return meeting

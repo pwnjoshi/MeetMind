@@ -8,10 +8,12 @@ public struct LiveRecordingView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
     @Environment(SettingsViewModel.self) private var settings
+    @Environment(AppState.self) private var appState: AppState?
     @State private var viewModel: LiveRecordingViewModel
     @State private var isPhotoSheetPresented: Bool = false
     @State private var isFinishConfirmationPresented = false
     @State private var isFinishing = false
+    @State private var isNotesOnlyPresented = false
     @State private var showsLiveTranscript = true
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize = 60
     public let meetingId: UUID
@@ -72,6 +74,16 @@ public struct LiveRecordingView: View {
             .padding(.top, 12)
             .padding(.bottom, 10)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if viewModel.isNoteSheetPresented {
+                LiveNoteComposeBar(
+                    timestamp: viewModel.noteCaptureTimestamp,
+                    onSave: { viewModel.saveNote(text: $0) },
+                    onCancel: { viewModel.isNoteSheetPresented = false }
+                )
+                .transition(.move(edge: .bottom))
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
@@ -81,15 +93,14 @@ public struct LiveRecordingView: View {
         .disabled(isFinishing)
         .alert("Finish Recording?", isPresented: $isFinishConfirmationPresented) {
             Button("Cancel", role: .cancel) { }
-            Button("Finish and Save") { proceedToProcessing() }
+            Button("Finish") { proceedToProcessing() }
         } message: {
             Text("Your recording will be saved on this iPhone.")
         }
-        .sheet(isPresented: $viewModel.isNoteSheetPresented) {
-            LiveNoteTakingSheet(timestamp: viewModel.noteCaptureTimestamp) { viewModel.saveNote(text: $0) }
-        }
         .sheet(isPresented: $isPhotoSheetPresented) {
-            LiveMediaCaptureSheet(timestamp: viewModel.elapsedDuration) { viewModel.captureWhiteboardPhoto(data: $0) }
+            LiveMediaCaptureSheet(timestamp: viewModel.elapsedDuration, onAttach: { data, caption in
+                viewModel.captureWhiteboardPhoto(data: data, caption: caption)
+            })
         }
         .sheet(isPresented: $viewModel.isShowingDiscardAlert) {
             ViewThatFits(in: .vertical) {
@@ -105,8 +116,31 @@ public struct LiveRecordingView: View {
             Button("Discard", role: .destructive) { viewModel.confirmDiscard(); dismiss() }
             Button("Save Anyway") { proceedToProcessing() }
         } message: { Text(viewModel.shortRecordingPrompt) }
+        .fullScreenCover(isPresented: Binding(
+            get: { viewModel.isMicrophoneUnavailable },
+            set: { if !$0 { viewModel.isMicrophoneUnavailable = false } }
+        )) {
+            MicrophoneUnavailableView(
+                onBack: leaveWithoutRecording,
+                onTryAgain: retryRecording,
+                onTakeNotes: { isNotesOnlyPresented = true },
+                onImportRecording: importRecording
+            )
+            .fullScreenCover(isPresented: $isNotesOnlyPresented) {
+                NotesOnlyView(
+                    existingMeeting: fetchMeeting(),
+                    onBack: { isNotesOnlyPresented = false },
+                    onSaved: { _ in
+                        isNotesOnlyPresented = false
+                        viewModel.isMicrophoneUnavailable = false
+                        viewModel.errorMessage = nil
+                        showMeetingDetail()
+                    }
+                )
+            }
+        }
         .alert("Recording unavailable", isPresented: Binding(
-            get: { viewModel.errorMessage != nil },
+            get: { viewModel.errorMessage != nil && !viewModel.isMicrophoneUnavailable },
             set: { if !$0 { viewModel.errorMessage = nil } }
         )) {
             Button("OK") { viewModel.errorMessage = nil }
@@ -292,7 +326,7 @@ public struct LiveRecordingView: View {
                 .background(.red.opacity(0.15), in: Circle())
                 .accessibilityHidden(true)
             Text("Delete This Recording?").font(.title3.bold())
-            Text("You’ve recorded \(viewModel.formattedDuration) so far. Deleting is permanent. The audio won’t be saved anywhere.")
+            Text("You\u{2019}ve recorded \(recordedPhrase) so far. Deleting is permanent \u{2014} the audio won\u{2019}t be saved anywhere.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -332,15 +366,66 @@ public struct LiveRecordingView: View {
             defer { isFinishing = false }
             do {
                 _ = try await viewModel.finishSession()
-                if router.homePath.last == .liveRecording(id: meetingId) {
-                    let record = NavigationDestination.meetingDetail(id: meetingId)
-                    if router.homePath.dropLast().last == record {
-                        router.homePath.removeLast()
-                    } else {
-                        router.homePath[router.homePath.count - 1] = record
-                    }
-                }
+                showMeetingDetail()
             } catch { viewModel.errorMessage = error.localizedDescription }
+        }
+    }
+
+    /// Replaces the live recording route with the meeting record.
+    private func showMeetingDetail() {
+        guard router.homePath.last == .liveRecording(id: meetingId) else { return }
+        let record = NavigationDestination.meetingDetail(id: meetingId)
+        if router.homePath.dropLast().last == record {
+            router.homePath.removeLast()
+        } else {
+            router.homePath[router.homePath.count - 1] = record
+        }
+    }
+
+    private var recordedPhrase: String {
+        let total = max(0, Int(viewModel.elapsedDuration.isFinite ? viewModel.elapsedDuration : 0))
+        if total >= 60 {
+            let minutes = total / 60
+            return "\(minutes) minute\(minutes == 1 ? "" : "s")"
+        }
+        return "\(total) second\(total == 1 ? "" : "s")"
+    }
+
+    private func fetchMeeting() -> Meeting? {
+        let id = meetingId
+        var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    /// Removes the meeting only when nothing was written to it yet.
+    private func discardIfEmpty() {
+        viewModel.isMicrophoneUnavailable = false
+        if let meeting = fetchMeeting(), meeting.notes.isEmpty, meeting.audioFileURL == nil,
+           (meeting.agendaText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            viewModel.confirmDiscard()
+        }
+    }
+
+    private func leaveWithoutRecording() {
+        discardIfEmpty()
+        dismiss()
+    }
+
+    private func retryRecording() {
+        if AVAudioApplication.shared.recordPermission == .denied { return }
+        viewModel.isMicrophoneUnavailable = false
+        viewModel.errorMessage = nil
+        viewModel.startSession()
+    }
+
+    private func importRecording() {
+        discardIfEmpty()
+        dismiss()
+        Task {
+            // Let this screen finish leaving before the import sheet opens.
+            try? await Task.sleep(for: .milliseconds(600))
+            appState?.activeSheet = .audioImport
         }
     }
 

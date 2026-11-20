@@ -42,15 +42,10 @@ public struct WelcomeAndSignInView: View {
                         .foregroundStyle(.secondary)
                     VStack(spacing: 8) {
                         Button { viewModel.continueLocally() } label: {
-                            Label("Continue with Apple", systemImage: "apple.logo")
+                            Text("Continue")
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity, minHeight: 50)
-                                .background(.black, in: Capsule())
-                        }
-                        Button { viewModel.continueLocally() } label: {
-                            Text("Continue with Email")
-                                .frame(maxWidth: .infinity, minHeight: 50)
-                                .background(Color(hex: "#ECECEF"), in: Capsule())
+                                .background(Theme.Colors.manentAccent, in: Capsule())
                         }
                         Button("Not Now") { viewModel.completeOnboarding() }
                             .frame(maxWidth: .infinity, minHeight: 44)

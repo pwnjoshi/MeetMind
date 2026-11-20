@@ -26,7 +26,8 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
                     onSeekToCitation: { viewModel.seekToCitation($0) },
                     onDismiss: { viewModel.cancelQuestion(); showAskAISheet = false },
                     meetingTitle: viewModel.headerTitle,
-                    isBusy: viewModel.isAnsweringQuestion
+                    isBusy: viewModel.isAnsweringQuestion,
+                    meeting: viewModel.meeting
                 )
                 .onDisappear {
                 viewModel.cancelQuestion()

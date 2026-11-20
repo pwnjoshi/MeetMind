@@ -31,11 +31,6 @@ public struct AudioImportView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Text("Bring a recording from Files into Manent.")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-                .listRowBackground(Color.clear)
                 Section("Audio File") {
                     if let selectedURL {
                         VStack(alignment: .leading, spacing: 3) {
@@ -61,7 +56,7 @@ public struct AudioImportView: View {
                             Text("None").tag(nil as UUID?)
                             ForEach(seriesOptions, id: \.id) { series in Text(series.name).tag(Optional(series.id)) }
                         }
-                        Button("New Series…", systemImage: "plus") {
+                        Button("New Series…") {
                             seriesNameDraft = ""
                             isNewSeriesPresented = true
                         }
@@ -114,7 +109,7 @@ public struct AudioImportView: View {
             .alert("New Series", isPresented: $isNewSeriesPresented) {
                 TextField("Series name", text: $seriesNameDraft)
                 Button("Cancel", role: .cancel) { }
-                Button("Save") {
+                Button("Create") {
                     newSeriesName = seriesNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                     let id = newSeriesID ?? UUID()
                     newSeriesID = id

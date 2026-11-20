@@ -217,16 +217,15 @@ public struct HomeDashboardView: View {
                 MeetingDateTile(date: upcoming ? (meeting.scheduledStartTime ?? meeting.createdAt) : meeting.createdAt)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(meeting.title).font(.body).foregroundStyle(.primary)
-                    Text(upcoming
-                        ? "\((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))) \u{00B7} \(seriesSubtitle(meeting))"
-                        : recentSubtitle(meeting))
-                        .font(.subheadline).foregroundStyle(.secondary)
+                    if let subtitle = upcoming ? seriesSubtitle(meeting) : recentSubtitle(meeting) {
+                        Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 8)
-                Text(upcoming
-                    ? (meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .omitted, time: .shortened)
-                    : meeting.createdAt.formatted(.dateTime.day().month(.abbreviated)))
-                    .font(.body).foregroundStyle(.secondary)
+                if upcoming {
+                    Text((meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .omitted, time: .shortened))
+                        .font(.body).foregroundStyle(.secondary)
+                }
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
@@ -244,20 +243,30 @@ public struct HomeDashboardView: View {
         }
     }
 
-    private func recentSubtitle(_ meeting: Meeting) -> String {
+    private func recentSubtitle(_ meeting: Meeting) -> String? {
+        let badge = meeting.figmaBadgeText
+        guard badge == "Finalized" else { return badge }
         let open = meeting.actionItems.filter { !$0.isCompleted }.count
-        guard meeting.figmaBadgeText == "Finalized", open > 0 else { return meeting.figmaBadgeText }
-        return "Finalized \u{00B7} \(open) open \(open == 1 ? "action" : "actions")"
+        return open > 0 ? "\(open) open \(open == 1 ? "action" : "actions")" : nil
     }
 
-    private func seriesSubtitle(_ meeting: Meeting) -> String {
-        guard let id = meeting.seriesID else { return meeting.figmaBadgeText }
-        let count = savedMeetings.filter { $0.seriesID == id }.count
-        return "Series \u{00B7} \(count) \(count == 1 ? "meeting" : "meetings")"
+    /// Cadence inferred from the dates of the meetings that share a series.
+    private func seriesSubtitle(_ meeting: Meeting) -> String? {
+        guard let id = meeting.seriesID else { return nil }
+        let dates = savedMeetings.filter { $0.seriesID == id }
+            .map { $0.scheduledStartTime ?? $0.createdAt }.sorted()
+        guard dates.count >= 2 else { return "Series" }
+        let gaps = zip(dates, dates.dropFirst()).map { $1.timeIntervalSince($0) / 86_400 }
+        let average = gaps.reduce(0, +) / Double(gaps.count)
+        switch average {
+        case 6...8: return "Repeats weekly"
+        case 13...15: return "Repeats every 2 weeks"
+        case 27...32: return "Repeats monthly"
+        default: return "Series \u{00B7} \(dates.count) meetings"
+        }
     }
 
 }
-
 private struct MeetingDateTile: View {
     let date: Date
 

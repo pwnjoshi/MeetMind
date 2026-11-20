@@ -5,91 +5,69 @@ import PhotosUI
 import UIKit
 import EventKit
 
-/// Main Settings configuration console for Manent.
+/// Main Settings page for Manent (Figma 161:2315).
 public struct SettingsView: View {
     @Environment(SettingsViewModel.self) private var environmentViewModel: SettingsViewModel?
     @State private var localViewModel = SettingsViewModel()
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
     @AppStorage("Manent.workspaceName") private var workspace = "iOS Center"
-    @AppStorage(VidurModel.preferenceKey) private var vidurModel: VidurModel = .fast
     @Environment(\.openURL) private var openURL
-    
+
     private var viewModel: SettingsViewModel {
         environmentViewModel ?? localViewModel
     }
-    
+
     public init() {}
-    
+
     public var body: some View {
         Form {
             Section {
-                NavigationLink { ProfileEditorView(viewModel: viewModel) } label: {
+                NavigationLink { AccountView(viewModel: viewModel) } label: {
                     HStack(spacing: 12) {
                         SettingsProfileAvatar(profile: viewModel.userProfile ?? .defaultProfile, size: 52)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(viewModel.userProfile?.name ?? UserProfile.defaultLocalName).font(.headline).foregroundStyle(.primary)
-                            Text(viewModel.userProfile?.email.isEmpty == false ? viewModel.userProfile!.email : "Local profile")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                            Text(viewModel.userProfile?.name ?? UserProfile.defaultLocalName)
+                                .font(.headline).foregroundStyle(.primary)
+                            Text(profileSubtitle).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                 }
             }
             Section("Meetings") {
                 NavigationLink {
-                    Form { TextField("Workspace name", text: $workspace) }
-                        .navigationTitle("Workspace")
+                    Form {
+                        Section {
+                            TextField("Workspace name", text: $workspace)
+                        } footer: {
+                            Text("Manent keeps one workspace on this iPhone. This name is only a local label.")
+                        }
+                    }
+                    .navigationTitle("Workspace")
                 } label: {
                     LabeledContent("Workspace", value: workspace.isEmpty ? "Local workspace" : workspace)
                 }
-                Button { openSystemSettings() } label: {
+                NavigationLink { AppleCalendarAccessView() } label: {
                     LabeledContent("Apple Calendar", value: calendarAccess)
-                }.foregroundStyle(.primary)
-                Button("Notifications") { openSystemSettings() }.foregroundStyle(.primary)
+                }
+                NavigationLink("Notifications") { NotificationsInboxView() }
             }
             Section {
                 NavigationLink {
-                    List {
-                        if meetings.isEmpty {
-                            ContentUnavailableView("No Meetings Yet", systemImage: "calendar")
-                        }
-                        ForEach(meetings) { meeting in
-                            VStack(alignment: .leading) {
-                                Text(meeting.title)
-                                Text(meeting.figmaBadgeText).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .navigationTitle("Local Recordings")
+                    LocalRecordingsView()
                 } label: {
                     LabeledContent("Local Recordings", value: meetings.filter { $0.resolvedAudioFileURL != nil }.count.formatted())
                 }
-                NavigationLink("Vidur") {
-                    Form {
-                        Section {
-                            Picker("Analysis model", selection: $vidurModel) {
-                                ForEach(VidurModel.allCases, id: \.self) { model in
-                                    Text(model.title).tag(model)
-                                }
-                            }
-                        } header: {
-                            Text("Model")
-                        } footer: {
-                            Text("Used for new minutes and Vidur answers. Download either model below. Saved minutes stay available until you regenerate them.")
-                        }
-                        SettingsSpeechAndAISection(viewModel: viewModel)
-                        Section { NavigationLink("Offline analysis models") { OfflineAnalysisModelsView() } }
-                    }
-                    .navigationTitle("Vidur")
-                }
+                NavigationLink("Vidur") { VidurSettingsView() }
             } header: {
                 Text("Recordings & Vidur")
             } footer: {
-                Text("Manent · Recordings stay on this iPhone.")
+                Text("Manent \(appVersion) · Recordings stay on this iPhone.")
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
             Section("Developer Settings") {
                 NavigationLink("Diagnostics") {
                     Form {
-                    NavigationLink("Offline model benchmarks") { OfflineBenchmarkView() }
+                        NavigationLink("Offline model benchmarks") { OfflineBenchmarkView() }
                         SettingsAboutAndDiagnosticsSection(viewModel: viewModel)
                     }
                     .navigationTitle("Diagnostics")
@@ -102,7 +80,16 @@ public struct SettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.hidden, for: .tabBar)
-        .tint(Color(hex: "#4B3FF0"))
+        .tint(Theme.Colors.manentAccent)
+    }
+
+    private var profileSubtitle: String {
+        if let email = viewModel.userProfile?.email, !email.isEmpty { return email }
+        return "Local profile"
+    }
+
+    private var appVersion: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
     }
 
     private func openSystemSettings() {
@@ -117,10 +104,9 @@ public struct SettingsView: View {
         }
     }
 }
-
 /// Local-only profile editing: the image is retained in the app's preferences
 /// and never enables an account or cloud sync.
-private struct ProfileEditorView: View {
+struct ProfileEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var viewModel: SettingsViewModel
     @State private var name = ""
@@ -185,7 +171,7 @@ private struct ProfileEditorView: View {
     }
 }
 
-private struct SettingsProfileAvatar: View {
+struct SettingsProfileAvatar: View {
     let profile: UserProfile
     let size: CGFloat
     var body: some View {
@@ -216,7 +202,7 @@ struct OfflineAnalysisModelsView: View {
             Section {
                 Text("Meeting audio, transcripts, and analysis stay on this iPhone. Internet is needed only to download public model files. Keep the app open during downloads and meeting analysis.")
                     .font(.footnote).foregroundStyle(.secondary)
-                Text("Hindi–English accuracy is still being evaluated. Review generated tasks and source quotes before accepting them.")
+                Text("Hindiâ€“English accuracy is still being evaluated. Review generated tasks and source quotes before accepting them.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if !message.isEmpty { Text(message) }
                 if busy {

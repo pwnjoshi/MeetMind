@@ -4,7 +4,6 @@ import SwiftUI
 public struct MeetingSummaryTabView: View {
     public let summary: Summary?
     public let actionItems: [ActionItem]
-    public let onDocumentFormat: () -> Void
 
     public var body: some View {
         if let summary {
@@ -25,12 +24,7 @@ public struct MeetingSummaryTabView: View {
                         }
                     }
                 }
-                Button(action: onDocumentFormat) {
-                    Text("Document format").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
+
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)

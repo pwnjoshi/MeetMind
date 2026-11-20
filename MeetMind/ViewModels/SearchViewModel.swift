@@ -31,6 +31,10 @@ public struct SearchResultItem: Identifiable, Sendable, Equatable {
     public let timecode: TimeInterval?
     public let actionItemId: UUID?
     public var highlightRange: Range<Int>?
+    /// Speaker for transcript matches (nil for other categories).
+    public let speakerName: String?
+    /// Secondary line for action matches, e.g. meeting, assignee and due date.
+    public let detail: String?
     
     public init(
         id: UUID = UUID(),
@@ -40,7 +44,9 @@ public struct SearchResultItem: Identifiable, Sendable, Equatable {
         snippet: String,
         timecode: TimeInterval? = nil,
         actionItemId: UUID? = nil,
-        highlightRange: Range<Int>? = nil
+        highlightRange: Range<Int>? = nil,
+        speakerName: String? = nil,
+        detail: String? = nil
     ) {
         self.id = id
         self.category = category
@@ -50,7 +56,42 @@ public struct SearchResultItem: Identifiable, Sendable, Equatable {
         self.timecode = timecode
         self.actionItemId = actionItemId
         self.highlightRange = highlightRange
+        self.speakerName = speakerName
+        self.detail = detail
     }
+}
+
+/// The four segments shown by the Search screen (Figma: All, Meetings, Transcripts, Actions).
+public enum SearchPresentedScope: String, CaseIterable, Identifiable, Sendable {
+    case all, meetings, transcripts, actions
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .all: return "All"
+        case .meetings: return "Meetings"
+        case .transcripts: return "Transcripts"
+        case .actions: return "Actions"
+        }
+    }
+
+    /// Engine scope used to gather matches. Meetings gathers everything and is narrowed afterwards.
+    public var engineScope: SearchScope {
+        switch self {
+        case .all, .meetings: return .all
+        case .transcripts: return .transcripts
+        case .actions: return .actionItems
+        }
+    }
+}
+
+/// One meeting row in the Meetings section: a meeting matched by title, summary or notes.
+public struct MeetingSearchHit: Identifiable, Sendable, Equatable {
+    public var id: UUID { meetingId }
+    public let meetingId: UUID
+    public let title: String
+    public let detail: String?
 }
 
 /// ViewModel coordinating cross-entity universal search, debouncing, highlighting, and search history
@@ -59,6 +100,7 @@ public struct SearchResultItem: Identifiable, Sendable, Equatable {
 public final class SearchViewModel {
     public var searchQuery: String = ""
     public var selectedScope: SearchScope = .all
+    public private(set) var presentedScope: SearchPresentedScope = .all
     public var searchResults: [SearchResultItem] = []
     public var recentSearches: [String] = []
     public var isSearching: Bool = false
@@ -101,8 +143,50 @@ public final class SearchViewModel {
         self.indexedMeetings = meetings
     }
     
+    public func setPresentedScope(_ scope: SearchPresentedScope) {
+        presentedScope = scope
+        selectedScope = scope.engineScope
+        search(query: searchQuery, recordsHistory: false)
+    }
+
+    /// Meetings matched by title, summary or notes, one row per meeting.
+    public var meetingHits: [MeetingSearchHit] {
+        var order: [UUID] = []
+        var titles: [UUID: String] = [:]
+        var details: [UUID: String] = [:]
+        for result in searchResults {
+            switch result.category {
+            case .meetingTitle, .summary, .note:
+                if titles[result.meetingId] == nil {
+                    order.append(result.meetingId)
+                    titles[result.meetingId] = result.meetingTitle
+                }
+                if result.category != .meetingTitle, details[result.meetingId] == nil {
+                    details[result.meetingId] = formatSnippet(text: result.snippet, matchTerm: trimmedQuery)
+                }
+            case .transcript, .actionItem:
+                break
+            }
+        }
+        return order.map { MeetingSearchHit(meetingId: $0, title: titles[$0] ?? "", detail: details[$0]) }
+    }
+
+    public var transcriptResults: [SearchResultItem] {
+        searchResults.filter { $0.category == .transcript }
+    }
+
+    public var actionResults: [SearchResultItem] {
+        searchResults.filter { $0.category == .actionItem }
+    }
+
     public func setScope(_ scope: SearchScope) {
         self.selectedScope = scope
+        switch scope {
+        case .transcripts: presentedScope = .transcripts
+        case .actionItems: presentedScope = .actions
+        case .titles, .summaries, .notes: presentedScope = .meetings
+        case .all: presentedScope = .all
+        }
         search(query: searchQuery, recordsHistory: false)
     }
     
@@ -170,7 +254,8 @@ public final class SearchViewModel {
                             meetingTitle: meeting.title,
                             snippet: seg.text,
                             timecode: seg.startTime,
-                            highlightRange: range
+                            highlightRange: range,
+                            speakerName: seg.speakerName
                         ))
                     }
                 }
@@ -213,7 +298,8 @@ public final class SearchViewModel {
                             meetingTitle: meeting.title,
                             snippet: item.title,
                             actionItemId: item.id,
-                            highlightRange: range
+                            highlightRange: range,
+                            detail: actionDetail(for: item, meeting: meeting)
                         ))
                     }
                 }
@@ -237,6 +323,9 @@ public final class SearchViewModel {
             }
         }
         
+        if presentedScope == .meetings && selectedScope == .all {
+            matches = matches.filter { $0.category != .transcript && $0.category != .actionItem }
+        }
         self.searchResults = matches
         self.isSearching = false
     }
@@ -260,6 +349,15 @@ public final class SearchViewModel {
         }
     }
     
+    private func actionDetail(for item: ActionItem, meeting: Meeting) -> String {
+        var parts: [String] = [meeting.title]
+        if item.assignee != nil { parts.append(item.assigneeName) }
+        if let due = item.dueDate {
+            parts.append("Due " + due.formatted(.dateTime.day().month(.abbreviated)))
+        }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
     private func calculateHighlight(in text: String, term: String) -> Range<Int>? {
         guard let range = text.lowercased().range(of: term) else { return nil }
         let start = text.distance(from: text.startIndex, to: range.lowerBound)

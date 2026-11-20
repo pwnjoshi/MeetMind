@@ -19,10 +19,11 @@ public struct SearchConsoleView: View {
     private var searchContent: some View {
         VStack(spacing: Spacing.sm) {
             if viewModel.hasQuery {
-                SearchScopeFilterBar(
-                    selectedScope: viewModel.selectedScope,
-                    onSelectScope: { viewModel.setScope($0) }
+                SearchPresentedScopeBar(
+                    selected: viewModel.presentedScope,
+                    onSelect: { viewModel.setPresentedScope($0) }
                 )
+                .padding(.horizontal, 16)
             }
             
             if !viewModel.hasQuery {
@@ -79,21 +80,13 @@ public struct SearchConsoleView: View {
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Suggestions").font(.headline).padding(.horizontal, 14)
-                    Button {
-                        viewModel.setScope(.transcripts)
-                        viewModel.performSearch(query: "Finance")
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Mentions of Finance")
-                                Text("In transcripts").font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                        }
-                        .padding(15)
+                    VStack(spacing: 0) {
+                        suggestionRow("Decisions this week", "From finalized minutes", scope: .meetings, query: "decision")
+                        Divider().padding(.leading, 15)
+                        suggestionRow("Actions assigned to me", "Across all meetings", scope: .actions, query: "action")
+                        Divider().padding(.leading, 15)
+                        suggestionRow("Mentions of Finance", "In transcripts", scope: .transcripts, query: "Finance")
                     }
-                    .buttonStyle(.plain)
                     .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 }
             }
@@ -101,22 +94,31 @@ public struct SearchConsoleView: View {
         }
     }
 
-    private var resultsList: some View {
-        ScrollView {
-            LazyVStack(spacing: Spacing.sm) {
-                ForEach(viewModel.searchResults) { res in
-                    SearchResultRowView(result: res) {
-                        viewModel.performSearch(query: viewModel.searchQuery)
-                        router.navigate(to: .meetingDetail(id: res.meetingId), in: .search)
-                    }
+    private func suggestionRow(_ title: String, _ subtitle: String, scope: SearchPresentedScope, query: String) -> some View {
+        Button {
+            viewModel.setPresentedScope(scope)
+            viewModel.performSearch(query: query)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
                 }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.vertical, Spacing.sm)
+            .padding(15)
+            .contentShape(Rectangle())
         }
-        .scrollDismissesKeyboard(.interactively)
+        .buttonStyle(.plain)
     }
-    
+
+    private var resultsList: some View {
+        SearchResultSectionsView(viewModel: viewModel, meetings: allMeetings) { meetingId in
+            viewModel.performSearch(query: viewModel.searchQuery)
+            router.navigate(to: .meetingDetail(id: meetingId), in: .search)
+        }
+    }
     private var emptyResultsView: some View {
         VStack(spacing: Spacing.sm) {
             Image(systemName: "magnifyingglass")

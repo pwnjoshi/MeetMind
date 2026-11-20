@@ -126,6 +126,10 @@ struct MeetMindApp: App {
             switch newPhase {
             case .active:
                 settingsVM.recalculateStorageUsage()
+                if let container {
+                    // Repeating meetings: create the next scheduled occurrence once it is due.
+                    _ = try? MeetingOccurrenceScheduler.generateDueOccurrences(context: container.mainContext)
+                }
             case .background:
                 if container != nil, appState.hasCompletedOnboarding {
                     OfflineAnalysisBackgroundScheduler.scheduleInitialSetup()

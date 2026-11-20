@@ -83,8 +83,45 @@ public final class ActionItemsViewModel {
     public var sheetTargetMeetingId: UUID? = nil
     public var editingActionItemId: UUID? = nil
     
+    public var selectedOwnerScope: ActionOwnerScope = .all
+    public var selectedSort: ActionSortOrder = .dueDate
+    /// Name of the local user (from the stored profile). Decides "Yours" and "Waiting on others".
+    public var localUserName: String = UserProfile.defaultLocalName
+
     public var totalTaskCount: Int {
         allActionItems.count
+    }
+
+    /// Items after the status filter and owner scope, in the chosen sort order.
+    public var visibleActionItems: [ActionItem] {
+        let scoped = ActionListLogic.apply(scope: selectedOwnerScope, to: filteredActionItems, localName: localUserName)
+        return ActionListLogic.sorted(scoped, by: selectedSort)
+    }
+
+    public var actionSections: ActionListSections {
+        ActionListLogic.sections(visibleActionItems, localName: localUserName)
+    }
+
+    public func isWaitingOnOthers(_ item: ActionItem) -> Bool {
+        ActionListLogic.isWaitingOnOthers(item, localName: localUserName)
+    }
+
+    /// Meetings that actions can be linked to, newest first.
+    public func availableMeetings() -> [Meeting] {
+        guard let context = modelContext else { return [] }
+        let descriptor = FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Saves a New Action draft as an `ActionItem` linked to its meeting and owner.
+    @discardableResult
+    public func createAction(from draft: ActionDraft) throws -> ActionItem {
+        guard let context = modelContext else { throw ActionDraftError.storeUnavailable }
+        let item = try ActionItemWriter.create(from: draft, meetings: availableMeetings(), context: context)
+        if !allActionItems.contains(where: { $0.id == item.id }) {
+            allActionItems.append(item)
+        }
+        return item
     }
     
     public var filteredActionItems: [ActionItem] {
@@ -404,6 +441,7 @@ public final class ActionItemsViewModel {
     
     public func deleteActionItem(id: UUID) {
         if let item = allActionItems.first(where: { $0.id == id }) {
+            TaskResponseStore.shared.remove(for: id)
             if let context = modelContext {
                 context.delete(item)
                 try? context.save()
