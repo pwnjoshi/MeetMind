@@ -17,6 +17,8 @@ public struct MeetingDetailView: View {
     @State private var showExportSheet: Bool = false
     @State private var confirmSendMinutes = false
     @State private var composeMinutes = false
+    @State private var showMinutesSent = false
+    @State private var minutesSentRecipientCount = 0
     @State private var showRecipientsSheet = false
     @State private var selectedMinutesRecipientIDs = Set<UUID>()
     @State private var showAskAISheet: Bool = false
@@ -83,6 +85,12 @@ public struct MeetingDetailView: View {
                                      onAddNote: { showNoteSheet = true },
                                      onSelectPhoto: { showPhotoModal = $0 })
                 .navigationTitle("Notes & Media")
+                .toolbar(.hidden, for: .tabBar)
+        }
+        .navigationDestination(isPresented: $showMinutesSent) {
+            MinutesSentView(recipientCount: minutesSentRecipientCount,
+                            onPlanNextMeeting: { dismiss() },
+                            onBackToMeetings: { dismiss() })
                 .toolbar(.hidden, for: .tabBar)
         }
         .toolbar(.hidden, for: .tabBar)
@@ -167,9 +175,13 @@ public struct MeetingDetailView: View {
         }
         .sheet(isPresented: $composeMinutes) {
             MinutesMailComposer(recipients: recipientsForShare.compactMap(\.email),
-                                subject: viewModel.headerTitle, bodyText: viewModel.exportPlainText()) { error in
+                                subject: viewModel.headerTitle, bodyText: viewModel.exportPlainText()) { result, error in
                 composeMinutes = false
                 if let error { deletionError = error.localizedDescription }
+                else if result == .sent {
+                    minutesSentRecipientCount = recipientsForShare.count
+                    showMinutesSent = true
+                }
             }
         }
         .sheet(isPresented: $showRecipientsSheet) {
@@ -438,14 +450,14 @@ private struct MinutesMailComposer: UIViewControllerRepresentable {
     let recipients: [String]
     let subject: String
     let bodyText: String
-    let finished: (Error?) -> Void
+    let finished: (MFMailComposeResult, Error?) -> Void
 
     final class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
-        let finished: (Error?) -> Void
-        init(finished: @escaping (Error?) -> Void) { self.finished = finished }
+        let finished: (MFMailComposeResult, Error?) -> Void
+        init(finished: @escaping (MFMailComposeResult, Error?) -> Void) { self.finished = finished }
         func mailComposeController(_ controller: MFMailComposeViewController,
                                    didFinishWith result: MFMailComposeResult, error: Error?) {
-            finished(error)
+            finished(result, error)
         }
     }
 
@@ -459,6 +471,46 @@ private struct MinutesMailComposer: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: MFMailComposeViewController, context: Context) {}
+}
+
+private struct MinutesSentView: View {
+    let recipientCount: Int
+    let onPlanNextMeeting: () -> Void
+    let onBackToMeetings: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            ZStack {
+                Circle().fill(Theme.Colors.manentAccent.opacity(0.16)).frame(width: 154, height: 154)
+                    .blur(radius: 22)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 76, height: 76)
+                    .background(.green, in: Circle())
+            }
+            .accessibilityHidden(true)
+            Text("Minutes Sent").font(.title2.bold())
+            Text(recipientCount == 1
+                 ? "1 person has the minutes and their action items."
+                 : "\(recipientCount) people have the minutes and their action items.")
+                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+            Spacer()
+            Button("Plan Next Meeting", action: onPlanNextMeeting)
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+            Button("Back to Meetings", action: onBackToMeetings)
+                .frame(minHeight: 44)
+                .foregroundStyle(Theme.Colors.manentAccent)
+        }
+        .padding(28)
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .navigationBarBackButtonHidden()
+    }
 }
 
 private struct MeetingDecisionDetail: View {
