@@ -69,9 +69,13 @@ public actor MeetingAnalysisPipeline {
         return root.appendingPathComponent(id.uuidString + ".json")
     }
 
-    private func preparationURL(meetingID: UUID, sequence: Int) throws -> URL {
-        let root = try OfflineModelStore.privateDirectory("RecordingChunkPreparation")
+    private func preparationDirectory(meetingID: UUID) throws -> URL {
+        try OfflineModelStore.privateDirectory("RecordingChunkPreparation")
             .appendingPathComponent(meetingID.uuidString, isDirectory: true)
+    }
+
+    private func preparationURL(meetingID: UUID, sequence: Int) throws -> URL {
+        let root = try preparationDirectory(meetingID: meetingID)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root.appendingPathComponent(String(format: "chunk-%04d.json", sequence))
     }
@@ -114,8 +118,7 @@ public actor MeetingAnalysisPipeline {
     }
 
     private func preparedTurns(meetingID: UUID, duration: TimeInterval) throws -> [AnalysisTurn]? {
-        let root = try OfflineModelStore.privateDirectory("RecordingChunkPreparation")
-            .appendingPathComponent(meetingID.uuidString, isDirectory: true)
+        let root = try preparationDirectory(meetingID: meetingID)
         guard FileManager.default.fileExists(atPath: root.path) else { return nil }
         let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -139,6 +142,8 @@ public actor MeetingAnalysisPipeline {
         if activeMeetingID == meetingID { discardActiveCheckpoint = true }
         let url = try checkpointURL(meetingID)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        let preparation = try preparationDirectory(meetingID: meetingID)
+        if FileManager.default.fileExists(atPath: preparation.path) { try FileManager.default.removeItem(at: preparation) }
     }
 
     public func answer(question: String, turns: [AnalysisTurn], model: VidurModel = .large) async throws -> [SupportedPoint] {
@@ -191,6 +196,8 @@ public actor MeetingAnalysisPipeline {
         guard !running else { throw OfflineError.unavailable("Wait for the current analysis to finish or pause it first.") }
         let url = try checkpointURL(meetingID)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        let preparation = try preparationDirectory(meetingID: meetingID)
+        if FileManager.default.fileExists(atPath: preparation.path) { try FileManager.default.removeItem(at: preparation) }
     }
 
     public func missingModels(model: VidurModel = .large, speakersOnly: Bool = false) async throws -> [ModelProfile] {

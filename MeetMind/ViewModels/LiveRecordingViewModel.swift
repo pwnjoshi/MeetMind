@@ -278,6 +278,9 @@ public final class LiveRecordingViewModel {
                 // chunks. AudioRecordingService multicast streams mean this
                 // can never displace live captions.
                 do {
+                    // A re-recorded meeting must not reuse a prior take's
+                    // transcript checkpoints.
+                    try? await MeetingAnalysisPipeline.shared.discardCheckpoint(meetingID: meetingId)
                     let writer = try RollingAudioChunkWriter(meetingID: meetingId)
                     chunkWriter = writer
                     preparedAudioChunkCount = 0
