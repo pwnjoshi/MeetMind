@@ -198,6 +198,10 @@ public struct ActionItemsConsoleView: View {
             case .all: return true
             case .pending: return !item.isCompleted
             case .completed: return item.isCompleted
+            case .urgent: return !item.isCompleted && item.priority == .urgent
+            case .dueSoon:
+                guard !item.isCompleted, let dueDate = item.dueDate else { return false }
+                return dueDate <= Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? dueDate
             }
         }
     }

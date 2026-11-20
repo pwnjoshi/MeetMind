@@ -159,6 +159,8 @@
 		1A0000A62CEE000100000001 /* ProcessingProgressRingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A62CEE000100000001 /* ProcessingProgressRingView.swift */; };
 		1A0000A72CEE000100000001 /* ProcessingStageRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A72CEE000100000001 /* ProcessingStageRowView.swift */; };
 		1A0000F02CEE000100000001 /* OfflineAnalysisBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000F02CEE000100000001 /* OfflineAnalysisBackgroundScheduler.swift */; };
+		1A0000F12CEE000100000001 /* ScheduledMeetingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000F12CEE000100000001 /* ScheduledMeetingDetailView.swift */; };
+		1A0000F22CEE000100000001 /* RollingAudioChunkWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000F22CEE000100000001 /* RollingAudioChunkWriter.swift */; };
 		1A0000A82CEE000100000001 /* ActionItemsConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A82CEE000100000001 /* ActionItemsConsoleView.swift */; };
 		1A0000A92CEE000100000001 /* ActionItemFilterHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A92CEE000100000001 /* ActionItemFilterHeaderView.swift */; };
 		1A0000AA2CEE000100000001 /* ActionItemGroupListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000AA2CEE000100000001 /* ActionItemGroupListView.swift */; };
@@ -378,6 +380,8 @@
 		1B0000A62CEE000100000001 /* ProcessingProgressRingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/ProcessingProgressRingView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000A72CEE000100000001 /* ProcessingStageRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/ProcessingStageRowView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000F02CEE000100000001 /* OfflineAnalysisBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Background/OfflineAnalysisBackgroundScheduler.swift"; sourceTree = SOURCE_ROOT; };
+		1B0000F12CEE000100000001 /* ScheduledMeetingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/ScheduledMeetingDetailView.swift"; sourceTree = SOURCE_ROOT; };
+		1B0000F22CEE000100000001 /* RollingAudioChunkWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Audio/RollingAudioChunkWriter.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000A82CEE000100000001 /* ActionItemsConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/ActionItemsConsoleView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000A92CEE000100000001 /* ActionItemFilterHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionItemFilterHeaderView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000AA2CEE000100000001 /* ActionItemGroupListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionItemGroupListView.swift"; sourceTree = SOURCE_ROOT; };
@@ -546,6 +550,7 @@
 				1B0000172CEE000100000001 /* AudioPlaybackService.swift */,
 				1B0000182CEE000100000001 /* MockAudioRecordingService.swift */,
 				1B0000192CEE000100000001 /* MockAudioPlaybackService.swift */,
+				1B0000F22CEE000100000001 /* RollingAudioChunkWriter.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -1083,6 +1088,8 @@
 				1A0000A62CEE000100000001 /* ProcessingProgressRingView.swift in Sources */,
 				1A0000A72CEE000100000001 /* ProcessingStageRowView.swift in Sources */,
 				1A0000F02CEE000100000001 /* OfflineAnalysisBackgroundScheduler.swift in Sources */,
+				1A0000F12CEE000100000001 /* ScheduledMeetingDetailView.swift in Sources */,
+				1A0000F22CEE000100000001 /* RollingAudioChunkWriter.swift in Sources */,
 				1A0000A82CEE000100000001 /* ActionItemsConsoleView.swift in Sources */,
 				1A0000A92CEE000100000001 /* ActionItemFilterHeaderView.swift in Sources */,
 				1A0000AA2CEE000100000001 /* ActionItemGroupListView.swift in Sources */,
