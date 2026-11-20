@@ -80,13 +80,33 @@ public actor MeetingAnalysisPipeline {
         let referenceDate = Date(), timezone = TimeZone.current.identifier
         var points: [SupportedPoint] = []
         var seen = Set<String>()
-        for chunk in try Self.fittedAnalysisChunks(turns, model: model, meetingDate: referenceDate,
-            timezone: timezone, question: question, maxJSONBytes: 900) {
+        let chunks = try Self.fittedAnalysisChunks(turns, model: model, meetingDate: referenceDate,
+            timezone: timezone, question: question, maxJSONBytes: 900)
+        // Chat should feel immediate. Rank bounded transcript windows by the
+        // question vocabulary instead of decoding every historical chunk. The
+        // answer remains transcript-grounded; callers can ask a follow-up when
+        // no ranked passage supports it.
+        let budget = profile.id == VidurModel.fast.rawValue ? 2 : 3
+        for chunk in Self.rankedQuestionChunks(chunks, question: question, limit: budget) {
             try checkConditions()
             let result = try model.analyze(turns: chunk, meetingDate: referenceDate, timezone: timezone, question: question)
             for point in result.discussion where seen.insert(point.text.lowercased()).inserted { points.append(point) }
         }
         return points
+    }
+
+    private static func rankedQuestionChunks(_ chunks: [[AnalysisTurn]], question: String, limit: Int) -> [[AnalysisTurn]] {
+        let terms = Set(question.lowercased().split { !$0.isLetter && !$0.isNumber }
+            .map(String.init).filter { $0.count > 2 })
+        guard !terms.isEmpty else { return Array(chunks.prefix(limit)) }
+        return chunks.enumerated().sorted { lhs, rhs in
+            func score(_ chunk: [AnalysisTurn]) -> Int {
+                let text = chunk.map(\.text).joined(separator: " ").lowercased()
+                return terms.reduce(into: 0) { total, term in if text.contains(term) { total += 1 } }
+            }
+            let left = score(lhs.element), right = score(rhs.element)
+            return left == right ? lhs.offset < rhs.offset : left > right
+        }.prefix(limit).map(\.element)
     }
 
     public func removeCheckpoint(meetingID: UUID) throws {

@@ -62,7 +62,7 @@ public struct MeetingProcessingView: View {
                     Text(meeting.createdAt.formatted(date: .long, time: .shortened))
                         .font(.footnote).foregroundStyle(.secondary)
                     MeetingSeriesMenu(meeting: meeting) { processingError = $0 }
-                    MeetingPeopleRow(meeting: meeting) { showsPeople = true }
+                    ProcessingPeopleRow(meeting: meeting) { showsPeople = true }
                 }
                 Picker("Meeting section", selection: $selectedSection) {
                     ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }
@@ -117,8 +117,8 @@ public struct MeetingProcessingView: View {
                                     .foregroundStyle(.secondary)
                             }
                             if let meeting {
-                                let voices = meeting.participants.filter { $0.recordingVoiceLabel != nil }
-                                Text("\(voices.count) voices · \(voices.filter { $0.name != $0.recordingVoiceLabel }.count) named")
+                                let voices = detectedVoices(in: meeting)
+                                Text("\(voices.count) detected voices · \(voices.filter { $0.name != $0.recordingVoiceLabel }.count) named")
                                     .font(.subheadline).foregroundStyle(.secondary)
                             }
                             Button {
@@ -129,7 +129,7 @@ public struct MeetingProcessingView: View {
                                 }
                             } label: {
                                 HStack(spacing: 4) {
-                                    Text("Name Speakers")
+                                    Text(meeting?.analysisState == "speakerReview" ? "Name Detected Voices" : "Detect Voices")
                                     Image(systemName: "chevron.right").font(.caption)
                                 }
                             }
@@ -340,6 +340,14 @@ public struct MeetingProcessingView: View {
             viewModel.onNavigateToDetail = { id in
                 OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
             }
+            // After saving a recording, begin the smaller, parallel ASR + voice
+            // pass immediately. It reaches a reviewable speaker state before
+            // expensive minutes generation, and checkpoints survive a handoff to
+            // iOS background processing.
+            if meeting?.analysisState == nil, meeting?.transcriptSegments.isEmpty != false,
+               !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) {
+                start(download: true, speakersOnly: true)
+            }
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in
@@ -353,6 +361,10 @@ public struct MeetingProcessingView: View {
     }
 
     private var meeting: Meeting? { meetings.first { $0.id == meetingId } }
+
+    private func detectedVoices(in meeting: Meeting) -> [Speaker] {
+        meeting.participants.filter { $0.recordingVoiceLabel != nil }
+    }
 
     private func saveTranscriptCorrection() {
         let text = transcriptDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -640,6 +652,38 @@ struct OfflinePipelineSmokeView: View {
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in if phase != .active { operation?.cancel() } }
+    }
+}
+
+private struct ProcessingPeopleRow: View {
+    let meeting: Meeting
+    let openVoices: () -> Void
+
+    private var voices: [Speaker] { meeting.participants.filter { $0.recordingVoiceLabel != nil } }
+    private var attendees: [Speaker] { meeting.participants.filter { $0.recordingVoiceLabel == nil } }
+
+    var body: some View {
+        Button(action: openVoices) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("People").foregroundStyle(.primary)
+                    Text("\(attendees.count) attendees · \(voices.count) detected voices")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                HStack(spacing: -6) {
+                    ForEach(voices.prefix(4), id: \.id) { voice in
+                        Text(voice.initials).font(.caption2.bold()).foregroundStyle(.white)
+                            .frame(width: 28, height: 28).background(Color(hex: voice.avatarColorHex), in: Circle())
+                            .overlay(Circle().strokeBorder(.background, lineWidth: 1))
+                    }
+                }
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(16).background(.background, in: RoundedRectangle(cornerRadius: 24))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("People and detected voices")
     }
 }
 
