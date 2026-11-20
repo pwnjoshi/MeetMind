@@ -203,6 +203,9 @@ public final class ActionItemsViewModel {
                 self.modelContext = container.mainContext
             }
         }
+        // A standalone view model owns its in-memory container for tests and
+        // previews. Production tabs replace it with the app context only when
+        // that tab appears (see `MainTabView`).
         fetchActionItems()
     }
     
@@ -411,6 +414,7 @@ public final class ActionItemsViewModel {
     
     public func setModelContext(_ context: ModelContext) {
         self.modelContext = context
+        fetchActionItems()
     }
     
     public func cancelSheet() {

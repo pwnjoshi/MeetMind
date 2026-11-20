@@ -48,7 +48,10 @@ public struct MainTabView: View {
 
     private var actionsStack: some View {
         NavigationStack(path: Bindable(router).actionItemsPath) {
-            ActionItemsConsoleView(viewModel: ActionItemsViewModel(modelContext: modelContext, remindersService: SystemRemindersSyncService()))
+            // Do not touch the production SwiftData store while TabView is
+            // constructing an off-screen Actions tab. The view adopts the
+            // injected context from its `onAppear`, after the tab is visible.
+            ActionItemsConsoleView()
                 .navigationDestination(for: NavigationDestination.self) { destinationView(for: $0) }
         }
     }
