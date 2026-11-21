@@ -4,12 +4,26 @@ import UIKit
 
 /// One question and its answer as shown in the Vidur conversation.
 private struct VidurConversationItem: Identifiable {
+    enum Phase { case searching, refining, done }
+
     let id = UUID()
     let prompt: String
-    let answerText: String
-    let citations: [VidurCitation]
-    let kind: VidurAnswerKind?
-    let notice: String?
+    var answerText: String
+    var citations: [VidurCitation]
+    var kind: VidurAnswerKind?
+    var notice: String?
+    var tier: VidurAnswerTier = .none
+    var phase: Phase = .done
+
+    init(prompt: String, answerText: String, citations: [VidurCitation], kind: VidurAnswerKind?,
+         notice: String?, phase: Phase = .done) {
+        self.prompt = prompt
+        self.answerText = answerText
+        self.citations = citations
+        self.kind = kind
+        self.notice = notice
+        self.phase = phase
+    }
 }
 
 /// Vidur: the local, on-device assistant that answers from saved transcripts.
@@ -87,10 +101,10 @@ public struct AskAIAssistantSheet: View {
                     ForEach(items) { item in
                         conversationView(item)
                     }
-                    if busy {
+                    if isBusy {
                         HStack(spacing: Spacing.sm) {
                             ProgressView()
-                            Text("Reading the transcript on this iPhone\u{2026}")
+                            Text("Working on this iPhone\u{2026}")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, Spacing.lg)
@@ -133,7 +147,9 @@ public struct AskAIAssistantSheet: View {
         .onAppear {
             scope = VidurPreferences.shared.searchScope
             loadPersistedHistory()
+            startPrewarm()
         }
+
         .onChange(of: scope) { _, newScope in VidurPreferences.shared.searchScope = newScope }
         .onChange(of: scenePhase) { _, phase in if phase != .active { onDismiss() } }
         .onChange(of: busy) { _, isBusyNow in UIApplication.shared.isIdleTimerDisabled = isBusyNow }
@@ -141,6 +157,14 @@ public struct AskAIAssistantSheet: View {
             answerTask?.cancel()
             UIApplication.shared.isIdleTimerDisabled = false
         }
+    }
+
+    /// Loads the on-device model while the user is typing, so the first refined answer is warm.
+    /// Skipped while minutes are being generated; the engine also refuses then.
+    @MainActor
+    private func startPrewarm() {
+        guard let meeting, meeting.status != .processing else { return }
+        Task(priority: .utility) { await VidurTieredAnswerService.prewarm() }
     }
 
     @MainActor
@@ -228,16 +252,35 @@ public struct AskAIAssistantSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Vidur", systemImage: "sparkle")
                     .font(.caption.weight(.semibold)).foregroundStyle(Theme.Colors.manentAccent)
-                Text(item.answerText).textSelection(.enabled)
-                if item.kind == .extractive {
-                    Text("Matched by keyword from the transcript. Not generated.")
+                if item.answerText.isEmpty {
+                    HStack(spacing: Spacing.sm) {
+                        ProgressView()
+                        Text(item.phase == .searching
+                             ? "Looking through the minutes and transcript\u{2026}"
+                             : "Working on an answer with \(VidurTieredAnswerService.activeEngineName)\u{2026}")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(item.answerText).textSelection(.enabled)
+                }
+                if item.tier == .quote, item.phase == .done {
+                    Text("Matched in the transcript and quoted exactly. Not generated.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if let notice = item.notice {
+                if let notice = item.notice, item.phase == .done {
                     Label(notice, systemImage: "info.circle")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                if item.phase == .refining, !item.answerText.isEmpty {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Refining with \(VidurTieredAnswerService.activeEngineName)\u{2026}")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
             }
+            .animation(.easeOut(duration: 0.2), value: item.phase)
             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(.background, in: RoundedRectangle(cornerRadius: 22))
             if VidurPreferences.shared.showsSources {
@@ -326,7 +369,7 @@ public struct AskAIAssistantSheet: View {
             Button { sendTyped() } label: {
                 Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.Colors.manentAccent)
             }
-            .disabled(busy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isBusy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel("Ask Vidur")
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -337,7 +380,7 @@ public struct AskAIAssistantSheet: View {
     @MainActor
     private func sendTyped() {
         let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !busy else { return }
+        guard !trimmed.isEmpty, !isBusy else { return }
         queryText = ""
         send(trimmed)
     }
@@ -346,25 +389,68 @@ public struct AskAIAssistantSheet: View {
 
     @MainActor
     private func send(_ question: String) {
-        guard !busy else { return }
+        guard !isBusy else { return }
         guard let meeting else { onAsk(question); return }
-        isLocalBusy = true
+        // A new question stops the previous one. Its best answer so far stays in the conversation.
+        answerTask?.cancel()
+        settlePendingItems()
         let sources = sourceMeetings(for: meeting)
-        let length = VidurPreferences.shared.answerLength
+        // Saved minutes describe this meeting only, so wider scopes go straight to transcript search.
+        let facts: VidurMeetingFacts? = scope == .thisMeeting ? VidurMeetingFacts.make(from: meeting) : nil
+        let request = VidurTieredRequest(
+            question: question, sources: sources, facts: facts, length: VidurPreferences.shared.answerLength,
+            allowRefinement: meeting.status != .processing)
+        let item = VidurConversationItem(prompt: question, answerText: "", citations: [], kind: nil, notice: nil,
+                                         phase: .searching)
+        let itemID = item.id
         let meetingID = meeting.id
+        localItems.append(item)
+        isLocalBusy = true
         answerTask = Task { @MainActor in
-            let answer = await VidurAnswerService.answer(question: question, sources: sources, length: length)
-            guard !Task.isCancelled else { isLocalBusy = false; return }
-            localItems.append(VidurConversationItem(
-                prompt: question, answerText: answer.text, citations: answer.citations,
-                kind: answer.kind, notice: answer.notice))
-            if answer.isRecordable {
+            for await update in VidurTieredAnswerService.stream(request) {
+                guard !Task.isCancelled else { return }
+                apply(update, itemID: itemID, meetingID: meetingID, question: question)
+            }
+            if !Task.isCancelled, let index = localItems.firstIndex(where: { $0.id == itemID }),
+               localItems[index].phase != .done {
+                settlePendingItems()
+            }
+            if !Task.isCancelled { isLocalBusy = false }
+        }
+    }
+
+    @MainActor
+    private func apply(_ update: VidurAnswerUpdate, itemID: UUID, meetingID: UUID, question: String) {
+        guard let index = localItems.firstIndex(where: { $0.id == itemID }) else { return }
+        if let answer = update.answer {
+            localItems[index].answerText = answer.text
+            localItems[index].citations = answer.citations
+            localItems[index].kind = answer.kind
+            localItems[index].notice = answer.notice
+        }
+        localItems[index].tier = update.tier
+        switch update.stage {
+        case .instant, .refining:
+            localItems[index].phase = .refining
+        case .final:
+            localItems[index].phase = .done
+            if let answer = update.answer, answer.isRecordable {
                 VidurPreferences.shared.record(VidurHistoryEntry(meetingID: meetingID, question: question, answer: answer.text))
             }
             isLocalBusy = false
         }
     }
 
+    /// Ends any answer that was still running: keeps what it has, drops an empty placeholder.
+    @MainActor
+    private func settlePendingItems() {
+        localItems.removeAll { $0.phase != .done && $0.answerText.isEmpty }
+        for index in localItems.indices where localItems[index].phase != .done {
+            localItems[index].phase = .done
+            localItems[index].notice = "Stopped before refinement finished."
+        }
+        isLocalBusy = false
+    }
     @MainActor
     private func sourceMeetings(for meeting: Meeting) -> [VidurSourceMeeting] {
         let current = VidurSourceMeeting.make(from: meeting)

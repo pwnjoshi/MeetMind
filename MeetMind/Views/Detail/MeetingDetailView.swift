@@ -234,13 +234,7 @@ public struct MeetingDetailView: View {
     }
 
     private func beginFollowUp(for meeting: Meeting) {
-        let draft = MeetingSetupViewModel(modelContext: modelContext)
-        draft.title = meeting.seriesName ?? "\(meeting.title) follow-up"
-        draft.scheduledSeriesID = meeting.seriesID
-        draft.scheduledSeriesName = meeting.seriesName
-        draft.variant = .followUp
-        draft.followUpSource = meeting
-        followUpDraft = draft
+        followUpDraft = MinutesFollowUpDraft.make(from: meeting, modelContext: modelContext)
         showFollowUp = true
     }
 

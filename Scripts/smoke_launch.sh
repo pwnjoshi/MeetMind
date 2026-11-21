@@ -63,4 +63,14 @@ for screen in recording-active recording-paused recording-finish meeting-review 
     fi
     simctl io "$device_id" screenshot "build/smoke/$screen.png"
 done
+simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
+minutes_sent_output=$(simctl launch "$device_id" "$bundle_id" "--ui-minutes-sent")
+minutes_sent_pid="${minutes_sent_output##*: }"
+sleep 4
+if ! kill -0 "$minutes_sent_pid"; then
+    simctl spawn "$device_id" log show --last 1m --predicate 'process == "MeetMind"' > "build/smoke/minutes-sent-failure.log" 2>&1 || true
+    find "$HOME/Library/Logs/DiagnosticReports" -name 'MeetMind*.ips' -mmin -5 -exec cp {} build/smoke/ \; || true
+    exit 1
+fi
+simctl io "$device_id" screenshot build/smoke/minutes-sent.png
 echo "PASS: onboarding, main tabs, microphone, recording, and post-meeting visual states stayed alive"

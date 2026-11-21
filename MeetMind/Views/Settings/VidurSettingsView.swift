@@ -36,6 +36,7 @@ public struct VidurSettingsView: View {
                     }
                 }
                 .pickerStyle(.menu)
+                LabeledContent("Active engine", value: VidurTieredAnswerService.activeEngineName)
             } header: {
                 Text("Model")
             } footer: {

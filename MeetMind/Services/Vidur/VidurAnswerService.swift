@@ -32,11 +32,22 @@ public struct VidurSourceMeeting: Sendable, Equatable, Identifiable {
 
     @MainActor
     public static func make(from meeting: Meeting) -> VidurSourceMeeting {
-        let turns = meeting.orderedTranscriptSegments.compactMap { segment -> VidurSourceTurn? in
+        var turns = meeting.orderedTranscriptSegments.compactMap { segment -> VidurSourceTurn? in
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return nil }
             return VidurSourceTurn(text: text, start: segment.startTime, end: segment.endTime,
                                    speaker: segment.speaker?.name)
+        }
+        // Typed notes are searchable too, so a question can be answered when audio was not transcribed.
+        let notes = meeting.notes.compactMap { note -> VidurSourceTurn? in
+            let text = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return VidurSourceTurn(text: text, start: note.timestamp, end: note.timestamp, speaker: "Note")
+        }
+        if !notes.isEmpty {
+            turns = (turns + notes).enumerated().sorted {
+                $0.element.start != $1.element.start ? $0.element.start < $1.element.start : $0.offset < $1.offset
+            }.map(\.element)
         }
         return VidurSourceMeeting(id: meeting.id, title: meeting.title, date: meeting.createdAt, turns: turns)
     }
@@ -159,16 +170,8 @@ public enum VidurAnswerService {
                             emptyKind: .unavailable)
         }
 
-        var turns: [AnalysisTurn] = []
-        var index: [String: (meeting: VidurSourceMeeting, turn: VidurSourceTurn)] = [:]
-        for (meetingIndex, meeting) in sources.enumerated() {
-            for (turnIndex, turn) in meeting.turns.enumerated() {
-                let id = "m\(meetingIndex)t\(turnIndex)"
-                turns.append(AnalysisTurn(id: id, text: turn.text, start: turn.start, end: turn.end,
-                                          speaker: turn.speaker))
-                index[id] = (meeting, turn)
-            }
-        }
+        let (turns, index) = modelTurns(for: sources)
+
 
         let points: [SupportedPoint]
         do {
@@ -183,7 +186,28 @@ public enum VidurAnswerService {
                             reason: error.localizedDescription, emptyKind: .failed)
         }
 
-        // Keep only points whose quotes really occur in the cited transcript turn.
+        return validatedAnswer(points: points, index: index, length: length)
+    }
+
+    typealias TurnIndex = [String: (meeting: VidurSourceMeeting, turn: VidurSourceTurn)]
+
+    /// Flattens sources into model turns ("m0t3") plus the lookup used to validate evidence.
+    static func modelTurns(for sources: [VidurSourceMeeting]) -> (turns: [AnalysisTurn], index: TurnIndex) {
+        var turns: [AnalysisTurn] = []
+        var index: TurnIndex = [:]
+        for (meetingIndex, meeting) in sources.enumerated() {
+            for (turnIndex, turn) in meeting.turns.enumerated() {
+                let id = "m\(meetingIndex)t\(turnIndex)"
+                turns.append(AnalysisTurn(id: id, text: turn.text, start: turn.start, end: turn.end,
+                                          speaker: turn.speaker))
+                index[id] = (meeting, turn)
+            }
+        }
+        return (turns, index)
+    }
+
+    /// Keeps only points whose quotes really occur in the cited transcript turn.
+    static func validatedAnswer(points: [SupportedPoint], index: TurnIndex, length: VidurAnswerLength) -> VidurAnswer {
         let limit = maximumPoints(for: length)
         var keptText: [String] = []
         var citations: [VidurCitation] = []
@@ -209,7 +233,6 @@ public enum VidurAnswerService {
         }
         return VidurAnswer(text: keptText.joined(separator: "\n"), citations: citations, kind: .generated)
     }
-
     static func maximumPoints(for length: VidurAnswerLength) -> Int {
         max(1, length.maxTokens / 110)
     }

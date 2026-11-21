@@ -22,9 +22,8 @@ struct MinutesShareFlowModifier: ViewModifier {
     @State private var selectedIDs = Set<UUID>()
     @State private var subject = ""
     @State private var bodyText = ""
-    @State private var sentRecipients: [SharedMinutesRecipient] = []
-    @State private var resultTitle = "Minutes Shared"
-    @State private var sentMessage = ""
+    @State private var sentState: MinutesSentState?
+    @State private var sentEntry: SharedMinutesEntry?
 
     private var candidates: [Speaker] {
         var seen = Set<String>()
@@ -71,24 +70,22 @@ struct MinutesShareFlowModifier: ViewModifier {
             .sheet(isPresented: $showMail) {
                 RecordMailComposer(recipients: chosen.compactMap(\.email), subject: subject, bodyText: bodyText) { result, error in
                     showMail = false
-                    if let error {
-                        onError(error.localizedDescription)
-                    } else if result == .sent {
-                        finish(channel: .mail)
-                    }
+                    handle(MinutesShareOutcome.fromMail(result, error: error))
                 }
             }
             .sheet(isPresented: $showActivity) {
                 RecordActivitySheet(text: bodyText) { completed in
                     showActivity = false
-                    if completed { finish(channel: .shareSheet) }
+                    handle(MinutesShareOutcome.fromActivity(completed: completed))
                 }
                 .presentationDetents([.medium, .large])
             }
             .navigationDestination(isPresented: $showSent) {
-                MinutesSentView(title: resultTitle, recipients: sentRecipients, message: sentMessage, meeting: meeting,
-                                onBackToMeetings: onBackToMeetings)
-                    .toolbar(.hidden, for: .tabBar)
+                if let sentState {
+                    MinutesSentView(state: sentState, entry: sentEntry, meeting: meeting,
+                                    onBackToMeetings: onBackToMeetings)
+                        .toolbar(.hidden, for: .tabBar)
+                }
             }
     }
 
@@ -112,7 +109,17 @@ struct MinutesShareFlowModifier: ViewModifier {
         }
     }
 
-    private func finish(channel: SharedMinutesEntry.Channel) {
+    /// Cancelled, saved-as-draft and failed attempts record nothing and show no success screen.
+    private func handle(_ outcome: MinutesShareOutcome) {
+        if let message = outcome.errorMessage {
+            onError(message)
+            return
+        }
+        guard let channel = outcome.recordedChannel else { return }
+        finish(channel: channel, outcome: outcome)
+    }
+
+    private func finish(channel: SharedMinutesEntry.Channel, outcome: MinutesShareOutcome) {
         guard let meeting else { return }
         let recipients: [SharedMinutesRecipient] = channel == .mail
             ? chosen.map { SharedMinutesRecipient(name: $0.name, email: $0.email, colorHex: $0.avatarColorHex) }
@@ -123,18 +130,11 @@ struct MinutesShareFlowModifier: ViewModifier {
         } catch {
             onError(error.localizedDescription)
         }
-        sentRecipients = recipients
-        if recipients.isEmpty {
-            resultTitle = "Minutes Shared or Exported"
-            sentMessage = "You completed an activity from the system share sheet. Manent cannot tell whether it was sent, saved, copied, or exported."
-        } else {
-            resultTitle = "Minutes Sent"
-            let names = MeetingRecordFormatting.joinedNames(recipients.map { MeetingRecordFormatting.firstName($0.name) })
-            sentMessage = "Mail confirmed that you sent the minutes to \(names)."
-        }
+        sentEntry = entry
+        sentState = MinutesSentState.make(outcome: outcome, recipients: recipients)
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(350))
-            showSent = true
+            showSent = sentState != nil
         }
     }
 }

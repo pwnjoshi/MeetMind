@@ -6,6 +6,24 @@ protocol MeetingAnalysisSession {
     var inputTokenLimit: Int { get }
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult
+    /// Participant names and the agenda are untrusted prompt context. Conformers that
+    /// ignore them inherit the default, which forwards to the context-free methods.
+    func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?,
+                         participants: [String], agenda: String?) throws -> Int
+    func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?,
+                 participants: [String], agenda: String?) throws -> LocalAnalysisResult
+}
+
+extension MeetingAnalysisSession {
+    func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?,
+                         participants: [String], agenda: String?) throws -> Int {
+        try inputTokenCount(turns: turns, meetingDate: meetingDate, timezone: timezone, question: question)
+    }
+
+    func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?,
+                 participants: [String], agenda: String?) throws -> LocalAnalysisResult {
+        try analyze(turns: turns, meetingDate: meetingDate, timezone: timezone, question: question)
+    }
 }
 
 extension LocalLanguageModel: MeetingAnalysisSession {}

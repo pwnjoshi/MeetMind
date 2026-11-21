@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0412CEE000100000001 /* AppleIntelligenceAnswerer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0422CEE000100000001 /* AppleIntelligenceAnswerer.swift */; };
+		1A00C0432CEE000100000001 /* VidurFastAnswerer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0442CEE000100000001 /* VidurFastAnswerer.swift */; };
+		1A00C0452CEE000100000001 /* VidurStructuredAnswerer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0462CEE000100000001 /* VidurStructuredAnswerer.swift */; };
+		1A00C0472CEE000100000001 /* VidurTieredAnswerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0482CEE000100000001 /* VidurTieredAnswerService.swift */; };
+		1A00C0492CEE000100000001 /* VidurTieredAnswerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C04A2CEE000100000001 /* VidurTieredAnswerTests.swift */; };
+		1A00C0392CEE000100000001 /* MinutesCelebrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C03A2CEE000100000001 /* MinutesCelebrationView.swift */; };
+		1A00C03B2CEE000100000001 /* MinutesSentFixtureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C03C2CEE000100000001 /* MinutesSentFixtureView.swift */; };
+		1A00C03D2CEE000100000001 /* MinutesShareOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C03E2CEE000100000001 /* MinutesShareOutcome.swift */; };
+		1A00C03F2CEE000100000001 /* MinutesShareOutcomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0402CEE000100000001 /* MinutesShareOutcomeTests.swift */; };
 		1A00C02B2CEE000100000001 /* MeetingMinutesContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C02C2CEE000100000001 /* MeetingMinutesContent.swift */; };
 		1A00C02D2CEE000100000001 /* MeetingRecordEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C02E2CEE000100000001 /* MeetingRecordEditor.swift */; };
 		1A00C02F2CEE000100000001 /* MeetingActionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0302CEE000100000001 /* MeetingActionViews.swift */; };
@@ -310,6 +319,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0422CEE000100000001 /* AppleIntelligenceAnswerer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/AppleIntelligenceAnswerer.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0442CEE000100000001 /* VidurFastAnswerer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurFastAnswerer.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0462CEE000100000001 /* VidurStructuredAnswerer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurStructuredAnswerer.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0482CEE000100000001 /* VidurTieredAnswerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurTieredAnswerService.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C04A2CEE000100000001 /* VidurTieredAnswerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Vidur/VidurTieredAnswerTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C03A2CEE000100000001 /* MinutesCelebrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Share/MinutesCelebrationView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C03C2CEE000100000001 /* MinutesSentFixtureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Share/MinutesSentFixtureView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C03E2CEE000100000001 /* MinutesShareOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Share/MinutesShareOutcome.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0402CEE000100000001 /* MinutesShareOutcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/MinutesShareOutcomeTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C02C2CEE000100000001 /* MeetingMinutesContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingMinutesContent.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C02E2CEE000100000001 /* MeetingRecordEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingRecordEditor.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0302CEE000100000001 /* MeetingActionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingActionViews.swift"; sourceTree = SOURCE_ROOT; };
@@ -636,6 +654,13 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0422CEE000100000001 /* AppleIntelligenceAnswerer.swift */,
+				1B00C0442CEE000100000001 /* VidurFastAnswerer.swift */,
+				1B00C0462CEE000100000001 /* VidurStructuredAnswerer.swift */,
+				1B00C0482CEE000100000001 /* VidurTieredAnswerService.swift */,
+				1B00C03A2CEE000100000001 /* MinutesCelebrationView.swift */,
+				1B00C03C2CEE000100000001 /* MinutesSentFixtureView.swift */,
+				1B00C03E2CEE000100000001 /* MinutesShareOutcome.swift */,
 				1B00C02C2CEE000100000001 /* MeetingMinutesContent.swift */,
 				1B00C02E2CEE000100000001 /* MeetingRecordEditor.swift */,
 				1B00C0302CEE000100000001 /* MeetingActionViews.swift */,
@@ -855,6 +880,8 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C04A2CEE000100000001 /* VidurTieredAnswerTests.swift */,
+				1B00C0402CEE000100000001 /* MinutesShareOutcomeTests.swift */,
 				1B00C0362CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift */,
 				1B00C0382CEE000100000001 /* MeetingRecordSyncTests.swift */,
 				1B00C0282CEE000100000001 /* RecordingChunkPipelineTests.swift */,
@@ -1220,6 +1247,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0412CEE000100000001 /* AppleIntelligenceAnswerer.swift in Sources */,
+				1A00C0432CEE000100000001 /* VidurFastAnswerer.swift in Sources */,
+				1A00C0452CEE000100000001 /* VidurStructuredAnswerer.swift in Sources */,
+				1A00C0472CEE000100000001 /* VidurTieredAnswerService.swift in Sources */,
+				1A00C0392CEE000100000001 /* MinutesCelebrationView.swift in Sources */,
+				1A00C03B2CEE000100000001 /* MinutesSentFixtureView.swift in Sources */,
+				1A00C03D2CEE000100000001 /* MinutesShareOutcome.swift in Sources */,
 				1A00C02B2CEE000100000001 /* MeetingMinutesContent.swift in Sources */,
 				1A00C02D2CEE000100000001 /* MeetingRecordEditor.swift in Sources */,
 				1A00C02F2CEE000100000001 /* MeetingActionViews.swift in Sources */,
@@ -1464,6 +1498,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0492CEE000100000001 /* VidurTieredAnswerTests.swift in Sources */,
+				1A00C03F2CEE000100000001 /* MinutesShareOutcomeTests.swift in Sources */,
 				1A00C0352CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift in Sources */,
 				1A00C0372CEE000100000001 /* MeetingRecordSyncTests.swift in Sources */,
 				1A00C0272CEE000100000001 /* RecordingChunkPipelineTests.swift in Sources */,

@@ -17,10 +17,16 @@ public protocol AnalysisPipelineRunning: Sendable {
              progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint
     func savedCheckpoint(meetingID: UUID) async -> MeetingAnalysisCheckpoint?
     func speakerWarning() async -> String?
+    func analysisReuseCounts() async -> (reused: Int, analyzed: Int)
+}
+
+extension AnalysisPipelineRunning {
+    public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { (0, 0) }
 }
 
 extension MeetingAnalysisPipeline: AnalysisPipelineRunning {
     public func speakerWarning() async -> String? { lastSpeakerWarning }
+    public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { lastAnalysisReuse }
 }
 
 public enum AnalysisCoordinatorError: LocalizedError {
@@ -181,11 +187,16 @@ public final class AnalysisCoordinator {
                          end: $0.endTime, speaker: $0.speaker?.recordingVoiceLabel ?? $0.speaker?.name)
         } : []
         do {
+            let runStarted = Date()
+            OfflineProcessingGate.begin()
+            defer { OfflineProcessingGate.end() }
             let result = try await pipeline.run(meetingID: meetingID, audio: audio,
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
                 timezone: meeting.analysisTimezone ?? TimeZone.current.identifier,
                 languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
-                reviewedTurns: reviewedTurns) { [weak self] stage in
+                reviewedTurns: reviewedTurns,
+                participants: meeting.namedAttendees.map(\.name),
+                agenda: meeting.agendaText) { [weak self] stage in
                     await self?.reached(stage, meetingID: meetingID, lease: lease, progress: progress)
                 }
             try Task.checkCancellation()
@@ -200,6 +211,10 @@ public final class AnalysisCoordinator {
             }
             try commitMinutes(result, to: meeting)
             try context.save()
+            let reuse = await pipeline.analysisReuseCounts()
+            let transcriptReuse = TranscriptReuseRegistry.shared.summary(for: meetingID)
+            Logger(subsystem: "com.meetmind.app", category: "Analysis").notice(
+                "Analysis timing total_ms=\(Int(Date().timeIntervalSince(runStarted) * 1_000), privacy: .public) audio_s=\(Int(transcriptReuse?.totalSeconds ?? 0), privacy: .public) transcript_reused_s=\(Int(transcriptReuse?.reusedSeconds ?? 0), privacy: .public) minutes_chunks_reused=\(reuse.reused, privacy: .public) minutes_chunks_analyzed=\(reuse.analyzed, privacy: .public)")
             try await jobs.complete(lease, warning: warning)
             return try await requiredSnapshot(meetingID)
         } catch is CancellationError {
@@ -249,7 +264,14 @@ public final class AnalysisCoordinator {
     }
 
     private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
-        let reduced = MeetingAnalysisReducer.reduce(result)
+        // Names the user gave attendees let the reducer attach an owner to requests
+        // ("Pawan, can you ...") and to first-person promises. Generic labels never count.
+        var speakerNames: [String: String] = [:]
+        for person in meeting.namedAttendees {
+            if let label = person.recordingVoiceLabel, !label.isEmpty { speakerNames[label] = person.name }
+        }
+        let reduced = MeetingAnalysisReducer.reduce(result, participants: meeting.namedAttendees.map(\.name),
+                                                    speakerNames: speakerNames)
         // Open issues live in the checkpoint as their own list; the minutes
         // content builder renders them in a dedicated Open Issues section.
         let points = uniqueTexts(reduced.discussion.map(\.text))

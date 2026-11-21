@@ -16,7 +16,14 @@ public struct ReducedMeetingAnalysis: Sendable {
 /// not invent facts: every retained or supplemented item carries an exact quote
 /// from a transcript turn and remains subject to user review.
 public enum MeetingAnalysisReducer {
-    public static func reduce(_ checkpoint: MeetingAnalysisCheckpoint) -> ReducedMeetingAnalysis {
+    /// - Parameters:
+    ///   - participants: Named attendees. Only these names (or a name written in the
+    ///     sentence itself) can become a task owner.
+    ///   - speakerNames: Maps a transcript speaker label to the attendee the user named,
+    ///     so first-person commitments ("I will ...") can receive an owner.
+    public static func reduce(_ checkpoint: MeetingAnalysisCheckpoint, participants: [String] = [],
+                              speakerNames: [String: String] = [:]) -> ReducedMeetingAnalysis {
+        let context = ExtractionContext(participants: participants, speakerNames: speakerNames)
         let grounding = Grounding(turns: checkpoint.turns)
         let generatedDiscussion = checkpoint.analysis.flatMap(\.discussion)
         let generatedDecisions = checkpoint.analysis.flatMap(\.decisions)
@@ -26,9 +33,19 @@ public enum MeetingAnalysisReducer {
         // A sentence that says something is undecided can never support a
         // decision. Model output grounded only in such a sentence is demoted.
         var openCandidates = generatedOpenIssues.compactMap(cleanedPoint)
+        // Deterministic requests and commitments found in the transcript itself.
+        let floorTasks = ActionExtractor.tasks(in: checkpoint.turns, context: context)
+        let requestSentences = Set(floorTasks.compactMap { $0.evidence.first }.map { normalize($0.quote) })
         var decisionCandidates: [SupportedPoint] = []
         for point in generatedDecisions.compactMap(cleanedPoint) {
-            if isUndecidedPoint(point, grounding) { openCandidates.append(point) } else { decisionCandidates.append(point) }
+            if isUndecidedPoint(point, grounding) {
+                openCandidates.append(point)
+            } else if isRequestOnly(point, grounding, requestSentences) {
+                // A "decision" whose only support is an assignment sentence is a task.
+                continue
+            } else {
+                decisionCandidates.append(point)
+            }
         }
         var discussionCandidates: [SupportedPoint] = []
         for point in generatedDiscussion.compactMap(cleanedPoint) {
@@ -52,8 +69,10 @@ public enum MeetingAnalysisReducer {
         decisions = Array(decisions.prefix(12))
         openIssues = Array(openIssues.prefix(12))
 
-        var tasks = deduplicateTasks(generatedTasks.compactMap(cleanedTask).filter { isGroundedCommitment($0, grounding) })
-        tasks = mergeTasks(tasks, with: explicitCommitments(in: checkpoint.turns))
+        var tasks = deduplicateTasks(generatedTasks.compactMap(cleanedTask).filter {
+            isGroundedCommitment($0, grounding) && !ActionExtractor.isRefusedRequest(evidence: $0.evidence, in: checkpoint.turns)
+        })
+        tasks = mergeTasks(tasks, with: floorTasks)
         tasks = Array(tasks.prefix(24))
 
         let executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
@@ -140,97 +159,19 @@ public enum MeetingAnalysisReducer {
         deduplicateTasks(lhs + rhs)
     }
 
-    /// Supplements only explicit, grammatically definite commitments. The result
-    /// remains a suggestion that the user must accept before it becomes a task.
-    private static func explicitCommitments(in turns: [AnalysisTurn]) -> [SuggestedTask] {
-        let name = #"([A-Z][\p{L}'-]+(?:\s+[A-Z][\p{L}'-]+)?)"#
-        let deadline = #"(today|tomorrow|by\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|on\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|next\s+week)"#
-        let pattern = #"(?i)\b"# + name + #"\s+will\s+(?!not\b)(.+?)(?:\s+"# + deadline + #")?[.!?]?$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        var tasks: [SuggestedTask] = []
-        for turn in turns {
-            for sentence in sentences(in: turn.text) {
-                guard !isNonCommittalSentence(sentence) else { continue }
-                let range = NSRange(sentence.startIndex..<sentence.endIndex, in: sentence)
-                guard let match = regex.firstMatch(in: sentence, range: range), match.numberOfRanges >= 3,
-                      let ownerRange = Range(match.range(at: 1), in: sentence),
-                      let actionRange = Range(match.range(at: 2), in: sentence) else { continue }
-                let owner = String(sentence[ownerRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                let nonNames = Set(["i", "we", "you", "they", "he", "she", "it", "team", "the team", "speaker"])
-                guard !nonNames.contains(owner.lowercased()) else { continue }
-                var action = String(sentence[actionRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                var deadlineText: String?
-                if match.numberOfRanges > 3, match.range(at: 3).location != NSNotFound,
-                   let deadlineRange = Range(match.range(at: 3), in: sentence) {
-                    deadlineText = String(sentence[deadlineRange])
-                    if let deadlineText, action.lowercased().hasSuffix(deadlineText.lowercased()) {
-                        action = String(action.dropLast(deadlineText.count)).trimmingCharacters(in: .whitespaces)
-                    }
-                }
-                let title = polishedTask(action)
-                guard isSubstantive(title), actionHasVerb(title) else { continue }
-                let evidence = SourceEvidence(turnID: turn.id, quote: sentence)
-                tasks.append(SuggestedTask(title: title, category: category(for: title), owner: owner,
-                                           deadlineText: deadlineText, priority: nil, evidence: [evidence]))
-            }
-        }
-        return tasks + hinglishCommitments(in: turns)
-    }
-
-    /// Definite Hinglish future commitments such as "Rahul kal tak estimate bhej
-    /// dega". The quote is the exact source sentence; the user still reviews it.
-    private static func hinglishCommitments(in turns: [AnalysisTurn]) -> [SuggestedTask] {
-        let pattern = #"^([A-Z][\p{L}'-]+)\s+(.+?)\s+(?i:(bhej\s+(?:dega|degi|denge)|bhejega|bhejegi|bhejenge|karega|karegi|karenge))\s*[.!?]?$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let deadlineRegex = try? NSRegularExpression(pattern: #"(?i)\b(kal|aaj|parso)\b(?:\s+tak)?"#) else { return [] }
-        let nonNames = Set(["hum", "ham", "main", "mai", "aap", "tum", "tu", "woh", "wo", "yeh", "ye", "sab",
-                            "koi", "team", "speaker", "hamara", "log"])
-        var tasks: [SuggestedTask] = []
-        for turn in turns {
-            for sentence in sentences(in: turn.text) {
-                guard !isNonCommittalSentence(sentence) else { continue }
-                let range = NSRange(sentence.startIndex..<sentence.endIndex, in: sentence)
-                guard let match = regex.firstMatch(in: sentence, range: range), match.numberOfRanges >= 4,
-                      let ownerRange = Range(match.range(at: 1), in: sentence),
-                      let bodyRange = Range(match.range(at: 2), in: sentence),
-                      let auxRange = Range(match.range(at: 3), in: sentence) else { continue }
-                let owner = String(sentence[ownerRange])
-                guard !nonNames.contains(owner.lowercased()) else { continue }
-                var body = String(sentence[bodyRange])
-                var deadlineText: String?
-                let bodyNSRange = NSRange(body.startIndex..<body.endIndex, in: body)
-                if let found = deadlineRegex.firstMatch(in: body, range: bodyNSRange),
-                   let foundRange = Range(found.range, in: body) {
-                    deadlineText = String(body[foundRange]).lowercased()
-                    body.removeSubrange(foundRange)
-                }
-                body = body.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-                    .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-                guard !body.isEmpty else { continue }
-                let aux = String(sentence[auxRange]).lowercased()
-                let title: String
-                if aux.hasPrefix("bhej") {
-                    title = polishedTask("Send " + body)
-                } else {
-                    var words = body.split(separator: " ").map(String.init)
-                    guard let last = words.popLast(), actionHasVerb(last), !words.isEmpty else { continue }
-                    title = polishedTask(last + " " + words.joined(separator: " "))
-                }
-                guard isSubstantive(title) else { continue }
-                tasks.append(SuggestedTask(title: title, category: category(for: title), owner: owner,
-                    deadlineText: deadlineText, priority: nil,
-                    evidence: [SourceEvidence(turnID: turn.id, quote: sentence)]))
-            }
-        }
-        return tasks
-    }
-
+    /// Settled outcomes only: see `DecisionExtractor` for the accepted markers and the
+    /// question, conditional, negation and undecided exclusions.
     private static func explicitDecisions(in turns: [AnalysisTurn]) -> [SupportedPoint] {
-        let markers = ["we decided", "we agreed", "was approved", "is approved", "was rejected",
-                       "is rejected", "we deferred", "decision is", "the decision was"]
-        return groundedSentences(in: turns) { sentence in
-            let lower = sentence.lowercased()
-            return markers.contains(where: lower.contains) && !containsNegation(lower) && !isUndecidedSentence(sentence)
+        turns.flatMap { turn in
+            sentences(in: turn.text).flatMap { sentence in
+                sentence.components(separatedBy: "\u{0964}").compactMap { piece -> SupportedPoint? in
+                    let quote = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !quote.isEmpty, DecisionExtractor.isDecision(quote) else { return nil }
+                    let text = polished(DecisionExtractor.minuteText(quote))
+                    guard isSubstantive(text) else { return nil }
+                    return SupportedPoint(text: text, evidence: [SourceEvidence(turnID: turn.id, quote: quote)])
+                }
+            }
         }
     }
 
@@ -253,7 +194,7 @@ public enum MeetingAnalysisReducer {
         }
     }
 
-    private static func sentences(in text: String) -> [String] {
+    static func sentences(in text: String) -> [String] {
         var values: [String] = []
         text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: [.bySentences, .substringNotRequired]) {
             _, range, _, _ in
@@ -276,7 +217,7 @@ public enum MeetingAnalysisReducer {
         return text.prefix(1).uppercased() + text.dropFirst()
     }
 
-    private static func polishedTask(_ value: String) -> String {
+    static func polishedTask(_ value: String) -> String {
         var text = value.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         text = text.replacingOccurrences(of: #"^(?:to|please)\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
@@ -358,7 +299,7 @@ public enum MeetingAnalysisReducer {
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    private static func isSubstantive(_ text: String) -> Bool {
+    static func isSubstantive(_ text: String) -> Bool {
         let normalized = normalize(text)
         let emptyPhrases = ["", "okay", "ok", "yes", "no", "thanks", "thank you", "hello", "hi", "good morning"]
         return text.count >= 8 && !emptyPhrases.contains(normalized)
@@ -373,7 +314,7 @@ public enum MeetingAnalysisReducer {
 
     /// Lowercased, punctuation-free form padded with single spaces so a marker
     /// can be matched as whole words. Apostrophes are kept ("haven't").
-    private static func clauseKey(_ text: String) -> String {
+    static func clauseKey(_ text: String) -> String {
         let lowered = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
         var result = " "
         var previousWasSpace = true
@@ -410,18 +351,18 @@ public enum MeetingAnalysisReducer {
         "cannot", "can't", "never", "no need", "not needed", "not required", "cancelled", "canceled",
         "cancel ho", "cancel kar", "cancel hua", "postponed", "put on hold", "on hold", "dropped",
         "not this week", "not today", "not tomorrow", "not now", "already completed", "already done",
-        "already sent", "nahi", "nahin", "mat",
+        "already sent", "nahi", "nahin", "mat", "if", "unless", "agar",
         "\u{0928}\u{0939}\u{0940}\u{0902}", "\u{0928}\u{0939}\u{0940}", "\u{0930}\u{0926}\u{094D}\u{0926}"
     ]
 
     /// Undecided, hypothetical or explicitly open ("not decided", "should we").
-    private static func isUndecidedSentence(_ sentence: String) -> Bool {
+    static func isUndecidedSentence(_ sentence: String) -> Bool {
         let key = clauseKey(sentence)
         return undecidedMarkers.contains { key.contains(" " + $0 + " ") }
     }
 
     /// True when a sentence cannot support a definite future commitment.
-    private static func isNonCommittalSentence(_ sentence: String) -> Bool {
+    static func isNonCommittalSentence(_ sentence: String) -> Bool {
         if isUndecidedSentence(sentence) { return true }
         let key = clauseKey(sentence)
         return commitmentBlockers.contains { key.contains(" " + $0 + " ") }
@@ -483,6 +424,13 @@ public enum MeetingAnalysisReducer {
         let found = focus(for: point.text, evidence: point.evidence, grounding)
         guard !found.sentences.isEmpty else { return false }
         return found.sentences.allSatisfy(isUndecidedSentence)
+    }
+
+    private static func isRequestOnly(_ point: SupportedPoint, _ grounding: Grounding,
+                                      _ requestSentences: Set<String>) -> Bool {
+        let found = focus(for: point.text, evidence: point.evidence, grounding)
+        guard !found.all.isEmpty else { return false }
+        return found.all.allSatisfy { requestSentences.contains(normalize($0)) && !DecisionExtractor.isDecision($0) }
     }
 
     private static func focusKeys(_ point: SupportedPoint, _ grounding: Grounding) -> Set<String> {
@@ -551,7 +499,7 @@ public enum MeetingAnalysisReducer {
         return verbs.contains { verb in words.contains(verb) || words.contains(verb + "s") || words.contains(verb + "ing") }
     }
 
-    private static func category(for title: String) -> String {
+    static func category(for title: String) -> String {
         let lower = title.lowercased()
         if ["research", "investigate", "check"].contains(where: lower.contains) { return "Research" }
         if ["review", "approve"].contains(where: lower.contains) { return "Review/Approve" }

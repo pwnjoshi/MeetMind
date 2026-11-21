@@ -65,6 +65,9 @@ public actor MeetingAnalysisPipeline {
     private var activeMeetingID: UUID?
     /// Set when speaker separation fails but transcription can still continue.
     public private(set) var lastSpeakerWarning: String?
+    /// Content-free counts from the last final pass: minutes chunks reused from
+    /// recording-time pre-analysis versus analyzed after Stop.
+    public private(set) var lastAnalysisReuse: (reused: Int, analyzed: Int) = (0, 0)
     private var preparingChunks = Set<String>()
     private var discardedPreparationMeetingIDs = Set<UUID>()
     private var discardActiveCheckpoint = false
@@ -428,6 +431,7 @@ public actor MeetingAnalysisPipeline {
                     model: VidurModel = .large,
                     stopAfterSpeakers: Bool = false,
                     reviewedTurns: [AnalysisTurn] = [],
+                    participants: [String] = [], agenda: String? = nil,
                     progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
         guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Pause it before starting this one.") }
         running = true
@@ -435,6 +439,7 @@ public actor MeetingAnalysisPipeline {
         discardActiveCheckpoint = false
         defer { running = false; activeMeetingID = nil; discardActiveCheckpoint = false }
         lastSpeakerWarning = nil
+        lastAnalysisReuse = (0, 0)
         guard audio.isFileURL else { throw OfflineError.unavailable("Choose a recording saved on this iPhone.") }
         let duration = try await AVURLAsset(url: audio).load(.duration).seconds
         guard duration.isFinite, duration > 0, duration <= 3600 else {
@@ -510,7 +515,8 @@ public actor MeetingAnalysisPipeline {
                 uniquingKeysWith: { first, _ in first })
             if checkpoint.chunkTurnIDs == nil {
                 let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: model,
-                    meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes)
+                    meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes,
+                    participants: participants, agenda: agenda)
                 var seen = Set<String>()
                 checkpoint.turns = fitted.flatMap { $0 }.filter { seen.insert($0.id).inserted }
                 checkpoint.chunkTurnIDs = fitted.map { $0.map(\.id) }
@@ -541,9 +547,12 @@ public actor MeetingAnalysisPipeline {
                    (try? cached.validate(against: chunks[index])) != nil {
                     // Identical turn IDs and texts were analyzed during recording.
                     result = cached
+                    lastAnalysisReuse.reused += 1
                 } else {
-                    result = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone, question: nil)
+                    result = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone,
+                        question: nil, participants: participants, agenda: agenda)
                     try result.validate(against: chunks[index])
+                    lastAnalysisReuse.analyzed += 1
                 }
                 checkpoint.analysis.append(result)
                 checkpoint.analyzedChunks = index + 1
@@ -563,12 +572,14 @@ public actor MeetingAnalysisPipeline {
     /// fit inputs without discarding any transcript text. Plans are checkpointed
     /// so a resumed run cannot skip different chunks after finer splitting.
     static func fittedAnalysisChunks(_ turns: [AnalysisTurn], model: any MeetingAnalysisSession,
-        meetingDate: Date, timezone: String, question: String? = nil, maxJSONBytes: Int = 1200) throws -> [[AnalysisTurn]] {
+        meetingDate: Date, timezone: String, question: String? = nil, maxJSONBytes: Int = 1200,
+        participants: [String] = [], agenda: String? = nil) throws -> [[AnalysisTurn]] {
         var fitted: [[AnalysisTurn]] = [], seen = Set<[String]>()
         func fit(_ chunk: [AnalysisTurn]) throws {
             try Task.checkCancellation()
             guard !chunk.isEmpty else { return }
-            if try model.inputTokenCount(turns: chunk, meetingDate: meetingDate, timezone: timezone, question: question) <= model.inputTokenLimit {
+            if try model.inputTokenCount(turns: chunk, meetingDate: meetingDate, timezone: timezone, question: question,
+                                         participants: participants, agenda: agenda) <= model.inputTokenLimit {
                 if seen.insert(chunk.map(\.id)).inserted { fitted.append(chunk) }
             } else if chunk.count > 1 {
                 let middle = chunk.count / 2
