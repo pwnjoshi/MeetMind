@@ -69,7 +69,10 @@ public enum MeetingAnalysisReducer {
         decisions = Array(decisions.prefix(12))
         openIssues = Array(openIssues.prefix(12))
 
-        var tasks = deduplicateTasks(generatedTasks.compactMap(cleanedTask).filter {
+        let speakerLabels = Set(checkpoint.turns.compactMap(\.speaker).map { normalize($0) })
+        var tasks = deduplicateTasks(generatedTasks.compactMap(cleanedTask).map {
+            withResolvedOwner($0, speakerLabels: speakerLabels, speakerNames: speakerNames)
+        }.filter {
             isGroundedCommitment($0, grounding) && !ActionExtractor.isRefusedRequest(evidence: $0.evidence, in: checkpoint.turns)
         })
         tasks = mergeTasks(tasks, with: floorTasks)
@@ -90,6 +93,25 @@ public enum MeetingAnalysisReducer {
         let text = polished(point.text)
         guard isSubstantive(text), !point.evidence.isEmpty else { return nil }
         return SupportedPoint(text: text, evidence: uniqueEvidence(point.evidence))
+    }
+
+    /// A diarization label ("S1", "Speaker 2", "SPEAKER_00") is not a person.
+    /// Map it to the attendee the user linked it to, otherwise leave the owner empty.
+    static func isSpeakerLabel(_ value: String, knownLabels: Set<String>) -> Bool {
+        let normalized = normalize(value)
+        if knownLabels.contains(normalized) { return true }
+        let compact = normalized.replacingOccurrences(of: " ", with: "")
+        return compact.range(of: #"^(s|speaker|spk|speaker_)?\d+$"#, options: .regularExpression) != nil
+            || compact.range(of: #"^speaker_?\d+$"#, options: .regularExpression) != nil
+            || compact.range(of: #"^s\d+$"#, options: .regularExpression) != nil
+    }
+
+    private static func withResolvedOwner(_ task: SuggestedTask, speakerLabels: Set<String>,
+                                          speakerNames: [String: String]) -> SuggestedTask {
+        guard let owner = task.owner, isSpeakerLabel(owner, knownLabels: speakerLabels) else { return task }
+        let mapped = speakerNames.first { normalize($0.key) == normalize(owner) }?.value
+        return SuggestedTask(title: task.title, category: task.category, owner: mapped,
+                             deadlineText: task.deadlineText, priority: task.priority, evidence: task.evidence)
     }
 
     private static func cleanedTask(_ task: SuggestedTask) -> SuggestedTask? {
