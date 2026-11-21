@@ -5,6 +5,7 @@ import SwiftData
 public struct SearchConsoleView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NavigationRouter.self) private var router
+    @Environment(SettingsViewModel.self) private var settings
     @Query private var allMeetings: [Meeting]
     @State public var viewModel: SearchViewModel
     
@@ -28,6 +29,18 @@ public struct SearchConsoleView: View {
             
             if !viewModel.hasQuery {
                 discovery
+            } else if viewModel.isDebouncing || viewModel.isSearching {
+                ProgressView("Searching saved meetings")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let searchError = viewModel.searchErrorMessage {
+                ContentUnavailableView {
+                    Label("Search Unavailable", systemImage: "exclamationmark.magnifyingglass")
+                } description: {
+                    Text(searchError)
+                } actions: {
+                    Button("Try Again") { viewModel.search(query: viewModel.searchQuery, recordsHistory: false) }
+                        .buttonStyle(.borderedProminent)
+                }
             } else if viewModel.searchResults.isEmpty {
                 emptyResultsView
             } else {
@@ -50,7 +63,10 @@ public struct SearchConsoleView: View {
             viewModel.search(query: viewModel.searchQuery, recordsHistory: false)
         }
         .task(id: viewModel.searchQuery) {
-            do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+            viewModel.isDebouncing = true
+            do { try await Task.sleep(for: .milliseconds(180)) }
+            catch { viewModel.isDebouncing = false; return }
+            viewModel.isDebouncing = false
             viewModel.search(query: viewModel.searchQuery, recordsHistory: false)
         }
     }
@@ -81,9 +97,9 @@ public struct SearchConsoleView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Suggestions").font(.headline).padding(.horizontal, 14)
                     VStack(spacing: 0) {
-                        suggestionRow("Decisions this week", "From finalized minutes", scope: .meetings, query: "decision")
+                        domainSuggestionRow("Decisions this week", "Decisions saved in meetings this week", suggestion: .decisionsThisWeek)
                         Divider().padding(.leading, 15)
-                        suggestionRow("Actions assigned to me", "Across all meetings", scope: .actions, query: "action")
+                        domainSuggestionRow("Actions assigned to me", "Assigned to \(settings.userProfile?.name ?? UserProfile.defaultLocalName)", suggestion: .actionsAssignedToMe)
                         Divider().padding(.leading, 15)
                         suggestionRow("Mentions of Finance", "In transcripts", scope: .transcripts, query: "Finance")
                     }
@@ -94,23 +110,39 @@ public struct SearchConsoleView: View {
         }
     }
 
+    private func domainSuggestionRow(_ title: String, _ subtitle: String, suggestion: SearchSuggestion) -> some View {
+        Button {
+            viewModel.activateSuggestion(
+                suggestion,
+                localUserName: settings.userProfile?.name ?? UserProfile.defaultLocalName
+            )
+        } label: {
+            suggestionLabel(title, subtitle)
+        }
+        .buttonStyle(.plain)
+    }
+
     private func suggestionRow(_ title: String, _ subtitle: String, scope: SearchPresentedScope, query: String) -> some View {
         Button {
             viewModel.setPresentedScope(scope)
             viewModel.performSearch(query: query)
         } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-            }
-            .padding(15)
-            .contentShape(Rectangle())
+            suggestionLabel(title, subtitle)
         }
         .buttonStyle(.plain)
+    }
+
+    private func suggestionLabel(_ title: String, _ subtitle: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+        }
+        .padding(15)
+        .contentShape(Rectangle())
     }
 
     private var resultsList: some View {

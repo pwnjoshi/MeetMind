@@ -234,6 +234,12 @@ struct MeetMindApp: App {
         meeting.absentParticipantIDs = [absent.id]
         if state != .review {
             meeting.agendaText = "Launch timing and budget"
+            if let speaker = meeting.participants.first {
+                let segment = TranscriptSegment(text: "The team proposed 20 November for launch.",
+                                                startTime: 18, endTime: 23, speaker: speaker)
+                store.mainContext.insert(segment)
+                meeting.addTranscriptSegment(segment)
+            }
             let summary = Summary(executiveSummary: "Launch timing and budget",
                                       keyPoints: ["The team proposed 20 November for launch.", "A budget of about ₹12 lakh was discussed.", "Finance follow-up remained open."],
                                       keyDecisions: ["Budget approval awaits the Finance estimate."])

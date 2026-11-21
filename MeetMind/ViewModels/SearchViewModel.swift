@@ -86,6 +86,18 @@ public enum SearchPresentedScope: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum SearchSuggestion: String, Sendable, Equatable {
+    case decisionsThisWeek
+    case actionsAssignedToMe
+
+    public var title: String {
+        switch self {
+        case .decisionsThisWeek: return "Decisions this week"
+        case .actionsAssignedToMe: return "Actions assigned to me"
+        }
+    }
+}
+
 /// One meeting row in the Meetings section: a meeting matched by title, summary or notes.
 public struct MeetingSearchHit: Identifiable, Sendable, Equatable {
     public var id: UUID { meetingId }
@@ -105,6 +117,7 @@ public final class SearchViewModel {
     public var recentSearches: [String] = []
     public var isSearching: Bool = false
     public var isDebouncing: Bool = false
+    public var searchErrorMessage: String?
     
     public var hasQuery: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -129,6 +142,10 @@ public final class SearchViewModel {
     private var modelContext: ModelContext?
     private var indexedMeetings: [Meeting] = []
     private var dataStore: Any?
+    private var activeSuggestion: SearchSuggestion?
+    private var suggestionLocalUserName = ""
+    private var suggestionDate = Date()
+    private var suggestionCalendar = Calendar.current
     
     public init(modelContext: ModelContext? = nil, dataStore: Any? = nil) {
         self.modelContext = modelContext
@@ -142,8 +159,20 @@ public final class SearchViewModel {
     public func indexMeetings(_ meetings: [Meeting]) {
         self.indexedMeetings = meetings
     }
+
+    public func activateSuggestion(_ suggestion: SearchSuggestion, localUserName: String = "",
+                                   now: Date = Date(), calendar: Calendar = .current) {
+        activeSuggestion = suggestion
+        suggestionLocalUserName = localUserName.trimmingCharacters(in: .whitespacesAndNewlines)
+        suggestionDate = now
+        suggestionCalendar = calendar
+        presentedScope = suggestion == .actionsAssignedToMe ? .actions : .meetings
+        selectedScope = suggestion == .actionsAssignedToMe ? .actionItems : .summaries
+        search(query: suggestion.title)
+    }
     
     public func setPresentedScope(_ scope: SearchPresentedScope) {
+        activeSuggestion = nil
         presentedScope = scope
         selectedScope = scope.engineScope
         search(query: searchQuery, recordsHistory: false)
@@ -180,6 +209,7 @@ public final class SearchViewModel {
     }
 
     public func setScope(_ scope: SearchScope) {
+        activeSuggestion = nil
         self.selectedScope = scope
         switch scope {
         case .transcripts: presentedScope = .transcripts
@@ -200,7 +230,11 @@ public final class SearchViewModel {
     
     public func search(query: String, recordsHistory: Bool = true) {
         self.searchQuery = query
+        searchErrorMessage = nil
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let activeSuggestion, trimmed != activeSuggestion.title {
+            self.activeSuggestion = nil
+        }
         guard !trimmed.isEmpty else {
             searchResults = []
             isSearching = false
@@ -223,9 +257,20 @@ public final class SearchViewModel {
         var candidateMeetings = indexedMeetings
         if candidateMeetings.isEmpty, let context = modelContext {
             let desc = FetchDescriptor<Meeting>()
-            if let fetched = try? context.fetch(desc) {
-                candidateMeetings = fetched
+            do {
+                candidateMeetings = try context.fetch(desc)
+            } catch {
+                searchResults = []
+                searchErrorMessage = "Saved meetings could not be searched. Try again; no meeting data was changed."
+                isSearching = false
+                return
             }
+        }
+
+        if let activeSuggestion {
+            searchResults = suggestionMatches(activeSuggestion, in: candidateMeetings)
+            isSearching = false
+            return
         }
         
         for meeting in candidateMeetings {
@@ -330,6 +375,34 @@ public final class SearchViewModel {
         self.isSearching = false
     }
     
+    private func suggestionMatches(_ suggestion: SearchSuggestion, in meetings: [Meeting]) -> [SearchResultItem] {
+        switch suggestion {
+        case .decisionsThisWeek:
+            guard let interval = suggestionCalendar.dateInterval(of: .weekOfYear, for: suggestionDate) else { return [] }
+            return meetings
+                .filter { interval.contains($0.scheduledStartTime ?? $0.createdAt) }
+                .flatMap { meeting in
+                    (meeting.summary?.keyDecisions ?? []).map { decision in
+                        SearchResultItem(category: .summary, meetingId: meeting.id, meetingTitle: meeting.title,
+                                         snippet: decision, detail: "Decision")
+                    }
+                }
+        case .actionsAssignedToMe:
+            let local = suggestionLocalUserName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard !local.isEmpty else { return [] }
+            return meetings.flatMap { meeting in
+                meeting.actionItems.compactMap { item in
+                    let owner = (item.assignee?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    guard owner == local else { return nil }
+                    return SearchResultItem(category: .actionItem, meetingId: meeting.id, meetingTitle: meeting.title,
+                                            snippet: item.title, actionItemId: item.id,
+                                            detail: actionDetail(for: item, meeting: meeting))
+                }
+            }
+        }
+    }
+
     public func formatSnippet(text: String, matchTerm: String, maxLength: Int = 60) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > maxLength else { return trimmed }
@@ -366,6 +439,7 @@ public final class SearchViewModel {
     }
     
     public func clearSearch() {
+        activeSuggestion = nil
         searchQuery = ""
         searchResults = []
         isSearching = false

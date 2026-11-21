@@ -18,10 +18,7 @@ public struct MeetingProcessingView: View {
     @State private var showsRename = false
     @State private var meetingTitleDraft = ""
     @State private var preparingSpeakers = false
-    @State private var speakerSample: Task<Void, Never>?
-    @State private var speakerPlayer: AVAudioPlayer?
-    @State private var renamingSpeaker: Speaker?
-    @State private var speakerName = ""
+    @State private var showsReviewChecklist = false
     @State private var showsTranscript = false
     @State private var editingSegment: TranscriptSegment?
     @State private var transcriptDraft = ""
@@ -239,10 +236,10 @@ public struct MeetingProcessingView: View {
                 let queued = OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil
                     || viewModel.jobSnapshot?.state == .queued
                 Button {
-                    if isReadyForReview { finalizeMinutes() }
+                    if isReadyForReview { showsReviewChecklist = true }
                     else { start(download: modelsRequired) }
                 } label: {
-                    Text(isReadyForReview ? "Finalize Minutes" :
+                    Text(isReadyForReview ? "Review Checklist" :
                          (modelsRequired ? "Download & Continue" :
                           (queued && !backgroundRunning ? "Process Now" : "Generate Minutes")))
                         .frame(maxWidth: .infinity)
@@ -259,69 +256,16 @@ public struct MeetingProcessingView: View {
         .navigationDestination(isPresented: $showsVidur) {
             RootAskAISheet(meetingId: meetingId, modelContext: modelContext) { showsVidur = false }
         }
-        .sheet(isPresented: $showsPeople, onDismiss: {
-            speakerSample?.cancel()
-            speakerPlayer?.stop()
-            speakerPlayer = nil
-        }) {
-            NavigationStack {
-                List {
-                    if let meeting, !meeting.participants.isEmpty {
-                        Section("Voices") {
-                            ForEach(meeting.participants.filter { $0.recordingVoiceLabel != nil }, id: \.id) { speaker in
-                                HStack(spacing: 12) {
-                                    if let segment = meeting.transcriptSegments.filter({ $0.speaker?.id == speaker.id })
-                                        .min(by: { $0.startTime < $1.startTime }) {
-                                        Button { playSpeakerSample(segment) } label: {
-                                            Image(systemName: "play.circle.fill").font(.title2)
-                                                .frame(width: 44, height: 44)
-                                        }
-                                        .buttonStyle(.borderless)
-                                        .accessibilityLabel("Play sample for \(speaker.name)")
-                                        VStack(alignment: .leading) {
-                                            Text(speaker.recordingVoiceLabel ?? speaker.name)
-                                            Text(segment.text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                        }
-                                    }
-                                    Spacer()
-                                    Button(speaker.name == speaker.recordingVoiceLabel ? "Unknown" : speaker.name) {
-                                        speakerName = speaker.name == speaker.recordingVoiceLabel ? "" : speaker.name
-                                        renamingSpeaker = speaker
-                                    }
-                                    .buttonStyle(.borderless)
-                                }
-                            }
-                        }
-                        Section("Who Was There") {
-                            ForEach(meeting.namedAttendees, id: \.id) { person in
-                                let absent = meeting.absentParticipantIDs?.contains(person.id) == true
-                                Button {
-                                    toggleAttendance(for: person, in: meeting)
-                                } label: {
-                                    HStack {
-                                        Text(person.name).foregroundStyle(.primary)
-                                        Spacer()
-                                        if !absent { Image(systemName: "checkmark") }
-                                    }
-                                    .contentShape(.rect)
-                                }
-                                .accessibilityValue(absent ? "Absent" : "Present")
-                            }
-                        }
-                    } else {
-                        ContentUnavailableView("No People Listed", systemImage: "person.2")
-                    }
-                }
-                .navigationTitle("People")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsPeople = false } } }
-                .alert("Name Speaker", isPresented: Binding(
-                    get: { renamingSpeaker != nil }, set: { if !$0 { renamingSpeaker = nil } }
-                )) {
-                    TextField("Name", text: $speakerName)
-                    Button("Cancel", role: .cancel) {}
-                    Button("Save") { saveSpeakerName() }
-                }
+        .navigationDestination(isPresented: $showsReviewChecklist) {
+            if let meeting { MinutesReviewChecklistView(meeting: meeting) }
+        }
+        .sheet(isPresented: $showsPeople) {
+            if let meeting {
+                MeetingPeopleSheet(
+                    meeting: meeting,
+                    viewModel: MeetingDetailViewModel(meeting: meeting, meetingId: meeting.id, modelContext: modelContext)
+                )
+                .presentationDragIndicator(.visible)
             }
         }
         .sheet(isPresented: $showsTranscript, onDismiss: {
@@ -356,8 +300,13 @@ public struct MeetingProcessingView: View {
                                 .disabled(OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId))
                             }
                         } else {
-                            Text("The transcript will appear here after processing.")
-                                .foregroundStyle(.secondary)
+                            ContentUnavailableView(
+                                "Transcript Not Available",
+                                systemImage: "doc.text.magnifyingglass",
+                                description: Text(meeting?.analysisState == "failed"
+                                    ? "Processing stopped before a transcript was saved. Retry processing from this meeting."
+                                    : "The transcript will appear after on-device processing completes.")
+                            )
                         }
                     }
                 }
@@ -559,18 +508,6 @@ public struct MeetingProcessingView: View {
         }
     }
 
-    private func finalizeMinutes() {
-        guard let meeting else { return }
-        let previous = meeting.minutesNeedFinalization
-        meeting.minutesNeedFinalization = false
-        do {
-            try modelContext.save()
-        } catch {
-            meeting.minutesNeedFinalization = previous
-            processingError = error.localizedDescription
-        }
-    }
-
     private var processingTitle: String {
         if viewModel.jobSnapshot?.state == .verifying { return "Verifying on-device models" }
         if downloading { return "Downloading on-device models" }
@@ -612,49 +549,6 @@ public struct MeetingProcessingView: View {
                 _ = try? await center.requestAuthorization(options: [.alert, .sound])
             }
             dismiss()
-        }
-    }
-
-    private func playSpeakerSample(_ segment: TranscriptSegment) {
-        guard let url = meeting?.resolvedAudioFileURL else { return }
-        speakerSample?.cancel()
-        do {
-            let player = try AVAudioPlayer(contentsOf: url)
-            speakerPlayer?.stop()
-            speakerPlayer = player
-            player.currentTime = max(0, segment.startTime)
-            guard player.play() else { return }
-            let length = min(8, max(0.5, segment.endTime - segment.startTime))
-            speakerSample = Task { @MainActor in
-                do { try await Task.sleep(for: .seconds(length)) } catch { return }
-                player.stop()
-            }
-        } catch {
-            processingError = error.localizedDescription
-        }
-    }
-
-    private func saveSpeakerName() {
-        guard let speaker = renamingSpeaker else { return }
-        let previous = speaker.name
-        let name = speakerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        speaker.name = name.isEmpty ? speaker.recordingVoiceLabel ?? previous : name
-        do { try modelContext.save() }
-        catch {
-            speaker.name = previous
-            processingError = error.localizedDescription
-        }
-    }
-
-    private func toggleAttendance(for person: Speaker, in meeting: Meeting) {
-        let previous = meeting.absentParticipantIDs
-        var absentIDs = Set(previous ?? [])
-        if absentIDs.remove(person.id) == nil { absentIDs.insert(person.id) }
-        meeting.absentParticipantIDs = absentIDs.sorted { $0.uuidString < $1.uuidString }
-        do { try modelContext.save() }
-        catch {
-            meeting.absentParticipantIDs = previous
-            processingError = error.localizedDescription
         }
     }
 

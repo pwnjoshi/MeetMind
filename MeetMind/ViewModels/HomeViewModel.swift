@@ -33,6 +33,7 @@ public final class HomeViewModel {
     public var isShowingDeleteConfirmationAlert: Bool = false
     public var pendingMeetingToDelete: Meeting? = nil
     public var deletionErrorMessage: String? = nil
+    public private(set) var loadingErrorMessage: String? = nil
     public var isShowingFolderPickerSheet: Bool = false
     public var selectedMeetingForFolder: Meeting? = nil
     
@@ -137,10 +138,14 @@ public final class HomeViewModel {
     }
     
     public func fetchMeetings() {
+        loadingErrorMessage = nil
         if let context = modelContext {
             let descriptor = FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
-            if let all = try? context.fetch(descriptor) {
-                partitionMeetings(all)
+            do {
+                partitionMeetings(try context.fetch(descriptor))
+                return
+            } catch {
+                loadingErrorMessage = "Your saved meetings could not be loaded. Try again; no meeting data was changed."
                 return
             }
         }

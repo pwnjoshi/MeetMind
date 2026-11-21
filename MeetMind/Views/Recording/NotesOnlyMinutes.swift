@@ -72,7 +72,7 @@ public enum NotesOnlyMinutesError: LocalizedError, Equatable, Sendable {
 /// finalizes the minutes.
 @MainActor
 public enum NotesOnlyMinutesBuilder {
-    public static let modelVersion = "Typed-Notes-v1"
+    public static let modelVersion = MinutesReviewContentSnapshot.typedNotesModelVersion
     public static let defaultTitle = "Quick meeting"
 
     /// Paragraphs: one per non-empty line, with list markers removed.

@@ -3,6 +3,7 @@ import SwiftData
 import UIKit
 
 /// Main Meetings home screen matching Figma node 1408:3209
+@MainActor
 public struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
@@ -10,6 +11,7 @@ public struct HomeDashboardView: View {
     @Environment(SettingsViewModel.self) private var settings
     @Query private var savedMeetings: [Meeting]
     @State public var viewModel: HomeViewModel
+    @State private var reviewStore = ReviewStateStore.shared
     
     @State private var isMicrophoneCheckPresented: Bool = false
     @State private var selectedSeriesID: UUID?
@@ -25,7 +27,18 @@ public struct HomeDashboardView: View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 34) {
-                    if savedMeetings.isEmpty || viewModel.isEmptyState {
+                    if let loadingError = viewModel.loadingErrorMessage {
+                        ContentUnavailableView {
+                            Label("Meetings Unavailable", systemImage: "calendar.badge.exclamationmark")
+                        } description: {
+                            Text(loadingError)
+                        } actions: {
+                            Button("Try Again") { viewModel.fetchMeetings() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 120)
+                    } else if savedMeetings.isEmpty || viewModel.isEmptyState {
                         emptyMeetingsState
                             .frame(maxWidth: .infinity)
                             .padding(.top, 150)
@@ -244,10 +257,12 @@ public struct HomeDashboardView: View {
     }
 
     private func recentSubtitle(_ meeting: Meeting) -> String? {
-        let badge = meeting.figmaBadgeText
+        let review = try? reviewStore.record(for: meeting.id)
+        let badge = MeetingLifecycleResolver.reviewDisplayStatus(meeting: meeting, reviewState: review)
+            ?? meeting.figmaBadgeText
         guard badge == "Finalized" else { return badge }
         let open = meeting.actionItems.filter { !$0.isCompleted }.count
-        return open > 0 ? "\(open) open \(open == 1 ? "action" : "actions")" : nil
+        return open > 0 ? "\(open) open \(open == 1 ? "action" : "actions")" : "Finalized"
     }
 
     /// Cadence inferred from the dates of the meetings that share a series.
@@ -283,6 +298,7 @@ private struct MeetingDateTile: View {
     }
 }
 
+@MainActor
 private struct LocalSeriesTimeline: View {
     let seriesID: UUID
     @Query private var meetings: [Meeting]
@@ -293,6 +309,7 @@ private struct LocalSeriesTimeline: View {
     @State private var showsRename = false
     @State private var nameDraft = ""
     @State private var saveError: String?
+    @State private var reviewStore = ReviewStateStore.shared
 
     private var occurrences: [Meeting] {
         meetings.filter { $0.seriesID == seriesID }.sorted {
@@ -382,7 +399,10 @@ private struct LocalSeriesTimeline: View {
                     Text(meeting.title).foregroundStyle(.primary)
                     Text(meeting.status == .scheduled
                         ? "\((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))) \u{00B7} Scheduled"
-                        : meeting.figmaBadgeText)
+                        : (MeetingLifecycleResolver.reviewDisplayStatus(
+                            meeting: meeting,
+                            reviewState: try? reviewStore.record(for: meeting.id)
+                        ) ?? meeting.figmaBadgeText))
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)

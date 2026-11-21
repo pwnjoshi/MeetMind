@@ -66,6 +66,8 @@ public struct RootExportMinutesSheet: View {
 
 /// Connected conversational AI assistant sheet presented from AppState
 public struct RootAskAISheet: View {
+    @Environment(NavigationRouter.self) private var router
+    @Environment(AppState.self) private var appState
     public let meetingId: UUID
     public let modelContext: ModelContext
     public let onDismiss: () -> Void
@@ -86,6 +88,11 @@ public struct RootAskAISheet: View {
             },
             onSeekToCitation: { citation in
                 viewModel.seekToCitation(citation)
+            },
+            onOpenMeeting: { citedMeetingID in
+                onDismiss()
+                appState.activeTab = .home
+                router.navigate(to: .meetingDetail(id: citedMeetingID), in: .home)
             },
             onDismiss: { viewModel.cancelQuestion(); onDismiss() },
             meetingTitle: viewModel.headerTitle,

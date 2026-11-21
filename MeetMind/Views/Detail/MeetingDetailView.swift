@@ -12,6 +12,7 @@ public struct MeetingDetailView: View {
     @Environment(SettingsViewModel.self) private var settings
     @State public var viewModel: MeetingDetailViewModel
     @State private var recordStore = MeetingRecordStore.shared
+    @State private var reviewStore = ReviewStateStore.shared
 
     @State private var transcriptSearch: String = ""
     @State private var showRenameAlert: Bool = false
@@ -39,12 +40,31 @@ public struct MeetingDetailView: View {
     @State private var showsApproval = false
     @State private var showsSeriesComparison = false
     @State private var showsSharedMinutes = false
+    @State private var showsReviewChecklist = false
 
     public init(viewModel: MeetingDetailViewModel) {
         _viewModel = State(initialValue: viewModel)
     }
 
     private var hasMinutes: Bool { viewModel.summary != nil }
+
+    private var lifecycleResolution: MeetingLifecycleResolution? {
+        guard let meeting = viewModel.meeting else { return nil }
+        let state = try? reviewStore.record(for: meeting.id)
+        return MeetingLifecycleResolver.resolve(meeting: meeting, reviewState: state)
+    }
+
+    private var reviewStatusText: String {
+        guard let meeting = viewModel.meeting else { return "Draft" }
+        if lifecycleResolution?.state == .finalized { return "Finalized" }
+        let state = (try? reviewStore.record(for: meeting.id)) ?? ReviewStateRecord()
+        let content = MinutesReviewContentSnapshot.make(from: meeting)
+        let checklist = MinutesReviewChecklist.evaluate(
+            content: content,
+            acknowledgements: state.acknowledgements(validFor: content.fingerprint)
+        )
+        return checklist.canFinalize ? "Ready to finalize" : "Draft"
+    }
 
     private var keptPrivate: Bool {
         guard let id = viewModel.meeting?.id else { return false }
@@ -61,6 +81,9 @@ public struct MeetingDetailView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .tint(Theme.Colors.manentAccent)
+        .navigationDestination(isPresented: $showsReviewChecklist) {
+            if let meeting = viewModel.meeting { MinutesReviewChecklistView(meeting: meeting) }
+        }
         .navigationDestination(isPresented: $showsTranscriptPage) {
             MeetingTranscriptAudioPage(viewModel: viewModel, searchText: $transcriptSearch) { showSpeakerReassign = $0 }
         }
@@ -250,16 +273,12 @@ public struct MeetingDetailView: View {
     @ViewBuilder
     private var bottomBar: some View {
         if recordSection == "Minutes", let meeting = viewModel.meeting, hasMinutes {
-            if meeting.minutesNeedFinalization == true {
+            if lifecycleResolution?.state != .finalized {
                 Button {
-                    meeting.minutesNeedFinalization = false
-                    do { try modelContext.save() }
-                    catch {
-                        meeting.minutesNeedFinalization = true
-                        deletionError = error.localizedDescription
-                    }
+                    showsReviewChecklist = true
                 } label: {
-                    Text("Finalize minutes").frame(maxWidth: .infinity)
+                    Text(reviewStatusText == "Ready to finalize" ? "Review and Finalize" : "Continue Review")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
@@ -291,6 +310,7 @@ public struct MeetingDetailView: View {
                 viewModel: viewModel,
                 section: $recordSection,
                 keptPrivate: keptPrivate,
+                reviewStatus: reviewStatusText,
                 onRename: {
                     renameText = viewModel.headerTitle
                     showRenameAlert = true

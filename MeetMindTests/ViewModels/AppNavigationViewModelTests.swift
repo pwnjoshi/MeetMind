@@ -243,9 +243,6 @@ final class AppNavigationViewModelTests: XCTestCase {
         sut.selectTab(.search)
         XCTAssertEqual(sut.selectedTab, .search)
         
-        sut.selectTab(.settings)
-        XCTAssertEqual(sut.selectedTab, .settings)
-        
         sut.selectTab(.home)
         XCTAssertEqual(sut.selectedTab, .home)
     }
@@ -276,8 +273,8 @@ final class AppNavigationViewModelTests: XCTestCase {
         sut.pushRoute(.meetingDetail(id: UUID()))
         XCTAssertEqual(sut.navigationPath.count, 1)
         
-        sut.selectTab(.settings)
-        XCTAssertEqual(sut.selectedTab, .settings)
+        sut.selectTab(.search)
+        XCTAssertEqual(sut.selectedTab, .search)
         
         sut.selectTab(.home)
         XCTAssertEqual(sut.selectedTab, .home)
@@ -464,7 +461,7 @@ final class AppNavigationViewModelTests: XCTestCase {
     
     /// Tier 2: Feature 13 - Validates rapid tab switching does not corrupt selectedTab state.
     func test_tier2_feature13_rapidTabSwitchingMaintainsConsistency() throws {
-        let tabs: [TabIdentifier] = [.home, .actionItems, .search, .settings]
+        let tabs: [TabIdentifier] = [.home, .actionItems, .search]
         for _ in 0..<100 {
             let nextTab = tabs.randomElement()!
             sut.selectTab(nextTab)

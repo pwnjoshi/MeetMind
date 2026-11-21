@@ -5,6 +5,7 @@ struct MeetingRecordHeader: View {
     let viewModel: MeetingDetailViewModel
     @Binding var section: String
     let keptPrivate: Bool
+    let reviewStatus: String
     let onRename: () -> Void
     let onOpenPeople: () -> Void
     let onError: (String) -> Void
@@ -22,6 +23,11 @@ struct MeetingRecordHeader: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Self.dateLine(for: meeting))
                         .font(.footnote).foregroundStyle(.secondary)
+                    Text(reviewStatus)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(reviewStatus == "Finalized" ? Theme.Colors.manentAccent : Color.orange)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background((reviewStatus == "Finalized" ? Theme.Colors.manentAccent : Color.orange).opacity(0.1), in: Capsule())
                     if keptPrivate {
                         Label("Kept private on this iPhone", systemImage: "lock")
                             .font(.footnote).foregroundStyle(.secondary)

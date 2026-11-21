@@ -2,6 +2,8 @@ import SwiftUI
 
 /// View modifier attaching export, ask AI, transcript edit sheets and rename alert to MeetingDetailView
 public struct MeetingDetailSheetsModifier: ViewModifier {
+    @Environment(NavigationRouter.self) private var router
+    @Environment(AppState.self) private var appState
     @Bindable public var viewModel: MeetingDetailViewModel
     @Binding public var showExportSheet: Bool
     @Binding public var showAskAISheet: Bool
@@ -24,6 +26,11 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
                     history: viewModel.aiChatHistory,
                     onAsk: { prompt in viewModel.submitAIQuery(prompt) { _ in } },
                     onSeekToCitation: { viewModel.seekToCitation($0) },
+                    onOpenMeeting: { meetingID in
+                        showAskAISheet = false
+                        appState.activeTab = .home
+                        router.navigate(to: .meetingDetail(id: meetingID), in: .home)
+                    },
                     onDismiss: { viewModel.cancelQuestion(); showAskAISheet = false },
                     meetingTitle: viewModel.headerTitle,
                     isBusy: viewModel.isAnsweringQuestion,

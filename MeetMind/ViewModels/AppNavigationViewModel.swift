@@ -12,7 +12,6 @@ public enum TabIdentifier: String, CaseIterable, Sendable {
     case home = "home"
     case actionItems = "actionItems"
     case search = "search"
-    case settings = "settings"
 }
 
 public typealias AppTab = TabIdentifier
@@ -345,7 +344,6 @@ extension AppNavigationViewModel {
             case .home: return 0
             case .actionItems: return 1
             case .search: return 2
-            case .settings: return 3
             }
         }
         set {
@@ -353,7 +351,8 @@ extension AppNavigationViewModel {
             case 0: selectedTab = .home
             case 1: selectedTab = .actionItems
             case 2: selectedTab = .search
-            case 3: selectedTab = .settings
+            // Index 3 was the removed Settings tab. Old snapshots restore safely to Meetings.
+            case 3: selectedTab = .home
             default: selectedTab = .home
             }
         }
@@ -440,7 +439,9 @@ extension AppNavigationViewModel {
         hasCompletedOnboarding = snapshot.hasCompletedOnboarding
         isOnboardingCompleted = snapshot.hasCompletedOnboarding
         rootRoute = snapshot.hasCompletedOnboarding ? .mainTabs : .onboarding
-        if let detailID = snapshot.presentedMeetingDetailID {
+        if snapshot.selectedTabIndex == 3 {
+            navigationPath.removeAll()
+        } else if let detailID = snapshot.presentedMeetingDetailID {
             navigateToMeetingDetail(meetingID: detailID)
         }
     }

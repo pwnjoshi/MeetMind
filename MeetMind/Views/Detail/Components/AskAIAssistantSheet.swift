@@ -23,6 +23,7 @@ public struct AskAIAssistantSheet: View {
     public let history: [(prompt: String, response: AIAnswerResponse)]
     public let onAsk: (String) -> Void
     public let onSeekToCitation: (AICitation) -> Void
+    public let onOpenMeeting: (UUID) -> Void
     public let onDismiss: () -> Void
     public let isBusy: Bool
     public let meeting: Meeting?
@@ -37,6 +38,7 @@ public struct AskAIAssistantSheet: View {
         history: [(prompt: String, response: AIAnswerResponse)],
         onAsk: @escaping (String) -> Void,
         onSeekToCitation: @escaping (AICitation) -> Void,
+        onOpenMeeting: @escaping (UUID) -> Void = { _ in },
         onDismiss: @escaping () -> Void,
         meetingTitle: String = "this meeting",
         isBusy: Bool = false,
@@ -46,6 +48,7 @@ public struct AskAIAssistantSheet: View {
         self.history = history
         self.onAsk = onAsk
         self.onSeekToCitation = onSeekToCitation
+        self.onOpenMeeting = onOpenMeeting
         self.onDismiss = onDismiss
         self.isBusy = isBusy
         self.meeting = meeting
@@ -127,13 +130,25 @@ public struct AskAIAssistantSheet: View {
                 }
             }
         }
-        .onAppear { scope = VidurPreferences.shared.searchScope }
+        .onAppear {
+            scope = VidurPreferences.shared.searchScope
+            loadPersistedHistory()
+        }
         .onChange(of: scope) { _, newScope in VidurPreferences.shared.searchScope = newScope }
         .onChange(of: scenePhase) { _, phase in if phase != .active { onDismiss() } }
         .onChange(of: busy) { _, isBusyNow in UIApplication.shared.isIdleTimerDisabled = isBusyNow }
         .onDisappear {
             answerTask?.cancel()
             UIApplication.shared.isIdleTimerDisabled = false
+        }
+    }
+
+    @MainActor
+    private func loadPersistedHistory() {
+        guard localItems.isEmpty, let meeting else { return }
+        localItems = VidurPreferences.shared.history(for: meeting.id).reversed().map { entry in
+            VidurConversationItem(prompt: entry.question, answerText: entry.answer,
+                                  citations: [], kind: nil, notice: "Saved on this iPhone")
         }
     }
 
@@ -256,8 +271,24 @@ public struct AskAIAssistantSheet: View {
             .buttonStyle(.plain)
             .accessibilityHint("Play the recording at this passage")
         } else {
-            citationLabel(heading: heading, detail: detail, showsPlay: false)
+            VStack(alignment: .leading, spacing: 8) {
+                citationLabel(heading: heading, detail: detail, showsPlay: false)
+                if let meetingID = citation.meetingID,
+                   meetingID != meeting?.id,
+                   meetingExists(meetingID) {
+                    Button("Open \(citation.meetingTitle)") { onOpenMeeting(meetingID) }
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 16)
+                        .accessibilityHint("Opens the cited meeting")
+                }
+            }
         }
+    }
+
+    @MainActor
+    private func meetingExists(_ id: UUID) -> Bool {
+        let context = meeting?.modelContext ?? modelContext
+        return ((try? context.fetch(FetchDescriptor<Meeting>())) ?? []).contains { $0.id == id }
     }
 
     private func citationLabel(heading: String, detail: String, showsPlay: Bool) -> some View {

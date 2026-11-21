@@ -65,7 +65,6 @@ struct AccountView: View {
                 router?.popToRoot(on: .home)
                 router?.popToRoot(on: .actionItems)
                 router?.popToRoot(on: .search)
-                router?.popToRoot(on: .settings)
                 appState?.resetOnboarding()
             } catch {
                 errorMessage = error.localizedDescription

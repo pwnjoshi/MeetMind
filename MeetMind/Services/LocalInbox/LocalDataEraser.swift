@@ -151,6 +151,7 @@ public final class DeletionCoordinator {
     private let approvals: MinutesApprovalStore
     private let vidur: VidurPreferences
     private let jobs: AnalysisJobStore
+    private let reviewStates: ReviewStateStore
     private let clearsSystemNotifications: Bool
     private let clearsLiveAnalysisPipeline: Bool
     private let interruptAfterJournalWrite: Bool
@@ -158,13 +159,15 @@ public final class DeletionCoordinator {
     public convenience init(modelContext: ModelContext) {
         self.init(context: modelContext, inventory: .live(), defaults: .standard,
                   meetingRecords: .shared, taskResponses: .shared, minutesStudio: .shared,
-                  meetingPrep: .shared, approvals: .shared, vidur: .shared, jobs: .shared)
+                  meetingPrep: .shared, approvals: .shared, vidur: .shared, jobs: .shared,
+                  reviewStates: .shared)
     }
 
     init(context: ModelContext, inventory: UserContentInventory, defaults: UserDefaults,
          meetingRecords: MeetingRecordStore, taskResponses: TaskResponseStore,
          minutesStudio: MinutesStudioStore, meetingPrep: MeetingPrepStore,
          approvals: MinutesApprovalStore, vidur: VidurPreferences, jobs: AnalysisJobStore,
+         reviewStates: ReviewStateStore = .shared,
          fileManager: FileManager = .default, clearsSystemNotifications: Bool = true,
          clearsLiveAnalysisPipeline: Bool = true, interruptAfterJournalWrite: Bool = false) {
         self.context = context
@@ -177,6 +180,7 @@ public final class DeletionCoordinator {
         self.approvals = approvals
         self.vidur = vidur
         self.jobs = jobs
+        self.reviewStates = reviewStates
         self.fileManager = fileManager
         self.clearsSystemNotifications = clearsSystemNotifications
         self.clearsLiveAnalysisPipeline = clearsLiveAnalysisPipeline
@@ -295,6 +299,7 @@ public final class DeletionCoordinator {
                 attempt("minutes configuration \(meetingID)") { try minutesStudio.remove(meetingID: meetingID) }
                 attempt("approval history \(meetingID)") { try approvals.remove(meetingID: meetingID) }
                 attempt("Vidur history \(meetingID)") { try vidur.remove(meetingID: meetingID) }
+                attempt("minutes review state \(meetingID)") { try reviewStates.remove(meetingID: meetingID) }
                 do { try await jobs.remove(meetingID: meetingID) }
                 catch { failures.append(DeletionFailure(artifact: "analysis job \(meetingID)", reason: error.localizedDescription)) }
             }
@@ -335,6 +340,7 @@ public final class DeletionCoordinator {
             meetingPrep.eraseAll()
             attempt("approval history") { try approvals.eraseAll() }
             vidur.eraseAll()
+            attempt("minutes review states") { try reviewStates.eraseAll() }
             do { try await jobs.eraseAll() }
             catch { failures.append(DeletionFailure(artifact: "analysis jobs", reason: error.localizedDescription)) }
             for key in UserContentInventory.privateDefaultsKeys where key != "Manent.vidurModel" {
@@ -434,6 +440,7 @@ public final class DeletionCoordinator {
             if !meetingPrep.isEmpty { failures.append(.init(artifact: "meeting preparation", reason: "Records remain")) }
             if !approvals.isEmpty { failures.append(.init(artifact: "approval history", reason: "Records remain")) }
             if !vidur.isEmpty { failures.append(.init(artifact: "Vidur history", reason: "History remains")) }
+            if !reviewStates.isEmpty { failures.append(.init(artifact: "minutes review states", reason: "Records remain")) }
             for key in UserContentInventory.privateDefaultsKeys where defaults.object(forKey: key) != nil {
                 failures.append(.init(artifact: "preference \(key)", reason: "Private value remains"))
             }
@@ -453,6 +460,13 @@ public final class DeletionCoordinator {
                 }
                 if !vidur.history(for: id).isEmpty {
                     failures.append(.init(artifact: "Vidur history \(id)", reason: "History remains"))
+                }
+                do {
+                    if try reviewStates.record(for: id) != ReviewStateRecord() {
+                        failures.append(.init(artifact: "minutes review state \(id)", reason: "Record remains"))
+                    }
+                } catch {
+                    failures.append(.init(artifact: "minutes review state \(id)", reason: error.localizedDescription))
                 }
             }
             for actionID in journal.actionItemIDs where taskResponses.response(for: actionID) != nil {
