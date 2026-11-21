@@ -29,7 +29,7 @@ public struct HomeDashboardView: View {
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
+                VStack(alignment: .leading, spacing: 22) {
                     homeHeader
 
                     if let loadingError = viewModel.loadingErrorMessage {
@@ -115,7 +115,7 @@ public struct HomeDashboardView: View {
     private var homeHeader: some View {
         HStack(alignment: .center, spacing: 12) {
             Text("Meetings")
-                .font(.system(size: 42, weight: .bold, design: .rounded))
+                .font(.system(size: 36, weight: .bold, design: .rounded))
                 .minimumScaleFactor(0.8)
             Spacer()
             Button { showsVidur = true } label: {

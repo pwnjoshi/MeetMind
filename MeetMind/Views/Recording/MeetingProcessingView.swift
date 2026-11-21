@@ -648,34 +648,30 @@ struct OfflinePipelineSmokeView: View {
                     let hasExpectedWords = transcript.contains("send") && transcript.contains("estimate") && transcript.contains("tomorrow")
                     print("MEETMIND_PIPELINE result transcript=\(meeting.transcriptSegments.count) decoded=\(analysis != nil) generated_tasks=\(analysis?.analysis.flatMap(\.tasks).count ?? 0) pending=\(meeting.pendingTaskSuggestions.count) active=\(meeting.actionItems.count) expected_words=\(hasExpectedWords)")
                     fflush(stdout)
+                    let suggestions = meeting.pendingTaskSuggestions
                     guard vm.pipelineStatus == .completed, !meeting.transcriptSegments.isEmpty,
-                          meeting.summary != nil, meeting.actionItems.isEmpty, hasExpectedWords else {
-                        throw OfflineError.unavailable("Synthetic processing did not produce the expected grounded transcript and minutes.")
+                          meeting.summary != nil, meeting.actionItems.isEmpty, hasExpectedWords,
+                          suggestions.count == 1, let suggestion = suggestions.first,
+                          suggestion.task.owner == "Rahul",
+                          suggestion.task.deadlineText?.lowercased() == "tomorrow",
+                          !suggestion.task.evidence.isEmpty else {
+                        throw OfflineError.unavailable("Synthetic processing did not produce the expected grounded transcript, minutes, and explicit action.")
                     }
-                    // A conservative local model may correctly return no task for a
-                    // short synthetic clip. That is not a pipeline failure: never
-                    // manufacture a task just to make a test green. When it does
-                    // return a grounded suggestion, exercise the review path too.
-                    if let suggestion = meeting.pendingTaskSuggestions.first {
-                        for _ in 0..<2 {
-                            try meeting.reviewTask(suggestion, title: suggestion.task.title,
-                                owner: suggestion.task.owner ?? "", category: suggestion.task.category,
-                                priority: suggestion.task.priority ?? "", dueDate: nil, accept: true, context: context)
-                        }
-                        let freshContext = ModelContext(container)
-                        let saved = try freshContext.fetch(FetchDescriptor<Meeting>()).first
-                        print("MEETMIND_PIPELINE review saved_tasks=\(saved?.actionItems.count ?? 0)")
-                        fflush(stdout)
-                        guard saved?.actionItems.count == 1,
-                              saved?.actionItems.first?.sourceEvidence?.isEmpty == false else {
-                            throw OfflineError.unavailable("Synthetic task review persistence check failed.")
-                        }
-                        status = "Completed: transcription, speakers, analysis, task review, and saved-task reload."
-                        print("MEETMIND_PIPELINE completed transcript=\(meeting.transcriptSegments.count) accepted=1 duplicate=0")
-                    } else {
-                        status = "Completed: transcription, speakers, and grounded minutes. No task was suggested for this short clip."
-                        print("MEETMIND_PIPELINE completed transcript=\(meeting.transcriptSegments.count) accepted=0 conservative_no_task=1")
+                    for _ in 0..<2 {
+                        try meeting.reviewTask(suggestion, title: suggestion.task.title,
+                            owner: suggestion.task.owner ?? "", category: suggestion.task.category,
+                            priority: suggestion.task.priority ?? "", dueDate: nil, accept: true, context: context)
                     }
+                    let freshContext = ModelContext(container)
+                    let saved = try freshContext.fetch(FetchDescriptor<Meeting>()).first
+                    print("MEETMIND_PIPELINE review saved_tasks=\(saved?.actionItems.count ?? 0)")
+                    fflush(stdout)
+                    guard saved?.actionItems.count == 1,
+                          saved?.actionItems.first?.sourceEvidence?.isEmpty == false else {
+                        throw OfflineError.unavailable("Synthetic task review persistence check failed.")
+                    }
+                    status = "Completed: transcription, speakers, grounded minutes, task review, and saved-task reload."
+                    print("MEETMIND_PIPELINE completed transcript=\(meeting.transcriptSegments.count) accepted=1 duplicate=0")
                     fflush(stdout)
                 } catch is CancellationError {
                     status = "Paused. Restart the synthetic check while MeetMind stays open."

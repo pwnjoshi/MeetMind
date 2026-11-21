@@ -9,11 +9,11 @@ struct HomeSectionHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.system(.title2, design: .rounded, weight: .bold))
+                .font(.title3.weight(.bold))
             Spacer()
             if showsSeeAll {
                 Button("See All", action: seeAll)
-                    .font(.title3)
+                    .font(.body)
                     .foregroundStyle(Theme.Colors.manentAccent)
             }
         }
@@ -32,16 +32,16 @@ struct UpNextMeetingCard: View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(eyebrow)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.84))
                     .textCase(.uppercase)
                 Text(meeting.title)
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.78)
                 Text(timeLine)
-                    .font(.title3)
+                    .font(.body)
                     .foregroundStyle(.white.opacity(0.88))
                     .lineLimit(2)
                 HStack(spacing: 10) {
@@ -61,7 +61,7 @@ struct UpNextMeetingCard: View {
                 .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(22)
+            .padding(20)
             .background {
                 LinearGradient(
                     colors: [Color(hex: 0x4338FF), Color(hex: 0x7545ED), Color(hex: 0xC05EC5)],
@@ -69,7 +69,7 @@ struct UpNextMeetingCard: View {
                     endPoint: .topTrailing
                 )
             }
-            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: Color(hex: 0x4F46E5).opacity(0.18), radius: 20, y: 10)
         }
         .buttonStyle(.plain)
@@ -120,18 +120,18 @@ struct WeekMeetingCard: View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(dateLabel)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.red)
                 Text(meeting.title)
-                    .font(.title3.weight(.semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                 Spacer(minLength: 2)
                 HStack {
                     Text((meeting.scheduledStartTime ?? meeting.createdAt)
                         .formatted(date: .omitted, time: .shortened))
-                        .font(.title3)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Circle()
@@ -139,9 +139,9 @@ struct WeekMeetingCard: View {
                         .frame(width: 11, height: 11)
                 }
             }
-            .padding(18)
-            .frame(width: 168, height: 156, alignment: .leading)
-            .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .padding(16)
+            .frame(width: 154, height: 138, alignment: .leading)
+            .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -176,12 +176,12 @@ struct RecentMeetingsCard: View {
                         HomeDateTile(date: meeting.scheduledStartTime ?? meeting.createdAt)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(meeting.title)
-                                .font(.title3)
+                                .font(.body)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                             if let subtitle = subtitle(meeting) {
                                 Text(subtitle)
-                                    .font(.body)
+                                    .font(.subheadline)
                                     .foregroundStyle(statusColor(meeting))
                                     .lineLimit(1)
                             }
@@ -192,9 +192,9 @@ struct RecentMeetingsCard: View {
                             .foregroundStyle(.tertiary)
                             .accessibilityHidden(true)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 13)
-                    .frame(minHeight: 72)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 64)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -204,7 +204,7 @@ struct RecentMeetingsCard: View {
                 }
             }
         }
-        .background(.background, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 }
 
@@ -214,13 +214,13 @@ struct HomeDateTile: View {
     var body: some View {
         VStack(spacing: -1) {
             Text(date.formatted(.dateTime.month(.abbreviated)).uppercased())
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.red)
             Text(date.formatted(.dateTime.day()))
-                .font(.system(size: 22, weight: .medium, design: .rounded))
+                .font(.system(size: 19, weight: .medium, design: .rounded))
         }
-        .frame(width: 48, height: 48)
-        .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .frame(width: 44, height: 44)
+        .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
     }
 }
@@ -230,20 +230,20 @@ struct HomeAvatarStack: View {
     let lightBorder: Bool
 
     var body: some View {
-        HStack(spacing: -8) {
+        HStack(spacing: -7) {
             ForEach(Array(people.prefix(3)), id: \.id) { person in
                 Text(person.initials)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 32, height: 32)
                     .background(Color(hex: person.avatarColorHex), in: Circle())
                     .overlay(Circle().stroke(borderColor, lineWidth: 2))
             }
             if people.count > 3 {
                 Text("+\(people.count - 3)")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 32, height: 32)
                     .background(Color(uiColor: .systemGray), in: Circle())
                     .overlay(Circle().stroke(borderColor, lineWidth: 2))
             }

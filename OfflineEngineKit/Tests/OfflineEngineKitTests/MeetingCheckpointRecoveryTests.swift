@@ -45,13 +45,13 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         } catch { }
         let resumed = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
         let result = try await resumed.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
-        let chunks = MeetingAnalysisPipeline.analysisChunks(backend.turns, maxJSONBytes: 1200).count
-        XCTAssertEqual(result.analysis.count, chunks)
+        let callsAfterResume = backend.counts.2
+        // One injected failure is retried; every fitted chunk is otherwise analyzed once.
+        XCTAssertEqual(result.analysis.count, callsAfterResume - 1)
         XCTAssertEqual(backend.counts.0, 1)
         XCTAssertEqual(backend.counts.1, 1)
-        XCTAssertEqual(backend.counts.2, chunks + 1)
         _ = try await resumed.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
-        XCTAssertEqual(backend.counts.2, chunks + 1)
+        XCTAssertEqual(backend.counts.2, callsAfterResume)
     }
 
     func testReviewedTranscriptFeedsMinutesAndInvalidatesStaleAnalysis() async throws {

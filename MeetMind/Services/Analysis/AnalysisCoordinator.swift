@@ -249,12 +249,13 @@ public final class AnalysisCoordinator {
     }
 
     private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
-        let points = uniqueTexts(result.analysis.flatMap { $0.discussion.map(\.text) })
-        let decisions = uniqueTexts(result.analysis.flatMap { $0.decisions.map(\.text) })
+        let reduced = MeetingAnalysisReducer.reduce(result)
+        let points = reduced.discussion.map(\.text)
+        let decisions = reduced.decisions.map(\.text)
         if let old = meeting.summary { context.delete(old) }
-        meeting.summary = Summary(executiveSummary: points.joined(separator: "\n"),
+        meeting.summary = Summary(executiveSummary: reduced.executiveSummary,
             keyPoints: points, keyDecisions: decisions, meeting: meeting)
-        meeting.offlineAnalysisData = try JSONEncoder().encode(result)
+        meeting.offlineAnalysisData = try JSONEncoder().encode(reduced.checkpoint)
         meeting.status = .completed
         meeting.analysisState = "completed"
         meeting.minutesNeedFinalization = true

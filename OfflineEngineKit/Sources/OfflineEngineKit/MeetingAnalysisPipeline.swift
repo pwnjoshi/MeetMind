@@ -74,7 +74,7 @@ public actor MeetingAnalysisPipeline {
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
     public static let checkpointFormatVersion = "asr-prefill-v2"
     private static let modelConfiguration = LocalModelConfiguration.compact
-    private static let analysisChunkBytes = 1200
+    static let analysisChunkBytes = 1800
     public init() { backend = LocalMeetingAnalysisBackend(); checkpointRoot = nil }
     init(backend: any MeetingAnalysisBackend, checkpointRoot: URL) {
         self.backend = backend; self.checkpointRoot = checkpointRoot
