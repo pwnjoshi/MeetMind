@@ -296,10 +296,8 @@ public final class AnalysisCoordinator {
     private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
         // Names the user gave attendees let the reducer attach an owner to requests
         // ("Pawan, can you ...") and to first-person promises. Generic labels never count.
-        var speakerNames: [String: String] = [:]
-        for person in meeting.namedAttendees {
-            if let label = person.recordingVoiceLabel, !label.isEmpty { speakerNames[label] = person.name }
-        }
+        // Includes voices the user assigned in People, not only label speakers.
+        let speakerNames = MeetingSpeakerNames(meeting: meeting, store: MeetingRecordStore.shared).assignedLabels
         let reduced = MeetingAnalysisReducer.reduce(result, participants: meeting.namedAttendees.map(\.name),
                                                     speakerNames: speakerNames)
         // Open issues live in the checkpoint as their own list; the minutes
@@ -310,37 +308,21 @@ public final class AnalysisCoordinator {
         meeting.summary = Summary(executiveSummary: reduced.executiveSummary,
             keyPoints: points, keyDecisions: decisions, meeting: meeting)
         meeting.offlineAnalysisData = try JSONEncoder().encode(reduced.checkpoint)
+        // An empty agenda is filled with the topics heard in the meeting; the user can edit it later.
+        let currentAgenda = (meeting.agendaText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if currentAgenda.isEmpty, !reduced.agendaTopics.isEmpty {
+            meeting.agendaText = reduced.agendaTopics.joined(separator: "\n")
+        }
         meeting.status = .completed
         meeting.analysisState = "completed"
         meeting.minutesNeedFinalization = true
     }
 
     private func replaceTranscript(of meeting: Meeting, with turns: [AnalysisTurn]) {
-        let old = meeting.transcriptSegments
-        meeting.transcriptSegments.removeAll()
-        for segment in old { context.delete(segment) }
-        var speakers: [String: Speaker] = [:]
-        for (index, turn) in turns.enumerated() {
-            var speaker: Speaker?
-            if let label = turn.speaker {
-                if let existing = speakers[label] ?? meeting.participants.first(where: {
-                    $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
-                }) {
-                    existing.recordingVoiceLabel = label
-                    speakers[label] = existing
-                    speaker = existing
-                } else {
-                    let created = Speaker(name: label)
-                    created.recordingVoiceLabel = label
-                    context.insert(created)
-                    meeting.addParticipant(created)
-                    speakers[label] = created
-                    speaker = created
-                }
-            }
-            meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
-                endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
-        }
+        // Voice naming lives in MeetingRecordStore; the editor maps each diarization
+        // label back to the person it was assigned to instead of recreating "Speaker N".
+        MeetingPeopleEditor.replaceTranscript(of: meeting, with: turns, context: context,
+                                              store: MeetingRecordStore.shared)
     }
 
     private func fetchMeeting(_ id: UUID) throws -> Meeting {

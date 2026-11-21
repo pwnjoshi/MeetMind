@@ -184,8 +184,10 @@ final class VidurAnswerEngineTests: XCTestCase {
     }
 
     func testAnswerPresetIsCompact() {
-        XCTAssertEqual(LocalModelConfiguration.answer.outputTokens, 160)
-        XCTAssertEqual(LocalModelConfiguration.answer.contextTokens, 2048)
+        XCTAssertEqual(LocalModelConfiguration.answer.outputTokens, 300)
+        XCTAssertEqual(LocalModelConfiguration.answer.contextTokens, 2304)
+        XCTAssertGreaterThan(Int(LocalModelConfiguration.answer.inputTokens), VidurAnswerEngine.groundedInputTokenBudget)
+        XCTAssertGreaterThanOrEqual(LocalModelConfiguration.answer.outputTokens, VidurAnswerEngine.maximumGroundedMaxTokens)
         XCTAssertLessThan(Int(LocalModelConfiguration.answer.inputTokens) + LocalModelConfiguration.answer.outputTokens,
                           Int(LocalModelConfiguration.answer.contextTokens))
     }

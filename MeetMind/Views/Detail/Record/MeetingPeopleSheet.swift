@@ -13,7 +13,7 @@ struct MeetingPeopleSheet: View {
     @State private var renameRow: MeetingVoiceRow?
     @State private var renameText = ""
     @State private var errorMessage: String?
-    @State private var playingRowID: String?
+    @State private var samplePlayer = VoiceSamplePlayer()
     @State private var showAddPerson = false
     @State private var editingPerson: Speaker?
     @State private var removalCandidate: Speaker?
@@ -32,7 +32,7 @@ struct MeetingPeopleSheet: View {
                     } header: {
                         Text("Detected Voices")
                     } footer: {
-                        Text("Assign a voice to a person to name them in the transcript. Unnamed voices appear as Speaker 1, 2, 3 in the minutes.")
+                        Text("Play the clips to confirm whose voice it is, then assign the voice to a person. Unnamed voices appear as Speaker 1, 2, 3 in the minutes.")
                     }
                 }
             }
@@ -42,6 +42,7 @@ struct MeetingPeopleSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", systemImage: "checkmark") {
                         viewModel.stopPlayback()
+                        samplePlayer.stop()
                         dismiss()
                     }
                     .labelStyle(.iconOnly)
@@ -85,6 +86,12 @@ struct MeetingPeopleSheet: View {
                 }
             }
             .recordErrorAlert("Could Not Update People", message: $errorMessage)
+            .onDisappear { samplePlayer.stop() }
+            .onChange(of: samplePlayer.errorMessage) { _, message in
+                guard let message else { return }
+                errorMessage = message
+                samplePlayer.errorMessage = nil
+            }
         }
     }
 
@@ -174,32 +181,26 @@ struct MeetingPeopleSheet: View {
     // MARK: Detected voices
 
     private func voiceRow(_ row: MeetingVoiceRow) -> some View {
-        HStack(spacing: 12) {
-            if meeting.resolvedAudioFileURL != nil {
-                Button { togglePlay(row) } label: {
-                    Image(systemName: playingRowID == row.id && viewModel.isPlaying ? "pause.fill" : "play.fill")
-                        .foregroundStyle(Theme.Colors.manentAccent)
-                        .frame(width: 44, height: 44)
-                        .background(Theme.Colors.manentAccent.opacity(0.1), in: Circle())
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Play \(row.label)")
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.label).font(.subheadline)
-                Text("\u{201C}\(row.sampleText)\u{201D}")
-                    .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            voiceMenu(row)
-        }
-        .frame(minHeight: 44)
+        let audioURL = meeting.resolvedAudioFileURL
+        return MeetingVoiceCard(
+            row: row,
+            displayName: displayName(row),
+            stats: MeetingVoiceSamples.stats(for: row, in: meeting),
+            samples: MeetingVoiceSamples.samples(for: row, in: meeting),
+            canPlay: audioURL != nil,
+            player: samplePlayer,
+            onToggle: { sample in
+                guard let audioURL else { return }
+                viewModel.stopPlayback()
+                samplePlayer.toggle(sample, audioURL: audioURL)
+            },
+            assignMenu: { voiceMenu(row) }
+        )
     }
-
     private func voiceMenu(_ row: MeetingVoiceRow) -> some View {
         let people = meeting.namedAttendees
         let assigned = people.first(where: { $0.id == row.assignedPersonID })
-        let assignedName = assigned?.name ?? "Unknown"
+        let assignedName = assigned?.displayName ?? "Assign"
         return Menu {
             ForEach(people, id: \.id) { person in
                 Button {
@@ -238,23 +239,12 @@ struct MeetingPeopleSheet: View {
             .frame(minHeight: 44)
         }
         .accessibilityLabel("Assign \(row.label)")
-        .accessibilityValue(assignedName)
+        .accessibilityValue(assigned?.displayName ?? "Not assigned")
     }
 
     private func displayName(_ row: MeetingVoiceRow) -> String {
         for person in meeting.namedAttendees where person.id == row.assignedPersonID { return person.name }
         return row.label
-    }
-
-    private func togglePlay(_ row: MeetingVoiceRow) {
-        if playingRowID == row.id && viewModel.isPlaying {
-            viewModel.stopPlayback()
-            playingRowID = nil
-        } else {
-            viewModel.seek(to: row.startTime)
-            if !viewModel.isPlaying { viewModel.togglePlayPause() }
-            playingRowID = row.id
-        }
     }
 
     private func run(_ action: () throws -> Void) {

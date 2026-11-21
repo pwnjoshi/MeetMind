@@ -20,10 +20,11 @@ public struct TranscriptEditSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 Text("Edit Spoken Transcript")
-                    .font(Typography.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 
                 TextEditor(text: $editedText)
+                    .font(.subheadline)
                     .frame(minHeight: 140)
                     .padding(Spacing.sm)
                     .background(Theme.Colors.secondaryBackground)

@@ -394,7 +394,7 @@ public final class Meeting: Identifiable {
     public var fullTranscriptText: String {
         orderedTranscriptSegments
             .map { segment in
-                let speakerName = segment.speaker?.name ?? "Unknown"
+                let speakerName = Speaker.displayName(of: segment.speaker)
                 return "[\(segment.formattedStartTime)] \(speakerName): \(segment.text)"
             }
             .joined(separator: "\n")

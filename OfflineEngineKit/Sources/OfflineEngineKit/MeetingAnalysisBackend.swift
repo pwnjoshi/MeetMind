@@ -32,12 +32,22 @@ protocol MeetingAnalysisBackend: Sendable {
     func verifiedFolder(_ profile: ModelProfile) async throws -> URL
     func transcribe(audio: URL, folder: URL, languageCode: String?) async throws -> [AnalysisTurn]
     func diarize(audio: URL, folder: URL) async throws -> [SpeakerSpan]
+    /// Vocabulary priming and per-meeting language memory. Conformers that ignore them inherit the default.
+    func transcribe(audio: URL, folder: URL, request: SpeechRequest) async throws -> [AnalysisTurn]
+    /// A named-attendee voice count. Conformers that ignore it inherit the default.
+    func diarize(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> [SpeakerSpan]
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession
     func isInstalled(_ profile: ModelProfile) async -> Bool
 }
 
 extension MeetingAnalysisBackend {
     func isInstalled(_ profile: ModelProfile) async -> Bool { true }
+    func transcribe(audio: URL, folder: URL, request: SpeechRequest) async throws -> [AnalysisTurn] {
+        try await transcribe(audio: audio, folder: folder, languageCode: request.languageCode)
+    }
+    func diarize(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> [SpeakerSpan] {
+        try await diarize(audio: audio, folder: folder)
+    }
 }
 
 struct LocalMeetingAnalysisBackend: MeetingAnalysisBackend {
@@ -52,6 +62,13 @@ struct LocalMeetingAnalysisBackend: MeetingAnalysisBackend {
     }
     func diarize(audio: URL, folder: URL) async throws -> [SpeakerSpan] {
         try await LocalSpeech.diarize(audio: audio, folder: folder)
+    }
+    func transcribe(audio: URL, folder: URL, request: SpeechRequest) async throws -> [AnalysisTurn] {
+        try await LocalSpeech.transcribe(audio: audio, folder: folder, languageCode: request.languageCode,
+                                         vocabulary: request.vocabulary, memory: request.memory)
+    }
+    func diarize(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> [SpeakerSpan] {
+        try await LocalSpeech.diarize(audio: audio, folder: folder, expectedSpeakers: expectedSpeakers)
     }
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession {
         try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"), configuration: configuration)

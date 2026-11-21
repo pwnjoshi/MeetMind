@@ -122,7 +122,7 @@ struct SuggestedTaskEditor: View {
                 ForEach(Array(suggestion.task.evidence.enumerated()), id: \.offset) { _, source in
                     VStack(alignment: .leading, spacing: 6) {
                         if let turn = meeting.offlineAnalysis?.turns.first(where: { $0.id == source.turnID }) {
-                            Text("\(Int(turn.start) / 60):\(String(format: "%02d", Int(turn.start) % 60)) · \(turn.speaker ?? "Unassigned speaker")")
+                            Text("\(Int(turn.start) / 60):\(String(format: "%02d", Int(turn.start) % 60)) · \(MeetingSpeakerNames(meeting: meeting, store: .shared).name(forLabel: turn.speaker))")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Text(source.quote).textSelection(.enabled)

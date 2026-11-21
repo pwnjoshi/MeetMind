@@ -148,7 +148,8 @@ final class ExtractionEvaluationTests: XCTestCase {
 
         c = Case("devanagari vocative assignment", [Line("\u{092A}\u{0935}\u{0928}, \u{090F}\u{091C}\u{0947}\u{0902}\u{0921}\u{093E} \u{092C}\u{0928}\u{093E} \u{0926}\u{0947}\u{0928}\u{093E}\u{0964}")])
         c.participants = ["\u{092A}\u{0935}\u{0928}"]
-        c.tasks = [ExpectedTask("\u{090F}\u{091C}\u{0947}\u{0902}\u{0921}\u{093E}", owner: "\u{092A}\u{0935}\u{0928}")]
+        // The Hindi grammar writes task titles in English ("Prepare the agenda") and maps the Devanagari loanword.
+        c.tasks = [ExpectedTask("agenda", owner: "\u{092A}\u{0935}\u{0928}")]
         all.append(c)
 
         c = Case("devanagari future with deadline", [Line("\u{0930}\u{094B}\u{0939}\u{0928} \u{0915}\u{0932} \u{0924}\u{0915} \u{0930}\u{093F}\u{092A}\u{094B}\u{0930}\u{094D}\u{091F} \u{092D}\u{0947}\u{091C}\u{0947}\u{0917}\u{093E}\u{0964}")])

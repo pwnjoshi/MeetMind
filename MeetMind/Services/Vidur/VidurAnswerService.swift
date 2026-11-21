@@ -36,7 +36,7 @@ public struct VidurSourceMeeting: Sendable, Equatable, Identifiable {
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return nil }
             return VidurSourceTurn(text: text, start: segment.startTime, end: segment.endTime,
-                                   speaker: segment.speaker?.name)
+                                   speaker: segment.speaker == nil ? nil : segment.speakerDisplayName)
         }
         // Typed notes are searchable too, so a question can be answered when audio was not transcribed.
         let notes = meeting.notes.compactMap { note -> VidurSourceTurn? in
@@ -61,15 +61,21 @@ public struct VidurCitation: Sendable, Equatable, Identifiable {
     public let timestamp: TimeInterval
     public let quote: String
     public let speaker: String?
+    /// "Decision", "Action", "Summary" and so on when the source is a minutes item. Nil for a transcript quote.
+    public let sourceLabel: String?
+    /// False for minutes items that carry no moment in the recording.
+    public let hasTimestamp: Bool
 
     public init(id: UUID = UUID(), meetingID: UUID?, meetingTitle: String, timestamp: TimeInterval,
-                quote: String, speaker: String? = nil) {
+                quote: String, speaker: String? = nil, sourceLabel: String? = nil, hasTimestamp: Bool = true) {
         self.id = id
         self.meetingID = meetingID
         self.meetingTitle = meetingTitle
         self.timestamp = timestamp
         self.quote = quote
         self.speaker = speaker
+        self.sourceLabel = sourceLabel
+        self.hasTimestamp = hasTimestamp
     }
 
     public var timecode: String { VidurTimecode.string(timestamp) }

@@ -1,0 +1,6 @@
+root ::= "{" ws "\"answer\":" ws text "," ws "\"citations\":" ws ids "," ws "\"found\":" ws bool "}"
+text ::= "\"" ([^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\""
+ids ::= "[" ws (id ("," ws id)*)? "]"
+id ::= "\"c" [1-9] [0-9]? "\"" ws
+bool ::= "true" | "false"
+ws ::= [ \t\n\r]*

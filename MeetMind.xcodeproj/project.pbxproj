@@ -7,6 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0612CEE000100000001 /* QuickMeetingRecentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0622CEE000100000001 /* QuickMeetingRecentTests.swift */; };
+		1A00C05D2CEE000100000001 /* SpeakerNamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05E2CEE000100000001 /* SpeakerNamingTests.swift */; };
+		1A00C05F2CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0602CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift */; };
+		1A00C0112CEE000100000001 /* MeetingSpeakerNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0122CEE000100000001 /* MeetingSpeakerNames.swift */; };
+		1A00C04B2CEE000100000001 /* MeetingVoiceSamples.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C04C2CEE000100000001 /* MeetingVoiceSamples.swift */; };
+		1A00C04D2CEE000100000001 /* VidurGroundedAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C04E2CEE000100000001 /* VidurGroundedAnswer.swift */; };
+		1A00C04F2CEE000100000001 /* VidurGroundedRetrieval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0502CEE000100000001 /* VidurGroundedRetrieval.swift */; };
+		1A00C0512CEE000100000001 /* TranscriptTurns.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0522CEE000100000001 /* TranscriptTurns.swift */; };
+		1A00C0532CEE000100000001 /* MeetingVoiceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0542CEE000100000001 /* MeetingVoiceViews.swift */; };
+		1A00C0552CEE000100000001 /* VoiceSamplePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0562CEE000100000001 /* VoiceSamplePlayer.swift */; };
+		1A00C0572CEE000100000001 /* RecentMeetingPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0582CEE000100000001 /* RecentMeetingPresenter.swift */; };
+		1A00C0592CEE000100000001 /* HomeRecentMeetingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05A2CEE000100000001 /* HomeRecentMeetingsTests.swift */; };
+		1A00C05B2CEE000100000001 /* VidurGroundedRetrievalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05C2CEE000100000001 /* VidurGroundedRetrievalTests.swift */; };
 		1A00C0412CEE000100000001 /* AppleIntelligenceAnswerer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0422CEE000100000001 /* AppleIntelligenceAnswerer.swift */; };
 		1A00C0432CEE000100000001 /* VidurFastAnswerer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0442CEE000100000001 /* VidurFastAnswerer.swift */; };
 		1A00C0452CEE000100000001 /* VidurStructuredAnswerer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0462CEE000100000001 /* VidurStructuredAnswerer.swift */; };
@@ -42,7 +55,6 @@
 		1A00C00B2CEE000100000001 /* WelcomeAndSignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */; };
 		1A00C00D2CEE000100000001 /* OtpDigitsRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */; };
 		1A00C00F2CEE000100000001 /* SignInPanelSubviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */; };
-		1A00C0112CEE000100000001 /* MicrophoneCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0122CEE000100000001 /* MicrophoneCheckView.swift */; };
 		1A00C0132CEE000100000001 /* MicWaveformCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0142CEE000100000001 /* MicWaveformCardView.swift */; };
 		1A00C0002CEE000100000001 /* AnalysisCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */; };
 		1A00C0022CEE000100000001 /* AnalysisJobStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0032CEE000100000001 /* AnalysisJobStore.swift */; };
@@ -319,6 +331,19 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0622CEE000100000001 /* QuickMeetingRecentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Recording/QuickMeetingRecentTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C05E2CEE000100000001 /* SpeakerNamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/SpeakerNamingTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0602CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/VoiceSamplesAndTranscriptTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0122CEE000100000001 /* MeetingSpeakerNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingSpeakerNames.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C04C2CEE000100000001 /* MeetingVoiceSamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingVoiceSamples.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C04E2CEE000100000001 /* VidurGroundedAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurGroundedAnswer.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0502CEE000100000001 /* VidurGroundedRetrieval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurGroundedRetrieval.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0522CEE000100000001 /* TranscriptTurns.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/TranscriptTurns.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0542CEE000100000001 /* MeetingVoiceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingVoiceViews.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0562CEE000100000001 /* VoiceSamplePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/VoiceSamplePlayer.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0582CEE000100000001 /* RecentMeetingPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/RecentMeetingPresenter.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C05A2CEE000100000001 /* HomeRecentMeetingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Home/HomeRecentMeetingsTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C05C2CEE000100000001 /* VidurGroundedRetrievalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Vidur/VidurGroundedRetrievalTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0422CEE000100000001 /* AppleIntelligenceAnswerer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/AppleIntelligenceAnswerer.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0442CEE000100000001 /* VidurFastAnswerer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurFastAnswerer.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0462CEE000100000001 /* VidurStructuredAnswerer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurStructuredAnswerer.swift"; sourceTree = SOURCE_ROOT; };
@@ -354,7 +379,6 @@
 		1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/WelcomeAndSignInView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/OtpDigitsRowView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/SignInPanelSubviews.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0122CEE000100000001 /* MicrophoneCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/MicrophoneCheckView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0142CEE000100000001 /* MicWaveformCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/Components/MicWaveformCardView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Analysis/AnalysisCoordinator.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0032CEE000100000001 /* AnalysisJobStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Analysis/AnalysisJobStore.swift"; sourceTree = SOURCE_ROOT; };
@@ -654,6 +678,14 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0122CEE000100000001 /* MeetingSpeakerNames.swift */,
+				1B00C04C2CEE000100000001 /* MeetingVoiceSamples.swift */,
+				1B00C04E2CEE000100000001 /* VidurGroundedAnswer.swift */,
+				1B00C0502CEE000100000001 /* VidurGroundedRetrieval.swift */,
+				1B00C0522CEE000100000001 /* TranscriptTurns.swift */,
+				1B00C0542CEE000100000001 /* MeetingVoiceViews.swift */,
+				1B00C0562CEE000100000001 /* VoiceSamplePlayer.swift */,
+				1B00C0582CEE000100000001 /* RecentMeetingPresenter.swift */,
 				1B00C0422CEE000100000001 /* AppleIntelligenceAnswerer.swift */,
 				1B00C0442CEE000100000001 /* VidurFastAnswerer.swift */,
 				1B00C0462CEE000100000001 /* VidurStructuredAnswerer.swift */,
@@ -682,7 +714,6 @@
 				1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */,
 				1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */,
 				1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */,
-				1B00C0122CEE000100000001 /* MicrophoneCheckView.swift */,
 				1B00C0142CEE000100000001 /* MicWaveformCardView.swift */,
 				1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */,
 				1B00C0032CEE000100000001 /* AnalysisJobStore.swift */,
@@ -880,6 +911,11 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0622CEE000100000001 /* QuickMeetingRecentTests.swift */,
+				1B00C05E2CEE000100000001 /* SpeakerNamingTests.swift */,
+				1B00C0602CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift */,
+				1B00C05A2CEE000100000001 /* HomeRecentMeetingsTests.swift */,
+				1B00C05C2CEE000100000001 /* VidurGroundedRetrievalTests.swift */,
 				1B00C04A2CEE000100000001 /* VidurTieredAnswerTests.swift */,
 				1B00C0402CEE000100000001 /* MinutesShareOutcomeTests.swift */,
 				1B00C0362CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift */,
@@ -1247,6 +1283,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0112CEE000100000001 /* MeetingSpeakerNames.swift in Sources */,
+				1A00C04B2CEE000100000001 /* MeetingVoiceSamples.swift in Sources */,
+				1A00C04D2CEE000100000001 /* VidurGroundedAnswer.swift in Sources */,
+				1A00C04F2CEE000100000001 /* VidurGroundedRetrieval.swift in Sources */,
+				1A00C0512CEE000100000001 /* TranscriptTurns.swift in Sources */,
+				1A00C0532CEE000100000001 /* MeetingVoiceViews.swift in Sources */,
+				1A00C0552CEE000100000001 /* VoiceSamplePlayer.swift in Sources */,
+				1A00C0572CEE000100000001 /* RecentMeetingPresenter.swift in Sources */,
 				1A00C0412CEE000100000001 /* AppleIntelligenceAnswerer.swift in Sources */,
 				1A00C0432CEE000100000001 /* VidurFastAnswerer.swift in Sources */,
 				1A00C0452CEE000100000001 /* VidurStructuredAnswerer.swift in Sources */,
@@ -1275,7 +1319,6 @@
 				1A00C00B2CEE000100000001 /* WelcomeAndSignInView.swift in Sources */,
 				1A00C00D2CEE000100000001 /* OtpDigitsRowView.swift in Sources */,
 				1A00C00F2CEE000100000001 /* SignInPanelSubviews.swift in Sources */,
-				1A00C0112CEE000100000001 /* MicrophoneCheckView.swift in Sources */,
 				1A00C0132CEE000100000001 /* MicWaveformCardView.swift in Sources */,
 				1A00C0002CEE000100000001 /* AnalysisCoordinator.swift in Sources */,
 				1A00C0022CEE000100000001 /* AnalysisJobStore.swift in Sources */,
@@ -1498,6 +1541,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0612CEE000100000001 /* QuickMeetingRecentTests.swift in Sources */,
+				1A00C05D2CEE000100000001 /* SpeakerNamingTests.swift in Sources */,
+				1A00C05F2CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift in Sources */,
+				1A00C0592CEE000100000001 /* HomeRecentMeetingsTests.swift in Sources */,
+				1A00C05B2CEE000100000001 /* VidurGroundedRetrievalTests.swift in Sources */,
 				1A00C0492CEE000100000001 /* VidurTieredAnswerTests.swift in Sources */,
 				1A00C03F2CEE000100000001 /* MinutesShareOutcomeTests.swift in Sources */,
 				1A00C0352CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift in Sources */,

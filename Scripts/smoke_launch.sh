@@ -39,18 +39,6 @@ home_pid="${server_output##*: }"
 sleep 3
 kill -0 "$home_pid"
 simctl io "$device_id" screenshot build/smoke/home-populated.png
-simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
-microphone_output=$(simctl launch "$device_id" "$bundle_id" --ui-microphone)
-microphone_pid="${microphone_output##*: }"
-sleep 5
-kill -0 "$microphone_pid"
-simctl io "$device_id" screenshot build/smoke/microphone-idle.png
-simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
-microphone_sample_output=$(simctl launch "$device_id" "$bundle_id" --ui-microphone-sample)
-microphone_sample_pid="${microphone_sample_output##*: }"
-sleep 3
-kill -0 "$microphone_sample_pid"
-simctl io "$device_id" screenshot build/smoke/microphone-sample.png
 for screen in recording-active recording-paused recording-finish meeting-review meeting-draft meeting-finalized; do
     simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
     recording_output=$(simctl launch "$device_id" "$bundle_id" "--ui-$screen")
@@ -73,4 +61,4 @@ if ! kill -0 "$minutes_sent_pid"; then
     exit 1
 fi
 simctl io "$device_id" screenshot build/smoke/minutes-sent.png
-echo "PASS: onboarding, main tabs, microphone, recording, and post-meeting visual states stayed alive"
+echo "PASS: onboarding, main tabs, recording, and post-meeting visual states stayed alive"

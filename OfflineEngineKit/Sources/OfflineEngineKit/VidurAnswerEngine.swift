@@ -54,7 +54,18 @@ public enum VidurTokenizer {
         "ka", "ki", "ke", "ko", "se", "me", "mein", "main", "par", "pe", "ne", "kya", "kab", "kaun", "kon",
         "kisne", "kisko", "kyun", "kyu", "kaise", "kaisa", "kahan", "aur", "ya", "to", "toh", "bhi", "hi",
         "yeh", "ye", "woh", "wo", "is", "us", "isme", "usme", "mera", "meri", "hum", "humne", "aap", "tum",
-        "kar", "karna", "karo", "kiya", "kia", "gaya", "gayi", "liye", "wala", "wali", "wale", "nahi", "nahin"
+        "kar", "karna", "karo", "kiya", "kia", "gaya", "gayi", "liye", "wala", "wali", "wale", "nahi", "nahin",
+        // Devanagari function words. Content words stay searchable.
+        "\u{0939}\u{0948}", "\u{0939}\u{0948}\u{0902}", "\u{0925}\u{093E}", "\u{0925}\u{0940}", "\u{0925}\u{0947}",
+        "\u{0915}\u{093E}", "\u{0915}\u{0940}", "\u{0915}\u{0947}", "\u{0915}\u{094B}", "\u{092E}\u{0947}\u{0902}",
+        "\u{0938}\u{0947}", "\u{092A}\u{0930}", "\u{0928}\u{0947}", "\u{0914}\u{0930}", "\u{092F}\u{093E}",
+        "\u{0924}\u{094B}", "\u{092D}\u{0940}", "\u{0915}\u{094D}\u{092F}\u{093E}", "\u{0915}\u{092C}",
+        "\u{0915}\u{094C}\u{0928}", "\u{0915}\u{093F}\u{0938}\u{0928}\u{0947}", "\u{092F}\u{0939}", "\u{0935}\u{0939}",
+        "\u{0907}\u{0938}", "\u{0909}\u{0938}", "\u{0915}\u{093F}", "\u{0939}\u{092E}", "\u{0906}\u{092A}",
+        "\u{092E}\u{0948}\u{0902}", "\u{0928}\u{0939}\u{0940}\u{0902}", "\u{0932}\u{093F}\u{090F}", "\u{0917}\u{092F}\u{093E}",
+        "\u{0917}\u{0908}", "\u{0939}\u{0941}\u{0906}", "\u{0939}\u{0941}\u{0908}", "\u{0939}\u{094B}",
+        "\u{0915}\u{094D}\u{092F}\u{094B}\u{0902}", "\u{0915}\u{0948}\u{0938}\u{0947}", "\u{0915}\u{0939}\u{093E}\u{0901}",
+        "\u{0915}\u{0939}\u{093E}\u{0902}", "\u{092C}\u{093E}\u{0930}\u{0947}"
     ]
 
     /// Lower-cased words with stop words removed, light suffix stripping and doubled-vowel
@@ -310,6 +321,61 @@ public actor VidurAnswerEngine {
             lastUsed = clock()
             scheduleIdleEviction()
             return VidurEngineResult(points: result.discussion, windowTurnIDs: window.map(\.id), usedWarmSession: warm)
+        } catch {
+            if case OfflineError.memoryBudget = error { evict() }
+            else { scheduleIdleEviction() }
+            throw error
+        }
+    }
+
+    /// Total prompt size (instructions, snippets, earlier chat) the engine aims for. Snippets beyond it
+    /// are dropped, lowest ranked first.
+    public static let groundedInputTokenBudget = 1500
+    public static let maximumGroundedMaxTokens = 300
+
+    /// Writes a direct, cited answer from numbered snippets (minutes, transcript, notes).
+    ///
+    /// The snippets are fitted to `groundedInputTokenBudget` using the model's own tokenizer. The
+    /// model's citations are validated: ids that do not name a shown snippet are discarded.
+    public func answerGrounded(_ request: VidurGroundedRequest,
+                               model: VidurModel = VidurModel.selected) async throws -> VidurGroundedResult {
+        let question = request.question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, question.utf8.count <= Self.maximumQuestionBytes, !request.snippets.isEmpty else {
+            throw OfflineError.unavailable("Ask a short question after a transcript is available.")
+        }
+        try ensureNotProcessing()
+        await acquire()
+        defer { release() }
+        try Task.checkCancellation()
+        try ensureNotProcessing()
+        guard resourceGate() else {
+            throw OfflineError.unavailable("iPhone is too warm or in Low Power Mode. Vidur is using quick matches only.")
+        }
+        let (session, warm) = try await loadedSession(for: model)
+        idleTask?.cancel()
+        guard let grounded = session as? VidurGroundedSession else {
+            throw OfflineError.unavailable("The loaded model cannot write answers.")
+        }
+        let language = request.language ?? VidurAnswerLanguage.detect(question)
+        let maxTokens = min(max(request.maxTokens, 64), Self.maximumGroundedMaxTokens)
+        do {
+            let fitted = try VidurGroundedFitter.fit(request.snippets, budget: Self.groundedInputTokenBudget) { texts in
+                try grounded.groundedTokenCount(question: question, context: texts, history: request.history,
+                                                language: language, maxSentences: request.maxSentences)
+            }
+            let output = try grounded.answer(question: question, context: fitted.texts, language: language,
+                                             maxTokens: maxTokens, history: request.history,
+                                             maxSentences: request.maxSentences)
+            lastUsed = clock()
+            scheduleIdleEviction()
+            let cited = VidurGroundedParser.citedIndices(output.citationLabels, snippetCount: fitted.kept.count)
+                .map { fitted.kept[$0] }
+            let notDiscussed = VidurGroundedParser.isNotDiscussed(output.answer)
+            let found = output.found && !output.answer.isEmpty && !notDiscussed
+            return VidurGroundedResult(
+                answer: found ? output.answer : VidurGroundedPrompt.notDiscussed(for: language),
+                found: found, citedIndices: found ? cited : [], keptIndices: fitted.kept, language: language,
+                usedWarmSession: warm, promptTokens: fitted.tokens, truncated: output.truncated)
         } catch {
             if case OfflineError.memoryBudget = error { evict() }
             else { scheduleIdleEviction() }

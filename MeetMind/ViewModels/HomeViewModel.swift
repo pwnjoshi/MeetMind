@@ -142,7 +142,11 @@ public final class HomeViewModel {
         if let context = modelContext {
             let descriptor = FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
             do {
-                partitionMeetings(try context.fetch(descriptor))
+                let fetched = try context.fetch(descriptor)
+                // The store is the source of truth. Objects kept in memory from an earlier add
+                // would otherwise outlive a delete or discard and appear as ghost meetings.
+                inMemoryMeetings.removeAll()
+                partitionMeetings(fetched)
                 return
             } catch {
                 loadingErrorMessage = "Your saved meetings could not be loaded. Try again; no meeting data was changed."
@@ -173,20 +177,24 @@ public final class HomeViewModel {
         }
         
         let now = Date()
+        let isUpcoming: (Meeting) -> Bool = { meeting in
+            let targetDate = meeting.scheduledStartTime ?? meeting.createdAt
+            return meeting.status == .scheduled && targetDate > now
+        }
         upcomingMeetings = combined
-            .filter { meeting in
-                let targetDate = meeting.scheduledStartTime ?? meeting.createdAt
-                return targetDate > now && meeting.status == .scheduled
-            }
+            .filter(isUpcoming)
             .sorted { ($0.scheduledStartTime ?? $0.createdAt) < ($1.scheduledStartTime ?? $1.createdAt) }
-        
-        recentMeetings = combined
-            .filter { meeting in
-                let targetDate = meeting.scheduledStartTime ?? meeting.createdAt
-                return targetDate <= now || meeting.status != .scheduled
-            }
-            .sorted { ($0.scheduledStartTime ?? $0.createdAt) > ($1.scheduledStartTime ?? $1.createdAt) }
-        
+
+        // Every meeting that is not an upcoming plan belongs in Recent, including ones that are
+        // still recording or processing. Order by when the meeting actually happened.
+        let keyed = combined
+            .filter { !isUpcoming($0) }
+            .map { (meeting: $0, date: Self.recencyDate(for: $0, now: now)) }
+        recentMeetings = keyed.sorted { left, right in
+            if left.date != right.date { return left.date > right.date }
+            if left.meeting.createdAt != right.meeting.createdAt { return left.meeting.createdAt > right.meeting.createdAt }
+            return left.meeting.id.uuidString < right.meeting.id.uuidString
+        }.map { $0.meeting }
         featuredUpcomingMeeting = upcomingMeetings.first
     }
     
@@ -196,11 +204,35 @@ public final class HomeViewModel {
                 context.insert(meeting)
                 try? context.save()
             }
-        }
-        if !inMemoryMeetings.contains(where: { $0.id == meeting.id }) {
+        } else if !inMemoryMeetings.contains(where: { $0.id == meeting.id }) {
             inMemoryMeetings.append(meeting)
         }
         fetchMeetings()
+    }
+
+    /// The moment Recent sorts and labels a meeting by. Scheduled plans use their planned time.
+    /// A meeting that was recorded (or is recording) uses when it really happened, so a scheduled
+    /// meeting that is started early or late is not pushed down by a stale planned time, and a
+    /// recording that is still in progress is the newest entry.
+    public static func recencyDate(for meeting: Meeting, now: Date = Date()) -> Date {
+        let planned = meeting.scheduledStartTime ?? meeting.createdAt
+        switch meeting.status {
+        case .scheduled:
+            return planned
+        case .recording:
+            return now
+        case .processing, .completed, .archived:
+            if let saved = savedRecordingDate(of: meeting), saved <= now { return saved }
+            return max(meeting.createdAt, min(planned, now))
+        }
+    }
+
+    /// When the app's own recording file for this meeting was last written.
+    private static func savedRecordingDate(of meeting: Meeting) -> Date? {
+        guard let url = meeting.resolvedAudioFileURL, url.isFileURL,
+              url.lastPathComponent.hasPrefix("recording_"),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        return attributes[.modificationDate] as? Date
     }
     
     public func setFilter(_ filter: MeetingFilter) {

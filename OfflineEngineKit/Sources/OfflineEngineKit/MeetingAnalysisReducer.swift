@@ -10,6 +10,9 @@ public struct ReducedMeetingAnalysis: Sendable {
     public let openIssues: [SupportedPoint]
     public let tasks: [SuggestedTask]
     public let checkpoint: MeetingAnalysisCheckpoint
+    /// Topics the meeting covered, in order of appearance, derived from agenda statements,
+    /// topic shifts and open issues. Short Title-case phrases for an editable agenda.
+    public let agendaTopics: [String]
 }
 
 /// Converts independent chunk outputs into one coherent meeting record. It does
@@ -25,6 +28,7 @@ public enum MeetingAnalysisReducer {
                               speakerNames: [String: String] = [:]) -> ReducedMeetingAnalysis {
         let context = ExtractionContext(participants: participants, speakerNames: speakerNames)
         let grounding = Grounding(turns: checkpoint.turns)
+        let hindi = HindiMeetingExtractor.analyze(checkpoint.turns, context: context)
         let generatedDiscussion = checkpoint.analysis.flatMap(\.discussion)
         let generatedDecisions = checkpoint.analysis.flatMap(\.decisions)
         let generatedOpenIssues = checkpoint.analysis.flatMap(\.openIssues)
@@ -34,7 +38,7 @@ public enum MeetingAnalysisReducer {
         // decision. Model output grounded only in such a sentence is demoted.
         var openCandidates = generatedOpenIssues.compactMap(cleanedPoint)
         // Deterministic requests and commitments found in the transcript itself.
-        let floorTasks = ActionExtractor.tasks(in: checkpoint.turns, context: context)
+        let floorTasks = ActionExtractor.tasks(in: checkpoint.turns, context: context, hindi: hindi)
         let requestSentences = Set(floorTasks.compactMap { $0.evidence.first }.map { normalize($0.quote) })
         var decisionCandidates: [SupportedPoint] = []
         for point in generatedDecisions.compactMap(cleanedPoint) {
@@ -53,9 +57,9 @@ public enum MeetingAnalysisReducer {
         }
 
         var decisions = deduplicatePoints(decisionCandidates)
-        decisions = mergePoints(decisions, with: explicitDecisions(in: checkpoint.turns))
+        decisions = mergePoints(decisions, with: explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi))
 
-        var openIssues = deduplicateOpenIssues(openCandidates + unresolvedOutcomes(in: checkpoint.turns), grounding)
+        var openIssues = deduplicateOpenIssues(openCandidates + unresolvedOutcomes(in: checkpoint.turns, hindi: hindi) + hindiOpenPoints(hindi), grounding)
         decisions.removeAll { decision in
             openIssues.contains { nearDuplicate(decision.text, $0.text) || sharesFocus(decision, $0, grounding) }
         }
@@ -78,7 +82,23 @@ public enum MeetingAnalysisReducer {
         tasks = mergeTasks(tasks, with: floorTasks)
         tasks = Array(tasks.prefix(24))
 
-        let executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
+        var executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
+        if hindi.hasDevanagari {
+            let composed = composeHindiMinutes(hindi, participants: participants, speakerNames: speakerNames,
+                                               decisions: decisions, openIssues: openIssues, tasks: tasks)
+            if !composed.summary.isEmpty {
+                executiveSummary = composed.summary
+            } else if HindiText.containsDevanagari(executiveSummary) {
+                executiveSummary = hindiFallbackSummary
+            }
+            if !composed.discussion.isEmpty {
+                var merged = composed.discussion
+                for point in discussion where !HindiText.containsDevanagari(point.text) {
+                    if !merged.contains(where: { nearDuplicate($0.text, point.text) }) { merged.append(point) }
+                }
+                discussion = Array(merged.prefix(16))
+            }
+        }
         let merged = LocalAnalysisResult(discussion: discussion, decisions: decisions, tasks: tasks, openIssues: openIssues)
         var normalized = checkpoint
         normalized.analysis = [merged]
@@ -86,7 +106,42 @@ public enum MeetingAnalysisReducer {
         normalized.chunkTurnIDs = [checkpoint.turns.map(\.id)]
         return ReducedMeetingAnalysis(executiveSummary: executiveSummary, discussion: discussion,
                                       decisions: decisions, openIssues: openIssues, tasks: tasks,
-                                      checkpoint: normalized)
+                                      checkpoint: normalized, agendaTopics: hindi.agendaTopics)
+    }
+
+    private static let hindiFallbackSummary =
+        "This meeting was held in Hindi. Review the decisions, tasks and open issues below, or open the transcript, for details."
+
+    private static func hindiDecisionPoints(_ hindi: HindiAnalysis) -> [SupportedPoint] {
+        hindi.decisions.map { SupportedPoint(text: polished($0.text), evidence: uniqueEvidence($0.evidence)) }
+    }
+
+    private static func hindiOpenPoints(_ hindi: HindiAnalysis) -> [SupportedPoint] {
+        hindi.openIssues.map { SupportedPoint(text: polished($0.text), evidence: uniqueEvidence($0.evidence)) }
+    }
+
+    private static func composeHindiMinutes(_ hindi: HindiAnalysis, participants: [String], speakerNames: [String: String],
+                                            decisions: [SupportedPoint], openIssues: [SupportedPoint],
+                                            tasks: [SuggestedTask]) -> (summary: String, discussion: [SupportedPoint]) {
+        var names: [String] = []
+        for name in participants where !name.lowercased().hasPrefix("speaker") && !names.contains(name) { names.append(name) }
+        if names.isEmpty {
+            for name in speakerNames.values.sorted() where !names.contains(name) { names.append(name) }
+        }
+        if names.isEmpty {
+            for task in tasks { if let owner = task.owner, !names.contains(owner) { names.append(owner) } }
+        }
+        let known = Set(hindi.decisions.map { normalize($0.text) })
+        var phrases: [String] = []
+        for decision in decisions where known.contains(normalize(decision.text)) { phrases.append(decision.text) }
+        var subjects: [String] = []
+        for issue in hindi.openIssues {
+            let text = polished(issue.text)
+            if openIssues.contains(where: { normalize($0.text) == normalize(text) }) { subjects.append(issue.subject) }
+        }
+        let summary = MinutesComposer.executiveSummary(names: names, topics: hindi.agendaTopics, decisionPhrases: phrases,
+                                                       tasks: tasks, openSubjects: subjects)
+        return (summary, MinutesComposer.discussion(hindi))
     }
 
     private static func cleanedPoint(_ point: SupportedPoint) -> SupportedPoint? {
@@ -183,12 +238,12 @@ public enum MeetingAnalysisReducer {
 
     /// Settled outcomes only: see `DecisionExtractor` for the accepted markers and the
     /// question, conditional, negation and undecided exclusions.
-    private static func explicitDecisions(in turns: [AnalysisTurn]) -> [SupportedPoint] {
+    private static func explicitDecisions(in turns: [AnalysisTurn], hindi: HindiAnalysis) -> [SupportedPoint] {
         turns.flatMap { turn in
             sentences(in: turn.text).flatMap { sentence in
                 sentence.components(separatedBy: "\u{0964}").compactMap { piece -> SupportedPoint? in
                     let quote = piece.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !quote.isEmpty, DecisionExtractor.isDecision(quote) else { return nil }
+                    guard !quote.isEmpty, !hindi.isClaimed(quote), DecisionExtractor.isDecision(quote) else { return nil }
                     let text = polished(DecisionExtractor.minuteText(quote))
                     guard isSubstantive(text) else { return nil }
                     return SupportedPoint(text: text, evidence: [SourceEvidence(turnID: turn.id, quote: quote)])
@@ -197,10 +252,11 @@ public enum MeetingAnalysisReducer {
         }
     }
 
-    private static func unresolvedOutcomes(in turns: [AnalysisTurn]) -> [SupportedPoint] {
+    private static func unresolvedOutcomes(in turns: [AnalysisTurn], hindi: HindiAnalysis) -> [SupportedPoint] {
         let markers = ["not decided", "no decision", "remains open", "still open", "pending approval",
                        "not yet agreed", "deferred until", "needs further discussion"]
         return groundedSentences(in: turns) { sentence in
+            if hindi.isClaimed(sentence) { return false }
             let lower = sentence.lowercased()
             return markers.contains(where: lower.contains) || isUndecidedSentence(sentence)
         }

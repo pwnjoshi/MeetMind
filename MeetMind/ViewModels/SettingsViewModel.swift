@@ -112,7 +112,9 @@ public enum SavedRecordingLanguage: String, CaseIterable, Sendable, Identifiable
         case .automatic: return "Automatic detection"
         }
     }
-    /// Whisper permits one language token per decode. Hindi is the more robust
+    /// Whisper permits one language token per decode. Hinglish keeps automatic detection (nil), and the
+    /// engine decodes again as Hindi when detection returns anything other than Hindi or English (for
+    /// example Urdu), then keeps Hindi for the remaining gaps of that meeting. Hindi is the more robust
     /// anchor for Hinglish and still recognizes English terms in a multilingual model.
     public var whisperCode: String? {
         switch self {

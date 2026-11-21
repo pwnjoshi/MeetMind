@@ -173,9 +173,9 @@ struct RecentMeetingsCard: View {
             ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
                 Button { open(meeting) } label: {
                     HStack(spacing: 14) {
-                        HomeDateTile(date: meeting.scheduledStartTime ?? meeting.createdAt)
+                        HomeDateTile(date: HomeViewModel.recencyDate(for: meeting))
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(meeting.title)
+                            Text(RecentMeetingPresenter.title(for: meeting))
                                 .font(.body)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
@@ -269,12 +269,10 @@ struct HomeMeetingCollectionView: View {
                 MeetingDetailContainerView(meetingId: meeting.id)
             } label: {
                 HStack(spacing: 12) {
-                    HomeDateTile(date: meeting.scheduledStartTime ?? meeting.createdAt)
+                    HomeDateTile(date: HomeViewModel.recencyDate(for: meeting))
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(meeting.title)
-                        if let detail = meeting.status == .scheduled
-                            ? (meeting.scheduledStartTime ?? meeting.createdAt).formatted(date: .omitted, time: .shortened)
-                            : recentSubtitle(meeting) {
+                        Text(RecentMeetingPresenter.title(for: meeting))
+                        if let detail = detailText(for: meeting) {
                             Text(detail).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
@@ -285,5 +283,13 @@ struct HomeMeetingCollectionView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.large)
+    }
+
+    private func detailText(for meeting: Meeting) -> String? {
+        if meeting.status == .scheduled {
+            let planned = meeting.scheduledStartTime ?? meeting.createdAt
+            if planned > Date() { return planned.formatted(date: .omitted, time: .shortened) }
+        }
+        return recentSubtitle(meeting)
     }
 }

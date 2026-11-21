@@ -14,10 +14,12 @@ struct LocalModelConfiguration: Sendable {
     // Real-meeting quality and long-duration qualification remain outstanding.
     static let compact = LocalModelConfiguration(contextTokens: 2048, inputTokens: 1280,
         outputTokens: 768, batchTokens: 256, microBatchTokens: 64, reserveBytes: 500_000_000)
-    // Vidur chat answers: one <= 900-byte window, one short supported point. The 2048-token context
-    // holds the ~700-token instructions, the window, and 160 generated tokens with margin.
-    static let answer = LocalModelConfiguration(contextTokens: 2048, inputTokens: 1400,
-        outputTokens: 160, batchTokens: 256, microBatchTokens: 64, reserveBytes: 500_000_000)
+    // Vidur chat answers.
+    // The grounded answer prompt (instructions, up to ~1500 tokens of numbered snippets, two earlier
+    // Q/A pairs) is hard-limited to 1750 input tokens. 2304 context = 1750 input + 300 output + margin,
+    // and the KV cache stays small enough for the optional 4B model under the same 500 MB reserve.
+    static let answer = LocalModelConfiguration(contextTokens: 2304, inputTokens: 1750,
+        outputTokens: 300, batchTokens: 256, microBatchTokens: 64, reserveBytes: 500_000_000)
 }
 
 enum ModelMemoryAdmission {

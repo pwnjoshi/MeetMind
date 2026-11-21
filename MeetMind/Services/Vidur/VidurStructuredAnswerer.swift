@@ -206,26 +206,31 @@ public enum VidurIntentRouter {
         "task", "tasks", "action", "actions", "todo", "todos", "assigned", "assign", "assignee", "owner", "owners",
         "responsible", "deliverable", "deliverables", "followup", "followups", "kaam", "kaams", "zimmedari",
         "jimmedari", "zimmedaari", "commit", "committed", "commitment", "commitments", "promise", "promised",
-        "owns", "handle", "handling", "karega", "karegi", "karenge", "lega", "legi", "dega", "degi"
+        "owns", "handle", "handling", "karega", "karegi", "karenge", "lega", "legi", "dega", "degi",
+        "\u{0915}\u{093E}\u{092E}", "\u{0915}\u{093E}\u{0930}\u{094D}\u{092F}"
     ]
     static let dueWords: Set<String> = ["due", "deadline", "deadlines", "overdue", "samay", "tarikh"]
     static let agreeWords: Set<String> = ["agree", "agreed", "agreement", "agreements", "sahmat", "manzoor"]
     static let decisionWords: Set<String> = [
         "decide", "decided", "decision", "decisions", "finalize", "finalized", "finalised", "finalise", "conclude",
-        "concluded", "resolution", "resolutions", "approved", "approve", "faisla", "faisle", "nirnay", "tay", "tai"
+        "concluded", "resolution", "resolutions", "approved", "approve", "faisla", "faisle", "nirnay", "tay", "tai",
+        "\u{092B}\u{0948}\u{0938}\u{0932}\u{093E}", "\u{092B}\u{0948}\u{0938}\u{0932}\u{0947}",
+        "\u{0928}\u{093F}\u{0930}\u{094D}\u{0923}\u{092F}", "\u{0924}\u{092F}"
     ]
     static let issueWords: Set<String> = [
         "unresolved", "issue", "issues", "undecided", "unclear", "unanswered", "concern", "concerns", "risk",
-        "risks", "blocker", "blockers", "blocked", "problem", "problems", "samasya", "dikkat"
+        "risks", "blocker", "blockers", "blocked", "problem", "problems", "samasya", "dikkat",
+        "\u{0938}\u{092E}\u{0938}\u{094D}\u{092F}\u{093E}"
     ]
     static let attendeeWords: Set<String> = [
         "attendees", "attendee", "attended", "attendance", "participants", "participant", "present", "joined",
-        "hazir", "haazir", "upasthit", "aaya", "aaye", "aayi"
+        "hazir", "haazir", "upasthit", "aaya", "aaye", "aayi", "\u{0909}\u{092A}\u{0938}\u{094D}\u{0925}\u{093F}\u{0924}"
     ]
-    static let absentWords: Set<String> = ["absent", "absentee", "absentees", "anupasthit", "missing"]
-    static let agendaWords: Set<String> = ["agenda", "agendas"]
+    static let absentWords: Set<String> = ["absent", "absentee", "absentees", "anupasthit", "missing", "\u{0905}\u{0928}\u{0941}\u{092A}\u{0938}\u{094D}\u{0925}\u{093F}\u{0924}"]
+    static let agendaWords: Set<String> = ["agenda", "agendas", "\u{090F}\u{091C}\u{0947}\u{0902}\u{0921}\u{093E}"]
     static let summaryWords: Set<String> = [
-        "summary", "summarize", "summarise", "recap", "overview", "tldr", "gist", "saransh", "highlights"
+        "summary", "summarize", "summarise", "recap", "overview", "tldr", "gist", "saransh", "highlights",
+        "\u{0938}\u{093E}\u{0930}\u{093E}\u{0902}\u{0936}"
     ]
     static let durationWords: Set<String> = ["duration"]
     static let dateWords: Set<String> = ["date", "tarikh", "when"]

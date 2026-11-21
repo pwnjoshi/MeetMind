@@ -8,6 +8,7 @@ public struct VidurSettingsView: View {
     @Environment(SettingsViewModel.self) private var environmentViewModel: SettingsViewModel?
     @State private var localViewModel = SettingsViewModel()
     @AppStorage(VidurModel.preferenceKey) private var vidurModel: VidurModel = .fast
+    @AppStorage(VidurDeepAnswerSetting.key) private var deepAnswers = true
     @State private var showingClearAlert = false
 
     private let preferences = VidurPreferences.shared
@@ -44,6 +45,7 @@ public struct VidurSettingsView: View {
             }
 
             Section {
+                Toggle("Deep Answers", isOn: $deepAnswers)
                 Toggle("Show Sources", isOn: Binding(
                     get: { preferences.showsSources },
                     set: { preferences.showsSources = $0 }
@@ -51,7 +53,7 @@ public struct VidurSettingsView: View {
             } header: {
                 Text("Answers")
             } footer: {
-                Text("Sources link each answer to the moment in the recording.")
+                Text("Deep answers search the minutes, transcript and notes and write a direct reply in your language. They take a few seconds. Turn off for instant matches only. Sources link each answer to the minutes or the moment in the recording.")
             }
 
             Section {

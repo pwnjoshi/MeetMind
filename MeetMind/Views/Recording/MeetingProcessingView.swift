@@ -158,8 +158,8 @@ public struct MeetingProcessingView: View {
                                     .foregroundStyle(.secondary)
                             }
                             if let meeting {
-                                let voices = detectedVoices(in: meeting)
-                                Text("\(voices.count) detected voices · \(voices.filter { $0.name != $0.recordingVoiceLabel }.count) named")
+                                let rows = MeetingPeopleEditor.voices(in: meeting, record: MeetingRecordStore.shared.record(for: meeting.id))
+                                Text("\(rows.count) detected voices · \(rows.filter { $0.assignedPersonID != nil }.count) named")
                                     .font(.subheadline).foregroundStyle(.secondary)
                             }
                             Button {
@@ -292,7 +292,7 @@ public struct MeetingProcessingView: View {
                                     editingSegment = segment
                                 } label: {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("\(segment.speaker?.name ?? "Speaker") · \(segment.formattedStartTime)")
+                                        Text("\(segment.speakerDisplayName) · \(segment.formattedStartTime)")
                                             .font(.caption).foregroundStyle(.secondary)
                                         Text(segment.text).foregroundStyle(.primary)
                                     }
@@ -720,24 +720,28 @@ struct OfflinePipelineSmokeView: View {
     }
 }
 
+@MainActor
 private struct ProcessingPeopleRow: View {
     let meeting: Meeting
     let openVoices: () -> Void
 
-    private var voices: [Speaker] { meeting.participants.filter { $0.recordingVoiceLabel != nil } }
-    private var attendees: [Speaker] { meeting.participants.filter { $0.recordingVoiceLabel == nil } }
+    private var voiceRows: [MeetingVoiceRow] {
+        MeetingPeopleEditor.voices(in: meeting, record: MeetingRecordStore.shared.record(for: meeting.id))
+    }
+    private var voices: [Speaker] { meeting.participants.filter { $0.isUnnamedVoice } }
+    private var attendees: [Speaker] { meeting.namedAttendees }
 
     var body: some View {
         Button(action: openVoices) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("People").foregroundStyle(.primary)
-                    Text("\(attendees.count) attendees · \(voices.count) detected voices")
+                    Text("\(attendees.count) attendees · \(voiceRows.count) detected voices")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
                 HStack(spacing: -6) {
-                    ForEach(voices.prefix(4), id: \.id) { voice in
+                    ForEach(Array((attendees + voices).prefix(4)), id: \.id) { voice in
                         Text(voice.initials).font(.caption2.bold()).foregroundStyle(.white)
                             .frame(width: 28, height: 28).background(Color(hex: voice.avatarColorHex), in: Circle())
                             .overlay(Circle().strokeBorder(.background, lineWidth: 1))

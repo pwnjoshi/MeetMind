@@ -85,7 +85,8 @@ struct MeetingDecisionDetail: View {
     private func evidenceSection(meeting: Meeting, decision: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("How It Was Decided").font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
-            let moments = Self.moments(for: decision, in: meeting)
+            let names = MeetingSpeakerNames(meeting: meeting, record: store.record(for: meeting.id))
+            let moments = Self.moments(for: decision, in: meeting, names: names)
             if moments.isEmpty {
                 Text("No supporting quotes were captured for this decision.")
                     .foregroundStyle(.secondary)
@@ -203,13 +204,13 @@ struct MeetingDecisionDetail: View {
         var timeText: String { String(format: "%02d:%02d", Int(start) / 60, Int(start) % 60) }
     }
 
-    static func moments(for decision: String, in meeting: Meeting) -> [DecisionMoment] {
+    static func moments(for decision: String, in meeting: Meeting, names: MeetingSpeakerNames) -> [DecisionMoment] {
         guard let result = meeting.offlineAnalysis,
               let point = result.analysis.lazy.flatMap(\.decisions).first(where: { $0.text == decision }) else { return [] }
         var moments: [DecisionMoment] = []
         for source in point.evidence {
             guard let turn = result.turns.first(where: { $0.id == source.turnID }) else { continue }
-            let name = turn.speaker ?? "Speaker"
+            let name = names.name(forLabel: turn.speaker)
             let color = meeting.participants.first(where: { $0.name == name })?.avatarColorHex ?? "#4F46E5"
             moments.append(DecisionMoment(turnID: turn.id, speaker: name, start: turn.start, quote: source.quote, colorHex: color))
         }

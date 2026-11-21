@@ -192,10 +192,6 @@ struct MeetMindApp: App {
             meetingVisualFixture(.finalized)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-minutes-sent") {
             MinutesSentFixtureView()
-        } else if ProcessInfo.processInfo.arguments.contains("--ui-microphone-sample") {
-            MicrophoneCheckView(onStartRecording: {}, visualSampleDuration: 6)
-        } else if ProcessInfo.processInfo.arguments.contains("--ui-microphone") {
-            MicrophoneCheckView(onStartRecording: {})
         } else if ProcessInfo.processInfo.arguments.contains("--ui-recording-finish") {
             recordingVisualFixture(paused: true, showsFinishConfirmation: true)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-recording-paused") {

@@ -108,7 +108,7 @@ final class LocalLanguageModel {
         tasks: every request or promise. A request to someone else ("Pawan, can you...", "Pawan ko ... bhejna hai") is that person's task; "sure"/"haan" confirms it. Refused, negated, hypothetical, cancelled or finished items are not tasks. Title starts with a verb.
         owner: a name spoken in the transcript or in Participants, never a speaker label, else null.
         deadlineText: exact words ("by Friday", "kal tak", EOD) else null; priority null unless stated; category one of Follow-up, Research, Create/Update, Review/Approve, Coordination, Other.
-        Quote = shortest exact transcript substring plus its turn ID. Empty arrays are fine. Never invent.
+        Quote = shortest exact transcript substring + turn ID. Write text and titles in English even for Hindi speech; quotes stay as spoken. Empty arrays are fine. Never invent.
         """
         if question == nil {
             system += """
@@ -227,4 +227,98 @@ final class LocalLanguageModel {
         }
         throw OfflineError.unavailable("Analysis reached its output limit. Shorten the input and retry.")
     }
+
+    // MARK: Grounded answers (Vidur)
+
+    func groundedTokenCount(question: String, context: [String], history: [VidurChatTurn],
+                            language: VidurAnswerLanguage, maxSentences: Int) throws -> Int {
+        let prompt = VidurGroundedPrompt.make(question: question, context: context, history: history,
+                                              language: language, maxSentences: maxSentences)
+        let required = llama_tokenize(vocab, prompt, Int32(prompt.utf8.count), nil, 0, false, true)
+        let count = abs(Int(required))
+        guard count > 0 else { throw OfflineError.unavailable("Unable to tokenize the question safely.") }
+        return count
+    }
+
+    /// Writes a direct answer from numbered context snippets. Output is grammar constrained to
+    /// {"answer":"...","citations":["c1"],"found":true}. The KV cache is cleared for every call.
+    func answer(question: String, context: [String], language: VidurAnswerLanguage, maxTokens: Int,
+                history: [VidurChatTurn] = [], maxSentences: Int = 4) throws -> VidurModelAnswer {
+        let prompt = VidurGroundedPrompt.make(question: question, context: context, history: history,
+                                              language: language, maxSentences: maxSentences)
+        let generated = try runConstrained(prompt: prompt, grammarResource: "answer",
+                                           maxTokens: min(max(maxTokens, 32), Int(configuration.contextTokens) / 4))
+        if generated.completed {
+            guard let parsed = VidurGroundedParser.parse(generated.text) else {
+                throw OfflineError.unavailable("Vidur's answer was not valid. No cloud fallback was used.")
+            }
+            return parsed
+        }
+        guard let salvaged = VidurGroundedParser.salvage(String(decoding: generated.text, as: UTF8.self)) else {
+            throw OfflineError.unavailable("Vidur's answer reached its length limit. Try a narrower question.")
+        }
+        return salvaged
+    }
+
+    /// Prefill and constrained greedy decoding. Returns `completed == false` when `maxTokens` ran out.
+    private func runConstrained(prompt: String, grammarResource: String,
+                                maxTokens: Int) throws -> (text: Data, completed: Bool) {
+        var tokens = [llama_token](repeating: 0, count: prompt.utf8.count + 16)
+        let count = llama_tokenize(vocab, prompt, Int32(prompt.utf8.count), &tokens, Int32(tokens.count), false, true)
+        guard count > 0, count <= configuration.inputTokens,
+              Int(count) + maxTokens <= Int(configuration.contextTokens) else {
+            throw OfflineError.unavailable("Vidur's question and context exceed the local model limit.")
+        }
+        tokens = Array(tokens.prefix(Int(count)))
+        llama_memory_clear(llama_get_memory(context), true)
+        guard let batch = llama_batch_ext_init(context) else { throw OfflineError.unavailable("Unable to allocate model input.") }
+        defer { llama_batch_ext_free(batch) }
+        func decode(_ input: [llama_token], offset: Int) throws {
+            try Task.checkCancellation()
+            try ModelMemoryAdmission.checkCurrentFootprint()
+            guard ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue else {
+                throw OfflineError.unavailable("iPhone is too warm. Let it cool down and retry.")
+            }
+            llama_batch_ext_clear(batch)
+            for (i, token) in input.enumerated() {
+                let index = llama_batch_ext_add_token(batch, 0, token)
+                guard index >= 0 else { throw OfflineError.unavailable("Model input allocation failed.") }
+                var position = Int32(offset + i)
+                llama_batch_ext_set_pos(batch, index, &position)
+                llama_batch_ext_set_output_logits(batch, index, i == input.count - 1)
+            }
+            guard llama_process(context, LLAMA_PROCESS_TYPE_DECODE, batch) == 0 else {
+                throw OfflineError.unavailable("Local model processing failed. No cloud fallback was used.")
+            }
+        }
+        let batchSize = Int(configuration.batchTokens)
+        for offset in stride(from: 0, to: tokens.count, by: batchSize) {
+            try decode(Array(tokens[offset..<min(offset + batchSize, tokens.count)]), offset: offset)
+        }
+        guard let grammarURL = Bundle.module.url(forResource: grammarResource, withExtension: "gbnf") else {
+            throw OfflineError.unavailable("Answer output grammar is missing.")
+        }
+        let grammar = try String(contentsOf: grammarURL, encoding: .utf8)
+        guard let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params()),
+              let grammarSampler = llama_sampler_init_grammar(vocab, grammar, "root") else {
+            throw OfflineError.unavailable("Unable to initialize constrained answer output.")
+        }
+        defer { llama_sampler_free(sampler) }
+        llama_sampler_chain_add(sampler, grammarSampler)
+        llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        var output = Data()
+        for index in 0..<maxTokens {
+            try Task.checkCancellation()
+            let token = llama_sampler_sample(sampler, context, -1)
+            if llama_vocab_is_eog(vocab, token) { return (output, true) }
+            var bytes = [CChar](repeating: 0, count: 256)
+            let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
+            guard length >= 0 else { throw OfflineError.unavailable("Model token exceeded its output buffer.") }
+            output.append(contentsOf: bytes.prefix(Int(length)).map { UInt8(bitPattern: $0) })
+            try decode([token], offset: tokens.count + index)
+        }
+        return (output, false)
+    }
 }
+
+extension LocalLanguageModel: VidurGroundedSession {}

@@ -156,7 +156,8 @@ public actor MeetingAnalysisPipeline {
     @discardableResult
     public func prepareRecordingChunk(meetingID: UUID, sequence: Int, audio: URL,
                                       chunkStartTime: TimeInterval, contentStartTime: TimeInterval,
-                                      endTime: TimeInterval, languageCode: String? = nil) async throws -> Bool {
+                                      endTime: TimeInterval, languageCode: String? = nil,
+                                      participants: [String] = [], agenda: String? = nil) async throws -> Bool {
         let key = "\(meetingID.uuidString)-\(sequence)"
         guard !running, !preAnalyzing, !preparingChunks.contains(key), resourceGate() else { return false }
         let profiles = try requiredProfiles(model: .fast)
@@ -164,7 +165,8 @@ public actor MeetingAnalysisPipeline {
         preparingChunks.insert(key)
         defer { preparingChunks.remove(key) }
         let folder = try await backend.verifiedFolder(profiles[0])
-        let rawTurns = try await backend.transcribe(audio: audio, folder: folder, languageCode: languageCode)
+        let rawTurns = try await backend.transcribe(audio: audio, folder: folder,
+            request: speechRequest(meetingID: meetingID, languageCode: languageCode, participants: participants, agenda: agenda))
         let turns = rawTurns.enumerated().compactMap { index, turn -> AnalysisTurn? in
             let start = turn.start + chunkStartTime
             let end = turn.end + chunkStartTime
@@ -182,6 +184,20 @@ public actor MeetingAnalysisPipeline {
         try JSONEncoder().encode(checkpoint).write(to: url,
             options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         return true
+    }
+
+    private var languageMemories: [UUID: SpeechLanguageMemory] = [:]
+
+    /// One language memory per meeting keeps separately transcribed windows and gaps consistent.
+    private func speechRequest(meetingID: UUID, languageCode: String?, participants: [String],
+                               agenda: String?) -> SpeechRequest {
+        let memory: SpeechLanguageMemory
+        if let existing = languageMemories[meetingID] { memory = existing } else {
+            memory = SpeechLanguageMemory()
+            languageMemories[meetingID] = memory
+        }
+        return SpeechRequest(languageCode: languageCode,
+                             vocabulary: SpeechVocabulary.make(participants: participants, agenda: agenda), memory: memory)
     }
 
     private func preparedWindows(meetingID: UUID) throws -> [PreparedRecordingChunk] {
@@ -202,7 +218,9 @@ public actor MeetingAnalysisPipeline {
     /// cover. When too little is prepared, one pass over the whole recording is
     /// cheaper than several model loads and is used instead.
     private func transcribeReusingPreparedWindows(meetingID: UUID, audio: URL, duration: TimeInterval,
-                                                  profile: ModelProfile, languageCode: String?) async throws -> [AnalysisTurn] {
+                                                  profile: ModelProfile, languageCode: String?,
+                                                  participants: [String] = [], agenda: String? = nil) async throws -> [AnalysisTurn] {
+        let request = speechRequest(meetingID: meetingID, languageCode: languageCode, participants: participants, agenda: agenda)
         let windows = (try? preparedWindows(meetingID: meetingID)) ?? []
         let plan = RecordingReuse.plan(windows: windows, duration: duration)
         var turns = plan.turns
@@ -219,18 +237,21 @@ public actor MeetingAnalysisPipeline {
                     catch is CancellationError { throw CancellationError() }
                     catch { wholeFile = true; break }
                     defer { RecordingReuse.removeClip(clip) }
-                    let raw = try await backend.transcribe(audio: clip, folder: folder, languageCode: languageCode)
+                    let raw = try await backend.transcribe(audio: clip, folder: folder, request: request)
                     gapTurns.append(contentsOf: RecordingReuse.offsetGapTurns(raw, gap: gap, index: index))
                     transcribedSeconds += gap.duration
                 }
                 if !wholeFile { turns = (turns + gapTurns).sorted { $0.start < $1.start } }
             }
             if wholeFile {
-                var recognized = try await backend.transcribe(audio: audio, folder: folder, languageCode: languageCode)
+                var recognized = try await backend.transcribe(audio: audio, folder: folder, request: request)
                 // A forced language that yields nothing is retried with detection.
                 // The recording is unchanged; only the decoder anchor changes.
                 if recognized.isEmpty, languageCode != nil {
-                    recognized = try await backend.transcribe(audio: audio, folder: folder, languageCode: nil)
+                    var relaxed = request
+                    relaxed.languageCode = nil
+                    relaxed.memory = nil
+                    recognized = try await backend.transcribe(audio: audio, folder: folder, request: relaxed)
                 }
                 turns = recognized
                 transcribedSeconds = duration
@@ -326,6 +347,7 @@ public actor MeetingAnalysisPipeline {
         if FileManager.default.fileExists(atPath: preparation.path) { try FileManager.default.removeItem(at: preparation) }
         removePreAnalysis(meetingID: meetingID)
         TranscriptReuseRegistry.shared.clear(meetingID: meetingID)
+        languageMemories[meetingID] = nil
     }
 
     /// Signals an active run to cancel and waits briefly for it to relinquish
@@ -481,7 +503,7 @@ public actor MeetingAnalysisPipeline {
             // ranges they do not cover are transcribed now.
             checkpoint.turns = Self.splitTurns(try await transcribeReusingPreparedWindows(
                 meetingID: meetingID, audio: audio, duration: duration, profile: profiles[0],
-                languageCode: languageCode))
+                languageCode: languageCode, participants: participants, agenda: agenda))
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
             try save()
@@ -492,7 +514,10 @@ public actor MeetingAnalysisPipeline {
             let rawSpans: [SpeakerSpan]
             do {
                 let folder = try await backend.verifiedFolder(profiles[1])
-                rawSpans = try await backend.diarize(audio: audio, folder: folder)
+                let named = participants.filter { !$0.lowercased().hasPrefix("speaker") && !$0.isEmpty }
+                let expectedVoices: Int? = named.count >= 2 ? named.count : nil
+                let found = try await backend.diarize(audio: audio, folder: folder, expectedSpeakers: expectedVoices)
+                rawSpans = SpeakerClusterMerge.mergeExcess(found, expected: expectedVoices)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {

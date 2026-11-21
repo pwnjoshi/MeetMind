@@ -75,33 +75,67 @@ public struct SpeakerSpan: Codable, Sendable {
 
 enum LocalSpeech {
     /// Hindi-English conversations are commonly misidentified as Urdu by automatic
-    /// detection. Supplying the meeting language keeps decoding in the intended
-    /// multilingual vocabulary; `nil` retains automatic detection for other use cases.
-    static func transcribe(audio: URL, folder: URL, languageCode: String? = nil) async throws -> [AnalysisTurn] {
+    /// detection. A nil language keeps automatic detection (Hinglish), but a result other
+    /// than Hindi or English is decoded again as Hindi. The first Hindi detection is
+    /// remembered in `memory` so later gaps and windows of the same meeting stay consistent.
+    static func transcribe(audio: URL, folder: URL, languageCode: String? = nil,
+                           vocabulary: SpeechVocabulary? = nil,
+                           memory: SpeechLanguageMemory? = nil) async throws -> [AnalysisTurn] {
         let engine = try await LocalOnlyWhisper(WhisperKitConfig(modelFolder: folder.path,
             verbose: false, logLevel: .none, prewarm: true, load: true, download: false))
         do {
-            let results = try await engine.transcribe(audioPath: audio.path,
-                audioInputOptions: AudioInputOptions(audioLoadingMode: .incremental(chunkDurationSeconds: 30, maxBufferedChunks: 1)),
-                decodeOptions: DecodingOptions(task: .transcribe, language: languageCode,
-                    usePrefillPrompt: true, detectLanguage: languageCode == nil,
-                    skipSpecialTokens: true, wordTimestamps: true, concurrentWorkerCount: 1),
-                callback: { _ in !Task.isCancelled })
-            var turns: [AnalysisTurn] = []
-            for segment in results.flatMap(\.segments) {
-                turns.append(AnalysisTurn(id: "t\(turns.count + 1)", text: segment.text,
-                    start: Double(segment.start), end: Double(segment.end), speaker: nil))
+            _ = try? await engine.loadTokenizerIfNeeded()
+            var language: String? = languageCode ?? memory?.code
+            let prompt = promptTokens(engine: engine, vocabulary: vocabulary, languageCode: language)
+            var pass = try await decode(engine: engine, audio: audio, language: language, prompt: prompt)
+            if languageCode == nil, language == nil {
+                let detected = (pass.language ?? "").lowercased()
+                if !detected.isEmpty, detected != "hi", detected != "en" {
+                    pass = try await decode(engine: engine, audio: audio, language: "hi", prompt: prompt)
+                    language = "hi"
+                } else if detected == "hi" {
+                    language = "hi"
+                }
+                if language == "hi" { memory?.remember("hi") }
             }
             await engine.unloadModels()
             try Task.checkCancellation()
-            return turns
+            return pass.turns
         } catch {
             await engine.unloadModels()
             throw error
         }
     }
 
-    static func diarize(audio: URL, folder: URL) async throws -> [SpeakerSpan] {
+    /// Encodes the vocabulary prompt with the engine tokenizer. Returns nil when the tokenizer is unavailable.
+    private static func promptTokens(engine: LocalOnlyWhisper, vocabulary: SpeechVocabulary?,
+                                     languageCode: String?) -> [Int]? {
+        guard let vocabulary = vocabulary, let tokenizer = engine.tokenizer else { return nil }
+        let text = " " + vocabulary.promptText(languageCode: languageCode)
+        let limit = tokenizer.specialTokens.specialTokenBegin
+        let ids = tokenizer.encode(text: text).filter { $0 < limit }
+        guard !ids.isEmpty else { return nil }
+        return Array(ids.prefix(SpeechVocabulary.maxPromptTokens))
+    }
+
+    private static func decode(engine: LocalOnlyWhisper, audio: URL, language: String?,
+                               prompt: [Int]?) async throws -> (turns: [AnalysisTurn], language: String?) {
+        var options = DecodingOptions(task: .transcribe, language: language,
+            usePrefillPrompt: true, detectLanguage: language == nil,
+            skipSpecialTokens: true, wordTimestamps: true, concurrentWorkerCount: 1)
+        options.promptTokens = prompt
+        let results = try await engine.transcribe(audioPath: audio.path,
+            audioInputOptions: AudioInputOptions(audioLoadingMode: .incremental(chunkDurationSeconds: 30, maxBufferedChunks: 1)),
+            decodeOptions: options,
+            callback: { _ in !Task.isCancelled })
+        var turns: [AnalysisTurn] = []
+        for segment in results.flatMap(\.segments) {
+            turns.append(AnalysisTurn(id: "t\(turns.count + 1)", text: segment.text,
+                start: Double(segment.start), end: Double(segment.end), speaker: nil))
+        }
+        return (turns, results.first?.language)
+    }
+    static func diarize(audio: URL, folder: URL, expectedSpeakers: Int? = nil) async throws -> [SpeakerSpan] {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .all
         func load(_ name: String) throws -> MLModel {
@@ -124,10 +158,25 @@ enum LocalSpeech {
         // Eight keeps the peak bounded while materially increasing Core ML throughput.
         config.segmentation.batchSize = 8
         config.embedding.batchSize = 8
-        let manager = OfflineDiarizerManager(config: config)
-        manager.initialize(models: models)
-        let result = try await manager.process(audio)
-        try Task.checkCancellation()
-        return result.segments.map { SpeakerSpan(speaker: $0.speakerId, start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds)) }
+        func run(_ settings: OfflineDiarizerConfig) async throws -> [SpeakerSpan] {
+            let manager = OfflineDiarizerManager(config: settings)
+            manager.initialize(models: models)
+            let result = try await manager.process(audio)
+            try Task.checkCancellation()
+            return result.segments.map { SpeakerSpan(speaker: $0.speakerId, start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds)) }
+        }
+        // Named attendees give the expected voice count. Small counts are a reliable target; larger
+        // groups only cap the count because some attendees may never speak.
+        guard let expected = expectedSpeakers, expected >= 2 else { return try await run(config) }
+        var constrained = config
+        if expected <= 3 { constrained.clustering.numSpeakers = expected } else { constrained.clustering.maxSpeakers = expected }
+        do {
+            return try await run(constrained)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // An unusable speaker-count request must not cost the meeting its speaker labels.
+            return try await run(config)
+        }
     }
 }

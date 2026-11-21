@@ -1,6 +1,36 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import OfflineEngineKit
+
+/// "Thinking..." placeholder with a light sweep. Static when Reduce Motion is on.
+private struct VidurThinkingShimmer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sweep: CGFloat = -0.6
+
+    var body: some View {
+        Text("Thinking\u{2026}")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .overlay {
+                if !reduceMotion {
+                    GeometryReader { proxy in
+                        LinearGradient(colors: [Color.clear, Color.white.opacity(0.85), Color.clear],
+                                       startPoint: .leading, endPoint: .trailing)
+                            .frame(width: proxy.size.width * 0.5)
+                            .offset(x: sweep * proxy.size.width)
+                    }
+                    .mask { Text("Thinking\u{2026}").font(.subheadline) }
+                    .allowsHitTesting(false)
+                }
+            }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 1.3).repeatForever(autoreverses: false)) { sweep = 1.1 }
+            }
+            .accessibilityLabel("Vidur is thinking")
+    }
+}
 
 /// One question and its answer as shown in the Vidur conversation.
 private struct VidurConversationItem: Identifiable {
@@ -47,6 +77,7 @@ public struct AskAIAssistantSheet: View {
     @State private var localItems: [VidurConversationItem] = []
     @State private var isLocalBusy = false
     @State private var answerTask: Task<Void, Never>?
+    @State private var expandedSources: Set<UUID> = []
 
     public init(
         history: [(prompt: String, response: AIAnswerResponse)],
@@ -230,11 +261,11 @@ public struct AskAIAssistantSheet: View {
     }
 
     private var scopeExplanation: String {
-        guard meeting != nil else { return "Answers come from this meeting\u{2019}s transcript." }
+        guard meeting != nil else { return "Answers come from this meeting\u{2019}s minutes, transcript and notes." }
         switch scope {
-        case .thisMeeting: return "Answers come from this meeting\u{2019}s transcript."
-        case .thisMeetingAndSeries: return "Answers come from this meeting and earlier ones in its series."
-        case .allMeetings: return "Answers come from every meeting saved on this iPhone."
+        case .thisMeeting: return "Answers come from this meeting\u{2019}s minutes, transcript and notes."
+        case .thisMeetingAndSeries: return "Answers come from the minutes, transcripts and notes of this meeting and its series."
+        case .allMeetings: return "Answers come from the minutes, transcripts and notes of every meeting saved on this iPhone."
         }
     }
 
@@ -253,18 +284,12 @@ public struct AskAIAssistantSheet: View {
                 Label("Vidur", systemImage: "sparkle")
                     .font(.caption.weight(.semibold)).foregroundStyle(Theme.Colors.manentAccent)
                 if item.answerText.isEmpty {
-                    HStack(spacing: Spacing.sm) {
-                        ProgressView()
-                        Text(item.phase == .searching
-                             ? "Looking through the minutes and transcript\u{2026}"
-                             : "Working on an answer with \(VidurTieredAnswerService.activeEngineName)\u{2026}")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
+                    VidurThinkingShimmer()
                 } else {
                     Text(item.answerText).textSelection(.enabled)
                 }
-                if item.tier == .quote, item.phase == .done {
-                    Text("Matched in the transcript and quoted exactly. Not generated.")
+                if item.phase == .done, item.tier == .structured || item.tier == .quote {
+                    Label("Quick answer", systemImage: "bolt")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let notice = item.notice, item.phase == .done {
@@ -274,7 +299,7 @@ public struct AskAIAssistantSheet: View {
                 if item.phase == .refining, !item.answerText.isEmpty {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
-                        Text("Refining with \(VidurTieredAnswerService.activeEngineName)\u{2026}")
+                        Text("Checking the minutes and transcript\u{2026}")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
@@ -283,9 +308,44 @@ public struct AskAIAssistantSheet: View {
             .animation(.easeOut(duration: 0.2), value: item.phase)
             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(.background, in: RoundedRectangle(cornerRadius: 22))
-            if VidurPreferences.shared.showsSources {
-                ForEach(item.citations) { citation in
+            if VidurPreferences.shared.showsSources, !item.citations.isEmpty {
+                sourceChips(item.citations)
+                ForEach(item.citations.filter { expandedSources.contains($0.id) }) { citation in
                     citationRow(citation)
+                }
+            }
+        }
+    }
+
+    private func chipTitle(_ citation: VidurCitation) -> String {
+        var parts: [String] = []
+        if !isCurrentMeeting(citation) { parts.append(String(citation.meetingTitle.prefix(18))) }
+        if let label = citation.sourceLabel {
+            parts.append(label)
+        } else if let speaker = citation.speaker, !speaker.isEmpty {
+            parts.append(speaker.split(separator: " ").first.map(String.init) ?? speaker)
+        }
+        if citation.hasTimestamp { parts.append(citation.timecode) }
+        return parts.isEmpty ? "Source" : parts.joined(separator: " \u{00B7} ")
+    }
+
+    private func sourceChips(_ citations: [VidurCitation]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(citations) { citation in
+                    let isExpanded = expandedSources.contains(citation.id)
+                    Button {
+                        if isExpanded { expandedSources.remove(citation.id) } else { expandedSources.insert(citation.id) }
+                    } label: {
+                        Label(chipTitle(citation), systemImage: citation.sourceLabel == nil ? "quote.bubble" : "doc.text")
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(isExpanded ? Theme.Colors.manentAccent.opacity(0.18) : Theme.Colors.manentAccent.opacity(0.08),
+                                        in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(isExpanded ? "Hide this source" : "Show this source")
                 }
             }
         }
@@ -296,14 +356,16 @@ public struct AskAIAssistantSheet: View {
     }
 
     private func canPlay(_ citation: VidurCitation) -> Bool {
-        isCurrentMeeting(citation) && (meeting?.hasAudio ?? true)
+        citation.hasTimestamp && isCurrentMeeting(citation) && (meeting?.hasAudio ?? true)
     }
 
     @ViewBuilder
     private func citationRow(_ citation: VidurCitation) -> some View {
+        let stamp = citation.hasTimestamp ? " \u{00B7} \(citation.timecode)" : ""
+        let kind = citation.sourceLabel.map { "Minutes \u{00B7} \($0)" } ?? "Source"
         let heading = isCurrentMeeting(citation)
-            ? "Source \u{00B7} \(citation.timecode)"
-            : "\(citation.meetingTitle) \u{00B7} \(citation.timecode)"
+            ? "\(kind)\(stamp)"
+            : "\(citation.meetingTitle) \u{00B7} \(citation.sourceLabel ?? "Source")\(stamp)"
         let detail = citation.quote.isEmpty ? "Play the supporting passage" : citation.quote
         if canPlay(citation) {
             Button {
@@ -395,11 +457,16 @@ public struct AskAIAssistantSheet: View {
         answerTask?.cancel()
         settlePendingItems()
         let sources = sourceMeetings(for: meeting)
-        // Saved minutes describe this meeting only, so wider scopes go straight to transcript search.
-        let facts: VidurMeetingFacts? = scope == .thisMeeting ? VidurMeetingFacts.make(from: meeting) : nil
+        // Saved minutes feed the instant tier for this meeting only. Wider scopes still give the
+        // deep answer the minutes of every meeting in scope.
+        let current = VidurMeetingFacts.make(from: meeting)
+        let facts: VidurMeetingFacts? = scope == .thisMeeting ? current : nil
+        let extraFacts: [VidurMeetingFacts] = scope == .thisMeeting ? [] : otherMeetingFacts(for: meeting, current: current)
         let request = VidurTieredRequest(
             question: question, sources: sources, facts: facts, length: VidurPreferences.shared.answerLength,
-            allowRefinement: meeting.status != .processing)
+            allowRefinement: meeting.status != .processing, additionalFacts: extraFacts,
+            history: conversationHistory(),
+            userDisabledRefinement: !VidurDeepAnswerSetting.isEnabled)
         let item = VidurConversationItem(prompt: question, answerText: "", citations: [], kind: nil, notice: nil,
                                          phase: .searching)
         let itemID = item.id
@@ -451,6 +518,35 @@ public struct AskAIAssistantSheet: View {
         }
         isLocalBusy = false
     }
+    /// The last two finished question and answer pairs, so "aur Neha ne?" follows the previous question.
+    @MainActor
+    private func conversationHistory() -> [VidurChatTurn] {
+        let usable = localItems.filter { item in
+            guard item.phase == .done, !item.answerText.isEmpty else { return false }
+            return item.kind != .failed && item.kind != .unavailable
+        }
+        return usable.suffix(2).map { VidurChatTurn(question: $0.prompt, answer: $0.answerText) }
+    }
+
+    /// Minutes of the other meetings in scope (the 20 most recent), with the current meeting last.
+    @MainActor
+    private func otherMeetingFacts(for meeting: Meeting, current: VidurMeetingFacts) -> [VidurMeetingFacts] {
+        let context = meeting.modelContext ?? modelContext
+        let all = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
+        var others: [Meeting]
+        switch scope {
+        case .thisMeeting:
+            return []
+        case .thisMeetingAndSeries:
+            guard let seriesID = meeting.seriesID else { return [current] }
+            others = all.filter { $0.seriesID == seriesID && $0.id != meeting.id }
+        case .allMeetings:
+            others = all.filter { $0.id != meeting.id }
+        }
+        others.sort { $0.createdAt < $1.createdAt }
+        return others.suffix(20).map { VidurMeetingFacts.make(from: $0) } + [current]
+    }
+
     @MainActor
     private func sourceMeetings(for meeting: Meeting) -> [VidurSourceMeeting] {
         let current = VidurSourceMeeting.make(from: meeting)

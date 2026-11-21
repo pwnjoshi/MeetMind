@@ -17,11 +17,16 @@ enum ActionExtractor {
     // MARK: - Public entry point
 
     static func tasks(in turns: [AnalysisTurn], context: ExtractionContext) -> [SuggestedTask] {
+        tasks(in: turns, context: context, hindi: HindiMeetingExtractor.analyze(turns, context: context))
+    }
+
+    static func tasks(in turns: [AnalysisTurn], context: ExtractionContext, hindi: HindiAnalysis) -> [SuggestedTask] {
         let rules = englishRules()
         let pieces = sentencePieces(turns)
-        var result: [SuggestedTask] = []
+        var keyed: [HindiKeyedTask] = hindi.tasks
         for (turnIndex, turn) in turns.enumerated() {
             for (sentenceIndex, sentence) in pieces[turnIndex].enumerated() {
+                guard !hindi.isClaimed(sentence) else { continue }
                 guard !MeetingAnalysisReducer.isNonCommittalSentence(sentence) else { continue }
                 guard var task = extract(sentence, turn: turn, rules: rules, context: context) else { continue }
                 let outcome = replies(turns: turns, pieces: pieces, turnIndex: turnIndex,
@@ -32,10 +37,17 @@ enum ActionExtractor {
                         deadlineText: task.deadlineText, priority: task.priority,
                         evidence: task.evidence + [accepted])
                 }
-                result.append(task)
+                keyed.append(HindiKeyedTask(turn: turnIndex, piece: sentenceIndex, task: task))
             }
         }
-        return result
+        var ordered: [(offset: Int, element: HindiKeyedTask)] = []
+        for (offset, item) in keyed.enumerated() { ordered.append((offset, item)) }
+        ordered.sort { lhs, rhs in
+            if lhs.element.turn != rhs.element.turn { return lhs.element.turn < rhs.element.turn }
+            if lhs.element.piece != rhs.element.piece { return lhs.element.piece < rhs.element.piece }
+            return lhs.offset < rhs.offset
+        }
+        return ordered.map { $0.element.task }
     }
 
     /// True when the sentence that grounds a (model-proposed) task was a request that
@@ -51,7 +63,7 @@ enum ActionExtractor {
                        requestIsQuestion: sentence.hasSuffix("?")).refused
     }
 
-    private static func sentencePieces(_ turns: [AnalysisTurn]) -> [[String]] {
+    static func sentencePieces(_ turns: [AnalysisTurn]) -> [[String]] {
         turns.map { turn in
             MeetingAnalysisReducer.sentences(in: turn.text).flatMap { sentence in
                 sentence.components(separatedBy: "\u{0964}")
@@ -65,7 +77,7 @@ enum ActionExtractor {
 
     private struct Reply { let turnID: String; let sentence: String }
 
-    private static func replies(turns: [AnalysisTurn], pieces: [[String]], turnIndex: Int, sentenceIndex: Int,
+    static func replies(turns: [AnalysisTurn], pieces: [[String]], turnIndex: Int, sentenceIndex: Int,
                                 requestIsQuestion: Bool) -> (refused: Bool, acceptance: SourceEvidence?) {
         for reply in replyWindow(turns: turns, pieces: pieces, turnIndex: turnIndex, sentenceIndex: sentenceIndex) {
             if isRefusal(reply.sentence, requestIsQuestion: requestIsQuestion) { return (true, nil) }
@@ -112,6 +124,7 @@ enum ActionExtractor {
 
     static func isRefusal(_ sentence: String, requestIsQuestion: Bool = true) -> Bool {
         guard wordCount(sentence) <= 9 else { return false }
+        if HindiText.isRefusal(sentence) { return true }
         let key = MeetingAnalysisReducer.clauseKey(sentence)
         // A bare "No." only declines a question; after a statement it means something else.
         if requestIsQuestion, exactRefusals.contains(key.trimmingCharacters(in: .whitespaces)) { return true }
@@ -132,6 +145,7 @@ enum ActionExtractor {
     static func isAcceptance(_ sentence: String) -> Bool {
         guard wordCount(sentence) <= 8, !isRefusal(sentence, requestIsQuestion: true),
               !MeetingAnalysisReducer.isNonCommittalSentence(sentence) else { return false }
+        if HindiText.hasAcceptanceCue(sentence) { return true }
         let key = MeetingAnalysisReducer.clauseKey(sentence)
         return acceptancePhrases.contains { key.contains(" " + $0 + " ") }
     }
@@ -218,7 +232,7 @@ enum ActionExtractor {
         if firstNameMatches.count == 1 { return firstNameMatches[0] }
         for word in cleaned.split(separator: " ") where nameStopwords.contains(String(word).lowercased()) { return nil }
         guard let first = cleaned.unicodeScalars.first else { return nil }
-        if isDevanagari(first) { return cleaned }
+        if isDevanagari(first) { return HindiText.isKnownWord(cleaned) ? nil : cleaned }
         guard CharacterSet.uppercaseLetters.contains(first) else { return nil }
         return cleaned
     }
@@ -618,7 +632,12 @@ enum DecisionExtractor {
         let allowedNegation = allowedNegatedDecisions.contains(where: has)
         if !allowedNegation, negations.contains(where: has) { return false }
         if markers.contains(where: has) { return true }
-        return chaloWords.contains(where: has) && chaloFollowers.contains(where: has)
+        if chaloWords.contains(where: has) && chaloFollowers.contains(where: has) {
+            // A Devanagari "chalo ... karte hain" opens or paces a meeting unless it names a date or stresses the choice.
+            if HindiText.containsDevanagari(sentence) { return HindiMeetingExtractor.settlesChoice(sentence) }
+            return true
+        }
+        return false
     }
 
     /// Text used for a minute: the sentence without conversational lead-ins.

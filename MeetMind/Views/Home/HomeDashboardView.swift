@@ -13,7 +13,6 @@ public struct HomeDashboardView: View {
     @State public var viewModel: HomeViewModel
     @State private var reviewStore = ReviewStateStore.shared
     
-    @State private var isMicrophoneCheckPresented: Bool = false
     @State private var selectedSeriesID: UUID?
     @State private var showsSeries = false
     @State private var showsAllUpcoming = false
@@ -98,18 +97,13 @@ public struct HomeDashboardView: View {
                 }
             }
         }
-        .sheet(isPresented: $isMicrophoneCheckPresented) {
-            MicrophoneCheckView {
-                let meeting = Meeting(title: "Quick meeting", createdAt: Date(), duration: 0, status: .recording)
-                viewModel.addMeeting(meeting)
-                router.navigate(to: .liveRecording(id: meeting.id), in: .home)
-            }
-        }
         .onAppear {
             viewModel.setModelContext(modelContext)
             viewModel.fetchMeetings()
         }
         .onChange(of: savedMeetingRevision) { _, _ in viewModel.fetchMeetings() }
+        // Returning from a recording or the meeting record pops the router path.
+        .onChange(of: router.homePath.count) { _, _ in viewModel.fetchMeetings() }
     }
 
     private var homeHeader: some View {
@@ -206,7 +200,7 @@ public struct HomeDashboardView: View {
 
     private var createMeetingMenu: some View {
         Menu {
-            Button("Quick Meet", systemImage: "mic.fill") { isMicrophoneCheckPresented = true }
+            Button("Quick Meet", systemImage: "mic.fill") { startQuickMeeting() }
             Button("Schedule Meet", systemImage: "calendar.badge.plus") { appState.activeSheet = .scheduleMeeting }
             Button("Import Audio", systemImage: "square.and.arrow.down") { appState.activeSheet = .audioImport }
         } label: {
@@ -221,6 +215,15 @@ public struct HomeDashboardView: View {
         .menuOrder(.fixed)
         .accessibilityLabel("New meeting")
         .accessibilityHint("Choose Quick Meet, Schedule Meet, or Import Audio")
+    }
+
+    /// Opens the recorder at once. The recorder asks for microphone access when it starts and
+    /// shows the Notes Only / Open Settings screen when access is denied.
+    private func startQuickMeeting() {
+        viewModel.setModelContext(modelContext)
+        let meeting = Meeting(title: "Quick meeting", createdAt: Date(), duration: 0, status: .recording)
+        viewModel.addMeeting(meeting)
+        router.navigate(to: .liveRecording(id: meeting.id), in: .home)
     }
 
     private var vidurMeeting: Meeting? {
@@ -270,8 +273,13 @@ public struct HomeDashboardView: View {
     // Sheet-based creation does not always trigger the underlying view's onAppear.
     // Observe persisted changes so imports, scheduling, and edits refresh the list.
     private var savedMeetingRevision: [String] {
-        savedMeetings.map {
-            "\($0.id)|\($0.title)|\($0.status.rawValue)|\($0.scheduledStartTime?.timeIntervalSince1970 ?? 0)|\($0.seriesName ?? "")|\($0.seriesID?.uuidString ?? "")"
+        savedMeetings.map { meeting in
+            let planned = meeting.scheduledStartTime?.timeIntervalSince1970 ?? 0
+            let identity = "\(meeting.id)|\(meeting.title)|\(meeting.status.rawValue)|\(planned)"
+            let progress = "\(meeting.createdAt.timeIntervalSince1970)|\(Int(meeting.duration))|\(meeting.analysisState ?? "")"
+            let content = "\(meeting.actionItems.count)|\(meeting.summary == nil)|\(meeting.minutesNeedFinalization == true)"
+            let series = "\(meeting.seriesName ?? "")|\(meeting.seriesID?.uuidString ?? "")"
+            return [identity, progress, content, series].joined(separator: "|")
         }.sorted()
     }
     private var emptyMeetingsState: some View {
@@ -372,30 +380,24 @@ public struct HomeDashboardView: View {
         }
     }
 
-    private func recentSubtitle(_ meeting: Meeting) -> String? {
+    private func recentLine(_ meeting: Meeting) -> RecentMeetingLine {
         let review = try? reviewStore.record(for: meeting.id)
-        let lifecycleStatus = MeetingLifecycleResolver.reviewDisplayStatus(meeting: meeting, reviewState: review)
-        if lifecycleStatus == "Needs speaker review" || meeting.analysisState == "speakerReview" {
-            return "Needs speaker review"
-        }
-        if meeting.analysisState == "failed" { return "Processing needs attention" }
-        let open = meeting.actionItems.filter { !$0.isCompleted }.count
-        if open > 0 { return "\(open) open \(open == 1 ? "action" : "actions")" }
-        guard meeting.duration > 0 else { return lifecycleStatus }
-        let minutes = max(1, Int(round(meeting.duration / 60)))
-        let duration = "\(minutes) min"
-        let date = meeting.scheduledStartTime ?? meeting.createdAt
-        if Calendar.current.isDateInYesterday(date) { return "Yesterday · \(duration)" }
-        if Calendar.current.isDateInToday(date) { return "Today · \(duration)" }
-        return duration
+        let reviewStatus = MeetingLifecycleResolver.reviewDisplayStatus(meeting: meeting, reviewState: review)
+        return RecentMeetingPresenter.line(for: meeting, reviewStatus: reviewStatus)
+    }
+
+    private func recentSubtitle(_ meeting: Meeting) -> String? {
+        recentLine(meeting).text
     }
 
     private func recentStatusColor(_ meeting: Meeting) -> Color {
-        if meeting.analysisState == "failed" { return Theme.Colors.coralRed }
-        if meeting.analysisState == "speakerReview" { return Theme.Colors.warmAmber }
-        return .secondary
+        switch recentLine(meeting).tone {
+        case .failure: return Theme.Colors.coralRed
+        case .attention: return Theme.Colors.warmAmber
+        case .active: return Theme.Colors.manentAccent
+        case .normal: return .secondary
+        }
     }
-
     /// Cadence inferred from the dates of the meetings that share a series.
     private func seriesSubtitle(_ meeting: Meeting) -> String? {
         guard let id = meeting.seriesID else { return nil }

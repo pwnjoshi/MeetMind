@@ -78,48 +78,112 @@ struct MeetingDecisionsList: View {
         }
     }
 }
-/// "Transcript and audio" page pushed from the meeting options menu.
+/// "Transcript and audio" page: sticky audio player, transcript grouped by speaker turn, the playing line
+/// highlighted and scrolled into view, search with highlighted matches.
 struct MeetingTranscriptAudioPage: View {
     let viewModel: MeetingDetailViewModel
     @Binding var searchText: String
     let onReassign: (TranscriptSegment) -> Void
+    @State private var playhead: TimeInterval = 0
+    @State private var isPlaying = false
+    @State private var rate: Float = 1.0
+    /// The page owns the live query so search also works when a caller passes `.constant("")`.
+    @State private var query = ""
 
-    var body: some View {
-        VStack(spacing: 0) {
-            MeetingTranscriptTabView(
-                segments: viewModel.transcriptSegments,
-                activeSegmentId: viewModel.activeSegmentId,
-                searchText: $searchText,
-                onSeek: { viewModel.tapToSeek(segment: $0) },
-                onEdit: { viewModel.beginEditingTranscript(segment: $0) },
-                onReassign: onReassign
-            )
-            if let duration = viewModel.meeting?.duration, duration > 0 {
-                StickyAudioPlayerBar(
-                    currentTime: viewModel.currentPlayheadTime,
-                    totalDuration: duration,
-                    isPlaying: viewModel.isPlaying,
-                    playbackRate: viewModel.playbackRate,
-                    onTogglePlayPause: { viewModel.togglePlayPause() },
-                    onSeek: { viewModel.seek(to: $0) },
-                    onSkipBackward: { viewModel.seek(to: max(0, viewModel.currentPlayheadTime - 15)) },
-                    onSkipForward: { viewModel.seek(to: min(duration, viewModel.currentPlayheadTime + 15)) },
-                    onCycleRate: { cyclePlaybackRate() }
-                )
-            }
-        }
-        .navigationTitle("Transcript and audio")
-        .toolbar(.hidden, for: .tabBar)
-        .onDisappear { viewModel.stopPlayback() }
+    private var segments: [TranscriptSegment] { viewModel.transcriptSegments }
+
+    private var hasAudio: Bool { viewModel.meeting?.resolvedAudioFileURL != nil }
+
+    private var activeSegmentID: UUID? {
+        guard isPlaying || playhead > 0 else { return nil }
+        return TranscriptTurnGrouper.activeSegmentID(at: playhead, in: segments)
     }
 
-    private func cyclePlaybackRate() {
-        let rates: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
-        let current = viewModel.playbackRate
-        if let idx = rates.firstIndex(where: { abs($0 - current) < 0.05 }) {
-            viewModel.setPlaybackRate(rates[(idx + 1) % rates.count])
-        } else {
-            viewModel.setPlaybackRate(1.0)
+    private var emptyKind: TranscriptEmptyKind {
+        guard let meeting = viewModel.meeting else { return .notAvailable }
+        if meeting.status == .processing, meeting.analysisState != "failed" { return .processing }
+        return .notAvailable
+    }
+
+    var body: some View {
+        MeetingTranscriptTabView(
+            segments: segments,
+            activeSegmentId: activeSegmentID,
+            searchText: $query,
+            emptyKind: emptyKind,
+            onSeek: { viewModel.tapToSeek(segment: $0) },
+            onEdit: { viewModel.beginEditingTranscript(segment: $0) },
+            onReassign: onReassign
+        )
+        .background(Color(uiColor: .systemBackground))
+        .safeAreaInset(edge: .bottom, spacing: 0) { playerArea }
+        .navigationTitle("Transcript and audio")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .tint(Theme.Colors.manentAccent)
+        .onAppear { query = searchText }
+        .onChange(of: query) { _, newValue in searchText = newValue }
+        .task {
+            while !Task.isCancelled {
+                syncPlayback()
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { break }
+            }
         }
+        .onDisappear { viewModel.stopPlayback() }
+        .alert("Audio Not Available", isPresented: Binding(
+            get: { viewModel.isShowingAudioMissingAlert },
+            set: { viewModel.isShowingAudioMissingAlert = $0 }
+        )) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The recording for this meeting is not on this iPhone, so lines cannot be played.")
+        }
+    }
+
+    @ViewBuilder
+    private var playerArea: some View {
+        let duration = viewModel.totalDuration
+        if hasAudio, duration > 0 {
+            StickyAudioPlayerBar(
+                currentTime: playhead,
+                totalDuration: duration,
+                isPlaying: isPlaying,
+                playbackRate: rate,
+                onTogglePlayPause: {
+                    viewModel.togglePlayPause()
+                    syncPlayback()
+                },
+                onSeek: {
+                    viewModel.seek(to: $0)
+                    syncPlayback()
+                },
+                onSkipBackward: {
+                    viewModel.seek(to: max(0, viewModel.currentPlayheadTime - 15))
+                    syncPlayback()
+                },
+                onSkipForward: {
+                    viewModel.seek(to: min(duration, viewModel.currentPlayheadTime + 15))
+                    syncPlayback()
+                },
+                onCycleRate: {
+                    viewModel.setPlaybackRate(StickyAudioPlayerBar.nextRate(after: viewModel.playbackRate))
+                    syncPlayback()
+                }
+            )
+        } else {
+            Label("No recording is saved for this meeting.", systemImage: "waveform.slash")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(.bar)
+        }
+    }
+
+    private func syncPlayback() {
+        viewModel.refreshPlaybackPosition()
+        playhead = viewModel.currentPlayheadTime
+        isPlaying = viewModel.isPlaying
+        rate = viewModel.playbackRate
     }
 }

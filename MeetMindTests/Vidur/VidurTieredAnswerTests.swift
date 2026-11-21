@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import OfflineEngineKit
 @testable import MeetMind
 
 private final class UpdateBox: @unchecked Sendable {
@@ -236,6 +237,13 @@ final class VidurFastAnswererTests: XCTestCase {
     }
 }
 
+private final class InputBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [VidurRefineInput] = []
+    func add(_ input: VidurRefineInput) { lock.lock(); stored.append(input); lock.unlock() }
+    var inputs: [VidurRefineInput] { lock.lock(); defer { lock.unlock() }; return stored }
+}
+
 final class VidurTieredFlowTests: XCTestCase {
     private let meetingID = UUID()
 
@@ -251,44 +259,71 @@ final class VidurTieredFlowTests: XCTestCase {
                           absent: [], attendanceRecorded: true)
     }
 
-    private func hooks(counter: CallCounter, available: Bool = true, fail: Bool = false,
+    private func hooks(counter: CallCounter, available: Bool = true, fail: Bool = false, delay: TimeInterval = 0,
+                       timeout: TimeInterval = 8, inputs: InputBox? = nil,
                        reply: VidurAnswer = VidurAnswer(text: "Moved to Friday.", kind: .generated)) -> VidurTieredHooks {
         VidurTieredHooks(
             refinementAvailable: { available },
-            refine: { _, _, _ in
+            refineTimeout: timeout,
+            refine: { input in
                 counter.increment()
+                inputs?.add(input)
+                if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
                 if fail { throw NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "model busy"]) }
                 return reply
             })
     }
 
-    private func run(_ question: String, facts: VidurMeetingFacts?, allow: Bool = true, hooks: VidurTieredHooks) async -> [VidurAnswerUpdate] {
+    private func run(_ question: String, facts: VidurMeetingFacts?, allow: Bool = true, additional: [VidurMeetingFacts] = [],
+                     history: [VidurChatTurn] = [], userDisabled: Bool = false,
+                     hooks: VidurTieredHooks) async -> [VidurAnswerUpdate] {
         let box = UpdateBox()
-        let request = VidurTieredRequest(question: question, sources: sources, facts: facts, length: .standard, allowRefinement: allow)
+        let request = VidurTieredRequest(question: question, sources: sources, facts: facts, length: .standard,
+                                         allowRefinement: allow, additionalFacts: additional, history: history,
+                                         userDisabledRefinement: userDisabled)
         await VidurTieredAnswerService.run(request, hooks: hooks) { box.add($0) }
         return box.updates
     }
 
-    func testTierTwoIsSkippedWhenStructuredDataAnswersFully() async {
+    private var populatedFacts: VidurMeetingFacts {
+        VidurMeetingFacts(meetingID: meetingID, title: "Weekly sync", date: Date(), attendees: ["Rahul", "Asha"], absent: ["Meera"],
+                          attendanceRecorded: true)
+    }
+
+    func testStructuredAnswerStillShowsInstantlyThenGenerationReplacesIt() async {
         let counter = CallCounter()
-        let populated = VidurMeetingFacts(
-            meetingID: meetingID, title: "Weekly sync", date: Date(), attendees: ["Rahul", "Asha"], absent: ["Meera"],
-            attendanceRecorded: true)
-        let updates = await run("Who attended?", facts: populated, hooks: hooks(counter: counter))
+        let updates = await run("Who attended?", facts: populatedFacts, hooks: hooks(counter: counter))
+        XCTAssertEqual(counter.count, 1, "Deep answer runs even when the minutes answer fully")
+        XCTAssertEqual(updates.map(\.stage), [.refining, .final])
+        XCTAssertEqual(updates[0].tier, .structured)
+        XCTAssertTrue(updates[0].answer?.text.contains("Present (2)") == true)
+        XCTAssertEqual(updates[1].tier, .generated)
+        XCTAssertEqual(updates[1].answer?.text, "Moved to Friday.")
+    }
+
+    func testStructuredAnswerIsKeptWhenGenerationFindsNothing() async {
+        let counter = CallCounter()
+        let reply = VidurAnswer(text: "This wasn't discussed in the meeting.", kind: .notFound)
+        let updates = await run("Who attended?", facts: populatedFacts, hooks: hooks(counter: counter, reply: reply))
+        XCTAssertEqual(updates.last?.tier, .structured)
+        XCTAssertTrue(updates.last?.answer?.text.contains("Present (2)") == true)
+    }
+
+    func testStructuredAnswerOnlyWhenRefinementIsBlocked() async {
+        let counter = CallCounter()
+        let updates = await run("Who attended?", facts: populatedFacts, allow: false, hooks: hooks(counter: counter))
         XCTAssertEqual(counter.count, 0)
         XCTAssertEqual(updates.count, 1)
         XCTAssertEqual(updates[0].stage, .final)
         XCTAssertEqual(updates[0].tier, .structured)
-        XCTAssertTrue(updates[0].answer?.text.contains("Present (2)") == true)
     }
 
-    func testTierOneShowsImmediatelyThenTierTwoReplaces() async {
+    func testQuoteAnswerIsNotShownWhileThinkingAndGenerationReplacesIt() async {
         let counter = CallCounter()
         let updates = await run("When does the pricing page launch?", facts: facts, hooks: hooks(counter: counter))
         XCTAssertEqual(counter.count, 1)
         XCTAssertEqual(updates.map(\.stage), [.refining, .final])
-        XCTAssertEqual(updates[0].tier, .quote)
-        XCTAssertEqual(updates[0].answer?.kind, .extractive)
+        XCTAssertNil(updates[0].answer, "Scrappy quote lists stay hidden behind the Thinking placeholder")
         XCTAssertEqual(updates[1].tier, .generated)
         XCTAssertEqual(updates[1].answer?.text, "Moved to Friday.")
     }
@@ -298,6 +333,7 @@ final class VidurTieredFlowTests: XCTestCase {
         let updates = await run("What did we decide about pricing?", facts: facts, hooks: hooks(counter: counter))
         XCTAssertEqual(counter.count, 1)
         XCTAssertEqual(updates.last?.stage, .final)
+        XCTAssertEqual(updates.last?.tier, .generated)
     }
 
     func testRefinementFailureKeepsTheQuickAnswerAndSaysSo() async {
@@ -305,16 +341,47 @@ final class VidurTieredFlowTests: XCTestCase {
         let updates = await run("When does the pricing page launch?", facts: nil, hooks: hooks(counter: counter, fail: true))
         let final = updates.last
         XCTAssertEqual(final?.stage, .final)
+        XCTAssertEqual(final?.tier, .quote)
         XCTAssertEqual(final?.answer?.kind, .extractive)
+        XCTAssertTrue(final?.answer?.notice?.contains("Quick answer shown") == true)
         XCTAssertTrue(final?.answer?.notice?.contains("model busy") == true)
+    }
+
+    func testSlowGenerationTimesOutAndKeepsTheQuickAnswer() async {
+        let counter = CallCounter()
+        let started = Date()
+        let updates = await run("When does the pricing page launch?", facts: nil,
+                                hooks: hooks(counter: counter, delay: 5, timeout: 0.1))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "The deadline returns control promptly")
+        let final = updates.last
+        XCTAssertEqual(final?.tier, .quote)
+        XCTAssertEqual(final?.answer?.kind, .extractive)
+        XCTAssertTrue(final?.answer?.notice?.contains("too long") == true)
+    }
+
+    func testFailureWithoutAnyQuickAnswerReportsFailure() async {
+        let counter = CallCounter()
+        let updates = await run("Which cloud provider hosts database backups?", facts: nil,
+                                hooks: hooks(counter: counter, fail: true))
+        XCTAssertEqual(updates.last?.answer?.kind, .failed)
+        XCTAssertFalse(updates.last?.answer?.isRecordable ?? true)
     }
 
     func testModelNotFoundKeepsClosestLinesWithHonestNotice() async {
         let counter = CallCounter()
-        let reply = VidurAnswer(text: "Not discussed in the transcripts searched.", kind: .notFound)
+        let reply = VidurAnswer(text: "This wasn't discussed in the meeting.", kind: .notFound)
         let updates = await run("When does the pricing page launch?", facts: nil, hooks: hooks(counter: counter, reply: reply))
         XCTAssertEqual(updates.last?.answer?.kind, .extractive)
         XCTAssertTrue(updates.last?.answer?.notice?.contains("closest saved lines") == true)
+    }
+
+    func testModelNotFoundWithNoQuickAnswerIsShownAsNotFound() async {
+        let counter = CallCounter()
+        let reply = VidurAnswer(text: "This wasn't discussed in the meeting.", kind: .notFound)
+        let updates = await run("Which cloud provider hosts database backups?", facts: nil, hooks: hooks(counter: counter, reply: reply))
+        XCTAssertEqual(updates.last?.answer?.kind, .notFound)
+        XCTAssertEqual(updates.last?.answer?.text, "This wasn't discussed in the meeting.")
+        XCTAssertTrue(updates.last?.answer?.isRecordable ?? false)
     }
 
     func testNoRefinementWhileMinutesAreProcessing() async {
@@ -325,6 +392,17 @@ final class VidurTieredFlowTests: XCTestCase {
         XCTAssertEqual(updates[0].tier, .quote)
     }
 
+    func testUserDisabledDeepAnswersSkipsTheModelAndExplains() async {
+        let counter = CallCounter()
+        let quick = await run("When does the pricing page launch?", facts: nil, userDisabled: true, hooks: hooks(counter: counter))
+        XCTAssertEqual(quick.count, 1)
+        XCTAssertEqual(quick[0].tier, .quote)
+        let none = await run("Which cloud provider hosts database backups?", facts: nil, userDisabled: true,
+                             hooks: hooks(counter: counter))
+        XCTAssertTrue(none.last?.answer?.text.contains("Deep answers") == true)
+        XCTAssertEqual(counter.count, 0)
+    }
+
     func testUnmatchedQuestionWithoutModelReportsUnavailable() async {
         let counter = CallCounter()
         let updates = await run("Which cloud provider hosts database backups?", facts: nil,
@@ -332,6 +410,20 @@ final class VidurTieredFlowTests: XCTestCase {
         XCTAssertEqual(updates.count, 1)
         XCTAssertEqual(updates[0].answer?.kind, .unavailable)
         XCTAssertFalse(updates[0].answer?.isRecordable ?? true)
+    }
+
+    func testFollowUpHistoryAndEveryMeetingsMinutesReachTheDeepTier() async {
+        let counter = CallCounter()
+        let inputs = InputBox()
+        let earlier = VidurMeetingFacts(meetingID: UUID(), title: "Kickoff", date: Date(timeIntervalSince1970: 0))
+        let history = [VidurChatTurn(question: "What did Rahul say about pricing?", answer: "Friday."),
+                       VidurChatTurn(question: "And the vendor?", answer: "Pune.")]
+        _ = await run("aur Neha ne?", facts: nil, additional: [earlier, facts], history: history,
+                      hooks: hooks(counter: counter, inputs: inputs))
+        XCTAssertEqual(inputs.inputs.count, 1)
+        XCTAssertEqual(inputs.inputs[0].history, history)
+        XCTAssertEqual(inputs.inputs[0].facts.map(\.title), ["Kickoff", "Weekly sync"])
+        XCTAssertEqual(inputs.inputs[0].question, "aur Neha ne?")
     }
 
     func testEmptyAndOversizedQuestionsFailFast() async {
@@ -351,6 +443,30 @@ final class VidurTieredFlowTests: XCTestCase {
                                          length: .brief)
         var received: [VidurAnswerUpdate] = []
         for await update in VidurTieredAnswerService.stream(request, hooks: hooks(counter: counter)) { received.append(update) }
-        XCTAssertEqual(received.map(\.stage), [.final])
+        XCTAssertEqual(received.map(\.stage), [.refining, .final])
+    }
+}
+
+final class VidurHindiRoutingTests: XCTestCase {
+    func testDevanagariQuestionsRouteToTheSameIntentsAsEnglish() {
+        let names = ["Rahul", "Asha"]
+        XCTAssertEqual(VidurIntentRouter.route(question: "\u{0915}\u{094D}\u{092F}\u{093E} \u{0924}\u{092F} \u{0939}\u{0941}\u{0906}?", participantNames: names).intents, [.decisions])
+        XCTAssertEqual(VidurIntentRouter.route(question: "\u{092B}\u{0948}\u{0938}\u{0932}\u{0947} \u{0915}\u{094D}\u{092F}\u{093E} \u{0925}\u{0947}?", participantNames: names).intents, [.decisions])
+        XCTAssertEqual(VidurIntentRouter.route(question: "Rahul \u{0915}\u{093E} \u{0915}\u{093E}\u{092E} \u{0915}\u{094D}\u{092F}\u{093E} \u{0939}\u{0948}?", participantNames: names).intents, [.tasks])
+        XCTAssertEqual(VidurIntentRouter.route(question: "\u{0905}\u{0928}\u{0941}\u{092A}\u{0938}\u{094D}\u{0925}\u{093F}\u{0924} \u{0915}\u{094C}\u{0928} \u{0925}\u{093E}?", participantNames: names).intents, [.absent])
+    }
+
+    func testFollowUpKeepsThePreviousQuestionsLanguage() {
+        let history = [VidurChatTurn(question: "Pricing ke baare mein kya tay hua?", answer: "Friday.")]
+        XCTAssertEqual(VidurTieredAnswerService.answerLanguage(question: "And Neha?", history: history), .hinglish)
+        XCTAssertEqual(VidurTieredAnswerService.answerLanguage(question: "And Neha?", history: []), .english)
+        XCTAssertEqual(VidurTieredAnswerService.answerLanguage(
+            question: "What did Neha say about the vendor contract renewal?", history: history), .english)
+    }
+
+    func testHindiQuestionGetsHindiNotFoundWhenNothingMatches() async {
+        let language = VidurAnswerLanguage.detect("\u{092C}\u{091C}\u{091F} \u{0915}\u{094D}\u{092F}\u{093E} \u{0925}\u{093E}?")
+        XCTAssertEqual(language, .hindi)
+        XCTAssertEqual(VidurGroundedPrompt.notDiscussed(for: language), "\u{092E}\u{0940}\u{091F}\u{093F}\u{0902}\u{0917} \u{092E}\u{0947}\u{0902} \u{0907}\u{0938} \u{092A}\u{0930} \u{092C}\u{093E}\u{0924} \u{0928}\u{0939}\u{0940}\u{0902} \u{0939}\u{0941}\u{0908}\u{0964}")
     }
 }

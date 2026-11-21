@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import OfflineEngineKit
 
 /// One unnamed or assigned voice in the People sheet.
 public struct MeetingVoiceRow: Identifiable, Equatable, Sendable {
@@ -71,6 +72,7 @@ public enum MeetingPeopleEditor {
         do {
             let previous = moveSegments(row.segmentIDs, in: meeting, to: person)
             meeting.addParticipant(person)
+            repointActions(from: previous, to: person, meeting: meeting)
             for old in previous { retireIfUnused(old, meeting: meeting, context: context) }
             try context.save()
         } catch {
@@ -127,6 +129,7 @@ public enum MeetingPeopleEditor {
         }
         do {
             let previous = moveSegments(row.segmentIDs, in: meeting, to: targetSpeaker)
+            repointActions(from: previous, to: targetSpeaker, meeting: meeting)
             for old in previous { retireIfUnused(old, meeting: meeting, context: context) }
             try context.save()
         } catch {
@@ -328,6 +331,85 @@ public enum MeetingPeopleEditor {
             segment.speaker = speaker
         }
         return previous
+    }
+
+    /// Actions owned by a detected voice ("Speaker 1") move to the person the voice now belongs to.
+    /// Named people keep their actions; only unnamed voices are re-pointed.
+    private static func repointActions(from previous: [Speaker], to person: Speaker, meeting: Meeting) {
+        for old in previous where old.isUnnamedVoice && old.id != person.id {
+            for item in meeting.actionItems where item.assignee?.id == old.id {
+                item.assignee = person
+            }
+        }
+    }
+
+    // MARK: - Durable naming across re-analysis
+
+    /// Replaces the transcript with freshly analysed `turns` and keeps the user's voice naming.
+    /// A diarization label that was assigned to a person ("Speaker 1" -> Maya) points at that
+    /// person again, and the stored assignment is updated to the new segment ids.
+    public static func replaceTranscript(of meeting: Meeting, with turns: [AnalysisTurn],
+                                         context: ModelContext, store: MeetingRecordStore) {
+        let assignments = store.record(for: meeting.id).voiceAssignments
+        let previousSegments = meeting.transcriptSegments
+        meeting.transcriptSegments.removeAll()
+        for segment in previousSegments { context.delete(segment) }
+
+        var speakersByLabel: [String: Speaker] = [:]
+        var segmentIDsByLabel: [String: [UUID]] = [:]
+        for (index, turn) in turns.enumerated() {
+            var speaker: Speaker?
+            if let label = turn.speaker {
+                if let known = speakersByLabel[label] {
+                    speaker = known
+                } else {
+                    let resolved = speakerForLabel(label, assignments: assignments, meeting: meeting, context: context)
+                    speakersByLabel[label] = resolved
+                    speaker = resolved
+                }
+            }
+            let segment = TranscriptSegment(text: turn.text, startTime: turn.start, endTime: turn.end,
+                                            confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index)
+            meeting.addTranscriptSegment(segment)
+            if let label = turn.speaker { segmentIDsByLabel[label, default: []].append(segment.id) }
+        }
+
+        guard !assignments.isEmpty else { return }
+        try? store.update(meeting.id) { record in
+            for index in record.voiceAssignments.indices {
+                let label = record.voiceAssignments[index].label
+                record.voiceAssignments[index].segmentIDs = segmentIDsByLabel[label] ?? []
+            }
+        }
+    }
+
+    /// The speaker a diarization label belongs to: the assigned person, a speaker already holding the label, or a new voice.
+    private static func speakerForLabel(_ label: String, assignments: [VoiceAssignment],
+                                        meeting: Meeting, context: ModelContext) -> Speaker {
+        if let assignment = assignments.first(where: { $0.label == label }),
+           let person = findPerson(withID: assignment.personID, meeting: meeting, context: context) {
+            meeting.addParticipant(person)
+            return person
+        }
+        let holder = meeting.participants.first {
+            $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
+        }
+        if let holder {
+            holder.recordingVoiceLabel = label
+            return holder
+        }
+        let created = Speaker(name: label)
+        created.recordingVoiceLabel = label
+        context.insert(created)
+        meeting.addParticipant(created)
+        return created
+    }
+
+    private static func findPerson(withID id: UUID, meeting: Meeting, context: ModelContext) -> Speaker? {
+        if let attendee = meeting.participants.first(where: { $0.id == id }) { return attendee }
+        var descriptor = FetchDescriptor<Speaker>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     /// Removes an unnamed voice that no longer owns any segment of this meeting.
