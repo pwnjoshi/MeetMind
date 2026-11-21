@@ -9,11 +9,11 @@ repairs, verification evidence, and remaining limitations.
 ## Features
 
 - AAC recording, live microphone metering, pause/resume, and persistent audio.
-- Apple Speech transcription restricted to on-device recognition.
-- Local extractive summaries, decisions, and suggested action items.
+- Offline multilingual Whisper transcription after recording; optional on-device Apple Speech live preview.
+- Local Qwen-generated English discussion points, decisions, and source-linked task suggestions requiring review.
 - Transcript editing, manual speaker attribution, playback, notes, and photos.
 - Meeting scheduling, audio import, filtering, and cross-meeting search services.
-- Action checklists and optional Apple Reminders export through EventKit.
+- Action checklists, categories, and optional export to on-device Apple Reminders lists.
 - PDF sharing, Markdown export, and email-draft text.
 
 On-device recognition depends on device/language support and installed speech
@@ -21,9 +21,12 @@ models; unavailable local recognition fails visibly rather than using cloud spee
 Calendar and iCloud sync are not provided. Saved meeting storage is excluded from
 device backups; sharing and Reminders export are explicit user actions.
 
-Settings includes a separate offline-model qualification lab for WhisperKit,
-FluidAudio speaker separation, and local Qwen3 task analysis. These experimental
-engines have not replaced the normal meeting pipeline. See
+Build 7 integrates offline WhisperKit transcription, FluidAudio speaker separation,
+and local Qwen analysis into saved-meeting processing, with explicit model setup,
+protected resume checkpoints, and human review before generated tasks are saved.
+Build 10 uses the compact 4B trial profile after device comparisons exposed missed
+commitments in the 1.7B candidate. Settings includes model management and a separate diagnostics lab. Real Hinglish
+accuracy and long-meeting performance remain unqualified. See
 [OFFLINE_QUALIFICATION.md](OFFLINE_QUALIFICATION.md) for device measurements and
 outstanding Hinglish quality gates.
 

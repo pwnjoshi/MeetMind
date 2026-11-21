@@ -466,4 +466,29 @@ final class SearchViewModelTests: XCTestCase {
         XCTAssertEqual(sut.searchResults.count, 0)
         XCTAssertTrue(sut.hasEmptyResults)
     }
+
+    func test_decisionsThisWeekSuggestionReturnsOnlyDecisionsInCalendarWeek() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let anchor = Date(timeIntervalSince1970: 1_800_000_000)
+        m1.createdAt = anchor
+        m2.createdAt = anchor.addingTimeInterval(-14 * 86_400)
+
+        sut.indexMeetings([m1, m2])
+        sut.activateSuggestion(.decisionsThisWeek, now: anchor, calendar: calendar)
+
+        XCTAssertEqual(sut.searchResults.map(\.meetingId), [m1.id])
+        XCTAssertTrue(sut.searchResults.allSatisfy { $0.category == .summary })
+        XCTAssertEqual(sut.searchResults.first?.snippet, "Approved $50k allocation for GPU cluster.")
+    }
+
+    func test_actionsAssignedToMeSuggestionUsesExactLocalProfileName() throws {
+        sut.indexMeetings([m1, m2])
+        sut.activateSuggestion(.actionsAssignedToMe, localUserName: "Sarah Connor")
+
+        XCTAssertEqual(sut.searchResults.count, 1)
+        XCTAssertEqual(sut.searchResults.first?.meetingId, m1.id)
+        XCTAssertEqual(sut.searchResults.first?.actionItemId, m1.actionItems.first?.id)
+        XCTAssertTrue(sut.searchResults.allSatisfy { $0.category == .actionItem })
+    }
 }

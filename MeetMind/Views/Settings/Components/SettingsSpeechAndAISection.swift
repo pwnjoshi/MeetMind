@@ -10,7 +10,18 @@ public struct SettingsSpeechAndAISection: View {
     
     public var body: some View {
         Section(header: Text("Speech Recognition & AI Intelligence")) {
-            Picker("Speech Language", selection: Binding(
+            Picker("Saved recording language", selection: Binding(
+                get: { viewModel.savedRecordingLanguage },
+                set: { viewModel.setSavedRecordingLanguage($0) }
+            )) {
+                ForEach(SavedRecordingLanguage.allCases) { language in
+                    Text(language.title).tag(language)
+                }
+            }
+            Text("Use Hindi + English for Hinglish meetings. This prevents automatic detection from selecting Urdu and is used for the final on-device transcript.")
+                .font(.footnote).foregroundStyle(.secondary)
+
+            Picker("Live preview language", selection: Binding(
                 get: { viewModel.speechLanguageLocale },
                 set: { viewModel.setSpeechLanguageLocale($0) }
             )) {
@@ -31,12 +42,7 @@ public struct SettingsSpeechAndAISection: View {
                 }
             }
             
-            Picker("Summary Style", selection: $viewModel.summaryStyle) {
-                Text("Executive Brief").tag(SummaryStyle.executive)
-                Text("Detailed Analysis").tag(SummaryStyle.detailed)
-            }
-            
-            Text("Summaries are generated locally from your transcript.")
+            Text("The live preview is provisional. When recording ends, Manent replaces it with the selected-language offline transcript before generating minutes and tasks.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
     }

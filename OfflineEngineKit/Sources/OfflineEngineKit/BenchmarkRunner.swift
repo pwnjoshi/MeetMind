@@ -5,6 +5,8 @@ import AVFoundation
 public struct BenchmarkResult: Codable, Sendable {
     public let engine: String
     public let modelRevision: String
+    public let promptVersion: String?
+    public let contextTokens: Int?
     public let elapsedSeconds: Double
     public let sampledPeakFootprintBytes: UInt64
     public let thermalState: Int
@@ -70,18 +72,12 @@ public actor OfflineBenchmarkRunner {
         } else if profile.id.hasPrefix("qwen") {
             guard !input.isEmpty else { throw OfflineError.unavailable("Transcribe audio or use the synthetic text fixture first.") }
             turns = input
-            let model = try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"))
-            var chunks: [[AnalysisTurn]] = [], chunk: [AnalysisTurn] = [], characters = 0
-            for turn in input {
-                guard turn.text.count <= 2000 else { throw OfflineError.unavailable("One transcript turn is too long. Split it before analysis.") }
-                if characters + turn.text.count > 2000 && !chunk.isEmpty {
-                    chunks.append(chunk)
-                    chunk = Array(chunk.suffix(2))
-                    characters = chunk.reduce(0) { $0 + $1.text.count }
-                }
-                chunk.append(turn); characters += turn.text.count
-            }
-            if !chunk.isEmpty { chunks.append(chunk) }
+            let configuration: LocalModelConfiguration = profile.id == "qwen-4b" ? .compact : .standard
+            let model = try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"), configuration: configuration)
+            let chunks = try MeetingAnalysisPipeline.fittedAnalysisChunks(input, model: model,
+                meetingDate: start, timezone: TimeZone.current.identifier, maxJSONBytes: profile.id == "qwen-4b" ? 1200 : 1800)
+            var seen = Set<String>()
+            turns = chunks.flatMap { $0 }.filter { seen.insert($0.id).inserted }
             for chunk in chunks {
                 try Task.checkCancellation()
                 analysis.append(try model.analyze(turns: chunk, meetingDate: start, timezone: TimeZone.current.identifier))
@@ -92,6 +88,8 @@ public actor OfflineBenchmarkRunner {
         sampler.cancel()
         let peak = max(Self.footprint(), await sampler.value)
         return BenchmarkResult(engine: profile.id, modelRevision: profile.revision,
+            promptVersion: profile.id.hasPrefix("qwen") ? OfflineAnalysisContract.promptVersion : nil,
+            contextTokens: profile.id.hasPrefix("qwen") ? Int((profile.id == "qwen-4b" ? LocalModelConfiguration.compact : .standard).contextTokens) : nil,
             elapsedSeconds: Date().timeIntervalSince(start), sampledPeakFootprintBytes: peak,
             thermalState: ProcessInfo.processInfo.thermalState.rawValue, turns: turns, speakers: speakers, analysis: analysis)
     }
@@ -110,6 +108,7 @@ public actor OfflineBenchmarkRunner {
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         try metricsRoot.setResourceValues(values)
         let metrics: [String: Any] = ["engine": result.engine, "revision": result.modelRevision,
+            "promptVersion": result.promptVersion ?? "not-applicable", "contextTokens": result.contextTokens ?? 0,
             "elapsedSeconds": result.elapsedSeconds, "sampledPeakFootprintBytes": result.sampledPeakFootprintBytes,
             "thermalState": result.thermalState, "qualified": false]
         try JSONSerialization.data(withJSONObject: metrics, options: [.prettyPrinted, .sortedKeys])

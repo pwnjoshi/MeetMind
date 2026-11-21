@@ -56,7 +56,7 @@ public struct RootExportMinutesSheet: View {
     
     public var body: some View {
         MeetingExportSheet(
-            onExportPDF: { try? viewModel.exportPDF() },
+            onExportPDF: { try viewModel.exportPDF() },
             onExportMarkdown: { viewModel.exportMarkdown() },
             onExportEmailDraft: { viewModel.generateEmailDraft() },
             onDismiss: onDismiss
@@ -66,6 +66,8 @@ public struct RootExportMinutesSheet: View {
 
 /// Connected conversational AI assistant sheet presented from AppState
 public struct RootAskAISheet: View {
+    @Environment(NavigationRouter.self) private var router
+    @Environment(AppState.self) private var appState
     public let meetingId: UUID
     public let modelContext: ModelContext
     public let onDismiss: () -> Void
@@ -82,12 +84,24 @@ public struct RootAskAISheet: View {
         AskAIAssistantSheet(
             history: viewModel.aiChatHistory,
             onAsk: { prompt in
-                Task { _ = try? await viewModel.askAI(prompt: prompt) }
+                viewModel.submitAIQuery(prompt) { _ in }
             },
             onSeekToCitation: { citation in
                 viewModel.seekToCitation(citation)
             },
-            onDismiss: onDismiss
+            onOpenMeeting: { citedMeetingID in
+                onDismiss()
+                appState.activeTab = .home
+                router.navigate(to: .meetingDetail(id: citedMeetingID), in: .home)
+            },
+            onDismiss: { viewModel.cancelQuestion(); onDismiss() },
+            meetingTitle: viewModel.headerTitle,
+            isBusy: viewModel.isAnsweringQuestion,
+            meeting: viewModel.meeting
         )
+        .onDisappear {
+                viewModel.cancelQuestion()
+                viewModel.stopPlayback()
+            }
     }
 }

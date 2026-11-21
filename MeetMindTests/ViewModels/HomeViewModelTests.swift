@@ -291,7 +291,7 @@ final class HomeViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 21 - Validates trailing swipe delete removes meeting from feed and storage.
-    func test_tier1_feature21_trailingSwipeDeleteMeetingRemovesFromList() throws {
+    func test_tier1_feature21_trailingSwipeDeleteMeetingRemovesFromList() async throws {
         let m1 = createMeeting(title: "To Keep", dateOffset: -100, status: .completed)
         let m2 = createMeeting(title: "To Delete", dateOffset: -200, status: .completed)
         _ = m1
@@ -299,7 +299,7 @@ final class HomeViewModelTests: XCTestCase {
         
         XCTAssertEqual(sut.filteredMeetings.count, 2)
         
-        sut.deleteMeeting(m2)
+        try await sut.deleteMeeting(m2)
         
         XCTAssertEqual(sut.filteredMeetings.count, 1)
         XCTAssertEqual(sut.filteredMeetings.first?.title, "To Keep")
@@ -385,13 +385,13 @@ final class HomeViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 18 - Validates deleting meeting removes it immediately from both upcoming and recent lists.
-    func test_tier2_feature18_deletedMeetingImmediatelyRemovedFromDashboard() throws {
+    func test_tier2_feature18_deletedMeetingImmediatelyRemovedFromDashboard() async throws {
         let meeting = createMeeting(title: "Standup", dateOffset: 600, status: .scheduled)
         sut.fetchMeetings()
         
         XCTAssertEqual(sut.upcomingMeetings.count, 1)
         
-        sut.deleteMeeting(meeting)
+        try await sut.deleteMeeting(meeting)
         XCTAssertEqual(sut.upcomingMeetings.count, 0)
         XCTAssertTrue(sut.isEmptyState)
     }
@@ -549,13 +549,13 @@ final class HomeViewModelTests: XCTestCase {
     }
     
     /// Tier 2: Feature 21 - Validates deleting last remaining meeting triggers empty dashboard state.
-    func test_tier2_feature21_deleteLastRemainingMeetingTransitionsToEmptyDashboard() throws {
+    func test_tier2_feature21_deleteLastRemainingMeetingTransitionsToEmptyDashboard() async throws {
         let loneMeeting = createMeeting(title: "Last Stand", dateOffset: -100, status: .completed)
         sut.fetchMeetings()
         
         XCTAssertFalse(sut.isEmptyState)
         
-        sut.deleteMeeting(loneMeeting)
+        try await sut.deleteMeeting(loneMeeting)
         
         XCTAssertTrue(sut.isEmptyState)
         XCTAssertEqual(sut.filteredMeetings.count, 0)

@@ -24,6 +24,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v5
 
+      - name: Verify source and Xcode project integrity
+        run: |
+          python3 -X utf8 Scripts/verify_project.py
+          python3 Scripts/register_new_sources.py --check
+          git diff --check
+
       - name: Test offline qualification scorer (synthetic data only)
         run: python3 -m unittest discover -s Scripts -p test_evaluate_offline.py
 
@@ -76,13 +82,18 @@ jobs:
             CODE_SIGN_STYLE="Manual"
 
       - name: Validate compiled app privacy keys
-        run: python3 Scripts/validate_ipa.py build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
+        run: |
+          APP_PLIST=build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
+          SOURCE_COMMIT=$(git rev-parse HEAD)
+          /usr/libexec/PlistBuddy -c "Set :ManentBuildCommit $SOURCE_COMMIT" "$APP_PLIST" 2>/dev/null ||
+            /usr/libexec/PlistBuddy -c "Add :ManentBuildCommit string $SOURCE_COMMIT" "$APP_PLIST"
+          python3 Scripts/validate_ipa.py "$APP_PLIST"
 
       - name: Package into IPA
         run: |
           mkdir -p ./build/Payload
           APP_PATH=./build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
-          if [ -z "$APP_PATH" ]; then
+          if [ ! -d "$APP_PATH" ]; then
             echo "Error: MeetMind.app was not built!"
             find ./build/DerivedData -maxdepth 5
             exit 1
@@ -92,21 +103,6 @@ jobs:
           cd ./build
           zip -r MeetMind.ipa Payload
           ls -lh MeetMind.ipa
-
-      - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: MeetMind-iOS-Unsigned-Requires-Resigning
-          path: ./build/MeetMind.ipa
-          retention-days: 14
-
-      - name: Upload release crash symbols
-        uses: actions/upload-artifact@v6
-        with:
-          name: MeetMind-Release-Symbols
-          path: build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app.dSYM
-          if-no-files-found: error
-          retention-days: 14
 
       - name: Run Swift XCTest suite
         timeout-minutes: 12
@@ -126,8 +122,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Smoke test onboarding and repeated main-tab launches
+        timeout-minutes: 8
         if: ${{ !cancelled() && env.DEVICE_ID != '' }}
         run: bash Scripts/smoke_launch.sh "$DEVICE_ID"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: MeetMind-iOS-Unsigned-Requires-Resigning
+          path: ./build/MeetMind.ipa
+          retention-days: 14
+
+      - name: Upload release crash symbols
+        uses: actions/upload-artifact@v6
+        with:
+          name: MeetMind-Release-Symbols
+          path: build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app.dSYM
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload simulator screenshots and launch diagnostics
         if: always()

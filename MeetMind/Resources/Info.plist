@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>MeetMind</string>
+    <string>Manent</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -25,26 +25,31 @@
     
     <!-- Privacy Descriptions -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>MeetMind requires microphone access to record audio during meetings and live conversations.</string>
+    <string>Manent requires microphone access to record audio during meetings and live conversations.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>MeetMind requires speech recognition access to transcribe spoken dialogue into real-time text.</string>
+    <string>Manent requires speech recognition access to transcribe spoken dialogue into real-time text.</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>MeetMind accesses your calendar to import scheduled meetings and save meeting reminders.</string>
+    <string>Manent accesses your calendar to import scheduled meetings and save meeting reminders.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>MeetMind accesses your calendar to import scheduled meetings and save meeting reminders.</string>
+    <string>Manent accesses your calendar to import scheduled meetings and save meeting reminders.</string>
     <key>NSRemindersUsageDescription</key>
-    <string>MeetMind accesses reminders to export extracted meeting action items into Apple Reminders.</string>
+    <string>Manent accesses reminders to export extracted meeting action items into Apple Reminders.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>MeetMind accesses reminders to export extracted meeting action items into Apple Reminders.</string>
+    <string>Manent accesses reminders to export extracted meeting action items into Apple Reminders.</string>
     <key>NSCameraUsageDescription</key>
-    <string>MeetMind requires camera access to capture photos of whiteboards and presentations during meetings.</string>
+    <string>Manent requires camera access to capture photos of whiteboards and presentations during meetings.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>MeetMind allows attaching photos from your photo library to meeting notes.</string>
+    <string>Manent allows attaching photos from your photo library to meeting notes.</string>
     
     <!-- Background Audio Mode -->
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>
+        <string>processing</string>
+    </array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>com.meetmind.app.offline-analysis</string>
     </array>
     
     <!-- Custom URL Schemes for Deep Linking -->

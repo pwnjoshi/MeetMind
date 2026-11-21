@@ -351,7 +351,10 @@ final class AudioRecordingServiceTests: XCTestCase {
     
     /// Tier 3: Pairwise - Verifies RecordingState enum raw values and Codable conformance.
     func test_tier3_recordingStateCodableConformance() throws {
-        let states: [RecordingState] = [.idle, .preparing, .recording, .paused, .stopped]
+        let states: [RecordingState] = [
+            .idle, .preparing, .recording, .paused, .interrupted,
+            .stopping, .stopped, .stoppedUnsaved, .saveFailed, .saved
+        ]
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
         
@@ -395,7 +398,12 @@ final class AudioRecordingServiceTests: XCTestCase {
         XCTAssertEqual(RecordingState.preparing.rawValue, "preparing")
         XCTAssertEqual(RecordingState.recording.rawValue, "recording")
         XCTAssertEqual(RecordingState.paused.rawValue, "paused")
+        XCTAssertEqual(RecordingState.interrupted.rawValue, "interrupted")
+        XCTAssertEqual(RecordingState.stopping.rawValue, "stopping")
         XCTAssertEqual(RecordingState.stopped.rawValue, "stopped")
+        XCTAssertEqual(RecordingState.stoppedUnsaved.rawValue, "stoppedUnsaved")
+        XCTAssertEqual(RecordingState.saveFailed.rawValue, "saveFailed")
+        XCTAssertEqual(RecordingState.saved.rawValue, "saved")
     }
     
     /// Tier 2: Feature 3 - Validates stopRecording generates default temp URL when destination is nil.

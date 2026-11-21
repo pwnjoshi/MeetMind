@@ -8,6 +8,8 @@
 import XCTest
 import Foundation
 import SwiftData
+import AVFoundation
+import OfflineEngineKit
 @testable import MeetMind
 
 /// Comprehensive test suite covering Post-Recording Synthesis HUD,
@@ -416,4 +418,173 @@ final class ProcessingPipelineViewModelTests: XCTestCase {
         XCTAssertEqual(restoredSut.stages[0].state, .completed)
         XCTAssertEqual(restoredSut.stages[1].state, .completed)
     }
+
+    func testAnalysisJobPersistsAndRejectsConcurrentClaim() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("jobs.json")
+        let store = AnalysisJobStore(fileURL: url)
+        let id = UUID()
+        let record = AnalysisJobRecord(meetingID: id, sourceFingerprint: "digest",
+            checkpointVersion: "asr-prefill-v2", requiredModels: [])
+        _ = try await store.enqueue(record)
+        let lease = try await store.claim(id, owner: .foreground)
+        do {
+            _ = try await store.claim(id, owner: .background)
+            XCTFail("A second live owner must not acquire the job")
+        } catch {
+            XCTAssertEqual(error as? AnalysisJobStoreError, .leaseConflict)
+        }
+        do {
+            _ = try await store.enqueue(record)
+            XCTFail("Enqueue must not clear a live execution lease")
+        } catch {
+            XCTAssertEqual(error as? AnalysisJobStoreError, .leaseConflict)
+        }
+        try await store.release(lease)
+        let reopened = AnalysisJobStore(fileURL: url)
+        let reopenedRecord = try await reopened.get(id)
+        XCTAssertEqual(reopenedRecord?.sourceFingerprint, "digest")
+    }
+
+    func testAnalysisJobRecoversStaleLeaseAndReportsCorruptJSON() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("jobs.json")
+        let store = AnalysisJobStore(fileURL: url)
+        let id = UUID()
+        _ = try await store.enqueue(AnalysisJobRecord(meetingID: id, sourceFingerprint: "digest",
+            checkpointVersion: "asr-prefill-v2", requiredModels: []))
+        _ = try await store.claim(id, owner: .foreground)
+        let recovered = try await store.claim(id, owner: .background, staleAfter: -1)
+        XCTAssertEqual(recovered.owner, .background)
+        let recoveredRecord = try await store.get(id)
+        XCTAssertEqual(recoveredRecord?.attemptCount, 2)
+
+        try Data("not-json".utf8).write(to: url, options: .atomic)
+        do {
+            _ = try await AnalysisJobStore(fileURL: url).all()
+            XCTFail("Corruption must not be treated as an empty queue")
+        } catch {
+            XCTAssertEqual(error as? AnalysisJobStoreError, .corrupt)
+            XCTAssertEqual(error.localizedDescription, AnalysisFailure.stable(.jobStoreCorrupt).message)
+        }
+    }
+
+    func testCoordinatorPersistsStableSourceFailureWithoutPrivateText() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AnalysisJobStore(fileURL: root.appendingPathComponent("jobs.json"))
+        let meeting = Meeting(id: UUID(), title: "Private board acquisition", status: .processing)
+        context.insert(meeting)
+        try context.save()
+        let profiles = Self.emptyProfiles()
+        let coordinator = AnalysisCoordinator(context: context, jobs: store,
+            pipeline: CoordinatorTestPipeline(), models: OfflineModelStore(rootDirectory: root.appendingPathComponent("models")),
+            profilesProvider: { profiles })
+        do {
+            _ = try await coordinator.prepare(meetingID: meeting.id, languageCode: "hi", model: .fast)
+            XCTFail("Missing audio must fail")
+        } catch { }
+        let failedRecord = try await AnalysisJobStore(fileURL: root.appendingPathComponent("jobs.json")).get(meeting.id)
+        let failure = try XCTUnwrap(failedRecord?.failure)
+        XCTAssertEqual(failure.code, .sourceUnavailable)
+        XCTAssertFalse(failure.message.contains(meeting.title))
+        XCTAssertFalse(failure.message.contains(root.path))
+    }
+
+    func testCoordinatorRetryUsesTranscriptCheckpointAndCompletes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let audio = try Self.audioFixture(in: root)
+        let profiles = Self.emptyProfiles()
+        let modelStore = OfflineModelStore(rootDirectory: root.appendingPathComponent("models"))
+        let source = root.appendingPathComponent("model-source")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        for profile in profiles { try await modelStore.repair(profile, fromVerifiedDirectory: source) }
+
+        let meeting = Meeting(id: UUID(), title: "Checkpoint", status: .processing, audioFileURL: audio)
+        context.insert(meeting)
+        try context.save()
+        let jobStore = AnalysisJobStore(fileURL: root.appendingPathComponent("jobs.json"))
+        let pipeline = CoordinatorTestPipeline()
+        let coordinator = AnalysisCoordinator(context: context, jobs: jobStore, pipeline: pipeline,
+                                               models: modelStore, profilesProvider: { profiles })
+        do {
+            _ = try await coordinator.run(meetingID: meeting.id, languageCode: "hi",
+                                          model: .fast, owner: .foreground)
+            XCTFail("The first minutes pass is injected to fail")
+        } catch { }
+        XCTAssertFalse(meeting.transcriptSegments.isEmpty)
+        let failedJob = try await jobStore.get(meeting.id)
+        XCTAssertEqual(failedJob?.state, .failed)
+
+        let completed = try await coordinator.run(meetingID: meeting.id, languageCode: "hi",
+                                                  model: .fast, owner: .foreground)
+        XCTAssertEqual(completed.state, .completed)
+        XCTAssertEqual(completed.attemptCount, 2)
+        XCTAssertNotNil(meeting.summary)
+        let transcriptionCount = await pipeline.transcriptionCount
+        XCTAssertEqual(transcriptionCount, 1)
+    }
+
+    func testBackgroundLegacyQueueCompatibilityReadsExistingIDs() throws {
+        let suite = "AnalysisLegacyQueueTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let id = UUID()
+        defaults.set([id.uuidString, "invalid"], forKey: "MeetMind.pendingOfflineAnalysisIDs")
+        XCTAssertEqual(OfflineAnalysisBackgroundScheduler.legacyMeetingIDs(in: defaults), [id])
+    }
+
+    private static func emptyProfiles() -> [ModelProfile] {
+        ["whisper-large", "diarization", VidurModel.fast.rawValue].map {
+            ModelProfile(id: $0, name: $0, revision: "test-r1", files: [])
+        }
+    }
+
+    private static func audioFixture(in root: URL) throws -> URL {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("audio.caf")
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1_600))
+        buffer.frameLength = 1_600
+        buffer.floatChannelData?[0].update(repeating: 0, count: 1_600)
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        try file.write(from: buffer)
+        return url
+    }
+
+}
+
+
+private actor CoordinatorTestPipeline: AnalysisPipelineRunning {
+    private var checkpoint: MeetingAnalysisCheckpoint?
+    private var runCount = 0
+    private(set) var transcriptionCount = 0
+
+    func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String,
+             languageCode: String?, model: VidurModel, stopAfterSpeakers: Bool,
+             reviewedTurns: [AnalysisTurn],
+             progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
+        runCount += 1
+        let turn = AnalysisTurn(id: "turn-1", text: "A saved checkpoint sentence.", start: 0, end: 1, speaker: nil)
+        if checkpoint == nil {
+            transcriptionCount += 1
+            await progress(.transcription)
+            checkpoint = MeetingAnalysisCheckpoint(sourceSignature: "fixture", stage: .speakers,
+                turns: [turn], speakers: [], analysis: [], analyzedChunks: 0)
+            await progress(.speakers)
+            throw OfflineError.unavailable("Injected private implementation detail")
+        }
+        await progress(.analysis)
+        let completed = MeetingAnalysisCheckpoint(sourceSignature: "fixture", stage: .completed,
+            turns: [turn], speakers: [], analysis: [], analyzedChunks: 0, chunkTurnIDs: [[turn.id]])
+        checkpoint = completed
+        await progress(.completed)
+        return completed
+    }
+
+    func savedCheckpoint(meetingID: UUID) async -> MeetingAnalysisCheckpoint? { checkpoint }
+    func speakerWarning() async -> String? { nil }
 }

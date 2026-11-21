@@ -151,6 +151,9 @@ final class MeetingSetupViewModelTests: XCTestCase {
         sut.startDate = start
         sut.endDate = end
         sut.agendaText = "Figma token mapping"
+        let seriesID = UUID()
+        sut.scheduledSeriesID = seriesID
+        sut.scheduledSeriesName = "Architecture reviews"
         
         let savedMeeting = try sut.saveScheduledMeeting()
         
@@ -159,6 +162,10 @@ final class MeetingSetupViewModelTests: XCTestCase {
         XCTAssertEqual(savedMeeting.status, .scheduled)
         XCTAssertEqual(savedMeeting.scheduledStartTime, start)
         XCTAssertEqual(fetchMeeting(id: savedMeeting.id)?.title, "Design Architecture Sync")
+        let freshContext = ModelContext(modelContainer)
+        let persisted = try XCTUnwrap(freshContext.fetch(FetchDescriptor<Meeting>()).first { $0.id == savedMeeting.id })
+        XCTAssertEqual(persisted.seriesID, seriesID)
+        XCTAssertEqual(persisted.seriesName, "Architecture reviews")
     }
     
     // MARK: - Tier 1: Feature 24 (Meeting Templates Selector)
@@ -723,5 +730,38 @@ final class MeetingSetupViewModelTests: XCTestCase {
         XCTAssertEqual(meeting.transcriptSegments.count, 2)
         XCTAssertEqual(meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }.first?.text, "Hello everyone")
         XCTAssertTrue(meeting.duration > 0)
+    }
+}
+
+
+extension MeetingSetupViewModelTests {
+    func testDefaultImportPersistsIndependentAudioAndWaitsForOfflineReviewPipeline() async throws {
+        let source = tempDirectoryURL.appendingPathComponent("private-import.m4a")
+        let bytes = Data("synthetic copy fixture, not a speech-quality sample".utf8)
+        try bytes.write(to: source)
+        let importer = MeetingSetupViewModel(modelContext: context)
+        importer.setSimulatedAudioDuration(20)
+        let recordedAt = Date(timeIntervalSince1970: 1700000000)
+        importer.importedRecordingDate = recordedAt
+        let seriesID = UUID()
+        importer.importedSeriesID = seriesID
+        importer.importedSeriesName = "Synthetic planning series"
+        let meeting = try await importer.importAudioFile(at: source)
+        let savedURL = try XCTUnwrap(meeting.audioFileURL)
+        defer { try? FileManager.default.removeItem(at: savedURL) }
+        try FileManager.default.removeItem(at: source)
+        XCTAssertEqual(try Data(contentsOf: savedURL), bytes)
+        XCTAssertEqual(meeting.status, .processing)
+        XCTAssertTrue(meeting.transcriptSegments.isEmpty)
+        XCTAssertTrue(meeting.actionItems.isEmpty)
+        XCTAssertNil(meeting.summary)
+        let fresh = ModelContext(modelContainer)
+        let stored = try XCTUnwrap(fresh.fetch(FetchDescriptor<Meeting>()).first)
+        XCTAssertEqual(stored.audioFileURL, savedURL)
+        XCTAssertEqual(stored.status, .processing)
+        XCTAssertEqual(stored.createdAt, recordedAt)
+        XCTAssertEqual(stored.scheduledStartTime, recordedAt)
+        XCTAssertEqual(stored.seriesID, seriesID)
+        XCTAssertEqual(stored.seriesName, "Synthetic planning series")
     }
 }

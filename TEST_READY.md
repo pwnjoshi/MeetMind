@@ -1,6 +1,6 @@
 # Verification status
 
-Use the current GitHub Actions run for `codex/offline-intelligence` as the
+Use the current GitHub Actions run for `codex/complete-offline-meeting-flow` (draft PR #3) as the
 source of build/test results. A green Release build alone is not a passing suite.
 
 The old report of 646 passing executions described a separate Python simulation.

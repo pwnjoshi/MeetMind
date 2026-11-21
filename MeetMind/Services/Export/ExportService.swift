@@ -1,298 +1,262 @@
 import Foundation
 import UIKit
+import PDFKit
+
+/// Immutable reviewed content used by PDF, Markdown, plain-text sharing, and approval.
+public struct DocumentSnapshot: Equatable, Sendable {
+    public struct Section: Equatable, Sendable {
+        public let heading: String
+        public let lines: [String]
+    }
+
+    public struct Action: Equatable, Sendable {
+        public let title: String
+        public let assignee: String
+        public let dueDate: String?
+        public let priority: String
+        public let isCompleted: Bool
+    }
+
+    public struct TranscriptLine: Equatable, Sendable {
+        public let speaker: String
+        public let timestamp: String
+        public let text: String
+    }
+
+    public let meetingID: UUID
+    public let title: String
+    public let formattedDate: String
+    public let formattedDuration: String
+    public let status: String
+    public let sections: [Section]
+    public let actions: [Action]
+    /// Sections printed after the action items (open issues).
+    public let closingSections: [Section]
+    public let transcript: [TranscriptLine]
+
+    /// Builds the snapshot from the same categorized content the Minutes tab shows.
+    /// Suggested tasks that were not accepted are not part of the minutes and are never exported.
+    /// `record` carries the decided-by metadata; when nil the shared record store is read (main thread only).
+    public static func make(from meeting: Meeting, record: MeetingRecordData? = nil) -> Self {
+        let resolved = record ?? currentRecord(for: meeting.id)
+        let content = MeetingMinutesContent.make(from: meeting, record: resolved)
+        return make(from: meeting, content: content)
+    }
+
+    static func make(from meeting: Meeting, content: MeetingMinutesContent) -> Self {
+        let presentHeading = content.hasAttendanceRecord ? "Present" : "Attendees"
+        let candidates: [Section] = [
+            Section(heading: "Executive Summary", lines: content.summary.isEmpty ? [] : [content.summary]),
+            Section(heading: "Agenda", lines: content.agenda),
+            Section(heading: presentHeading, lines: content.present.map(\.label)),
+            Section(heading: "Absent", lines: content.absent.map(\.label)),
+            Section(heading: "Discussion", lines: content.discussion),
+            Section(heading: "Key Decisions", lines: content.decisions.map { content.decisionLine($0) })
+        ]
+        let sections = candidates.filter { !$0.lines.isEmpty }
+        let closing = [Section(heading: "Open Issues", lines: content.openIssues)].filter { !$0.lines.isEmpty }
+        let actions = content.actions.map { line in
+            Action(title: line.title, assignee: line.ownerName, dueDate: line.dueText,
+                   priority: line.priorityName, isCompleted: line.isCompleted)
+        }
+        let transcript = meeting.orderedTranscriptSegments.map {
+            TranscriptLine(speaker: $0.speakerDisplayName, timestamp: $0.formattedStartTime, text: $0.text)
+        }
+        return Self(
+            meetingID: meeting.id,
+            title: meeting.title,
+            formattedDate: meeting.formattedDate,
+            formattedDuration: meeting.formattedDuration,
+            status: meeting.status.displayName,
+            sections: sections,
+            actions: actions,
+            closingSections: closing,
+            transcript: transcript
+        )
+    }
+
+    /// The same document without the transcript, for email bodies and the clipboard.
+    public func withoutTranscript() -> Self {
+        Self(meetingID: meetingID, title: title, formattedDate: formattedDate, formattedDuration: formattedDuration,
+             status: status, sections: sections, actions: actions, closingSections: closingSections, transcript: [])
+    }
+
+    private static func currentRecord(for meetingID: UUID) -> MeetingRecordData {
+        guard Thread.isMainThread else { return MeetingRecordData() }
+        return MainActor.assumeIsolated { MeetingRecordStore.shared.record(for: meetingID) }
+    }
+}
 
 public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
-    public init() {}
-    
+    private let pdfRenderer: (DocumentSnapshot) throws -> Data
+
+    public init() {
+        pdfRenderer = Self.renderPDF
+    }
+
+    /// Renderer injection makes failure behavior deterministic in tests.
+    init(pdfRenderer: @escaping (DocumentSnapshot) throws -> Data) {
+        self.pdfRenderer = pdfRenderer
+    }
+
     public func generatePDFReport(for meeting: Meeting) throws -> Data {
-        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // Standard US Letter
-        let margin: CGFloat = 40.0
-        let contentWidth = pageRect.width - (margin * 2)
+        try generatePDFReport(snapshot: .make(from: meeting))
+    }
+
+    public func generatePDFReport(snapshot: DocumentSnapshot) throws -> Data {
+        let data: Data
+        do { data = try pdfRenderer(snapshot) }
+        catch let error as ExportError { throw error }
+        catch { throw ExportError.pdfGenerationFailed(error.localizedDescription) }
+        guard data.starts(with: Data("%PDF-".utf8)), data.count > 20,
+              let document = PDFDocument(data: data), document.pageCount > 0 else {
+            throw ExportError.pdfGenerationFailed("The renderer did not produce a valid PDF document.")
+        }
+        return data
+    }
+
+    private static func renderPDF(_ snapshot: DocumentSnapshot) throws -> Data {
+        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let margin: CGFloat = 40
+        let contentWidth = pageRect.width - margin * 2
         let maxContentY = pageRect.height - margin
-        
         let format = UIGraphicsPDFRendererFormat()
-        let metadata: [String: Any] = [
-            kCGPDFContextTitle as String: meeting.title,
-            kCGPDFContextAuthor as String: "MeetMind Intelligence",
-            kCGPDFContextCreator as String: "MeetMind iOS"
+        format.documentInfo = [
+            kCGPDFContextTitle as String: snapshot.title,
+            kCGPDFContextAuthor as String: "Manent",
+            kCGPDFContextCreator as String: "Manent iOS"
         ]
-        format.documentInfo = metadata
-        
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
-        
-        let pdfData = renderer.pdfData { context in
+        return renderer.pdfData { context in
             var pageIndex = 1
-            var currentY: CGFloat = margin
-            
+            var currentY = margin
+
             func startNewPage() {
                 context.beginPage()
                 currentY = margin
-                
-                // Draw running page footer
-                let footerText = "MeetMind  |  \(meeting.title)  |  Page \(pageIndex)"
-                let footerAttributes: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 9, weight: .regular),
-                    .foregroundColor: UIColor.systemGray
-                ]
-                let footerSize = footerText.size(withAttributes: footerAttributes)
-                let footerRect = CGRect(x: margin, y: pageRect.height - 28, width: contentWidth, height: footerSize.height)
-                footerText.draw(in: footerRect, withAttributes: footerAttributes)
+                let footer = "Manent  |  \(snapshot.title)  |  Page \(pageIndex)"
+                footer.draw(in: CGRect(x: margin, y: pageRect.height - 28, width: contentWidth, height: 12),
+                            withAttributes: [.font: UIFont.systemFont(ofSize: 9), .foregroundColor: UIColor.systemGray])
                 pageIndex += 1
             }
-            
+
+            func drawSection(_ heading: String, lines: [String], color: UIColor = .systemBlue) {
+                if currentY + 44 > maxContentY { startNewPage() }
+                heading.uppercased().draw(at: CGPoint(x: margin, y: currentY), withAttributes: [
+                    .font: UIFont.systemFont(ofSize: 12, weight: .bold), .foregroundColor: color])
+                currentY += 16
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.black]
+                for line in lines {
+                    let height = ceil(line.boundingRect(
+                        with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes, context: nil).height) + 4
+                    if currentY + height > maxContentY { startNewPage() }
+                    line.draw(in: CGRect(x: margin, y: currentY, width: contentWidth, height: height), withAttributes: attributes)
+                    currentY += height
+                }
+                currentY += 10
+            }
+
             startNewPage()
-            
-            // 1. Header Banner
-            let appName = "MEETMIND MINUTES"
-            let appAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 10, weight: .bold),
-                .foregroundColor: UIColor(red: 0.12, green: 0.18, blue: 0.16, alpha: 1.0)
-            ]
-            appName.draw(at: CGPoint(x: margin, y: currentY), withAttributes: appAttrs)
+            "MANENT MINUTES".draw(at: CGPoint(x: margin, y: currentY), withAttributes: [
+                .font: UIFont.systemFont(ofSize: 10, weight: .bold), .foregroundColor: UIColor.darkGray])
             currentY += 16
-            
-            let titleAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 22, weight: .bold),
-                .foregroundColor: UIColor.black
-            ]
-            let titleRect = CGRect(x: margin, y: currentY, width: contentWidth, height: 40)
-            meeting.title.draw(in: titleRect, withAttributes: titleAttrs)
+            snapshot.title.draw(in: CGRect(x: margin, y: currentY, width: contentWidth, height: 40), withAttributes: [
+                .font: UIFont.systemFont(ofSize: 22, weight: .bold), .foregroundColor: UIColor.black])
             currentY += 36
-            
-            // 2. Metadata: Date, Duration, Status
-            let metaString = "Date: \(meeting.formattedDate)  •  Duration: \(meeting.formattedDuration)  •  Status: \(meeting.status.displayName)"
-            let metaAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: UIColor.darkGray
-            ]
-            metaString.draw(at: CGPoint(x: margin, y: currentY), withAttributes: metaAttrs)
+            let metadata = "Date: \(snapshot.formattedDate)  •  Duration: \(snapshot.formattedDuration)  •  Status: \(snapshot.status)"
+            metadata.draw(at: CGPoint(x: margin, y: currentY), withAttributes: [
+                .font: UIFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: UIColor.darkGray])
             currentY += 24
-            
-            // Divider line
             context.cgContext.setStrokeColor(UIColor.systemGray4.cgColor)
-            context.cgContext.setLineWidth(1.0)
             context.cgContext.move(to: CGPoint(x: margin, y: currentY))
             context.cgContext.addLine(to: CGPoint(x: pageRect.width - margin, y: currentY))
             context.cgContext.strokePath()
             currentY += 16
-            
-            // 3. Attendees Section
-            if !meeting.participants.isEmpty {
-                let attTitle = "ATTENDEES"
-                let secAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .bold),
-                    .foregroundColor: UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1.0)
-                ]
-                attTitle.draw(at: CGPoint(x: margin, y: currentY), withAttributes: secAttrs)
-                currentY += 16
-                
-                let attendeeList = meeting.participants.map { $0.displayLabel }.joined(separator: ", ")
-                let bodyAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 11, weight: .regular),
-                    .foregroundColor: UIColor.black
-                ]
-                let attRect = CGRect(x: margin, y: currentY, width: contentWidth, height: 30)
-                attendeeList.draw(in: attRect, withAttributes: bodyAttrs)
-                currentY += 26
+
+            for section in snapshot.sections { drawSection(section.heading, lines: section.lines) }
+            if !snapshot.actions.isEmpty {
+                drawSection("Action Items (\(snapshot.actions.count))", lines: snapshot.actions.map {
+                    "\($0.isCompleted ? "[X]" : "[  ]")  \($0.title)  (\($0.assignee))  [Priority: \($0.priority)]"
+                }, color: .systemGreen)
             }
-            
-            // 4. Executive Summary Section
-            if let summary = meeting.summary, !summary.executiveSummary.isEmpty {
-                if currentY + 100 > maxContentY { startNewPage() }
-                
-                let sumTitle = "EXECUTIVE SUMMARY"
-                let sumAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .bold),
-                    .foregroundColor: UIColor(red: 0.96, green: 0.62, blue: 0.04, alpha: 1.0)
-                ]
-                sumTitle.draw(at: CGPoint(x: margin, y: currentY), withAttributes: sumAttrs)
-                currentY += 16
-                
-                let bodyAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 11, weight: .regular),
-                    .foregroundColor: UIColor.black
-                ]
-                let sumBounding = summary.executiveSummary.boundingRect(
-                    with: CGSize(width: contentWidth - 16, height: 1000),
-                    options: .usesLineFragmentOrigin,
-                    attributes: bodyAttrs,
-                    context: nil
-                )
-                
-                // Draw background callout box
-                let boxRect = CGRect(x: margin, y: currentY, width: contentWidth, height: sumBounding.height + 16)
-                context.cgContext.setFillColor(UIColor(white: 0.96, alpha: 1.0).cgColor)
-                context.cgContext.fill(boxRect)
-                
-                summary.executiveSummary.draw(
-                    in: CGRect(x: margin + 8, y: currentY + 8, width: contentWidth - 16, height: sumBounding.height),
-                    withAttributes: bodyAttrs
-                )
-                currentY += sumBounding.height + 26
-            }
-            
-            // 5. Action Items Section
-            if !meeting.actionItems.isEmpty {
-                if currentY + 80 > maxContentY { startNewPage() }
-                
-                let actTitle = "ACTION ITEMS (\(meeting.actionItems.count))"
-                let actAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .bold),
-                    .foregroundColor: UIColor(red: 0.06, green: 0.73, blue: 0.51, alpha: 1.0)
-                ]
-                actTitle.draw(at: CGPoint(x: margin, y: currentY), withAttributes: actAttrs)
-                currentY += 18
-                
-                for item in meeting.actionItems {
-                    if currentY + 30 > maxContentY { startNewPage() }
-                    
-                    let checkMark = item.isCompleted ? "[X]" : "[  ]"
-                    let line = "\(checkMark)  \(item.title)  (\(item.assigneeName))  [Priority: \(item.priority.displayName)]"
-                    let itemAttrs: [NSAttributedString.Key: Any] = [
-                        .font: UIFont.systemFont(ofSize: 11, weight: .regular),
-                        .foregroundColor: item.isCompleted ? UIColor.gray : UIColor.black
-                    ]
-                    line.draw(at: CGPoint(x: margin, y: currentY), withAttributes: itemAttrs)
-                    currentY += 18
-                }
-                currentY += 12
-            }
-            
-            // 6. Diarized Transcript Section
-            if !meeting.transcriptSegments.isEmpty {
-                if currentY + 80 > maxContentY { startNewPage() }
-                
-                let transTitle = "TRANSCRIPT"
-                let tAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .bold),
-                    .foregroundColor: UIColor(red: 0.12, green: 0.18, blue: 0.16, alpha: 1.0)
-                ]
-                transTitle.draw(at: CGPoint(x: margin, y: currentY), withAttributes: tAttrs)
-                currentY += 18
-                
-                let sortedSegments = meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }
-                for segment in sortedSegments {
-                    let textAttrs: [NSAttributedString.Key: Any] = [
-                        .font: UIFont.systemFont(ofSize: 10, weight: .regular),
-                        .foregroundColor: UIColor.black
-                    ]
-                    let textBounding = segment.text.boundingRect(
-                        with: CGSize(width: contentWidth, height: 1000),
-                        options: .usesLineFragmentOrigin,
-                        attributes: textAttrs,
-                        context: nil
-                    )
-                    let textHeight = ceil(textBounding.height)
-                    let headerHeight: CGFloat = 14
-                    let segmentSpacing: CGFloat = 10
-                    
-                    // Pre-check bounding box: advance to a new page whenever currentY + textHeight + headerHeight > maxContentY
-                    if currentY + headerHeight + textHeight + segmentSpacing > maxContentY {
-                        startNewPage()
-                    }
-                    
-                    let speakerLabel = "\(segment.speakerDisplayName) [\(segment.formattedStartTime)]:"
-                    let labelAttrs: [NSAttributedString.Key: Any] = [
-                        .font: UIFont.systemFont(ofSize: 10, weight: .bold),
-                        .foregroundColor: UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1.0)
-                    ]
-                    speakerLabel.draw(at: CGPoint(x: margin, y: currentY), withAttributes: labelAttrs)
-                    currentY += headerHeight
-                    
-                    segment.text.draw(
-                        in: CGRect(x: margin, y: currentY, width: contentWidth, height: textHeight),
-                        withAttributes: textAttrs
-                    )
-                    currentY += textHeight + segmentSpacing
-                }
+            for section in snapshot.closingSections { drawSection(section.heading, lines: section.lines) }
+            if !snapshot.transcript.isEmpty {
+                drawSection("Transcript", lines: snapshot.transcript.map {
+                    "\($0.speaker) [\($0.timestamp)]:\n\($0.text)"
+                }, color: .darkGray)
             }
         }
-        
-        return pdfData
     }
-    
+
     public func generateMarkdown(for meeting: Meeting) -> String {
-        var md = "# Meeting Minutes: \(meeting.title)\n\n"
-        md += "**Date**: \(meeting.formattedDate)  \n"
-        md += "**Duration**: \(meeting.formattedDuration)  \n"
-        md += "**Status**: \(meeting.status.displayName)  \n\n"
-        
-        if !meeting.participants.isEmpty {
-            md += "## Attendees\n"
-            for participant in meeting.participants {
-                md += "- \(participant.displayLabel)\n"
-            }
-            md += "\n"
-        }
-        
-        if let summary = meeting.summary {
-            md += "## Executive Summary\n\(summary.executiveSummary)\n\n"
-            
-            if !summary.keyDecisions.isEmpty {
-                md += "## Key Decisions\n"
-                for decision in summary.keyDecisions {
-                    md += "- \(decision)\n"
-                }
-                md += "\n"
-            }
-        }
-        
-        if !meeting.actionItems.isEmpty {
-            md += "## Action Items\n"
-            for item in meeting.actionItems {
-                let check = item.isCompleted ? "[x]" : "[ ]"
-                let due = item.formattedDueDate != nil ? " (Due: \(item.formattedDueDate ?? ""))" : ""
-                md += "- \(check) **\(item.title)** - \(item.assigneeName)\(due) [Priority: \(item.priority.displayName)]\n"
-            }
-            md += "\n"
-        }
-        
-        if !meeting.transcriptSegments.isEmpty {
-            md += "## Transcript\n"
-            let sortedSegments = meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }
-            for segment in sortedSegments {
-                md += "**\(segment.speakerDisplayName)** [\(segment.formattedStartTime)]: \(segment.text)\n\n"
-            }
-        }
-        
-        return md
+        generateMarkdown(snapshot: .make(from: meeting))
     }
-    
+
+    public func generateMarkdown(snapshot: DocumentSnapshot) -> String {
+        var text = "# Meeting Minutes: \(snapshot.title)\n\n"
+        text += "**Date**: \(snapshot.formattedDate)  \n"
+        text += "**Duration**: \(snapshot.formattedDuration)  \n"
+        text += "**Status**: \(snapshot.status)  \n\n"
+        for section in snapshot.sections {
+            text += "## \(section.heading)\n"
+            text += section.lines.map { "- \($0)\n" }.joined()
+            text += "\n"
+        }
+        if !snapshot.actions.isEmpty {
+            text += "## Action Items\n"
+            for action in snapshot.actions {
+                let due = action.dueDate.map { " (Due: \($0))" } ?? ""
+                text += "- [\(action.isCompleted ? "x" : " ")] **\(action.title)** - \(action.assignee)\(due) [Priority: \(action.priority)]\n"
+            }
+            text += "\n"
+        }
+        for section in snapshot.closingSections {
+            text += "## \(section.heading)\n"
+            text += section.lines.map { "- \($0)\n" }.joined()
+            text += "\n"
+        }
+        if !snapshot.transcript.isEmpty {
+            text += "## Transcript\n"
+            for line in snapshot.transcript {
+                text += "**\(line.speaker)** [\(line.timestamp)]: \(line.text)\n\n"
+            }
+        }
+        return text
+    }
+
     public func generatePlainText(for meeting: Meeting) -> String {
-        var text = "MEETMIND MINUTES: \(meeting.title)\n"
-        text += "========================================\n"
-        text += "Date: \(meeting.formattedDate)\n"
-        text += "Duration: \(meeting.formattedDuration)\n"
-        text += "Status: \(meeting.status.displayName)\n\n"
-        
-        if !meeting.participants.isEmpty {
-            text += "ATTENDEES:\n"
-            for participant in meeting.participants {
-                text += "• \(participant.displayLabel)\n"
-            }
+        generatePlainText(snapshot: .make(from: meeting))
+    }
+
+    public func generatePlainText(snapshot: DocumentSnapshot) -> String {
+        var text = "MANENT MINUTES: \(snapshot.title)\n========================================\n"
+        text += "Date: \(snapshot.formattedDate)\nDuration: \(snapshot.formattedDuration)\nStatus: \(snapshot.status)\n\n"
+        for section in snapshot.sections {
+            text += "\(section.heading.uppercased()):\n"
+            text += section.lines.map { "• \($0)\n" }.joined()
             text += "\n"
         }
-        
-        if let summary = meeting.summary {
-            text += "EXECUTIVE SUMMARY:\n\(summary.executiveSummary)\n\n"
-            if !summary.keyDecisions.isEmpty {
-                text += "KEY DECISIONS:\n"
-                for decision in summary.keyDecisions {
-                    text += "• \(decision)\n"
-                }
-                text += "\n"
-            }
-        }
-        
-        if !meeting.actionItems.isEmpty {
+        if !snapshot.actions.isEmpty {
             text += "ACTION ITEMS:\n"
-            for item in meeting.actionItems {
-                let mark = item.isCompleted ? "[X]" : "[ ]"
-                text += "\(mark) \(item.title) (\(item.assigneeName)) [\(item.priority.displayName)]\n"
+            for action in snapshot.actions {
+                let due = action.dueDate.map { " (Due: \($0))" } ?? ""
+                text += "[\(action.isCompleted ? "X" : " ")] \(action.title) (\(action.assignee))\(due) [\(action.priority)]\n"
             }
             text += "\n"
         }
-        
+        for section in snapshot.closingSections {
+            text += "\(section.heading.uppercased()):\n"
+            text += section.lines.map { "• \($0)\n" }.joined()
+            text += "\n"
+        }
+        if !snapshot.transcript.isEmpty {
+            text += "TRANSCRIPT:\n"
+            for line in snapshot.transcript {
+                text += "\(line.speaker) [\(line.timestamp)]: \(line.text)\n\n"
+            }
+        }
         return text
     }
 }

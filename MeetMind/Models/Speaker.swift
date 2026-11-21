@@ -9,6 +9,7 @@ public final class Speaker: Identifiable {
     public var role: String?
     public var avatarColorHex: String
     public var voiceSampleURL: URL?
+    public var recordingVoiceLabel: String?
     
     public var colorHex: String {
         get { avatarColorHex }

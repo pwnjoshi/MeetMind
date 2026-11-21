@@ -4,6 +4,7 @@ import SwiftUI
 public struct LiveRecordingHeaderView: View {
     @Binding public var title: String
     public let isOfflineFallback: Bool
+    public let isPaused: Bool
     public var onDismiss: () -> Void
     
     @State private var isEditingTitle: Bool = false
@@ -11,22 +12,24 @@ public struct LiveRecordingHeaderView: View {
     public init(
         title: Binding<String>,
         isOfflineFallback: Bool = false,
+        isPaused: Bool = false,
         onDismiss: @escaping () -> Void
     ) {
         self._title = title
         self.isOfflineFallback = isOfflineFallback
+        self.isPaused = isPaused
         self.onDismiss = onDismiss
     }
     
     public var body: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
             Button(action: onDismiss) {
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .frame(width: 44, height: 44)
             }
-            .accessibilityLabel("Dismiss Recording Console")
+            .accessibilityLabel("Finish or continue recording")
             
             VStack(alignment: .leading, spacing: 2) {
                 if isEditingTitle {
@@ -35,15 +38,20 @@ public struct LiveRecordingHeaderView: View {
                         .textFieldStyle(.plain)
                         .onSubmit { isEditingTitle = false }
                 } else {
-                    Text(title.isEmpty ? "Live Meeting" : title)
-                        .font(Typography.headline)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                        .lineLimit(1)
-                        .onTapGesture { isEditingTitle = true }
+                    Button { isEditingTitle = true } label: {
+                        Text(title.isEmpty ? "Live Meeting" : title)
+                            .font(Typography.headline)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(1)
+                            .frame(minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Edit meeting title")
+                    .accessibilityValue(title)
                 }
                 
                 HStack(spacing: 6) {
-                    Text("LIVE RECORDING")
+                    Text(isPaused ? "Paused" : "Recording")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Theme.Colors.coralRed)
                         .padding(.horizontal, 6)

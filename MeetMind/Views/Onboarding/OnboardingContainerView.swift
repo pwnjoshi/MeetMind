@@ -13,7 +13,7 @@ public struct OnboardingContainerView: View {
         Group {
             switch viewModel.currentStage {
             case .carousel:
-                WelcomeAndSignInView(viewModel: viewModel)
+                OnboardingWelcomeView(viewModel: viewModel)
                     .transition(.asymmetric(
                         insertion: .opacity,
                         removal: .move(edge: .leading).combined(with: .opacity)

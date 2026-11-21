@@ -79,10 +79,13 @@ public final class ProcessingPipelineViewModel {
     public var currentStep: PipelineStep = .initial
     public var errorMessage: String? = nil
     public var onNavigateToDetail: ((UUID) -> Void)? = nil
+    public var onOfflineStageChanged: ((MeetingAnalysisStage) -> Void)?
     public var onProcessingNotificationPosted: (() -> Void)? = nil
     public var isUsingOfflineExtractiveFallback: Bool = false
     public var didCleanUpPartialArtifacts: Bool = false
     public var retryCount: Int = 0
+    public private(set) var jobSnapshot: AnalysisJobRecord?
+    public private(set) var modelStatuses: [AnalysisModelStatus] = []
     
     private var isAppInBackground: Bool = false
     private var isCorruptAudioSimulated: Bool = false
@@ -113,8 +116,9 @@ public final class ProcessingPipelineViewModel {
     private var summarizationService: SummarizationServiceProtocol?
     private var transcriptionService: SpeechTranscriptionServiceProtocol?
     private var dataStore: Any?
+    private var settings: SettingsViewModel?
     private var usesOfflinePipeline = false
-    private let offlinePipeline = MeetingAnalysisPipeline.shared
+    private var coordinator: AnalysisCoordinator?
     
     public init(
         meeting: Meeting? = nil,
@@ -132,9 +136,11 @@ public final class ProcessingPipelineViewModel {
         self.dataStore = dataStore
     }
     
+    #if DEBUG
     public func setSimulatedProgress(_ progress: Double) {
         overallProgress = max(0.0, min(1.0, progress))
     }
+    #endif
     
     private func preparePipeline() {
         if isCorruptAudioSimulated {
@@ -151,15 +157,18 @@ public final class ProcessingPipelineViewModel {
         stages[0].state = .inProgress
     }
     
+    #if DEBUG
     public func startPipeline() {
         preparePipeline()
     }
+    #endif
     
     public func startPipeline() async throws {
         if usesOfflinePipeline {
             try await runOfflinePipeline()
             return
         }
+        #if DEBUG
         preparePipeline()
         if pipelineStatus == .failed { return }
         
@@ -174,7 +183,7 @@ public final class ProcessingPipelineViewModel {
         // Stage 1: Diarization
         stages[1].state = .inProgress
         currentStep = .diarization
-        if let transcriptionService = transcriptionService, let meeting = meeting, let url = meeting.audioFileURL {
+        if let transcriptionService = transcriptionService, let meeting = meeting, let url = meeting.resolvedAudioFileURL {
             do {
                 let segments = try await transcriptionService.transcribeAudioFile(at: url)
                 guard !segments.isEmpty else {
@@ -260,42 +269,82 @@ public final class ProcessingPipelineViewModel {
         if let id = meeting?.id ?? meetingId {
             onNavigateToDetail?(id)
         }
+        #else
+        throw AnalysisCoordinatorError.failed(.stable(.processingFailed))
+        #endif
+    }
+
+    public func prepareSpeakerReview() async throws {
+        try await runOfflinePipeline(stopAfterSpeakers: true)
     }
     
     public func prepareForProduction(context: ModelContext, settings: SettingsViewModel? = nil) throws {
+        analysisModel = VidurModel.selected
         modelContext = context
+        self.settings = settings
         usesOfflinePipeline = true
         if meeting == nil, let id = meetingId {
             var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
             descriptor.fetchLimit = 1
             meeting = try context.fetch(descriptor).first
         }
-        guard let meeting, let url = meeting.audioFileURL,
-              FileManager.default.fileExists(atPath: url.path) else {
-            throw SpeechTranscriptionError.audioFileReadFailed("Saved audio is unavailable. Return to Meetings and try again.")
-        }
-        let audio = try AVAudioFile(forReading: url)
-        guard audio.fileFormat.sampleRate > 0, audio.length > 0 else {
-            throw SpeechTranscriptionError.audioFileReadFailed("This recording contains no readable audio.")
-        }
-        meeting.duration = Double(audio.length) / audio.fileFormat.sampleRate
-        meeting.status = .processing
-        meeting.analysisState = "ready"
-        if meeting.analysisTimezone == nil { meeting.analysisTimezone = TimeZone.current.identifier }
-        try context.save()
+        guard meeting != nil else { throw MeetingError.meetingNotFound }
+        coordinator = AnalysisCoordinator(context: context)
     }
 
-    public func missingOfflineModels() async throws -> [ModelProfile] {
-        try await offlinePipeline.missingModels()
+    @discardableResult
+    public func refreshAnalysisState(speakersOnly: Bool = false) async throws -> AnalysisJobRecord {
+        guard let coordinator, let meetingID = meeting?.id ?? meetingId else { throw MeetingError.meetingNotFound }
+        let record = try await coordinator.prepare(meetingID: meetingID,
+            languageCode: (settings?.savedRecordingLanguage ?? .hinglish).whisperCode,
+            model: analysisModel, speakersOnly: speakersOnly)
+        jobSnapshot = record
+        modelStatuses = try await coordinator.modelStatus(meetingID: meetingID, model: analysisModel,
+                                                           speakersOnly: speakersOnly)
+        if modelStatuses.contains(where: { $0.readiness != .ready }) {
+            try await coordinator.markModelsRequired(meetingID: meetingID)
+            jobSnapshot = try await coordinator.snapshot(meetingID: meetingID)
+        }
+        return jobSnapshot ?? record
     }
+
+    public func missingOfflineModels(speakersOnly: Bool = false) async throws -> [ModelProfile] {
+        _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+        return modelStatuses.compactMap { $0.readiness == .ready ? nil : $0.profile }
+    }
+
+    public func downloadAndContinueModels(speakersOnly: Bool = false,
+                                          progress: @Sendable @escaping (String, Double) -> Void) async throws {
+        guard let coordinator, let meetingID = meeting?.id ?? meetingId else { throw MeetingError.meetingNotFound }
+        try await coordinator.downloadAndVerify(meetingID: meetingID, model: analysisModel,
+                                                speakersOnly: speakersOnly, progress: progress) { [weak self] state in
+            guard var snapshot = self?.jobSnapshot else { return }
+            snapshot.state = state
+            self?.jobSnapshot = snapshot
+        }
+        _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+    }
+
+    private var analysisModel = VidurModel.selected
 
     private func updateOfflineStage(_ stage: MeetingAnalysisStage) {
+        if let context = modelContext, let id = meetingId {
+            let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+            if let existing = try? context.fetch(descriptor), existing.isEmpty { return }
+        }
+        onOfflineStageChanged?(stage)
         let index: Int
         switch stage {
         case .transcription: index = 1
         case .speakers: index = 1
         case .analysis: index = 2
         case .completed: index = 3
+        }
+        switch stage {
+        case .transcription: currentStep = .audio
+        case .speakers: currentStep = .diarization
+        case .analysis: currentStep = .summarization
+        case .completed: currentStep = .actions
         }
         for i in stages.indices { stages[i].state = i < index ? .completed : (i == index ? .inProgress : .pending) }
         currentStageIndex = index
@@ -304,66 +353,68 @@ public final class ProcessingPipelineViewModel {
         try? modelContext?.save()
     }
 
-    private func runOfflinePipeline() async throws {
-        guard let meeting, let audio = meeting.audioFileURL else { throw MeetingError.meetingNotFound }
+    private func runOfflinePipeline(stopAfterSpeakers: Bool = false) async throws {
+        guard let coordinator, let meetingID = meeting?.id ?? meetingId else { throw MeetingError.meetingNotFound }
         preparePipeline()
         errorMessage = nil
         do {
-            let result = try await offlinePipeline.run(meetingID: meeting.id, audio: audio,
-                meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
-                timezone: meeting.analysisTimezone ?? TimeZone.current.identifier) { [weak self] stage in
-                    await self?.updateOfflineStage(stage)
+            let snapshot = try await coordinator.run(meetingID: meetingID,
+                languageCode: (settings?.savedRecordingLanguage ?? .hinglish).whisperCode,
+                model: analysisModel, owner: .foreground, stopAfterSpeakers: stopAfterSpeakers) { [weak self] stage in
+                    self?.updateOfflineStage(stage)
                 }
-            try Task.checkCancellation()
-            let data = try JSONEncoder().encode(result)
-            let previousSegments = meeting.transcriptSegments
-            meeting.transcriptSegments.removeAll()
-            for segment in previousSegments { modelContext?.delete(segment) }
-            var speakers: [String: Speaker] = [:]
-            for turn in result.turns {
-                var speaker: Speaker?
-                if let label = turn.speaker {
-                    if let existing = speakers[label] { speaker = existing }
-                    else {
-                        let created = Speaker(name: label)
-                        modelContext?.insert(created)
-                        meeting.addParticipant(created)
-                        speakers[label] = created
-                        speaker = created
-                    }
-                }
-                meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
-                    endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting))
+            jobSnapshot = snapshot
+            if stopAfterSpeakers {
+                pipelineStatus = .idle
+                if snapshot.warning != nil { stages[1].state = .completedWithWarning }
+                return
             }
-            let points = uniqueTexts(result.analysis.flatMap { $0.discussion.map(\.text) })
-            let decisions = uniqueTexts(result.analysis.flatMap { $0.decisions.map(\.text) })
-            if let old = meeting.summary { modelContext?.delete(old) }
-            meeting.summary = Summary(executiveSummary: points.joined(separator: "\n"),
-                keyPoints: points, keyDecisions: decisions, meeting: meeting)
-            meeting.offlineAnalysisData = data
-            // Accepted tasks are never deleted or silently regenerated.
-            meeting.status = .completed
-            meeting.analysisState = "completed"
-            try modelContext?.save()
-            for i in stages.indices { stages[i].state = .completed }
+            for index in stages.indices { stages[index].state = .completed }
             overallProgress = 1
             pipelineStatus = .completed
             currentStep = .completed
-            onNavigateToDetail?(meeting.id)
+            onNavigateToDetail?(meetingID)
+        } catch is CancellationError {
+            pipelineStatus = .cancelled
+            errorMessage = "Analysis paused. Your recording and completed steps are saved."
+            jobSnapshot = try? await coordinator.snapshot(meetingID: meetingID)
+            throw CancellationError()
         } catch {
-            if error is CancellationError {
-                pipelineStatus = .cancelled
-                meeting.analysisState = "paused"
-                errorMessage = "Analysis paused. Your recording and completed steps are saved."
-            } else {
-                pipelineStatus = .failed
-                stages[currentStageIndex].state = .failed
-                stages[currentStageIndex].errorMessage = error.localizedDescription
-                meeting.analysisState = "failed"
-                errorMessage = error.localizedDescription
-            }
-            try? modelContext?.save()
+            jobSnapshot = try? await coordinator.snapshot(meetingID: meetingID)
+            let message = jobSnapshot?.failure?.message ?? error.localizedDescription
+            pipelineStatus = .failed
+            stages[currentStageIndex].state = .failed
+            stages[currentStageIndex].errorMessage = message
+            errorMessage = message
             throw error
+        }
+    }
+
+    private func replaceTranscript(of meeting: Meeting, with turns: [AnalysisTurn]) {
+        let previousSegments = meeting.transcriptSegments
+        meeting.transcriptSegments.removeAll()
+        for segment in previousSegments { modelContext?.delete(segment) }
+        var speakers: [String: Speaker] = [:]
+        for (index, turn) in turns.enumerated() {
+            var speaker: Speaker?
+            if let label = turn.speaker {
+                if let existing = speakers[label] ?? meeting.participants.first(where: {
+                    $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
+                }) {
+                    existing.recordingVoiceLabel = label
+                    speaker = existing
+                    speakers[label] = existing
+                } else {
+                    let created = Speaker(name: label)
+                    created.recordingVoiceLabel = label
+                    modelContext?.insert(created)
+                    meeting.addParticipant(created)
+                    speakers[label] = created
+                    speaker = created
+                }
+            }
+            meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
+                endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
         }
     }
 
@@ -372,6 +423,7 @@ public final class ProcessingPipelineViewModel {
         return texts.filter { seen.insert($0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()).inserted }
     }
 
+    #if DEBUG
     public func executePipeline(for targetMeeting: Meeting) async throws {
         self.meeting = targetMeeting
         self.meetingId = targetMeeting.id
@@ -584,4 +636,5 @@ public final class ProcessingPipelineViewModel {
     public func cancelProcessing() {
         cancelPipeline()
     }
+    #endif
 }

@@ -37,12 +37,13 @@ public struct MeetingTranscriptTabView: View {
                 .padding(.horizontal, Spacing.lg)
             
             if displayedSegments.isEmpty {
-                VStack(spacing: Spacing.sm) {
-                    Image(systemName: "text.magnifyingglass")
-                        .font(.system(size: 32))
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                    Text("No matching transcript segments").font(Typography.body)
-                }
+                ContentUnavailableView(
+                    segments.isEmpty ? "Transcript Not Available" : "No Matching Transcript",
+                    systemImage: segments.isEmpty ? "doc.text.magnifyingglass" : "text.magnifyingglass",
+                    description: Text(segments.isEmpty
+                        ? "A saved transcript will appear here after processing."
+                        : "Try a different word or clear the transcript filter.")
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in

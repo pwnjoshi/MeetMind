@@ -32,6 +32,8 @@ public final class HomeViewModel {
     
     public var isShowingDeleteConfirmationAlert: Bool = false
     public var pendingMeetingToDelete: Meeting? = nil
+    public var deletionErrorMessage: String? = nil
+    public private(set) var loadingErrorMessage: String? = nil
     public var isShowingFolderPickerSheet: Bool = false
     public var selectedMeetingForFolder: Meeting? = nil
     
@@ -136,10 +138,14 @@ public final class HomeViewModel {
     }
     
     public func fetchMeetings() {
+        loadingErrorMessage = nil
         if let context = modelContext {
             let descriptor = FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
-            if let all = try? context.fetch(descriptor) {
-                partitionMeetings(all)
+            do {
+                partitionMeetings(try context.fetch(descriptor))
+                return
+            } catch {
+                loadingErrorMessage = "Your saved meetings could not be loaded. Try again; no meeting data was changed."
                 return
             }
         }
@@ -241,34 +247,39 @@ public final class HomeViewModel {
     }
     
     public func confirmDelete() {
-        if let meeting = pendingMeetingToDelete {
-            deleteMeeting(meeting)
-            pendingMeetingToDelete = nil
-            isShowingDeleteConfirmationAlert = false
+        guard let meeting = pendingMeetingToDelete else { return }
+        pendingMeetingToDelete = nil
+        isShowingDeleteConfirmationAlert = false
+        Task { @MainActor in
+            do { try await deleteMeeting(meeting) }
+            catch { deletionErrorMessage = error.localizedDescription }
         }
     }
     
     public func confirmDeleteMeeting(_ meeting: Meeting) {
-        deleteMeeting(meeting)
         pendingMeetingToDelete = nil
         isShowingDeleteConfirmationAlert = false
+        Task { @MainActor in
+            do { try await deleteMeeting(meeting) }
+            catch { deletionErrorMessage = error.localizedDescription }
+        }
     }
     
-    public func deleteMeeting(id: UUID) {
+    public func deleteMeeting(id: UUID) async throws {
         if let meeting = meetings.first(where: { $0.id == id }) {
-            deleteMeeting(meeting)
+            try await deleteMeeting(meeting)
         }
     }
     
-    public func deleteMeeting(_ meeting: Meeting) {
+    public func deleteMeeting(_ meeting: Meeting) async throws {
+        let id = meeting.id
         if let context = modelContext {
-            context.delete(meeting)
-            try? context.save()
+            _ = try await DeletionCoordinator(modelContext: context).deleteMeeting(meeting)
         }
-        inMemoryMeetings.removeAll { $0.id == meeting.id }
-        upcomingMeetings.removeAll { $0.id == meeting.id }
-        recentMeetings.removeAll { $0.id == meeting.id }
-        if featuredUpcomingMeeting?.id == meeting.id {
+        inMemoryMeetings.removeAll { $0.id == id }
+        upcomingMeetings.removeAll { $0.id == id }
+        recentMeetings.removeAll { $0.id == id }
+        if featuredUpcomingMeeting?.id == id {
             featuredUpcomingMeeting = upcomingMeetings.first
         }
         fetchMeetings()

@@ -17,21 +17,21 @@ public final class OnboardingViewModel {
     public let slides: [OnboardingSlide] = [
         OnboardingSlide(
             id: 0,
-            title: "Live Streaming Transcription",
-            subtitle: "On-device real-time speech recognition with automatic speaker diarization and audio waveform visualization.",
+            title: "Record Every Meeting",
+            subtitle: "One tap captures the whole conversation, even without internet.",
             imageName: "waveform.badge.mic"
         ),
         OnboardingSlide(
             id: 1,
-            title: "AI Executive Summaries",
-            subtitle: "Automated synthesis of meeting discussions, key topics, decisions, and action plans powered by on-device intelligence.",
+            title: "Minutes Write Themselves",
+            subtitle: "Decisions, actions and owners, ready the moment you stop.",
             imageName: "doc.text.fill"
         ),
         OnboardingSlide(
             id: 2,
-            title: "Actionable Tasks & Sync",
-            subtitle: "Instant action item extraction, priority tracking, and seamless export to Apple Reminders and Calendar.",
-            imageName: "checklist"
+            title: "Ask Vidur Anything",
+            subtitle: "Find what was said or decided. Your recordings stay on this iPhone.",
+            imageName: "sparkles"
         )
     ]
     
@@ -77,7 +77,7 @@ public final class OnboardingViewModel {
 
     public func continueLocally() {
         name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
-        if name.isEmpty { name = "MeetMind User" }
+        if name.isEmpty { name = UserProfile.defaultLocalName }
         email = ""
         role = ""
         currentStage = .permissionsPrimer
@@ -126,7 +126,7 @@ public final class OnboardingViewModel {
     
     public var currentUserProfile: UserProfile {
         UserProfile(
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "MeetMind User" : name.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UserProfile.defaultLocalName : name.trimmingCharacters(in: .whitespacesAndNewlines),
             email: email.trimmingCharacters(in: .whitespacesAndNewlines),
             role: role.trimmingCharacters(in: .whitespacesAndNewlines),
             avatarColorHex: selectedAvatarColorHex,
@@ -140,7 +140,9 @@ public final class OnboardingViewModel {
         if currentSlideIndex < totalSlides - 1 {
             currentSlideIndex += 1
         } else {
-            currentStage = .profileSetup
+            // The next screen preserves the Figma sign-in composition but offers
+            // only local entry; profile details remain editable from Settings.
+            currentStage = .verifyEmail
         }
     }
     
@@ -152,7 +154,7 @@ public final class OnboardingViewModel {
     
     public func skipCarousel() {
         currentSlideIndex = totalSlides - 1
-        currentStage = .profileSetup
+        currentStage = .verifyEmail
     }
     
     // MARK: - Profile Actions
@@ -162,7 +164,7 @@ public final class OnboardingViewModel {
     }
     
     public func skipProfileSetup() {
-        name = "MeetMind User"
+        name = UserProfile.defaultLocalName
         role = "Team Member"
         email = ""
         voiceProfileURL = nil

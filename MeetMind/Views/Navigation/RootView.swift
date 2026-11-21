@@ -51,7 +51,7 @@ public struct RootView: View {
         case .audioImport:
             AudioImportView(viewModel: MeetingSetupViewModel(modelContext: modelContext)) { meeting in
                 appState.activeSheet = nil
-                router.navigate(to: .meetingProcessing(id: meeting.id), in: .home)
+                router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
             }
             .environment(\.modelContext, modelContext)
         case .editActionItem(let id):
@@ -63,8 +63,9 @@ public struct RootView: View {
                 appState.activeSheet = nil
             }
         case .askAIAssistant(let id):
-            RootAskAISheet(meetingId: id, modelContext: modelContext) {
-                appState.activeSheet = nil
+            NavigationStack {
+                RootAskAISheet(meetingId: id, modelContext: modelContext) { appState.activeSheet = nil }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { appState.activeSheet = nil } } }
             }
         }
     }

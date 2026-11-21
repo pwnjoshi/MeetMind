@@ -85,7 +85,7 @@ final class NavigationRouterTests: XCTestCase {
         XCTAssertTrue(didScrollToTop)
         
         didScrollToTop = false
-        appState.handleTabReselection(tab: .settings)
+        appState.handleTabReselection(tab: .search)
         XCTAssertFalse(didScrollToTop)
     }
     
@@ -112,18 +112,15 @@ final class NavigationRouterTests: XCTestCase {
         XCTAssertEqual(router.homePath.count, 1)
         XCTAssertEqual(router.actionItemsPath.count, 0)
         XCTAssertEqual(router.searchPath.count, 0)
-        XCTAssertEqual(router.settingsPath.count, 0)
-        
-        router.push(.settings, on: .settings)
-        XCTAssertEqual(router.settingsPath.count, 1)
-        XCTAssertEqual(router.homePath.count, 1)
-        
+
+        router.push(.settings, on: .home)
+        XCTAssertEqual(router.homePath.count, 2)
+
         router.pop(from: .home)
+        XCTAssertEqual(router.homePath.count, 1)
+
+        router.popToRoot(on: .home)
         XCTAssertEqual(router.homePath.count, 0)
-        XCTAssertEqual(router.settingsPath.count, 1)
-        
-        router.popToRoot(on: .settings)
-        XCTAssertEqual(router.settingsPath.count, 0)
     }
     
     func test_navigateConvenienceMethod() {
@@ -132,9 +129,9 @@ final class NavigationRouterTests: XCTestCase {
         XCTAssertEqual(router.homePath.count, 1)
         XCTAssertEqual(router.homePath.first, .meetingDetail(id: meetingID))
         
-        router.navigate(to: .settings, in: .settings)
-        XCTAssertEqual(router.settingsPath.count, 1)
-        XCTAssertEqual(router.settingsPath.first, .settings)
+        router.navigate(to: .settings, in: .home)
+        XCTAssertEqual(router.homePath.count, 2)
+        XCTAssertEqual(router.homePath.last, .settings)
     }
     
     func test_presentedMeetingDetailID() {
@@ -155,11 +152,11 @@ final class NavigationRouterTests: XCTestCase {
         XCTAssertEqual(router.presentedMeetingDetailID, meetingID)
     }
     
-    func test_deepLinkTabRouting() {
+    func test_removedSettingsTabDeepLinkIsNotHandled() {
         let url = URL(string: "meetmind://tab/settings")!
         let handled = router.handleDeepLink(url: url, appState: appState)
-        XCTAssertTrue(handled)
-        XCTAssertEqual(appState.activeTab, .settings)
+        XCTAssertFalse(handled)
+        XCTAssertEqual(appState.activeTab, .home)
     }
     
     func test_deepLinkInvalidSchemes() {
@@ -189,5 +186,18 @@ final class NavigationRouterTests: XCTestCase {
         XCTAssertEqual(freshState.activeTab, .actionItems)
         XCTAssertTrue(freshState.hasCompletedOnboarding)
         XCTAssertEqual(freshRouter.presentedMeetingDetailID, detailID)
+    }
+
+    func test_legacySettingsTabRestorationFallsBackToMeetingsRoot() {
+        appState.activeTab = .search
+        router.homePath = [.settings]
+        let oldSnapshot = NavigationRestorationSnapshot(selectedTabIndex: 3,
+                                                          presentedMeetingDetailID: UUID(),
+                                                          hasCompletedOnboarding: true)
+
+        router.restore(from: oldSnapshot, appState: appState)
+
+        XCTAssertEqual(appState.activeTab, .home)
+        XCTAssertTrue(router.homePath.isEmpty)
     }
 }

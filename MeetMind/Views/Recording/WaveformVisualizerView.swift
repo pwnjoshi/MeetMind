@@ -4,10 +4,12 @@ import SwiftUI
 public struct WaveformVisualizerView: View {
     public let levels: [Float]
     public let isRecording: Bool
+    public var showsBackground: Bool
     
-    public init(levels: [Float], isRecording: Bool = true) {
+    public init(levels: [Float], isRecording: Bool = true, showsBackground: Bool = true) {
         self.levels = levels
         self.isRecording = isRecording
+        self.showsBackground = showsBackground
     }
     
     public var body: some View {
@@ -26,10 +28,10 @@ public struct WaveformVisualizerView: View {
         .padding(.vertical, Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Theme.Colors.cardBackground)
+                .fill(showsBackground ? Theme.Colors.cardBackground : Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Theme.Colors.cardBorder.opacity(0.6), lineWidth: 1)
+                        .stroke(Theme.Colors.cardBorder.opacity(showsBackground ? 0.6 : 0), lineWidth: 1)
                 )
         )
         .accessibilityElement(children: .ignore)

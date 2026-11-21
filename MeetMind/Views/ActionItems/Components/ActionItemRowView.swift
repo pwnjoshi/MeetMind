@@ -1,31 +1,53 @@
 import SwiftUI
 
-/// Universal action item row with round checkmark toggle, meeting link, and metadata pills
+/// Checklist row with a completion control, meeting link, and task metadata.
 public struct ActionItemRowView: View {
     public let item: ActionItem
     public let onToggle: () -> Void
     public let onSelectMeeting: (() -> Void)?
+    public var onOpenTask: (() -> Void)?
     
-    public init(item: ActionItem, onToggle: @escaping () -> Void, onSelectMeeting: (() -> Void)? = nil) {
+    public init(item: ActionItem, onToggle: @escaping () -> Void, onSelectMeeting: (() -> Void)? = nil, onOpenTask: (() -> Void)? = nil) {
         self.item = item
         self.onToggle = onToggle
         self.onSelectMeeting = onSelectMeeting
+        self.onOpenTask = onOpenTask
     }
     
     public var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
             Button(action: onToggle) {
-                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
                     .font(.system(size: 22))
-                    .foregroundStyle(item.isCompleted ? Theme.Colors.mintGreenDark : Theme.Colors.cardBorder)
+                    .foregroundStyle(item.isCompleted ? Color.accentColor : Theme.Colors.textSecondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(item.isCompleted ? "Reopen \(item.title)" : "Complete \(item.title)")
             
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(item.title)
-                    .font(Typography.headline)
-                    .strikethrough(item.isCompleted)
-                    .foregroundStyle(item.isCompleted ? Theme.Colors.textTertiary : Theme.Colors.textPrimary)
+                if let onOpenTask {
+                    Button(action: onOpenTask) {
+                        HStack {
+                            taskTitle
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    taskTitle
+                }
+
+                Label(
+                    item.assignee.map { "Assigned to \($0.name)" } ?? "Unassigned",
+                    systemImage: "person"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 
                 if let meetingTitle = item.meeting?.title {
                     Button {
@@ -42,14 +64,16 @@ public struct ActionItemRowView: View {
                 }
                 
                 HStack(spacing: Spacing.xs) {
-                    PriorityBadge(priorityText: item.priority.rawValue)
-                    if let assignee = item.assignee?.name {
-                        Text(assignee).font(Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                    }
+                    if !item.priorityRaw.isEmpty { PriorityBadge(priorityText: item.priority.rawValue) }
                     if let due = item.dueDate {
                         Text(due.formatted(date: .abbreviated, time: .omitted))
                             .font(Typography.caption2).foregroundStyle(Theme.Colors.textTertiary)
                     }
+                }
+                if let category = item.category { Text(category).font(.caption).foregroundStyle(.secondary) }
+                if let evidence = item.sourceEvidence {
+                    DisclosureGroup("Transcript evidence") { Text(evidence).font(.footnote).textSelection(.enabled) }
+                        .font(.caption)
                 }
             }
             Spacer()
@@ -58,5 +82,12 @@ public struct ActionItemRowView: View {
         .background(Theme.Colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.md))
         .overlay(RoundedRectangle(cornerRadius: Spacing.Radius.md).stroke(Theme.Colors.cardBorder, lineWidth: 1))
+    }
+
+    private var taskTitle: some View {
+        Text(item.title)
+            .font(Typography.headline)
+            .strikethrough(item.isCompleted)
+            .foregroundStyle(item.isCompleted ? Theme.Colors.textTertiary : Theme.Colors.textPrimary)
     }
 }

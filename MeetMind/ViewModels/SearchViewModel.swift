@@ -31,6 +31,10 @@ public struct SearchResultItem: Identifiable, Sendable, Equatable {
     public let timecode: TimeInterval?
     public let actionItemId: UUID?
     public var highlightRange: Range<Int>?
+    /// Speaker for transcript matches (nil for other categories).
+    public let speakerName: String?
+    /// Secondary line for action matches, e.g. meeting, assignee and due date.
+    public let detail: String?
     
     public init(
         id: UUID = UUID(),
@@ -40,7 +44,9 @@ public struct SearchResultItem: Identifiable, Sendable, Equatable {
         snippet: String,
         timecode: TimeInterval? = nil,
         actionItemId: UUID? = nil,
-        highlightRange: Range<Int>? = nil
+        highlightRange: Range<Int>? = nil,
+        speakerName: String? = nil,
+        detail: String? = nil
     ) {
         self.id = id
         self.category = category
@@ -50,7 +56,54 @@ public struct SearchResultItem: Identifiable, Sendable, Equatable {
         self.timecode = timecode
         self.actionItemId = actionItemId
         self.highlightRange = highlightRange
+        self.speakerName = speakerName
+        self.detail = detail
     }
+}
+
+/// The four segments shown by the Search screen (Figma: All, Meetings, Transcripts, Actions).
+public enum SearchPresentedScope: String, CaseIterable, Identifiable, Sendable {
+    case all, meetings, transcripts, actions
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .all: return "All"
+        case .meetings: return "Meetings"
+        case .transcripts: return "Transcripts"
+        case .actions: return "Actions"
+        }
+    }
+
+    /// Engine scope used to gather matches. Meetings gathers everything and is narrowed afterwards.
+    public var engineScope: SearchScope {
+        switch self {
+        case .all, .meetings: return .all
+        case .transcripts: return .transcripts
+        case .actions: return .actionItems
+        }
+    }
+}
+
+public enum SearchSuggestion: String, Sendable, Equatable {
+    case decisionsThisWeek
+    case actionsAssignedToMe
+
+    public var title: String {
+        switch self {
+        case .decisionsThisWeek: return "Decisions this week"
+        case .actionsAssignedToMe: return "Actions assigned to me"
+        }
+    }
+}
+
+/// One meeting row in the Meetings section: a meeting matched by title, summary or notes.
+public struct MeetingSearchHit: Identifiable, Sendable, Equatable {
+    public var id: UUID { meetingId }
+    public let meetingId: UUID
+    public let title: String
+    public let detail: String?
 }
 
 /// ViewModel coordinating cross-entity universal search, debouncing, highlighting, and search history
@@ -59,10 +112,12 @@ public struct SearchResultItem: Identifiable, Sendable, Equatable {
 public final class SearchViewModel {
     public var searchQuery: String = ""
     public var selectedScope: SearchScope = .all
+    public private(set) var presentedScope: SearchPresentedScope = .all
     public var searchResults: [SearchResultItem] = []
-    public var recentSearches: [String] = ["Budget", "Architecture", "Sprint Review"]
+    public var recentSearches: [String] = []
     public var isSearching: Bool = false
     public var isDebouncing: Bool = false
+    public var searchErrorMessage: String?
     
     public var hasQuery: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -87,6 +142,10 @@ public final class SearchViewModel {
     private var modelContext: ModelContext?
     private var indexedMeetings: [Meeting] = []
     private var dataStore: Any?
+    private var activeSuggestion: SearchSuggestion?
+    private var suggestionLocalUserName = ""
+    private var suggestionDate = Date()
+    private var suggestionCalendar = Calendar.current
     
     public init(modelContext: ModelContext? = nil, dataStore: Any? = nil) {
         self.modelContext = modelContext
@@ -100,10 +159,65 @@ public final class SearchViewModel {
     public func indexMeetings(_ meetings: [Meeting]) {
         self.indexedMeetings = meetings
     }
+
+    public func activateSuggestion(_ suggestion: SearchSuggestion, localUserName: String = "",
+                                   now: Date = Date(), calendar: Calendar = .current) {
+        activeSuggestion = suggestion
+        suggestionLocalUserName = localUserName.trimmingCharacters(in: .whitespacesAndNewlines)
+        suggestionDate = now
+        suggestionCalendar = calendar
+        presentedScope = suggestion == .actionsAssignedToMe ? .actions : .meetings
+        selectedScope = suggestion == .actionsAssignedToMe ? .actionItems : .summaries
+        search(query: suggestion.title)
+    }
     
+    public func setPresentedScope(_ scope: SearchPresentedScope) {
+        activeSuggestion = nil
+        presentedScope = scope
+        selectedScope = scope.engineScope
+        search(query: searchQuery, recordsHistory: false)
+    }
+
+    /// Meetings matched by title, summary or notes, one row per meeting.
+    public var meetingHits: [MeetingSearchHit] {
+        var order: [UUID] = []
+        var titles: [UUID: String] = [:]
+        var details: [UUID: String] = [:]
+        for result in searchResults {
+            switch result.category {
+            case .meetingTitle, .summary, .note:
+                if titles[result.meetingId] == nil {
+                    order.append(result.meetingId)
+                    titles[result.meetingId] = result.meetingTitle
+                }
+                if result.category != .meetingTitle, details[result.meetingId] == nil {
+                    details[result.meetingId] = formatSnippet(text: result.snippet, matchTerm: trimmedQuery)
+                }
+            case .transcript, .actionItem:
+                break
+            }
+        }
+        return order.map { MeetingSearchHit(meetingId: $0, title: titles[$0] ?? "", detail: details[$0]) }
+    }
+
+    public var transcriptResults: [SearchResultItem] {
+        searchResults.filter { $0.category == .transcript }
+    }
+
+    public var actionResults: [SearchResultItem] {
+        searchResults.filter { $0.category == .actionItem }
+    }
+
     public func setScope(_ scope: SearchScope) {
+        activeSuggestion = nil
         self.selectedScope = scope
-        performSearch(query: searchQuery)
+        switch scope {
+        case .transcripts: presentedScope = .transcripts
+        case .actionItems: presentedScope = .actions
+        case .titles, .summaries, .notes: presentedScope = .meetings
+        case .all: presentedScope = .all
+        }
+        search(query: searchQuery, recordsHistory: false)
     }
     
     public func destination(for result: SearchResultItem) -> NavigationDestination {
@@ -114,9 +228,13 @@ public final class SearchViewModel {
         search(query: query)
     }
     
-    public func search(query: String) {
+    public func search(query: String, recordsHistory: Bool = true) {
         self.searchQuery = query
+        searchErrorMessage = nil
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let activeSuggestion, trimmed != activeSuggestion.title {
+            self.activeSuggestion = nil
+        }
         guard !trimmed.isEmpty else {
             searchResults = []
             isSearching = false
@@ -124,7 +242,8 @@ public final class SearchViewModel {
         }
         
         isSearching = true
-        if !recentSearches.contains(trimmed) {
+        if recordsHistory {
+            recentSearches.removeAll { $0.localizedCaseInsensitiveCompare(trimmed) == .orderedSame }
             recentSearches.insert(trimmed, at: 0)
             if recentSearches.count > 10 {
                 recentSearches.removeLast()
@@ -138,9 +257,20 @@ public final class SearchViewModel {
         var candidateMeetings = indexedMeetings
         if candidateMeetings.isEmpty, let context = modelContext {
             let desc = FetchDescriptor<Meeting>()
-            if let fetched = try? context.fetch(desc) {
-                candidateMeetings = fetched
+            do {
+                candidateMeetings = try context.fetch(desc)
+            } catch {
+                searchResults = []
+                searchErrorMessage = "Saved meetings could not be searched. Try again; no meeting data was changed."
+                isSearching = false
+                return
             }
+        }
+
+        if let activeSuggestion {
+            searchResults = suggestionMatches(activeSuggestion, in: candidateMeetings)
+            isSearching = false
+            return
         }
         
         for meeting in candidateMeetings {
@@ -169,7 +299,8 @@ public final class SearchViewModel {
                             meetingTitle: meeting.title,
                             snippet: seg.text,
                             timecode: seg.startTime,
-                            highlightRange: range
+                            highlightRange: range,
+                            speakerName: seg.speakerName
                         ))
                     }
                 }
@@ -212,7 +343,8 @@ public final class SearchViewModel {
                             meetingTitle: meeting.title,
                             snippet: item.title,
                             actionItemId: item.id,
-                            highlightRange: range
+                            highlightRange: range,
+                            detail: actionDetail(for: item, meeting: meeting)
                         ))
                     }
                 }
@@ -236,10 +368,41 @@ public final class SearchViewModel {
             }
         }
         
+        if presentedScope == .meetings && selectedScope == .all {
+            matches = matches.filter { $0.category != .transcript && $0.category != .actionItem }
+        }
         self.searchResults = matches
         self.isSearching = false
     }
     
+    private func suggestionMatches(_ suggestion: SearchSuggestion, in meetings: [Meeting]) -> [SearchResultItem] {
+        switch suggestion {
+        case .decisionsThisWeek:
+            guard let interval = suggestionCalendar.dateInterval(of: .weekOfYear, for: suggestionDate) else { return [] }
+            return meetings
+                .filter { interval.contains($0.scheduledStartTime ?? $0.createdAt) }
+                .flatMap { meeting in
+                    (meeting.summary?.keyDecisions ?? []).map { decision in
+                        SearchResultItem(category: .summary, meetingId: meeting.id, meetingTitle: meeting.title,
+                                         snippet: decision, detail: "Decision")
+                    }
+                }
+        case .actionsAssignedToMe:
+            let local = suggestionLocalUserName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard !local.isEmpty else { return [] }
+            return meetings.flatMap { meeting in
+                meeting.actionItems.compactMap { item in
+                    let owner = (item.assignee?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    guard owner == local else { return nil }
+                    return SearchResultItem(category: .actionItem, meetingId: meeting.id, meetingTitle: meeting.title,
+                                            snippet: item.title, actionItemId: item.id,
+                                            detail: actionDetail(for: item, meeting: meeting))
+                }
+            }
+        }
+    }
+
     public func formatSnippet(text: String, matchTerm: String, maxLength: Int = 60) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > maxLength else { return trimmed }
@@ -259,6 +422,15 @@ public final class SearchViewModel {
         }
     }
     
+    private func actionDetail(for item: ActionItem, meeting: Meeting) -> String {
+        var parts: [String] = [meeting.title]
+        if item.assignee != nil { parts.append(item.assigneeName) }
+        if let due = item.dueDate {
+            parts.append("Due " + due.formatted(.dateTime.day().month(.abbreviated)))
+        }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
     private func calculateHighlight(in text: String, term: String) -> Range<Int>? {
         guard let range = text.lowercased().range(of: term) else { return nil }
         let start = text.distance(from: text.startIndex, to: range.lowerBound)
@@ -267,6 +439,7 @@ public final class SearchViewModel {
     }
     
     public func clearSearch() {
+        activeSuggestion = nil
         searchQuery = ""
         searchResults = []
         isSearching = false

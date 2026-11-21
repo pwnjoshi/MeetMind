@@ -9,13 +9,12 @@ public struct MeetingDetailTabContentView: View {
     @Binding public var transcriptSearch: String
     public let actionItems: [ActionItem]
     public let notes: [Note]
-    public let onCopySummary: () -> Void
-    public let onRegenerateSummary: () -> Void
     public let onSeekTranscript: (TranscriptSegment) -> Void
     public let onEditTranscript: (TranscriptSegment) -> Void
     public let onReassignSpeaker: (TranscriptSegment) -> Void
     public let onToggleAction: (ActionItem) -> Void
     public let onAddAction: () -> Void
+    public let onSyncReminders: () -> Void
     public let onAddNote: () -> Void
     public let onSelectPhoto: (String) -> Void
     
@@ -24,9 +23,7 @@ public struct MeetingDetailTabContentView: View {
         case .summary:
             MeetingSummaryTabView(
                 summary: summary,
-                onCopy: onCopySummary,
-                onRegenerate: onRegenerateSummary
-            )
+                actionItems: actionItems)
         case .transcript:
             MeetingTranscriptTabView(
                 segments: transcriptSegments,
@@ -41,7 +38,7 @@ public struct MeetingDetailTabContentView: View {
                 items: actionItems,
                 onToggle: onToggleAction,
                 onAdd: onAddAction,
-                onSyncReminders: {}
+                onSyncReminders: onSyncReminders
             )
         case .notesMedia:
             MeetingNotesMediaTabView(
