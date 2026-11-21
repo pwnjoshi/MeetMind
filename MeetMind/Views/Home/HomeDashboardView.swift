@@ -151,7 +151,7 @@ public struct HomeDashboardView: View {
 
         if !week.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                HomeSectionHeader(title: "This Week", showsSeeAll: upcoming.count > week.count) {
+                HomeSectionHeader(title: "This Week", showsSeeAll: true) {
                     showsAllUpcoming = true
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -170,7 +170,7 @@ public struct HomeDashboardView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HomeSectionHeader(
                     title: "Recent",
-                    showsSeeAll: viewModel.filteredRecentMeetings.count > recent.count
+                    showsSeeAll: true
                 ) { showsAllRecent = true }
                 RecentMeetingsCard(
                     meetings: recent,

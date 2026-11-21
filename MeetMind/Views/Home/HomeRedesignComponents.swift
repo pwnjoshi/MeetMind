@@ -47,9 +47,11 @@ struct UpNextMeetingCard: View {
                 HStack(spacing: 10) {
                     HomeAvatarStack(people: meeting.namedAttendees, lightBorder: true)
                     Text(attendeeSummary)
-                        .font(.body)
+                        .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.82))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .layoutPriority(1)
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.right")
                         .font(.title2.weight(.semibold))
@@ -153,8 +155,9 @@ struct WeekMeetingCard: View {
     }
 
     private var accentColor: Color {
-        if let color = meeting.namedAttendees.first?.avatarColorHex { return Color(hex: color) }
-        return meeting.seriesID == nil ? Theme.Colors.warmAmber : Theme.Colors.mintGreen
+        let palette = [Theme.Colors.warmAmber, Theme.Colors.mintGreen, Theme.Colors.aiPurple]
+        let index = meeting.title.unicodeScalars.reduce(0) { $0 + Int($1.value) } % palette.count
+        return palette[index]
     }
 }
 
