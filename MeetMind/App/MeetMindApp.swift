@@ -182,7 +182,9 @@ struct MeetMindApp: App {
     @ViewBuilder
     private var appContent: some View {
         #if targetEnvironment(simulator)
-        if ProcessInfo.processInfo.arguments.contains("--ui-meeting-review") {
+        if ProcessInfo.processInfo.arguments.contains("--ui-home-populated") {
+            homeVisualFixture()
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-meeting-review") {
             meetingVisualFixture(.review)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-meeting-draft") {
             meetingVisualFixture(.draft)
@@ -207,6 +209,53 @@ struct MeetMindApp: App {
     }
 
     #if targetEnvironment(simulator)
+    @MainActor private static var homeFixtureStore: ModelContainer?
+
+    @MainActor private func homeVisualFixture() -> some View {
+        let store = Self.homeFixtureStore ?? Self.createHomeFixture()
+        Self.homeFixtureStore = store
+        return NavigationStack { HomeDashboardView(modelContext: store.mainContext) }
+            .modelContainer(store)
+            .environment(AppState(userDefaults: UserDefaults(suiteName: "Manent.HomeFixture") ?? .standard))
+            .environment(NavigationRouter())
+            .environment(SettingsViewModel(userDefaults: UserDefaults(suiteName: "Manent.HomeFixture") ?? .standard))
+    }
+
+    @MainActor private static func createHomeFixture() -> ModelContainer {
+        let store = try! ModelContainerFactory.createInMemoryContainer()
+        let now = Date()
+        let people = [
+            Speaker(name: "Maya Rao", avatarColorHex: "#FF9500"),
+            Speaker(name: "Arjun Mehta", avatarColorHex: "#34C759"),
+            Speaker(name: "Pawan Joshi", avatarColorHex: "#3B82F6"),
+            Speaker(name: "Neha Singh", avatarColorHex: "#8E8E93")
+        ]
+        people.forEach { store.mainContext.insert($0) }
+        func add(_ title: String, day: Double, hour: Double, status: MeetingStatus, duration: TimeInterval = 0) -> Meeting {
+            let date = now.addingTimeInterval(day * 86_400 + hour * 3_600)
+            let meeting = Meeting(title: title, createdAt: date, scheduledStartTime: status == .scheduled ? date : nil,
+                                  duration: duration, status: status)
+            store.mainContext.insert(meeting)
+            people.forEach { meeting.addParticipant($0) }
+            return meeting
+        }
+        let next = add("Design review", day: 0, hour: 0.5, status: .scheduled, duration: 2_700)
+        next.seriesID = UUID(); next.seriesName = "Design review"
+        let repeatMeeting = add("Design review", day: -7, hour: 0.5, status: .completed, duration: 2_280)
+        repeatMeeting.seriesID = next.seriesID; repeatMeeting.seriesName = next.seriesName
+        _ = add("Launch readiness", day: 1, hour: 2, status: .scheduled)
+        _ = add("Finance review", day: 2, hour: 3, status: .scheduled)
+        _ = add("Product planning", day: 4, hour: 1, status: .scheduled)
+        _ = add("Finance review", day: -1, hour: 0, status: .completed, duration: 2_520)
+        let review = add("Product planning", day: -3, hour: 0, status: .processing, duration: 1_920)
+        review.analysisState = "speakerReview"
+        let actions = add("October planning", day: -30, hour: 0, status: .completed, duration: 3_000)
+        actions.addActionItem(ActionItem(title: "Send estimate", meeting: actions))
+        actions.addActionItem(ActionItem(title: "Confirm launch date", meeting: actions))
+        try! store.mainContext.save()
+        return store
+    }
+
     private enum MeetingFixtureState: Hashable { case review, draft, finalized }
 
     @MainActor private static var fixtureStores: [MeetingFixtureState: (ModelContainer, UUID)] = [:]

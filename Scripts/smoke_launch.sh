@@ -34,6 +34,12 @@ launch_and_check YES meetings-first
 launch_and_check YES meetings-second
 launch_and_check YES meetings-third
 simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
+server_output=$(simctl launch "$device_id" "$bundle_id" --ui-home-populated)
+home_pid="${server_output##*: }"
+sleep 3
+kill -0 "$home_pid"
+simctl io "$device_id" screenshot build/smoke/home-populated.png
+simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
 microphone_output=$(simctl launch "$device_id" "$bundle_id" --ui-microphone)
 microphone_pid="${microphone_output##*: }"
 sleep 5
