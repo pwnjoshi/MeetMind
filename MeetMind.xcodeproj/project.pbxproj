@@ -7,6 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C01F2CEE000100000001 /* CanonicalRecordingValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0202CEE000100000001 /* CanonicalRecordingValidator.swift */; };
+		1A00C0212CEE000100000001 /* RecordingChunkPump.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0222CEE000100000001 /* RecordingChunkPump.swift */; };
+		1A00C0232CEE000100000001 /* RecordingMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0242CEE000100000001 /* RecordingMetrics.swift */; };
+		1A00C0252CEE000100000001 /* RecordingPreprocessingWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0262CEE000100000001 /* RecordingPreprocessingWorker.swift */; };
+		1A00C0272CEE000100000001 /* RecordingChunkPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0282CEE000100000001 /* RecordingChunkPipelineTests.swift */; };
+		1A00C0172CEE000100000001 /* MeetingLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0182CEE000100000001 /* MeetingLifecycle.swift */; };
+		1A00C0192CEE000100000001 /* ReviewStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C01A2CEE000100000001 /* ReviewStateStore.swift */; };
+		1A00C01B2CEE000100000001 /* MinutesReviewChecklistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C01C2CEE000100000001 /* MinutesReviewChecklistView.swift */; };
+		1A00C01D2CEE000100000001 /* MeetingLifecycleReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C01E2CEE000100000001 /* MeetingLifecycleReviewTests.swift */; };
+		1A00C0152CEE000100000001 /* DataLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0162CEE000100000001 /* DataLifecycleTests.swift */; };
 		1A00C0012CEE000100000001 /* HomeRecentSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */; };
 		1A00C0032CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */; };
 		1A00C0052CEE000100000001 /* MeetingsHomeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */; };
@@ -293,6 +303,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0202CEE000100000001 /* CanonicalRecordingValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Audio/CanonicalRecordingValidator.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0222CEE000100000001 /* RecordingChunkPump.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Audio/RecordingChunkPump.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0242CEE000100000001 /* RecordingMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Audio/RecordingMetrics.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0262CEE000100000001 /* RecordingPreprocessingWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Audio/RecordingPreprocessingWorker.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0282CEE000100000001 /* RecordingChunkPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Services/RecordingChunkPipelineTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0182CEE000100000001 /* MeetingLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Models/MeetingLifecycle.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C01A2CEE000100000001 /* ReviewStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Review/ReviewStateStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C01C2CEE000100000001 /* MinutesReviewChecklistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MinutesReviewChecklistView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C01E2CEE000100000001 /* MeetingLifecycleReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/MeetingLifecycleReviewTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0162CEE000100000001 /* DataLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Services/DataLifecycleTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeRecentSectionView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeUpcomingSectionView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsHomeRowView.swift"; sourceTree = SOURCE_ROOT; };
@@ -602,6 +622,13 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0202CEE000100000001 /* CanonicalRecordingValidator.swift */,
+				1B00C0222CEE000100000001 /* RecordingChunkPump.swift */,
+				1B00C0242CEE000100000001 /* RecordingMetrics.swift */,
+				1B00C0262CEE000100000001 /* RecordingPreprocessingWorker.swift */,
+				1B00C0182CEE000100000001 /* MeetingLifecycle.swift */,
+				1B00C01A2CEE000100000001 /* ReviewStateStore.swift */,
+				1B00C01C2CEE000100000001 /* MinutesReviewChecklistView.swift */,
 				1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */,
 				1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */,
 				1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */,
@@ -808,6 +835,9 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0282CEE000100000001 /* RecordingChunkPipelineTests.swift */,
+				1B00C01E2CEE000100000001 /* MeetingLifecycleReviewTests.swift */,
+				1B00C0162CEE000100000001 /* DataLifecycleTests.swift */,
 				1B00C0732CEE000100000001 /* ActionItemWriterTests.swift */,
 				1B00C0752CEE000100000001 /* ActionListLogicTests.swift */,
 				1B00C0772CEE000100000001 /* TaskResponseStoreTests.swift */,
@@ -1169,6 +1199,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C01F2CEE000100000001 /* CanonicalRecordingValidator.swift in Sources */,
+				1A00C0212CEE000100000001 /* RecordingChunkPump.swift in Sources */,
+				1A00C0232CEE000100000001 /* RecordingMetrics.swift in Sources */,
+				1A00C0252CEE000100000001 /* RecordingPreprocessingWorker.swift in Sources */,
+				1A00C0172CEE000100000001 /* MeetingLifecycle.swift in Sources */,
+				1A00C0192CEE000100000001 /* ReviewStateStore.swift in Sources */,
+				1A00C01B2CEE000100000001 /* MinutesReviewChecklistView.swift in Sources */,
 				1A00C0012CEE000100000001 /* HomeRecentSectionView.swift in Sources */,
 				1A00C0032CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */,
 				1A00C0052CEE000100000001 /* MeetingsHomeRowView.swift in Sources */,
@@ -1401,6 +1438,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0272CEE000100000001 /* RecordingChunkPipelineTests.swift in Sources */,
+				1A00C01D2CEE000100000001 /* MeetingLifecycleReviewTests.swift in Sources */,
+				1A00C0152CEE000100000001 /* DataLifecycleTests.swift in Sources */,
 				1A00C0722CEE000100000001 /* ActionItemWriterTests.swift in Sources */,
 				1A00C0742CEE000100000001 /* ActionListLogicTests.swift in Sources */,
 				1A00C0762CEE000100000001 /* TaskResponseStoreTests.swift in Sources */,

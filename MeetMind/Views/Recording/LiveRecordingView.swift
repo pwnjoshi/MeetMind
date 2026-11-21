@@ -45,6 +45,7 @@ public struct LiveRecordingView: View {
                 Spacer(minLength: 24)
 
                 recordingStatus
+                recoveryControls
                 Text(viewModel.formattedDuration)
                     .font(.system(size: timerSize, weight: .medium, design: .default))
                     .monospacedDigit()
@@ -140,7 +141,12 @@ public struct LiveRecordingView: View {
             }
         }
         .alert("Recording unavailable", isPresented: Binding(
-            get: { viewModel.errorMessage != nil && !viewModel.isMicrophoneUnavailable },
+            get: {
+                viewModel.errorMessage != nil
+                    && !viewModel.isMicrophoneUnavailable
+                    && viewModel.recordingState != .saveFailed
+                    && viewModel.recordingState != .stoppedUnsaved
+            },
             set: { if !$0 { viewModel.errorMessage = nil } }
         )) {
             Button("OK") { viewModel.errorMessage = nil }
@@ -153,13 +159,6 @@ public struct LiveRecordingView: View {
         }
         .onDisappear {
             if automaticallyStartsSession { viewModel.leaveSession() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
-            guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
-            if type == .began, viewModel.isRecording {
-                viewModel.handleAudioSessionInterruption(began: true)
-            }
         }
     }
     
@@ -189,25 +188,61 @@ public struct LiveRecordingView: View {
     }
 
     private var recordingStatus: some View {
-        Label(
-            viewModel.isPaused ? "Paused" : "Recording",
-            systemImage: viewModel.isPaused ? "pause.fill" : "circle.fill"
-        )
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(viewModel.isPaused ? Color.orange : Theme.Colors.coralRed)
-        .padding(.horizontal, 13)
-        .padding(.vertical, 7)
-        .background(
-            (viewModel.isPaused ? Color.orange : Theme.Colors.coralRed).opacity(0.20),
-            in: Capsule()
-        )
-        .accessibilityLabel(viewModel.isPaused ? "Recording paused" : "Recording in progress")
+        let presentation: (title: String, icon: String, color: Color) = switch viewModel.recordingState {
+        case .preparing: ("Preparing", "hourglass", Color.gray)
+        case .paused: ("Paused", "pause.fill", .orange)
+        case .interrupted: ("Interrupted", "exclamationmark.triangle.fill", .orange)
+        case .stopping: ("Saving", "arrow.triangle.2.circlepath", .blue)
+        case .stoppedUnsaved: ("Stopped, Not Saved", "externaldrive.badge.exclamationmark", .orange)
+        case .saveFailed: ("Save Failed", "exclamationmark.circle.fill", .red)
+        case .saved: ("Saved", "checkmark.circle.fill", .green)
+        default: ("Recording", "circle.fill", Theme.Colors.coralRed)
+        }
+        return Label(presentation.title, systemImage: presentation.icon)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(presentation.color)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 7)
+            .background(presentation.color.opacity(0.20), in: Capsule())
+            .accessibilityLabel(presentation.title)
+    }
+
+    @ViewBuilder
+    private var recoveryControls: some View {
+        if viewModel.recordingState == .saveFailed || viewModel.recordingState == .stoppedUnsaved {
+            VStack(spacing: 8) {
+                Text(viewModel.errorMessage ?? "The audio is still on this iPhone.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                Button("Retry Save") { retrySave() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.Colors.manentAccent)
+            }
+            .padding(.top, 8)
+        } else if viewModel.recordingState == .interrupted {
+            VStack(spacing: 8) {
+                Text(viewModel.interruptionCanResume
+                     ? "Audio was interrupted. Resume this recording or finish with the audio already captured."
+                     : "Audio was interrupted. You can finish safely now; Resume appears when the audio session is available.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                HStack {
+                    Button("Resume") { viewModel.resumeSession() }
+                        .disabled(!viewModel.interruptionCanResume)
+                    Button("Finish") { proceedToProcessing() }
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.top, 8)
+        }
     }
 
     private func liveTranscriptCard(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Live transcript")
+                Text("Live transcript · Provisional")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white)
                 Spacer()
@@ -359,6 +394,19 @@ public struct LiveRecordingView: View {
         }
     }
     
+    private func retrySave() {
+        guard !isFinishing else { return }
+        isFinishing = true
+        defer { isFinishing = false }
+        do {
+            _ = try viewModel.retrySave()
+            viewModel.errorMessage = nil
+            showMeetingDetail()
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+        }
+    }
+
     private func proceedToProcessing() {
         guard !isFinishing else { return }
         isFinishing = true

@@ -21,6 +21,8 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
     // disconnect the other one, which is why captions could disappear as soon as
     // background preparation started.
     private var bufferContinuations: [UUID: AsyncStream<AVAudioPCMBuffer>.Continuation] = [:]
+    private var interruptionContinuations: [UUID: AsyncStream<RecordingInterruptionEvent>.Continuation] = [:]
+    private var notificationObservers: [NSObjectProtocol] = []
     public var audioBufferStream: AsyncStream<AVAudioPCMBuffer> {
         AsyncStream(bufferingPolicy: .bufferingNewest(16)) { continuation in
             let id = UUID()
@@ -30,6 +32,20 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
             continuation.onTermination = { [weak self] _ in
                 self?.lock.lock()
                 self?.bufferContinuations.removeValue(forKey: id)
+                self?.lock.unlock()
+            }
+        }
+    }
+
+    public var interruptionStream: AsyncStream<RecordingInterruptionEvent> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(4)) { continuation in
+            let id = UUID()
+            lock.lock()
+            interruptionContinuations[id] = continuation
+            lock.unlock()
+            continuation.onTermination = { [weak self] _ in
+                self?.lock.lock()
+                self?.interruptionContinuations.removeValue(forKey: id)
                 self?.lock.unlock()
             }
         }
@@ -69,9 +85,11 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         self.bitRate = bitRate
         self.noiseSuppression = noiseSuppression
         super.init()
+        observeAudioSessionNotifications()
     }
     
     deinit {
+        notificationObservers.forEach(NotificationCenter.default.removeObserver)
         if let engine = audioEngine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
@@ -79,6 +97,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         meterContinuation?.finish()
         let continuations = bufferContinuations.values
         continuations.forEach { $0.finish() }
+        interruptionContinuations.values.forEach { $0.finish() }
     }
     
     public func startRecording(destinationURL: URL) async throws {
@@ -203,18 +222,29 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
     
     public func resumeRecording() throws {
         lock.lock()
-        defer { lock.unlock() }
-        guard internalState == .paused else {
-            throw AudioRecordingError.invalidState("Cannot resume from state: \(internalState)")
+        guard internalState == .paused || internalState == .interrupted else {
+            let currentState = internalState
+            lock.unlock()
+            throw AudioRecordingError.invalidState("Cannot resume from state: \(currentState)")
         }
+        let engine = audioEngine
+        lock.unlock()
+
+        if let engine, !engine.isRunning {
+            do { try engine.start() }
+            catch { throw AudioRecordingError.engineStartFailed(error.localizedDescription) }
+        }
+
+        lock.lock()
         recordingStartTime = Date()
         lastPauseTime = nil
         internalState = .recording
+        lock.unlock()
     }
     
     public func stopRecording() async throws -> URL {
         lock.lock()
-        guard internalState == .recording || internalState == .paused else {
+        guard internalState == .recording || internalState == .paused || internalState == .interrupted else {
             let currentState = internalState
             lock.unlock()
             throw AudioRecordingError.invalidState("Cannot stop recording from state: \(currentState)")
@@ -240,6 +270,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
         finishBufferStreams()
+        finishInterruptionStreams()
         
         guard let finalURL = url else {
             throw AudioRecordingError.recordingFailed("Destination URL was missing.")
@@ -267,6 +298,7 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         meterContinuation?.yield(0.0)
         meterContinuation?.finish()
         finishBufferStreams()
+        finishInterruptionStreams()
         
         if let url = url, FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.removeItem(at: url)
@@ -347,6 +379,78 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
         let finalPower = linearPower.isFinite ? max(0.0, min(1.0, linearPower)) : 0.0
         
         meter?.yield(finalPower)
+    }
+
+    private func observeAudioSessionNotifications() {
+        let center = NotificationCenter.default
+        notificationObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: nil
+        ) { [weak self] notification in
+            self?.handleAudioSessionInterruption(notification)
+        })
+        notificationObservers.append(center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: nil
+        ) { [weak self] _ in
+            self?.enterInterruptedState(code: .mediaServicesReset, canResume: false, hasEnded: true)
+        })
+    }
+
+    private func handleAudioSessionInterruption(_ notification: Notification) {
+        guard let rawValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: rawValue) else { return }
+        switch type {
+        case .began:
+            enterInterruptedState(code: .audioSession, canResume: false, hasEnded: false)
+        case .ended:
+            let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let canResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+            yieldInterruption(RecordingInterruptionEvent(
+                code: .audioSession,
+                canResume: canResume,
+                hasEnded: true
+            ))
+        @unknown default:
+            break
+        }
+    }
+
+    private func enterInterruptedState(
+        code: RecordingInterruptionCode,
+        canResume: Bool,
+        hasEnded: Bool
+    ) {
+        lock.lock()
+        guard internalState == .recording || internalState == .paused else {
+            lock.unlock()
+            return
+        }
+        if let start = recordingStartTime {
+            accumulatedDuration += Date().timeIntervalSince(start)
+            recordingStartTime = nil
+        }
+        internalState = .interrupted
+        lock.unlock()
+        meterContinuation?.yield(0)
+        yieldInterruption(RecordingInterruptionEvent(code: code, canResume: canResume, hasEnded: hasEnded))
+    }
+
+    private func yieldInterruption(_ event: RecordingInterruptionEvent) {
+        lock.lock()
+        let continuations = Array(interruptionContinuations.values)
+        lock.unlock()
+        continuations.forEach { $0.yield(event) }
+    }
+
+    private func finishInterruptionStreams() {
+        lock.lock()
+        let continuations = Array(interruptionContinuations.values)
+        interruptionContinuations.removeAll()
+        lock.unlock()
+        continuations.forEach { $0.finish() }
     }
 
     private func finishBufferStreams() {
