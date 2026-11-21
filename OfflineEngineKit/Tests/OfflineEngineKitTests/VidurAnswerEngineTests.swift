@@ -160,9 +160,11 @@ final class VidurAnswerEngineTests: XCTestCase {
     func testAnswerUsesSingleBoundedWindow() async throws {
         let counter = Counter()
         let engine = makeEngine(counter: counter)
-        let long = (0..<40).map {
-            AnalysisTurn(id: "t\($0)", text: String(repeating: "filler words here ", count: 6) + (($0 == 20) ? "budget approval" : ""),
-                         start: Double($0), end: Double($0 + 1), speaker: nil)
+        let filler = String(repeating: "filler words here ", count: 6)
+        let long: [AnalysisTurn] = (0..<40).map { (index: Int) -> AnalysisTurn in
+            let suffix = index == 20 ? "budget approval" : ""
+            return AnalysisTurn(id: "t\(index)", text: filler + suffix,
+                                start: Double(index), end: Double(index + 1), speaker: nil)
         }
         let result = try await engine.answer(question: "budget approval", turns: long, model: .fast)
         XCTAssertTrue(result.windowTurnIDs.contains("t20"))
