@@ -72,7 +72,8 @@ final class DataLifecycleTests: XCTestCase {
         XCTAssertTrue(fixture.prep.isEmpty)
         XCTAssertTrue(fixture.approvals.isEmpty)
         XCTAssertTrue(fixture.vidur.isEmpty)
-        XCTAssertTrue(try await fixture.jobs.isEmpty())
+        let jobsAreEmpty = try await fixture.jobs.isEmpty()
+        XCTAssertTrue(jobsAreEmpty)
         for url in fixture.inventory.eraseAllDirectories + fixture.inventory.eraseAllFiles {
             XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "Private artifact remains: \(url.path)")
         }
@@ -151,7 +152,8 @@ final class DataLifecycleTests: XCTestCase {
         XCTAssertTrue(fixture.approvals.records(for: doomed.id).isEmpty)
         XCTAssertTrue(fixture.vidur.history(for: doomed.id).isEmpty)
         XCTAssertFalse(LocalInboxReadStore(defaults: defaults).readIDs.contains("minutes-\(doomed.id.uuidString)"))
-        XCTAssertNil(try await fixture.jobs.get(doomed.id))
+        let deletedJob = try await fixture.jobs.get(doomed.id)
+        XCTAssertNil(deletedJob)
     }
 
     private typealias Fixture = (container: ModelContainer, inventory: UserContentInventory,
