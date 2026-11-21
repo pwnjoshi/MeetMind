@@ -16,6 +16,9 @@ public struct HomeDashboardView: View {
     @State private var isMicrophoneCheckPresented: Bool = false
     @State private var selectedSeriesID: UUID?
     @State private var showsSeries = false
+    @State private var showsAllUpcoming = false
+    @State private var showsAllRecent = false
+    @State private var showsVidur = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var waveformPhase = 0
     @AppStorage("Manent.dismissedFirstMeetingTip") private var dismissedFirstMeetingTip = false
@@ -26,7 +29,9 @@ public struct HomeDashboardView: View {
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 34) {
+                VStack(alignment: .leading, spacing: 26) {
+                    homeHeader
+
                     if let loadingError = viewModel.loadingErrorMessage {
                         ContentUnavailableView {
                             Label("Meetings Unavailable", systemImage: "calendar.badge.exclamationmark")
@@ -37,93 +42,204 @@ public struct HomeDashboardView: View {
                                 .buttonStyle(.borderedProminent)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.top, 120)
+                        .padding(.top, 70)
                     } else if savedMeetings.isEmpty || viewModel.isEmptyState {
                         emptyMeetingsState
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 150)
+                            .padding(.top, 70)
                     } else {
-                        meetingSection("Upcoming meetings", meetings: viewModel.filteredUpcomingMeetings, upcoming: true)
-                        meetingSection("Recent meetings", meetings: viewModel.filteredRecentMeetings, upcoming: false)
+                        populatedHome
                     }
-                    Color.clear.frame(height: 96)
+                    Color.clear.frame(height: 88)
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 18)
+                .padding(.top, 12)
             }
 
             if savedMeetings.isEmpty && !dismissedFirstMeetingTip {
-                HStack(spacing: 12) {
-                    Image(systemName: "mic").foregroundStyle(Theme.Colors.manentAccent)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Record Your First Meeting").font(.subheadline.bold())
-                        Text("Tap + to record. Manent writes the minutes.")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Button { dismissedFirstMeetingTip = true } label: {
-                        Image(systemName: "xmark").font(.caption)
-                            .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss recording tip")
-                }
-                .padding(.leading, 16).padding(.vertical, 12)
-                .background(.background, in: RoundedRectangle(cornerRadius: 22))
-                .shadow(color: .black.opacity(0.10), radius: 14, y: 8)
-                .frame(maxWidth: 300)
-                .padding(.trailing, 16).padding(.bottom, 88)
+                firstMeetingTip
             }
 
-            // Bottom Action FAB
-            Menu {
-                Button("Quick Meet", systemImage: "mic.fill") { isMicrophoneCheckPresented = true }
-                Button("Schedule Meet", systemImage: "calendar.badge.plus") { appState.activeSheet = .scheduleMeeting }
-                Button("Import Audio", systemImage: "square.and.arrow.down") { appState.activeSheet = .audioImport }
-            } label: {
-                Image(systemName: "plus")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .background(Theme.Colors.manentAccent)
-                .clipShape(Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.2), lineWidth: 1))
-            }
-            .menuOrder(.fixed)
-            .accessibilityLabel("New meeting")
-            .accessibilityHint("Choose Quick Meet, Schedule Meet, or Import Audio")
-            .padding(.trailing, 28)
-            .padding(.bottom, 8)
+            createMeetingMenu
+                .padding(.trailing, 22)
+                .padding(.bottom, 10)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("Meetings")
-        .toolbarTitleDisplayMode(.inlineLarge)
-        .toolbar {
-            if #available(iOS 26.0, *) {
-                ToolbarItem(placement: .topBarTrailing) {
-                    profileButton
-                }
-                .sharedBackgroundVisibility(.hidden)
-            } else {
-                ToolbarItem(placement: .topBarTrailing) {
-                    profileButton
-                }
-            }
-        }
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showsSeries) {
             if let id = selectedSeriesID {
                 NavigationStack { LocalSeriesTimeline(seriesID: id) }
             }
         }
-        .sheet(isPresented: $isMicrophoneCheckPresented) {
-            MicrophoneCheckView {
-                let m = Meeting(title: "Quick meeting", createdAt: Date(), duration: 0, status: .recording)
-                viewModel.addMeeting(m)
-                router.navigate(to: .liveRecording(id: m.id), in: .home)
+        .sheet(isPresented: $showsAllUpcoming) {
+            NavigationStack {
+                HomeMeetingCollectionView(
+                    title: "Upcoming Meetings",
+                    meetings: viewModel.filteredUpcomingMeetings,
+                    recentSubtitle: recentSubtitle
+                )
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsAllUpcoming = false } } }
             }
         }
-        .onAppear { viewModel.setModelContext(modelContext); viewModel.fetchMeetings() }
+        .sheet(isPresented: $showsAllRecent) {
+            NavigationStack {
+                HomeMeetingCollectionView(
+                    title: "Recent Meetings",
+                    meetings: viewModel.filteredRecentMeetings,
+                    recentSubtitle: recentSubtitle
+                )
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsAllRecent = false } } }
+            }
+        }
+        .sheet(isPresented: $showsVidur) {
+            if let meeting = vidurMeeting {
+                NavigationStack {
+                    RootAskAISheet(meetingId: meeting.id, modelContext: modelContext) { showsVidur = false }
+                }
+            }
+        }
+        .sheet(isPresented: $isMicrophoneCheckPresented) {
+            MicrophoneCheckView {
+                let meeting = Meeting(title: "Quick meeting", createdAt: Date(), duration: 0, status: .recording)
+                viewModel.addMeeting(meeting)
+                router.navigate(to: .liveRecording(id: meeting.id), in: .home)
+            }
+        }
+        .onAppear {
+            viewModel.setModelContext(modelContext)
+            viewModel.fetchMeetings()
+        }
         .onChange(of: savedMeetingRevision) { _, _ in viewModel.fetchMeetings() }
+    }
+
+    private var homeHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text("Meetings")
+                .font(.system(size: 42, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.8)
+            Spacer()
+            Button { showsVidur = true } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 23, weight: .medium))
+                    .foregroundStyle(Theme.Colors.manentAccent)
+                    .frame(width: 50, height: 50)
+                    .background(.background, in: Circle())
+                    .overlay(Circle().stroke(Color(uiColor: .separator).opacity(0.6)))
+            }
+            .buttonStyle(.plain)
+            .disabled(vidurMeeting == nil)
+            .accessibilityLabel("Ask Vidur")
+            .accessibilityHint(vidurMeeting == nil ? "Available after a meeting has been saved" : "Ask about your latest meeting")
+            profileButton
+        }
+    }
+
+    @ViewBuilder
+    private var populatedHome: some View {
+        let upcoming = viewModel.filteredUpcomingMeetings
+        let featured = upcoming.first
+        let week = thisWeekMeetings(from: upcoming, excluding: featured?.id)
+        let recent = Array(viewModel.filteredRecentMeetings.prefix(4))
+
+        if let featured {
+            UpNextMeetingCard(
+                meeting: featured,
+                recurrenceText: seriesSubtitle(featured),
+                referenceDate: Date()
+            ) { openMeeting(featured) }
+        }
+
+        if !week.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HomeSectionHeader(title: "This Week", showsSeeAll: upcoming.count > week.count) {
+                    showsAllUpcoming = true
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(week) { meeting in
+                            WeekMeetingCard(meeting: meeting) { openMeeting(meeting) }
+                        }
+                    }
+                    .padding(.horizontal, 1)
+                }
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+            }
+        }
+
+        if !recent.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HomeSectionHeader(
+                    title: "Recent",
+                    showsSeeAll: viewModel.filteredRecentMeetings.count > recent.count
+                ) { showsAllRecent = true }
+                RecentMeetingsCard(
+                    meetings: recent,
+                    subtitle: recentSubtitle,
+                    statusColor: recentStatusColor,
+                    open: openMeeting
+                )
+            }
+        }
+    }
+
+    private var firstMeetingTip: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mic").foregroundStyle(Theme.Colors.manentAccent)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Record Your First Meeting").font(.subheadline.bold())
+                Text("Tap + to record. Manent writes the minutes.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Button { dismissedFirstMeetingTip = true } label: {
+                Image(systemName: "xmark").font(.caption).frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss recording tip")
+        }
+        .padding(.leading, 16).padding(.vertical, 12)
+        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .shadow(color: .black.opacity(0.10), radius: 14, y: 8)
+        .frame(maxWidth: 310)
+        .padding(.trailing, 16).padding(.bottom, 82)
+    }
+
+    private var createMeetingMenu: some View {
+        Menu {
+            Button("Quick Meet", systemImage: "mic.fill") { isMicrophoneCheckPresented = true }
+            Button("Schedule Meet", systemImage: "calendar.badge.plus") { appState.activeSheet = .scheduleMeeting }
+            Button("Import Audio", systemImage: "square.and.arrow.down") { appState.activeSheet = .audioImport }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 25, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 54, height: 54)
+                .background(Theme.Colors.manentAccent, in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 1))
+                .shadow(color: Theme.Colors.manentAccent.opacity(0.28), radius: 12, y: 6)
+        }
+        .menuOrder(.fixed)
+        .accessibilityLabel("New meeting")
+        .accessibilityHint("Choose Quick Meet, Schedule Meet, or Import Audio")
+    }
+
+    private var vidurMeeting: Meeting? {
+        viewModel.filteredUpcomingMeetings.first ?? viewModel.filteredRecentMeetings.first
+    }
+
+    private func thisWeekMeetings(from meetings: [Meeting], excluding featuredID: UUID?) -> [Meeting] {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        let end = calendar.date(byAdding: .day, value: 7, to: start) ?? Date.distantFuture
+        return meetings.filter { meeting in
+            guard meeting.id != featuredID else { return false }
+            let date = meeting.scheduledStartTime ?? meeting.createdAt
+            return date >= start && date < end
+        }
+    }
+
+    private func openMeeting(_ meeting: Meeting) {
+        router.navigate(to: .meetingDetail(id: meeting.id), in: .home)
     }
 
     private var profileButton: some View {
@@ -258,11 +374,26 @@ public struct HomeDashboardView: View {
 
     private func recentSubtitle(_ meeting: Meeting) -> String? {
         let review = try? reviewStore.record(for: meeting.id)
-        let badge = MeetingLifecycleResolver.reviewDisplayStatus(meeting: meeting, reviewState: review)
-            ?? meeting.figmaBadgeText
-        guard badge == "Finalized" else { return badge }
+        let lifecycleStatus = MeetingLifecycleResolver.reviewDisplayStatus(meeting: meeting, reviewState: review)
+        if lifecycleStatus == "Needs speaker review" || meeting.analysisState == "speakerReview" {
+            return "Needs speaker review"
+        }
+        if meeting.analysisState == "failed" { return "Processing needs attention" }
         let open = meeting.actionItems.filter { !$0.isCompleted }.count
-        return open > 0 ? "\(open) open \(open == 1 ? "action" : "actions")" : "Finalized"
+        if open > 0 { return "\(open) open \(open == 1 ? "action" : "actions")" }
+        guard meeting.duration > 0 else { return lifecycleStatus }
+        let minutes = max(1, Int(round(meeting.duration / 60)))
+        let duration = "\(minutes) min"
+        let date = meeting.scheduledStartTime ?? meeting.createdAt
+        if Calendar.current.isDateInYesterday(date) { return "Yesterday · \(duration)" }
+        if Calendar.current.isDateInToday(date) { return "Today · \(duration)" }
+        return duration
+    }
+
+    private func recentStatusColor(_ meeting: Meeting) -> Color {
+        if meeting.analysisState == "failed" { return Theme.Colors.coralRed }
+        if meeting.analysisState == "speakerReview" { return Theme.Colors.warmAmber }
+        return .secondary
     }
 
     /// Cadence inferred from the dates of the meetings that share a series.
