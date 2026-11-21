@@ -3,22 +3,28 @@ import Foundation
 import OfflineEngineKit
 import SwiftData
 import UserNotifications
+import OSLog
 
-/// Resumes a saved offline-analysis checkpoint when iOS grants a processing
-/// window. This is deliberately opportunistic: iOS may defer or decline a
-/// request, so foreground analysis remains the fast path and checkpoints make
-/// either path safe to resume.
+/// Resumes durable analysis jobs when iOS grants a processing window. The
+/// scheduler is an adapter only; AnalysisCoordinator owns all production work.
 @MainActor
 enum OfflineAnalysisBackgroundScheduler {
     static let taskIdentifier = "com.meetmind.app.offline-analysis"
-    private static let pendingMeetingIDsKey = "MeetMind.pendingOfflineAnalysisIDs"
-    private static let modelSetupKey = "Manent.initialModelSetupComplete"
+    private static let legacyPendingMeetingIDsKey = "MeetMind.pendingOfflineAnalysisIDs"
+    private static let legacyImportKey = "MeetMind.pendingOfflineAnalysisIDs.imported-v2"
     private static var activeMeetingID: UUID?
     private static var activeStage: MeetingAnalysisStage?
     private static var applicationContainer: ModelContainer?
+    private static var cachedJobs: [UUID: AnalysisJobRecord] = [:]
+    private static let jobs = AnalysisJobStore.shared
 
     static func useApplicationContainer(_ container: ModelContainer?) {
         applicationContainer = container
+        guard container != nil else { return }
+        Task {
+            await importLegacyQueueIfNeeded()
+            await refreshCache()
+        }
     }
 
     static func stage(for meetingID: UUID) -> MeetingAnalysisStage? {
@@ -39,13 +45,24 @@ enum OfflineAnalysisBackgroundScheduler {
             case nil: return "Preparing on-device models in background"
             }
         }
-        if pendingMeetingIDs.contains(meetingID.uuidString) { return "Queued for background processing" }
-        return nil
+        guard let job = cachedJobs[meetingID] else { return nil }
+        switch job.state {
+        case .queued: return "Queued for background processing"
+        case .needsModels: return "Queued until on-device models are ready"
+        case .downloading: return "Downloading on-device models"
+        case .verifying: return "Verifying on-device models"
+        case .running: return "Processing in background"
+        case .paused, .failed, .speakerReview, .completed: return nil
+        }
     }
 
+    /// Kept for app lifecycle compatibility. Model downloads now belong to a
+    /// meeting job and never start only because the app entered background.
     static func scheduleInitialSetup() {
-        guard !UserDefaults.standard.bool(forKey: modelSetupKey) else { return }
-        submit()
+        Task {
+            await refreshCache()
+            if cachedJobs.values.contains(where: { $0.state == .queued }) { await submit() }
+        }
     }
 
     static func register() {
@@ -59,29 +76,62 @@ enum OfflineAnalysisBackgroundScheduler {
     }
 
     static func schedule(meetingID: UUID) {
-        var ids = pendingMeetingIDs
-        if !ids.contains(meetingID.uuidString) { ids.append(meetingID.uuidString) }
-        UserDefaults.standard.set(ids, forKey: pendingMeetingIDsKey)
-        submit()
-    }
-
-    private static func submit() {
-        let request = BGProcessingTaskRequest(identifier: taskIdentifier)
-        request.requiresNetworkConnectivity = !UserDefaults.standard.bool(forKey: modelSetupKey)
-        request.requiresExternalPower = false
-        // Begin promptly if iOS has thermal and battery headroom; there is no
-        // promise of an exact start time under iOS background scheduling.
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 20)
-        do { try BGTaskScheduler.shared.submit(request) }
-        catch { /* An equivalent queued request is normal; saved IDs remain. */ }
+        Task {
+            guard let container = applicationContainer else {
+                await persistSchedulerFailure(meetingID: meetingID)
+                return
+            }
+            do {
+                let coordinator = AnalysisCoordinator(context: container.mainContext, jobs: jobs)
+                try await coordinator.enqueue(meetingID: meetingID,
+                    languageCode: SettingsViewModel().savedRecordingLanguage.whisperCode,
+                    model: VidurModel.selected)
+                await refreshCache()
+                await submit()
+            } catch AnalysisJobStoreError.leaseConflict {
+                // The foreground owner still has a live lease. Its cancellation
+                // path will release the lease before a deliberate handoff.
+                return
+            } catch {
+                await persistSchedulerFailure(meetingID: meetingID)
+            }
+        }
     }
 
     static func remove(meetingID: UUID) {
-        UserDefaults.standard.set(pendingMeetingIDs.filter { $0 != meetingID.uuidString }, forKey: pendingMeetingIDsKey)
+        // Removes the scheduler's presentation cache only. The durable job is
+        // retained for recovery and diagnostics; a foreground claim changes its
+        // state so it is no longer eligible for background execution.
+        cachedJobs.removeValue(forKey: meetingID)
     }
 
-    private static var pendingMeetingIDs: [String] {
-        UserDefaults.standard.stringArray(forKey: pendingMeetingIDsKey) ?? []
+    private static func submit() async {
+        let request = BGProcessingTaskRequest(identifier: taskIdentifier)
+        request.requiresNetworkConnectivity = await queuedJobsRequireNetwork()
+        request.requiresExternalPower = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 20)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // A second pending request already covers the same durable jobs.
+            let nsError = error as NSError
+            if nsError.code == BGTaskScheduler.Error.Code.tooManyPendingTaskRequests.rawValue { return }
+            for record in cachedJobs.values where record.state == .queued {
+                try? await jobs.setState(record.meetingID, state: .failed, stage: record.currentStage,
+                                         failure: .stable(.schedulingFailed))
+            }
+            await refreshCache()
+        }
+    }
+
+    private static func queuedJobsRequireNetwork() async -> Bool {
+        let queued = cachedJobs.values.filter { $0.state == .queued || $0.state == .needsModels }
+        guard !queued.isEmpty, let profiles = try? OfflineModelStore.profiles() else { return false }
+        let IDs = Set(queued.flatMap { $0.requiredModels.map(\.id) })
+        for profile in profiles where IDs.contains(profile.id) {
+            if await OfflineModelStore.shared.readiness(profile) != .ready { return true }
+        }
+        return false
     }
 
     private static func handle(_ task: BGProcessingTask) async {
@@ -91,50 +141,103 @@ enum OfflineAnalysisBackgroundScheduler {
             var succeeded = false
             defer {
                 task.setTaskCompleted(success: succeeded)
-                if !succeeded || !pendingMeetingIDs.isEmpty { submit() }
+                Task { @MainActor in
+                    await refreshCache()
+                    if cachedJobs.values.contains(where: { $0.state == .queued }) { await submit() }
+                }
             }
-            do {
-                let meetingID = pendingMeetingIDs.first.flatMap { UUID(uuidString: $0) }
-                activeMeetingID = meetingID
-                activeStage = nil
-                defer { activeMeetingID = nil; activeStage = nil }
-                for profile in try await MeetingAnalysisPipeline.shared.missingModels(model: VidurModel.selected) {
-                    try Task.checkCancellation()
-                    try await OfflineModelStore.shared.install(profile) { _ in }
-                }
-                UserDefaults.standard.set(true, forKey: modelSetupKey)
-                guard let meetingID else {
-                    succeeded = true
-                    return
-                }
-                let container = try applicationContainer ?? ModelContainerFactory.createProductionContainer()
-                let context = container.mainContext
-                var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == meetingID })
-                descriptor.fetchLimit = 1
-                guard let meeting = try context.fetch(descriptor).first else { remove(meetingID: meetingID); return }
-                if meeting.analysisState == "completed" {
-                    remove(meetingID: meetingID)
-                    succeeded = true
-                    return
-                }
-                let viewModel = ProcessingPipelineViewModel(meeting: meeting, modelContext: context)
-                viewModel.onOfflineStageChanged = { stage in activeStage = stage }
-                try viewModel.prepareForProduction(context: context, settings: SettingsViewModel())
-                guard try await viewModel.missingOfflineModels().isEmpty else { return }
-                try await viewModel.startPipeline()
-                guard viewModel.pipelineStatus == .completed else { return }
-                remove(meetingID: meetingID)
+            await importLegacyQueueIfNeeded()
+            await refreshCache()
+            guard let record = cachedJobs.values
+                .filter({ $0.state == .queued })
+                .sorted(by: { $0.createdAt < $1.createdAt }).first else {
                 succeeded = true
-                await postCompletionNotification(meetingID: meetingID, title: meeting.title)
+                return
+            }
+            let meetingID = record.meetingID
+            activeMeetingID = meetingID
+            activeStage = nil
+            defer { activeMeetingID = nil; activeStage = nil }
+            do {
+                guard let container = applicationContainer else {
+                    throw AnalysisCoordinatorError.failed(.stable(.persistenceFailed))
+                }
+                let coordinator = AnalysisCoordinator(context: container.mainContext, jobs: jobs)
+                let language = SettingsViewModel().savedRecordingLanguage.whisperCode
+                let readiness = try await coordinator.modelStatus(meetingID: meetingID, model: VidurModel.selected)
+                if readiness.contains(where: { $0.readiness != .ready }) {
+                    try await coordinator.downloadAndVerify(meetingID: meetingID, model: VidurModel.selected,
+                                                            progress: { _, _ in })
+                }
+                _ = try await coordinator.run(meetingID: meetingID, languageCode: language,
+                    model: VidurModel.selected, owner: .background) { stage in activeStage = stage }
+                succeeded = true
+                let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == meetingID })
+                if let meeting = try container.mainContext.fetch(descriptor).first {
+                    await postCompletionNotification(meetingID: meetingID, title: meeting.title)
+                }
             } catch is CancellationError {
-                // The engine wrote a checkpoint before interruption. Leave it
-                // queued so the user or a later iOS window can resume safely.
+                do {
+                    if let snapshot = try await jobs.get(meetingID) { _ = try await jobs.enqueue(snapshot) }
+                } catch { }
             } catch {
-                // Keep the checkpoint/queue; a malformed or missing recording
-                // remains visible in the app and is never silently discarded.
+                // Coordinator persists execution failures. Failures before a
+                // coordinator claim still receive a stable scheduler record.
+                do {
+                    if let snapshot = try await jobs.get(meetingID), snapshot.state == .queued {
+                        try await jobs.setState(meetingID, state: .failed, stage: snapshot.currentStage,
+                                                failure: .stable(.schedulingFailed))
+                    }
+                } catch { }
             }
         }
         await worker?.value
+    }
+
+    static func legacyMeetingIDs(in defaults: UserDefaults) -> [UUID] {
+        (defaults.stringArray(forKey: legacyPendingMeetingIDsKey) ?? []).compactMap(UUID.init(uuidString:))
+    }
+
+    private static func importLegacyQueueIfNeeded() async {
+        guard !UserDefaults.standard.bool(forKey: legacyImportKey), let container = applicationContainer else { return }
+        let ids = legacyMeetingIDs(in: .standard)
+        let coordinator = AnalysisCoordinator(context: container.mainContext, jobs: jobs)
+        var importedAll = true
+        for id in ids {
+            do {
+                try await coordinator.enqueue(meetingID: id,
+                    languageCode: SettingsViewModel().savedRecordingLanguage.whisperCode,
+                    model: VidurModel.selected)
+            } catch {
+                importedAll = false
+                await persistSchedulerFailure(meetingID: id)
+            }
+        }
+        if importedAll {
+            UserDefaults.standard.removeObject(forKey: legacyPendingMeetingIDsKey)
+            UserDefaults.standard.set(true, forKey: legacyImportKey)
+        }
+    }
+
+    private static func persistSchedulerFailure(meetingID: UUID) async {
+        do {
+            if let record = try await jobs.get(meetingID) {
+                try await jobs.setState(meetingID, state: .failed, stage: record.currentStage,
+                                        failure: .stable(.schedulingFailed))
+            }
+        } catch { }
+        await refreshCache()
+    }
+
+    private static func refreshCache() async {
+        do {
+            let records = try await jobs.all()
+            cachedJobs = Dictionary(uniqueKeysWithValues: records.map { ($0.meetingID, $0) })
+        } catch {
+            cachedJobs = [:]
+            Logger(subsystem: "com.meetmind.app", category: "Analysis")
+                .error("Analysis job store could not be read; code=jobStoreCorrupt")
+        }
     }
 
     private static func postCompletionNotification(meetingID: UUID, title: String) async {

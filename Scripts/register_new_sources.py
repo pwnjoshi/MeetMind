@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Register every Swift file under MeetMind/ and MeetMindTests/ that project.pbxproj does not reference by path.
 
 App files join the MeetMind group and app Sources phase; test files join the MeetMindTests group and test
@@ -23,7 +23,7 @@ def main():
 
     def new_id(prefix):
         while True:
-            candidate = f"{prefix}{counter[0]:04X}2CEE000100000001"
+            candidate = f"{prefix}{counter[0]:06X}2CEE000100000001"
             counter[0] += 1
             if candidate not in used:
                 used.add(candidate)
@@ -78,3 +78,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

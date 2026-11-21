@@ -31,6 +31,18 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public var analysis: [LocalAnalysisResult]
     public var analyzedChunks: Int
     public var chunkTurnIDs: [[String]]? = nil
+
+    public init(sourceSignature: String, stage: MeetingAnalysisStage, turns: [AnalysisTurn],
+                speakers: [SpeakerSpan], analysis: [LocalAnalysisResult], analyzedChunks: Int,
+                chunkTurnIDs: [[String]]? = nil) {
+        self.sourceSignature = sourceSignature
+        self.stage = stage
+        self.turns = turns
+        self.speakers = speakers
+        self.analysis = analysis
+        self.analyzedChunks = analyzedChunks
+        self.chunkTurnIDs = chunkTurnIDs
+    }
 }
 
 /// A local ASR checkpoint produced from a sealed recording window. It contains
@@ -59,6 +71,7 @@ public actor MeetingAnalysisPipeline {
     private let checkpointRoot: URL?
     public static let analysisModelID = "qwen-4b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
+    public static let checkpointFormatVersion = "asr-prefill-v2"
     private static let modelConfiguration = LocalModelConfiguration.compact
     private static let analysisChunkBytes = 1200
     public init() { backend = LocalMeetingAnalysisBackend(); checkpointRoot = nil }
@@ -210,16 +223,22 @@ public actor MeetingAnalysisPipeline {
         if FileManager.default.fileExists(atPath: preparation.path) { try FileManager.default.removeItem(at: preparation) }
     }
 
-    public func missingModels(model: VidurModel = .large, speakersOnly: Bool = false) async throws -> [ModelProfile] {
-        var missing: [ModelProfile] = []
+    public func modelReadiness(model: VidurModel = .large, speakersOnly: Bool = false) async throws -> [(ModelProfile, ModelReadiness)] {
         let profiles = try requiredProfiles(model: model)
+        var states: [(ModelProfile, ModelReadiness)] = []
         for profile in profiles.prefix(speakersOnly ? 2 : profiles.count) {
-            if !(await OfflineModelStore.shared.isInstalled(profile)) { missing.append(profile) }
+            states.append((profile, await OfflineModelStore.shared.readiness(profile)))
         }
-        return missing
+        return states
     }
 
-    private func requiredProfiles(model: VidurModel) throws -> [ModelProfile] {
+    public func missingModels(model: VidurModel = .large, speakersOnly: Bool = false) async throws -> [ModelProfile] {
+        try await modelReadiness(model: model, speakersOnly: speakersOnly).compactMap { profile, state in
+            state == .ready ? nil : profile
+        }
+    }
+
+    public func requiredProfiles(model: VidurModel) throws -> [ModelProfile] {
         let profiles = try OfflineModelStore.profiles()
         return try ["whisper-large", "diarization", model.rawValue].map { id in
             guard let profile = profiles.first(where: { $0.id == id }) else {
@@ -247,7 +266,7 @@ public actor MeetingAnalysisPipeline {
         }
         let profiles = try requiredProfiles(model: model)
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|asr-prefill-v2|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
+        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|\(Self.checkpointFormatVersion)|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         if !reviewedTurns.isEmpty {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
@@ -260,13 +279,9 @@ public actor MeetingAnalysisPipeline {
         if let data = try? Data(contentsOf: checkpointURL),
            let saved = try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data),
            saved.sourceSignature == signature { checkpoint = saved }
-        // ASR and diarization consume the same finished audio but have no data
-        // dependency. On a cool, normally-powered device we start diarization
-        // while transcription is running, then retain the normal checkpoint
-        // boundary after transcription. This shortens finalization without
-        // sacrificing resumability or competing when the phone is constrained.
-        var overlappingDiarization: Task<[SpeakerSpan], Error>?
-        defer { overlappingDiarization?.cancel() }
+        // ASR and diarization run serially. Both engines have high transient
+        // memory use, and concurrency is disabled until a separately tested
+        // resource governor can admit it for a qualified device profile.
         func save() throws {
             if discardActiveCheckpoint { throw CancellationError() }
             try JSONEncoder().encode(checkpoint).write(to: checkpointURL,
@@ -275,15 +290,6 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .transcription {
             try checkConditions()
             await progress(.transcription)
-            if ProcessInfo.processInfo.thermalState == .nominal,
-               !ProcessInfo.processInfo.isLowPowerModeEnabled {
-                let backend = self.backend
-                let diarizationProfile = profiles[1]
-                overlappingDiarization = Task {
-                    let diarizationFolder = try await backend.verifiedFolder(diarizationProfile)
-                    return try await backend.diarize(audio: audio, folder: diarizationFolder)
-                }
-            }
             if let prepared = try preparedTurns(meetingID: meetingID, duration: duration), !prepared.isEmpty {
                 checkpoint.turns = Self.splitTurns(prepared)
             } else {
@@ -307,17 +313,13 @@ public actor MeetingAnalysisPipeline {
             await progress(.speakers)
             let rawSpans: [SpeakerSpan]
             do {
-                if let overlappingDiarization {
-                    rawSpans = try await overlappingDiarization.value
-                } else {
-                    let folder = try await backend.verifiedFolder(profiles[1])
-                    rawSpans = try await backend.diarize(audio: audio, folder: folder)
-                }
+                let folder = try await backend.verifiedFolder(profiles[1])
+                rawSpans = try await backend.diarize(audio: audio, folder: folder)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 rawSpans = []
-                lastSpeakerWarning = "Voices could not be separated (\(error.localizedDescription)). Minutes will still be written from the transcript."
+                lastSpeakerWarning = "Voices could not be separated. Minutes will continue with unnamed speakers."
             }
             checkpoint.speakers = Self.stabilizeSpeakerSpans(rawSpans)
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)

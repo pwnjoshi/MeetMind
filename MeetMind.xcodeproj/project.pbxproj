@@ -7,82 +7,84 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1AC0002CEE000100000001 /* AppleCalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0012CEE000100000001 /* AppleCalendarService.swift */; };
-		1AC0022CEE000100000001 /* MeetingPrepStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0032CEE000100000001 /* MeetingPrepStore.swift */; };
-		1AC0042CEE000100000001 /* MeetingRecurrence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0052CEE000100000001 /* MeetingRecurrence.swift */; };
-		1AC0062CEE000100000001 /* MeetingPeopleEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0072CEE000100000001 /* MeetingPeopleEditor.swift */; };
-		1AC0082CEE000100000001 /* MeetingRecordStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0092CEE000100000001 /* MeetingRecordStore.swift */; };
-		1AC00A2CEE000100000001 /* LocalDataEraser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC00B2CEE000100000001 /* LocalDataEraser.swift */; };
-		1AC00C2CEE000100000001 /* LocalInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC00D2CEE000100000001 /* LocalInbox.swift */; };
-		1AC00E2CEE000100000001 /* LocalRecordingStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC00F2CEE000100000001 /* LocalRecordingStorage.swift */; };
-		1AC0102CEE000100000001 /* MinutesDocumentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0112CEE000100000001 /* MinutesDocumentBuilder.swift */; };
-		1AC0122CEE000100000001 /* MinutesPDFRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0132CEE000100000001 /* MinutesPDFRenderer.swift */; };
-		1AC0142CEE000100000001 /* MinutesStudioModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0152CEE000100000001 /* MinutesStudioModels.swift */; };
-		1AC0162CEE000100000001 /* MinutesStudioStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0172CEE000100000001 /* MinutesStudioStore.swift */; };
-		1AC0182CEE000100000001 /* VidurPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0192CEE000100000001 /* VidurPreferences.swift */; };
-		1AC01A2CEE000100000001 /* ActionDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC01B2CEE000100000001 /* ActionDraft.swift */; };
-		1AC01C2CEE000100000001 /* ActionListLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC01D2CEE000100000001 /* ActionListLogic.swift */; };
-		1AC01E2CEE000100000001 /* MeetingRepeatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC01F2CEE000100000001 /* MeetingRepeatService.swift */; };
-		1AC0202CEE000100000001 /* TaskResponseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0212CEE000100000001 /* TaskResponseStore.swift */; };
-		1AC0222CEE000100000001 /* MinutesApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0232CEE000100000001 /* MinutesApproval.swift */; };
-		1AC0242CEE000100000001 /* SeriesDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0252CEE000100000001 /* SeriesDiff.swift */; };
-		1AC0262CEE000100000001 /* VidurAnswerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0272CEE000100000001 /* VidurAnswerService.swift */; };
-		1AC0282CEE000100000001 /* ActionTaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0292CEE000100000001 /* ActionTaskDetailView.swift */; };
-		1AC02A2CEE000100000001 /* NewActionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC02B2CEE000100000001 /* NewActionSheet.swift */; };
-		1AC02C2CEE000100000001 /* RepeatMeetingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC02D2CEE000100000001 /* RepeatMeetingSheet.swift */; };
-		1AC02E2CEE000100000001 /* TaskAssignmentResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC02F2CEE000100000001 /* TaskAssignmentResponseView.swift */; };
-		1AC0302CEE000100000001 /* ActionFormComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0312CEE000100000001 /* ActionFormComponents.swift */; };
-		1AC0322CEE000100000001 /* ActionsListSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0332CEE000100000001 /* ActionsListSectionView.swift */; };
-		1AC0342CEE000100000001 /* EditSavedMinutesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0352CEE000100000001 /* EditSavedMinutesSheet.swift */; };
-		1AC0362CEE000100000001 /* MeetingDecisionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0372CEE000100000001 /* MeetingDecisionViews.swift */; };
-		1AC0382CEE000100000001 /* MeetingPeopleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0392CEE000100000001 /* MeetingPeopleSheet.swift */; };
-		1AC03A2CEE000100000001 /* MeetingRecordHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC03B2CEE000100000001 /* MeetingRecordHeader.swift */; };
-		1AC03C2CEE000100000001 /* MeetingRecordPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC03D2CEE000100000001 /* MeetingRecordPages.swift */; };
-		1AC03E2CEE000100000001 /* MeetingTaskReviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC03F2CEE000100000001 /* MeetingTaskReviewViews.swift */; };
-		1AC0402CEE000100000001 /* MinutesSentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0412CEE000100000001 /* MinutesSentView.swift */; };
-		1AC0422CEE000100000001 /* MinutesShareFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0432CEE000100000001 /* MinutesShareFlow.swift */; };
-		1AC0442CEE000100000001 /* SharedMinutesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0452CEE000100000001 /* SharedMinutesViews.swift */; };
-		1AC0462CEE000100000001 /* MinutesAttendanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0472CEE000100000001 /* MinutesAttendanceViews.swift */; };
-		1AC0482CEE000100000001 /* MinutesDocumentPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0492CEE000100000001 /* MinutesDocumentPreviewView.swift */; };
-		1AC04A2CEE000100000001 /* MinutesStudioModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC04B2CEE000100000001 /* MinutesStudioModel.swift */; };
-		1AC04C2CEE000100000001 /* MinutesStudioPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC04D2CEE000100000001 /* MinutesStudioPages.swift */; };
-		1AC04E2CEE000100000001 /* MinutesStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC04F2CEE000100000001 /* MinutesStudioView.swift */; };
-		1AC0502CEE000100000001 /* LiveNoteComposeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0512CEE000100000001 /* LiveNoteComposeBar.swift */; };
-		1AC0522CEE000100000001 /* MicrophoneUnavailableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0532CEE000100000001 /* MicrophoneUnavailableView.swift */; };
-		1AC0542CEE000100000001 /* NotesOnlyMinutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0552CEE000100000001 /* NotesOnlyMinutes.swift */; };
-		1AC0562CEE000100000001 /* NotesOnlyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0572CEE000100000001 /* NotesOnlyView.swift */; };
-		1AC0582CEE000100000001 /* SearchResultSectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0592CEE000100000001 /* SearchResultSectionsView.swift */; };
-		1AC05A2CEE000100000001 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC05B2CEE000100000001 /* AccountView.swift */; };
-		1AC05C2CEE000100000001 /* LocalRecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC05D2CEE000100000001 /* LocalRecordingsView.swift */; };
-		1AC05E2CEE000100000001 /* NotificationsInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC05F2CEE000100000001 /* NotificationsInboxView.swift */; };
-		1AC0602CEE000100000001 /* RecordingPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0612CEE000100000001 /* RecordingPlayerView.swift */; };
-		1AC0622CEE000100000001 /* VidurSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0632CEE000100000001 /* VidurSettingsView.swift */; };
-		1AC0642CEE000100000001 /* AddPeopleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0652CEE000100000001 /* AddPeopleSheet.swift */; };
-		1AC0662CEE000100000001 /* AppleCalendarAccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0672CEE000100000001 /* AppleCalendarAccessView.swift */; };
-		1AC0682CEE000100000001 /* PrepComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0692CEE000100000001 /* PrepComponents.swift */; };
-		1AC06A2CEE000100000001 /* MinutesApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC06B2CEE000100000001 /* MinutesApprovalView.swift */; };
-		1AC06C2CEE000100000001 /* SeriesComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC06D2CEE000100000001 /* SeriesComparisonView.swift */; };
-		1AC06E2CEE000100000001 /* ActionItemWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC06F2CEE000100000001 /* ActionItemWriterTests.swift */; };
-		1AC0702CEE000100000001 /* ActionListLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0712CEE000100000001 /* ActionListLogicTests.swift */; };
-		1AC0722CEE000100000001 /* TaskResponseStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0732CEE000100000001 /* TaskResponseStoreTests.swift */; };
-		1AC0742CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0752CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift */; };
-		1AC0762CEE000100000001 /* MeetingRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0772CEE000100000001 /* MeetingRecordTests.swift */; };
-		1AC0782CEE000100000001 /* MinutesStudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0792CEE000100000001 /* MinutesStudioTests.swift */; };
-		1AC07A2CEE000100000001 /* MeetingPreparationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC07B2CEE000100000001 /* MeetingPreparationTests.swift */; };
-		1AC07C2CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC07D2CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift */; };
-		1AC07E2CEE000100000001 /* LocalInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC07F2CEE000100000001 /* LocalInboxTests.swift */; };
-		1AC0802CEE000100000001 /* MinutesApprovalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0812CEE000100000001 /* MinutesApprovalTests.swift */; };
-		1AC0822CEE000100000001 /* SeriesDiffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0832CEE000100000001 /* SeriesDiffTests.swift */; };
-		1AE0002CEE000100000001 /* HomeRecentSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0002CEE000100000001 /* HomeRecentSectionView.swift */; };
-		1AE0012CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0012CEE000100000001 /* HomeUpcomingSectionView.swift */; };
-		1AE0022CEE000100000001 /* MeetingsHomeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0022CEE000100000001 /* MeetingsHomeRowView.swift */; };
-		1AE0032CEE000100000001 /* MeetingsSearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0032CEE000100000001 /* MeetingsSearchBarView.swift */; };
-		1AE0042CEE000100000001 /* VerifyEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0042CEE000100000001 /* VerifyEmailView.swift */; };
-		1AE0052CEE000100000001 /* WelcomeAndSignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0052CEE000100000001 /* WelcomeAndSignInView.swift */; };
-		1AE0062CEE000100000001 /* OtpDigitsRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0062CEE000100000001 /* OtpDigitsRowView.swift */; };
-		1AE0072CEE000100000001 /* SignInPanelSubviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0072CEE000100000001 /* SignInPanelSubviews.swift */; };
-		1AE0082CEE000100000001 /* MicrophoneCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0082CEE000100000001 /* MicrophoneCheckView.swift */; };
-		1AE0092CEE000100000001 /* MicWaveformCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE0092CEE000100000001 /* MicWaveformCardView.swift */; };
+		1A00C0012CEE000100000001 /* HomeRecentSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */; };
+		1A00C0032CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */; };
+		1A00C0052CEE000100000001 /* MeetingsHomeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */; };
+		1A00C0072CEE000100000001 /* MeetingsSearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0082CEE000100000001 /* MeetingsSearchBarView.swift */; };
+		1A00C0092CEE000100000001 /* VerifyEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00A2CEE000100000001 /* VerifyEmailView.swift */; };
+		1A00C00B2CEE000100000001 /* WelcomeAndSignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */; };
+		1A00C00D2CEE000100000001 /* OtpDigitsRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */; };
+		1A00C00F2CEE000100000001 /* SignInPanelSubviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */; };
+		1A00C0112CEE000100000001 /* MicrophoneCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0122CEE000100000001 /* MicrophoneCheckView.swift */; };
+		1A00C0132CEE000100000001 /* MicWaveformCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0142CEE000100000001 /* MicWaveformCardView.swift */; };
+		1A00C0002CEE000100000001 /* AnalysisCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */; };
+		1A00C0022CEE000100000001 /* AnalysisJobStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0032CEE000100000001 /* AnalysisJobStore.swift */; };
+		1A00C0042CEE000100000001 /* AppleCalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0052CEE000100000001 /* AppleCalendarService.swift */; };
+		1A00C0062CEE000100000001 /* MeetingPrepStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0072CEE000100000001 /* MeetingPrepStore.swift */; };
+		1A00C0082CEE000100000001 /* MeetingRecurrence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0092CEE000100000001 /* MeetingRecurrence.swift */; };
+		1A00C00A2CEE000100000001 /* MeetingPeopleEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00B2CEE000100000001 /* MeetingPeopleEditor.swift */; };
+		1A00C00C2CEE000100000001 /* MeetingRecordStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00D2CEE000100000001 /* MeetingRecordStore.swift */; };
+		1A00C00E2CEE000100000001 /* LocalDataEraser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00F2CEE000100000001 /* LocalDataEraser.swift */; };
+		1A00C0102CEE000100000001 /* LocalInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0112CEE000100000001 /* LocalInbox.swift */; };
+		1A00C0122CEE000100000001 /* LocalRecordingStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0132CEE000100000001 /* LocalRecordingStorage.swift */; };
+		1A00C0142CEE000100000001 /* MinutesDocumentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0152CEE000100000001 /* MinutesDocumentBuilder.swift */; };
+		1A00C0162CEE000100000001 /* MinutesPDFRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0172CEE000100000001 /* MinutesPDFRenderer.swift */; };
+		1A00C0182CEE000100000001 /* MinutesStudioModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0192CEE000100000001 /* MinutesStudioModels.swift */; };
+		1A00C01A2CEE000100000001 /* MinutesStudioStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C01B2CEE000100000001 /* MinutesStudioStore.swift */; };
+		1A00C01C2CEE000100000001 /* VidurPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C01D2CEE000100000001 /* VidurPreferences.swift */; };
+		1A00C01E2CEE000100000001 /* ActionDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C01F2CEE000100000001 /* ActionDraft.swift */; };
+		1A00C0202CEE000100000001 /* ActionListLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0212CEE000100000001 /* ActionListLogic.swift */; };
+		1A00C0222CEE000100000001 /* MeetingRepeatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0232CEE000100000001 /* MeetingRepeatService.swift */; };
+		1A00C0242CEE000100000001 /* TaskResponseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0252CEE000100000001 /* TaskResponseStore.swift */; };
+		1A00C0262CEE000100000001 /* MinutesApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0272CEE000100000001 /* MinutesApproval.swift */; };
+		1A00C0282CEE000100000001 /* SeriesDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0292CEE000100000001 /* SeriesDiff.swift */; };
+		1A00C02A2CEE000100000001 /* VidurAnswerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C02B2CEE000100000001 /* VidurAnswerService.swift */; };
+		1A00C02C2CEE000100000001 /* ActionTaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C02D2CEE000100000001 /* ActionTaskDetailView.swift */; };
+		1A00C02E2CEE000100000001 /* NewActionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C02F2CEE000100000001 /* NewActionSheet.swift */; };
+		1A00C0302CEE000100000001 /* RepeatMeetingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0312CEE000100000001 /* RepeatMeetingSheet.swift */; };
+		1A00C0322CEE000100000001 /* TaskAssignmentResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0332CEE000100000001 /* TaskAssignmentResponseView.swift */; };
+		1A00C0342CEE000100000001 /* ActionFormComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0352CEE000100000001 /* ActionFormComponents.swift */; };
+		1A00C0362CEE000100000001 /* ActionsListSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0372CEE000100000001 /* ActionsListSectionView.swift */; };
+		1A00C0382CEE000100000001 /* EditSavedMinutesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0392CEE000100000001 /* EditSavedMinutesSheet.swift */; };
+		1A00C03A2CEE000100000001 /* MeetingDecisionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C03B2CEE000100000001 /* MeetingDecisionViews.swift */; };
+		1A00C03C2CEE000100000001 /* MeetingPeopleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C03D2CEE000100000001 /* MeetingPeopleSheet.swift */; };
+		1A00C03E2CEE000100000001 /* MeetingRecordHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C03F2CEE000100000001 /* MeetingRecordHeader.swift */; };
+		1A00C0402CEE000100000001 /* MeetingRecordPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0412CEE000100000001 /* MeetingRecordPages.swift */; };
+		1A00C0422CEE000100000001 /* MeetingTaskReviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0432CEE000100000001 /* MeetingTaskReviewViews.swift */; };
+		1A00C0442CEE000100000001 /* MinutesSentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0452CEE000100000001 /* MinutesSentView.swift */; };
+		1A00C0462CEE000100000001 /* MinutesShareFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0472CEE000100000001 /* MinutesShareFlow.swift */; };
+		1A00C0482CEE000100000001 /* SharedMinutesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0492CEE000100000001 /* SharedMinutesViews.swift */; };
+		1A00C04A2CEE000100000001 /* MinutesAttendanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C04B2CEE000100000001 /* MinutesAttendanceViews.swift */; };
+		1A00C04C2CEE000100000001 /* MinutesDocumentPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C04D2CEE000100000001 /* MinutesDocumentPreviewView.swift */; };
+		1A00C04E2CEE000100000001 /* MinutesStudioModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C04F2CEE000100000001 /* MinutesStudioModel.swift */; };
+		1A00C0502CEE000100000001 /* MinutesStudioPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0512CEE000100000001 /* MinutesStudioPages.swift */; };
+		1A00C0522CEE000100000001 /* MinutesStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0532CEE000100000001 /* MinutesStudioView.swift */; };
+		1A00C0542CEE000100000001 /* LiveNoteComposeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0552CEE000100000001 /* LiveNoteComposeBar.swift */; };
+		1A00C0562CEE000100000001 /* MicrophoneUnavailableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0572CEE000100000001 /* MicrophoneUnavailableView.swift */; };
+		1A00C0582CEE000100000001 /* NotesOnlyMinutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0592CEE000100000001 /* NotesOnlyMinutes.swift */; };
+		1A00C05A2CEE000100000001 /* NotesOnlyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05B2CEE000100000001 /* NotesOnlyView.swift */; };
+		1A00C05C2CEE000100000001 /* SearchResultSectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05D2CEE000100000001 /* SearchResultSectionsView.swift */; };
+		1A00C05E2CEE000100000001 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05F2CEE000100000001 /* AccountView.swift */; };
+		1A00C0602CEE000100000001 /* LocalRecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0612CEE000100000001 /* LocalRecordingsView.swift */; };
+		1A00C0622CEE000100000001 /* NotificationsInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0632CEE000100000001 /* NotificationsInboxView.swift */; };
+		1A00C0642CEE000100000001 /* RecordingPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0652CEE000100000001 /* RecordingPlayerView.swift */; };
+		1A00C0662CEE000100000001 /* VidurSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0672CEE000100000001 /* VidurSettingsView.swift */; };
+		1A00C0682CEE000100000001 /* AddPeopleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0692CEE000100000001 /* AddPeopleSheet.swift */; };
+		1A00C06A2CEE000100000001 /* AppleCalendarAccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C06B2CEE000100000001 /* AppleCalendarAccessView.swift */; };
+		1A00C06C2CEE000100000001 /* PrepComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C06D2CEE000100000001 /* PrepComponents.swift */; };
+		1A00C06E2CEE000100000001 /* MinutesApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C06F2CEE000100000001 /* MinutesApprovalView.swift */; };
+		1A00C0702CEE000100000001 /* SeriesComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0712CEE000100000001 /* SeriesComparisonView.swift */; };
+		1A00C0722CEE000100000001 /* ActionItemWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0732CEE000100000001 /* ActionItemWriterTests.swift */; };
+		1A00C0742CEE000100000001 /* ActionListLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0752CEE000100000001 /* ActionListLogicTests.swift */; };
+		1A00C0762CEE000100000001 /* TaskResponseStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0772CEE000100000001 /* TaskResponseStoreTests.swift */; };
+		1A00C0782CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0792CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift */; };
+		1A00C07A2CEE000100000001 /* MeetingRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C07B2CEE000100000001 /* MeetingRecordTests.swift */; };
+		1A00C07C2CEE000100000001 /* MinutesStudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C07D2CEE000100000001 /* MinutesStudioTests.swift */; };
+		1A00C07E2CEE000100000001 /* MeetingPreparationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C07F2CEE000100000001 /* MeetingPreparationTests.swift */; };
+		1A00C0802CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0812CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift */; };
+		1A00C0822CEE000100000001 /* LocalInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0832CEE000100000001 /* LocalInboxTests.swift */; };
+		1A00C0842CEE000100000001 /* MinutesApprovalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0852CEE000100000001 /* MinutesApprovalTests.swift */; };
+		1A00C0862CEE000100000001 /* SeriesDiffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0872CEE000100000001 /* SeriesDiffTests.swift */; };
 		1A0000012CEE000100000001 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000012CEE000100000001 /* Theme.swift */; };
 		1A0000022CEE000100000001 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000022CEE000100000001 /* Typography.swift */; };
 		1A0000032CEE000100000001 /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000032CEE000100000001 /* Spacing.swift */; };
@@ -291,82 +293,84 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		1BC0012CEE000100000001 /* AppleCalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/AppleCalendarService.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0032CEE000100000001 /* MeetingPrepStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/MeetingPrepStore.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0052CEE000100000001 /* MeetingRecurrence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/MeetingRecurrence.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0072CEE000100000001 /* MeetingPeopleEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingPeopleEditor.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0092CEE000100000001 /* MeetingRecordStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingRecordStore.swift"; sourceTree = SOURCE_ROOT; };
-		1BC00B2CEE000100000001 /* LocalDataEraser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/LocalInbox/LocalDataEraser.swift"; sourceTree = SOURCE_ROOT; };
-		1BC00D2CEE000100000001 /* LocalInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/LocalInbox/LocalInbox.swift"; sourceTree = SOURCE_ROOT; };
-		1BC00F2CEE000100000001 /* LocalRecordingStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/LocalInbox/LocalRecordingStorage.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0112CEE000100000001 /* MinutesDocumentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MinutesDocumentBuilder.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0132CEE000100000001 /* MinutesPDFRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MinutesPDFRenderer.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0152CEE000100000001 /* MinutesStudioModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MinutesStudioModels.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0172CEE000100000001 /* MinutesStudioStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MinutesStudioStore.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0192CEE000100000001 /* VidurPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Preferences/VidurPreferences.swift"; sourceTree = SOURCE_ROOT; };
-		1BC01B2CEE000100000001 /* ActionDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Tasks/ActionDraft.swift"; sourceTree = SOURCE_ROOT; };
-		1BC01D2CEE000100000001 /* ActionListLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Tasks/ActionListLogic.swift"; sourceTree = SOURCE_ROOT; };
-		1BC01F2CEE000100000001 /* MeetingRepeatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Tasks/MeetingRepeatService.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0212CEE000100000001 /* TaskResponseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Tasks/TaskResponseStore.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0232CEE000100000001 /* MinutesApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/MinutesApproval.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0252CEE000100000001 /* SeriesDiff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/SeriesDiff.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0272CEE000100000001 /* VidurAnswerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurAnswerService.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0292CEE000100000001 /* ActionTaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/ActionTaskDetailView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC02B2CEE000100000001 /* NewActionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/NewActionSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1BC02D2CEE000100000001 /* RepeatMeetingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/RepeatMeetingSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1BC02F2CEE000100000001 /* TaskAssignmentResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/TaskAssignmentResponseView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0312CEE000100000001 /* ActionFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionFormComponents.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0332CEE000100000001 /* ActionsListSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionsListSectionView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0352CEE000100000001 /* EditSavedMinutesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/EditSavedMinutesSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0372CEE000100000001 /* MeetingDecisionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingDecisionViews.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0392CEE000100000001 /* MeetingPeopleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingPeopleSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1BC03B2CEE000100000001 /* MeetingRecordHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingRecordHeader.swift"; sourceTree = SOURCE_ROOT; };
-		1BC03D2CEE000100000001 /* MeetingRecordPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingRecordPages.swift"; sourceTree = SOURCE_ROOT; };
-		1BC03F2CEE000100000001 /* MeetingTaskReviewViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingTaskReviewViews.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0412CEE000100000001 /* MinutesSentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MinutesSentView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0432CEE000100000001 /* MinutesShareFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MinutesShareFlow.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0452CEE000100000001 /* SharedMinutesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/SharedMinutesViews.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0472CEE000100000001 /* MinutesAttendanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesAttendanceViews.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0492CEE000100000001 /* MinutesDocumentPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesDocumentPreviewView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC04B2CEE000100000001 /* MinutesStudioModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesStudioModel.swift"; sourceTree = SOURCE_ROOT; };
-		1BC04D2CEE000100000001 /* MinutesStudioPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesStudioPages.swift"; sourceTree = SOURCE_ROOT; };
-		1BC04F2CEE000100000001 /* MinutesStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesStudioView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0512CEE000100000001 /* LiveNoteComposeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveNoteComposeBar.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0532CEE000100000001 /* MicrophoneUnavailableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/MicrophoneUnavailableView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0552CEE000100000001 /* NotesOnlyMinutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/NotesOnlyMinutes.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0572CEE000100000001 /* NotesOnlyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/NotesOnlyView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0592CEE000100000001 /* SearchResultSectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Search/Components/SearchResultSectionsView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC05B2CEE000100000001 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/AccountView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC05D2CEE000100000001 /* LocalRecordingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/LocalRecordingsView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC05F2CEE000100000001 /* NotificationsInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/NotificationsInboxView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0612CEE000100000001 /* RecordingPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/RecordingPlayerView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0632CEE000100000001 /* VidurSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/VidurSettingsView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0652CEE000100000001 /* AddPeopleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/AddPeopleSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0672CEE000100000001 /* AppleCalendarAccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/AppleCalendarAccessView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0692CEE000100000001 /* PrepComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/PrepComponents.swift"; sourceTree = SOURCE_ROOT; };
-		1BC06B2CEE000100000001 /* MinutesApprovalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Vidur/MinutesApprovalView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC06D2CEE000100000001 /* SeriesComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Vidur/SeriesComparisonView.swift"; sourceTree = SOURCE_ROOT; };
-		1BC06F2CEE000100000001 /* ActionItemWriterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Actions/ActionItemWriterTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0712CEE000100000001 /* ActionListLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Actions/ActionListLogicTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0732CEE000100000001 /* TaskResponseStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Actions/TaskResponseStoreTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0752CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Home/HomeGroupingAndSearchScopeTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0772CEE000100000001 /* MeetingRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/MeetingRecordTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0792CEE000100000001 /* MinutesStudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MinutesStudio/MinutesStudioTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC07B2CEE000100000001 /* MeetingPreparationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Prepare/MeetingPreparationTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC07D2CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Recording/NotesOnlyMinutesBuilderTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC07F2CEE000100000001 /* LocalInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Settings/LocalInboxTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0812CEE000100000001 /* MinutesApprovalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Vidur/MinutesApprovalTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BC0832CEE000100000001 /* SeriesDiffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Vidur/SeriesDiffTests.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0002CEE000100000001 /* HomeRecentSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeRecentSectionView.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0012CEE000100000001 /* HomeUpcomingSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeUpcomingSectionView.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0022CEE000100000001 /* MeetingsHomeRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsHomeRowView.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0032CEE000100000001 /* MeetingsSearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsSearchBarView.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0042CEE000100000001 /* VerifyEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/VerifyEmailView.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0052CEE000100000001 /* WelcomeAndSignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/WelcomeAndSignInView.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0062CEE000100000001 /* OtpDigitsRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/OtpDigitsRowView.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0072CEE000100000001 /* SignInPanelSubviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/SignInPanelSubviews.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0082CEE000100000001 /* MicrophoneCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/MicrophoneCheckView.swift"; sourceTree = SOURCE_ROOT; };
-		1BE0092CEE000100000001 /* MicWaveformCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/Components/MicWaveformCardView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeRecentSectionView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeUpcomingSectionView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsHomeRowView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0082CEE000100000001 /* MeetingsSearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsSearchBarView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C00A2CEE000100000001 /* VerifyEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/VerifyEmailView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/WelcomeAndSignInView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/OtpDigitsRowView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/SignInPanelSubviews.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0122CEE000100000001 /* MicrophoneCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/MicrophoneCheckView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0142CEE000100000001 /* MicWaveformCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/Components/MicWaveformCardView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Analysis/AnalysisCoordinator.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0032CEE000100000001 /* AnalysisJobStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Analysis/AnalysisJobStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0052CEE000100000001 /* AppleCalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/AppleCalendarService.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0072CEE000100000001 /* MeetingPrepStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/MeetingPrepStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0092CEE000100000001 /* MeetingRecurrence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/MeetingRecurrence.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C00B2CEE000100000001 /* MeetingPeopleEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingPeopleEditor.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C00D2CEE000100000001 /* MeetingRecordStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingRecordStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C00F2CEE000100000001 /* LocalDataEraser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/LocalInbox/LocalDataEraser.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0112CEE000100000001 /* LocalInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/LocalInbox/LocalInbox.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0132CEE000100000001 /* LocalRecordingStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/LocalInbox/LocalRecordingStorage.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0152CEE000100000001 /* MinutesDocumentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MinutesDocumentBuilder.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0172CEE000100000001 /* MinutesPDFRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MinutesPDFRenderer.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0192CEE000100000001 /* MinutesStudioModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MinutesStudioModels.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C01B2CEE000100000001 /* MinutesStudioStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MinutesStudioStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C01D2CEE000100000001 /* VidurPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Preferences/VidurPreferences.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C01F2CEE000100000001 /* ActionDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Tasks/ActionDraft.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0212CEE000100000001 /* ActionListLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Tasks/ActionListLogic.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0232CEE000100000001 /* MeetingRepeatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Tasks/MeetingRepeatService.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0252CEE000100000001 /* TaskResponseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Tasks/TaskResponseStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0272CEE000100000001 /* MinutesApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/MinutesApproval.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0292CEE000100000001 /* SeriesDiff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/SeriesDiff.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C02B2CEE000100000001 /* VidurAnswerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurAnswerService.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C02D2CEE000100000001 /* ActionTaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/ActionTaskDetailView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C02F2CEE000100000001 /* NewActionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/NewActionSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0312CEE000100000001 /* RepeatMeetingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/RepeatMeetingSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0332CEE000100000001 /* TaskAssignmentResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/TaskAssignmentResponseView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0352CEE000100000001 /* ActionFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionFormComponents.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0372CEE000100000001 /* ActionsListSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionsListSectionView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0392CEE000100000001 /* EditSavedMinutesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/EditSavedMinutesSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C03B2CEE000100000001 /* MeetingDecisionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingDecisionViews.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C03D2CEE000100000001 /* MeetingPeopleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingPeopleSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C03F2CEE000100000001 /* MeetingRecordHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingRecordHeader.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0412CEE000100000001 /* MeetingRecordPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingRecordPages.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0432CEE000100000001 /* MeetingTaskReviewViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingTaskReviewViews.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0452CEE000100000001 /* MinutesSentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MinutesSentView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0472CEE000100000001 /* MinutesShareFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MinutesShareFlow.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0492CEE000100000001 /* SharedMinutesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/SharedMinutesViews.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C04B2CEE000100000001 /* MinutesAttendanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesAttendanceViews.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C04D2CEE000100000001 /* MinutesDocumentPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesDocumentPreviewView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C04F2CEE000100000001 /* MinutesStudioModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesStudioModel.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0512CEE000100000001 /* MinutesStudioPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesStudioPages.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0532CEE000100000001 /* MinutesStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/MinutesStudio/MinutesStudioView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0552CEE000100000001 /* LiveNoteComposeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveNoteComposeBar.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0572CEE000100000001 /* MicrophoneUnavailableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/MicrophoneUnavailableView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0592CEE000100000001 /* NotesOnlyMinutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/NotesOnlyMinutes.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C05B2CEE000100000001 /* NotesOnlyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/NotesOnlyView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C05D2CEE000100000001 /* SearchResultSectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Search/Components/SearchResultSectionsView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C05F2CEE000100000001 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/AccountView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0612CEE000100000001 /* LocalRecordingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/LocalRecordingsView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0632CEE000100000001 /* NotificationsInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/NotificationsInboxView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0652CEE000100000001 /* RecordingPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/RecordingPlayerView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0672CEE000100000001 /* VidurSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/VidurSettingsView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0692CEE000100000001 /* AddPeopleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/AddPeopleSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C06B2CEE000100000001 /* AppleCalendarAccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/AppleCalendarAccessView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C06D2CEE000100000001 /* PrepComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/PrepComponents.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C06F2CEE000100000001 /* MinutesApprovalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Vidur/MinutesApprovalView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0712CEE000100000001 /* SeriesComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Vidur/SeriesComparisonView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0732CEE000100000001 /* ActionItemWriterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Actions/ActionItemWriterTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0752CEE000100000001 /* ActionListLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Actions/ActionListLogicTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0772CEE000100000001 /* TaskResponseStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Actions/TaskResponseStoreTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0792CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Home/HomeGroupingAndSearchScopeTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C07B2CEE000100000001 /* MeetingRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/MeetingRecordTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C07D2CEE000100000001 /* MinutesStudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MinutesStudio/MinutesStudioTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C07F2CEE000100000001 /* MeetingPreparationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Prepare/MeetingPreparationTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0812CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Recording/NotesOnlyMinutesBuilderTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0832CEE000100000001 /* LocalInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Settings/LocalInboxTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0852CEE000100000001 /* MinutesApprovalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Vidur/MinutesApprovalTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0872CEE000100000001 /* SeriesDiffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Vidur/SeriesDiffTests.swift"; sourceTree = SOURCE_ROOT; };
 		1F0000012CEE000100000001 /* MeetMind.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeetMind.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1F0000022CEE000100000001 /* MeetMindTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MeetMindTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B0000012CEE000100000001 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Theme.swift"; sourceTree = SOURCE_ROOT; };
@@ -598,61 +602,73 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
-				1BC0012CEE000100000001 /* AppleCalendarService.swift */,
-				1BC0032CEE000100000001 /* MeetingPrepStore.swift */,
-				1BC0052CEE000100000001 /* MeetingRecurrence.swift */,
-				1BC0072CEE000100000001 /* MeetingPeopleEditor.swift */,
-				1BC0092CEE000100000001 /* MeetingRecordStore.swift */,
-				1BC00B2CEE000100000001 /* LocalDataEraser.swift */,
-				1BC00D2CEE000100000001 /* LocalInbox.swift */,
-				1BC00F2CEE000100000001 /* LocalRecordingStorage.swift */,
-				1BC0112CEE000100000001 /* MinutesDocumentBuilder.swift */,
-				1BC0132CEE000100000001 /* MinutesPDFRenderer.swift */,
-				1BC0152CEE000100000001 /* MinutesStudioModels.swift */,
-				1BC0172CEE000100000001 /* MinutesStudioStore.swift */,
-				1BC0192CEE000100000001 /* VidurPreferences.swift */,
-				1BC01B2CEE000100000001 /* ActionDraft.swift */,
-				1BC01D2CEE000100000001 /* ActionListLogic.swift */,
-				1BC01F2CEE000100000001 /* MeetingRepeatService.swift */,
-				1BC0212CEE000100000001 /* TaskResponseStore.swift */,
-				1BC0232CEE000100000001 /* MinutesApproval.swift */,
-				1BC0252CEE000100000001 /* SeriesDiff.swift */,
-				1BC0272CEE000100000001 /* VidurAnswerService.swift */,
-				1BC0292CEE000100000001 /* ActionTaskDetailView.swift */,
-				1BC02B2CEE000100000001 /* NewActionSheet.swift */,
-				1BC02D2CEE000100000001 /* RepeatMeetingSheet.swift */,
-				1BC02F2CEE000100000001 /* TaskAssignmentResponseView.swift */,
-				1BC0312CEE000100000001 /* ActionFormComponents.swift */,
-				1BC0332CEE000100000001 /* ActionsListSectionView.swift */,
-				1BC0352CEE000100000001 /* EditSavedMinutesSheet.swift */,
-				1BC0372CEE000100000001 /* MeetingDecisionViews.swift */,
-				1BC0392CEE000100000001 /* MeetingPeopleSheet.swift */,
-				1BC03B2CEE000100000001 /* MeetingRecordHeader.swift */,
-				1BC03D2CEE000100000001 /* MeetingRecordPages.swift */,
-				1BC03F2CEE000100000001 /* MeetingTaskReviewViews.swift */,
-				1BC0412CEE000100000001 /* MinutesSentView.swift */,
-				1BC0432CEE000100000001 /* MinutesShareFlow.swift */,
-				1BC0452CEE000100000001 /* SharedMinutesViews.swift */,
-				1BC0472CEE000100000001 /* MinutesAttendanceViews.swift */,
-				1BC0492CEE000100000001 /* MinutesDocumentPreviewView.swift */,
-				1BC04B2CEE000100000001 /* MinutesStudioModel.swift */,
-				1BC04D2CEE000100000001 /* MinutesStudioPages.swift */,
-				1BC04F2CEE000100000001 /* MinutesStudioView.swift */,
-				1BC0512CEE000100000001 /* LiveNoteComposeBar.swift */,
-				1BC0532CEE000100000001 /* MicrophoneUnavailableView.swift */,
-				1BC0552CEE000100000001 /* NotesOnlyMinutes.swift */,
-				1BC0572CEE000100000001 /* NotesOnlyView.swift */,
-				1BC0592CEE000100000001 /* SearchResultSectionsView.swift */,
-				1BC05B2CEE000100000001 /* AccountView.swift */,
-				1BC05D2CEE000100000001 /* LocalRecordingsView.swift */,
-				1BC05F2CEE000100000001 /* NotificationsInboxView.swift */,
-				1BC0612CEE000100000001 /* RecordingPlayerView.swift */,
-				1BC0632CEE000100000001 /* VidurSettingsView.swift */,
-				1BC0652CEE000100000001 /* AddPeopleSheet.swift */,
-				1BC0672CEE000100000001 /* AppleCalendarAccessView.swift */,
-				1BC0692CEE000100000001 /* PrepComponents.swift */,
-				1BC06B2CEE000100000001 /* MinutesApprovalView.swift */,
-				1BC06D2CEE000100000001 /* SeriesComparisonView.swift */,
+				1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */,
+				1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */,
+				1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */,
+				1B00C0082CEE000100000001 /* MeetingsSearchBarView.swift */,
+				1B00C00A2CEE000100000001 /* VerifyEmailView.swift */,
+				1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */,
+				1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */,
+				1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */,
+				1B00C0122CEE000100000001 /* MicrophoneCheckView.swift */,
+				1B00C0142CEE000100000001 /* MicWaveformCardView.swift */,
+				1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */,
+				1B00C0032CEE000100000001 /* AnalysisJobStore.swift */,
+				1B00C0052CEE000100000001 /* AppleCalendarService.swift */,
+				1B00C0072CEE000100000001 /* MeetingPrepStore.swift */,
+				1B00C0092CEE000100000001 /* MeetingRecurrence.swift */,
+				1B00C00B2CEE000100000001 /* MeetingPeopleEditor.swift */,
+				1B00C00D2CEE000100000001 /* MeetingRecordStore.swift */,
+				1B00C00F2CEE000100000001 /* LocalDataEraser.swift */,
+				1B00C0112CEE000100000001 /* LocalInbox.swift */,
+				1B00C0132CEE000100000001 /* LocalRecordingStorage.swift */,
+				1B00C0152CEE000100000001 /* MinutesDocumentBuilder.swift */,
+				1B00C0172CEE000100000001 /* MinutesPDFRenderer.swift */,
+				1B00C0192CEE000100000001 /* MinutesStudioModels.swift */,
+				1B00C01B2CEE000100000001 /* MinutesStudioStore.swift */,
+				1B00C01D2CEE000100000001 /* VidurPreferences.swift */,
+				1B00C01F2CEE000100000001 /* ActionDraft.swift */,
+				1B00C0212CEE000100000001 /* ActionListLogic.swift */,
+				1B00C0232CEE000100000001 /* MeetingRepeatService.swift */,
+				1B00C0252CEE000100000001 /* TaskResponseStore.swift */,
+				1B00C0272CEE000100000001 /* MinutesApproval.swift */,
+				1B00C0292CEE000100000001 /* SeriesDiff.swift */,
+				1B00C02B2CEE000100000001 /* VidurAnswerService.swift */,
+				1B00C02D2CEE000100000001 /* ActionTaskDetailView.swift */,
+				1B00C02F2CEE000100000001 /* NewActionSheet.swift */,
+				1B00C0312CEE000100000001 /* RepeatMeetingSheet.swift */,
+				1B00C0332CEE000100000001 /* TaskAssignmentResponseView.swift */,
+				1B00C0352CEE000100000001 /* ActionFormComponents.swift */,
+				1B00C0372CEE000100000001 /* ActionsListSectionView.swift */,
+				1B00C0392CEE000100000001 /* EditSavedMinutesSheet.swift */,
+				1B00C03B2CEE000100000001 /* MeetingDecisionViews.swift */,
+				1B00C03D2CEE000100000001 /* MeetingPeopleSheet.swift */,
+				1B00C03F2CEE000100000001 /* MeetingRecordHeader.swift */,
+				1B00C0412CEE000100000001 /* MeetingRecordPages.swift */,
+				1B00C0432CEE000100000001 /* MeetingTaskReviewViews.swift */,
+				1B00C0452CEE000100000001 /* MinutesSentView.swift */,
+				1B00C0472CEE000100000001 /* MinutesShareFlow.swift */,
+				1B00C0492CEE000100000001 /* SharedMinutesViews.swift */,
+				1B00C04B2CEE000100000001 /* MinutesAttendanceViews.swift */,
+				1B00C04D2CEE000100000001 /* MinutesDocumentPreviewView.swift */,
+				1B00C04F2CEE000100000001 /* MinutesStudioModel.swift */,
+				1B00C0512CEE000100000001 /* MinutesStudioPages.swift */,
+				1B00C0532CEE000100000001 /* MinutesStudioView.swift */,
+				1B00C0552CEE000100000001 /* LiveNoteComposeBar.swift */,
+				1B00C0572CEE000100000001 /* MicrophoneUnavailableView.swift */,
+				1B00C0592CEE000100000001 /* NotesOnlyMinutes.swift */,
+				1B00C05B2CEE000100000001 /* NotesOnlyView.swift */,
+				1B00C05D2CEE000100000001 /* SearchResultSectionsView.swift */,
+				1B00C05F2CEE000100000001 /* AccountView.swift */,
+				1B00C0612CEE000100000001 /* LocalRecordingsView.swift */,
+				1B00C0632CEE000100000001 /* NotificationsInboxView.swift */,
+				1B00C0652CEE000100000001 /* RecordingPlayerView.swift */,
+				1B00C0672CEE000100000001 /* VidurSettingsView.swift */,
+				1B00C0692CEE000100000001 /* AddPeopleSheet.swift */,
+				1B00C06B2CEE000100000001 /* AppleCalendarAccessView.swift */,
+				1B00C06D2CEE000100000001 /* PrepComponents.swift */,
+				1B00C06F2CEE000100000001 /* MinutesApprovalView.swift */,
+				1B00C0712CEE000100000001 /* SeriesComparisonView.swift */,
 				1D0000162CEE000100000001 /* App */,
 				1D0000062CEE000100000001 /* DesignSystem */,
 				1D0000072CEE000100000001 /* Models */,
@@ -792,17 +808,17 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
-				1BC06F2CEE000100000001 /* ActionItemWriterTests.swift */,
-				1BC0712CEE000100000001 /* ActionListLogicTests.swift */,
-				1BC0732CEE000100000001 /* TaskResponseStoreTests.swift */,
-				1BC0752CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift */,
-				1BC0772CEE000100000001 /* MeetingRecordTests.swift */,
-				1BC0792CEE000100000001 /* MinutesStudioTests.swift */,
-				1BC07B2CEE000100000001 /* MeetingPreparationTests.swift */,
-				1BC07D2CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift */,
-				1BC07F2CEE000100000001 /* LocalInboxTests.swift */,
-				1BC0812CEE000100000001 /* MinutesApprovalTests.swift */,
-				1BC0832CEE000100000001 /* SeriesDiffTests.swift */,
+				1B00C0732CEE000100000001 /* ActionItemWriterTests.swift */,
+				1B00C0752CEE000100000001 /* ActionListLogicTests.swift */,
+				1B00C0772CEE000100000001 /* TaskResponseStoreTests.swift */,
+				1B00C0792CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift */,
+				1B00C07B2CEE000100000001 /* MeetingRecordTests.swift */,
+				1B00C07D2CEE000100000001 /* MinutesStudioTests.swift */,
+				1B00C07F2CEE000100000001 /* MeetingPreparationTests.swift */,
+				1B00C0812CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift */,
+				1B00C0832CEE000100000001 /* LocalInboxTests.swift */,
+				1B00C0852CEE000100000001 /* MinutesApprovalTests.swift */,
+				1B00C0872CEE000100000001 /* SeriesDiffTests.swift */,
 				1D0000122CEE000100000001 /* Models */,
 				1D0000132CEE000100000001 /* Services */,
 				1D0000142CEE000100000001 /* ViewModels */,
@@ -927,16 +943,6 @@
 		1D0000172CEE000100000001 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				1BE0002CEE000100000001 /* HomeRecentSectionView.swift */,
-				1BE0012CEE000100000001 /* HomeUpcomingSectionView.swift */,
-				1BE0022CEE000100000001 /* MeetingsHomeRowView.swift */,
-				1BE0032CEE000100000001 /* MeetingsSearchBarView.swift */,
-				1BE0042CEE000100000001 /* VerifyEmailView.swift */,
-				1BE0052CEE000100000001 /* WelcomeAndSignInView.swift */,
-				1BE0062CEE000100000001 /* OtpDigitsRowView.swift */,
-				1BE0072CEE000100000001 /* SignInPanelSubviews.swift */,
-				1BE0082CEE000100000001 /* MicrophoneCheckView.swift */,
-				1BE0092CEE000100000001 /* MicWaveformCardView.swift */,
 				1D00001C2CEE000100000001 /* Home */,
 				1D00001E2CEE000100000001 /* Setup */,
 				1D0000192CEE000100000001 /* Navigation */,
@@ -1163,72 +1169,74 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1AC0002CEE000100000001 /* AppleCalendarService.swift in Sources */,
-				1AC0022CEE000100000001 /* MeetingPrepStore.swift in Sources */,
-				1AC0042CEE000100000001 /* MeetingRecurrence.swift in Sources */,
-				1AC0062CEE000100000001 /* MeetingPeopleEditor.swift in Sources */,
-				1AC0082CEE000100000001 /* MeetingRecordStore.swift in Sources */,
-				1AC00A2CEE000100000001 /* LocalDataEraser.swift in Sources */,
-				1AC00C2CEE000100000001 /* LocalInbox.swift in Sources */,
-				1AC00E2CEE000100000001 /* LocalRecordingStorage.swift in Sources */,
-				1AC0102CEE000100000001 /* MinutesDocumentBuilder.swift in Sources */,
-				1AC0122CEE000100000001 /* MinutesPDFRenderer.swift in Sources */,
-				1AC0142CEE000100000001 /* MinutesStudioModels.swift in Sources */,
-				1AC0162CEE000100000001 /* MinutesStudioStore.swift in Sources */,
-				1AC0182CEE000100000001 /* VidurPreferences.swift in Sources */,
-				1AC01A2CEE000100000001 /* ActionDraft.swift in Sources */,
-				1AC01C2CEE000100000001 /* ActionListLogic.swift in Sources */,
-				1AC01E2CEE000100000001 /* MeetingRepeatService.swift in Sources */,
-				1AC0202CEE000100000001 /* TaskResponseStore.swift in Sources */,
-				1AC0222CEE000100000001 /* MinutesApproval.swift in Sources */,
-				1AC0242CEE000100000001 /* SeriesDiff.swift in Sources */,
-				1AC0262CEE000100000001 /* VidurAnswerService.swift in Sources */,
-				1AC0282CEE000100000001 /* ActionTaskDetailView.swift in Sources */,
-				1AC02A2CEE000100000001 /* NewActionSheet.swift in Sources */,
-				1AC02C2CEE000100000001 /* RepeatMeetingSheet.swift in Sources */,
-				1AC02E2CEE000100000001 /* TaskAssignmentResponseView.swift in Sources */,
-				1AC0302CEE000100000001 /* ActionFormComponents.swift in Sources */,
-				1AC0322CEE000100000001 /* ActionsListSectionView.swift in Sources */,
-				1AC0342CEE000100000001 /* EditSavedMinutesSheet.swift in Sources */,
-				1AC0362CEE000100000001 /* MeetingDecisionViews.swift in Sources */,
-				1AC0382CEE000100000001 /* MeetingPeopleSheet.swift in Sources */,
-				1AC03A2CEE000100000001 /* MeetingRecordHeader.swift in Sources */,
-				1AC03C2CEE000100000001 /* MeetingRecordPages.swift in Sources */,
-				1AC03E2CEE000100000001 /* MeetingTaskReviewViews.swift in Sources */,
-				1AC0402CEE000100000001 /* MinutesSentView.swift in Sources */,
-				1AC0422CEE000100000001 /* MinutesShareFlow.swift in Sources */,
-				1AC0442CEE000100000001 /* SharedMinutesViews.swift in Sources */,
-				1AC0462CEE000100000001 /* MinutesAttendanceViews.swift in Sources */,
-				1AC0482CEE000100000001 /* MinutesDocumentPreviewView.swift in Sources */,
-				1AC04A2CEE000100000001 /* MinutesStudioModel.swift in Sources */,
-				1AC04C2CEE000100000001 /* MinutesStudioPages.swift in Sources */,
-				1AC04E2CEE000100000001 /* MinutesStudioView.swift in Sources */,
-				1AC0502CEE000100000001 /* LiveNoteComposeBar.swift in Sources */,
-				1AC0522CEE000100000001 /* MicrophoneUnavailableView.swift in Sources */,
-				1AC0542CEE000100000001 /* NotesOnlyMinutes.swift in Sources */,
-				1AC0562CEE000100000001 /* NotesOnlyView.swift in Sources */,
-				1AC0582CEE000100000001 /* SearchResultSectionsView.swift in Sources */,
-				1AC05A2CEE000100000001 /* AccountView.swift in Sources */,
-				1AC05C2CEE000100000001 /* LocalRecordingsView.swift in Sources */,
-				1AC05E2CEE000100000001 /* NotificationsInboxView.swift in Sources */,
-				1AC0602CEE000100000001 /* RecordingPlayerView.swift in Sources */,
-				1AC0622CEE000100000001 /* VidurSettingsView.swift in Sources */,
-				1AC0642CEE000100000001 /* AddPeopleSheet.swift in Sources */,
-				1AC0662CEE000100000001 /* AppleCalendarAccessView.swift in Sources */,
-				1AC0682CEE000100000001 /* PrepComponents.swift in Sources */,
-				1AC06A2CEE000100000001 /* MinutesApprovalView.swift in Sources */,
-				1AC06C2CEE000100000001 /* SeriesComparisonView.swift in Sources */,
+				1A00C0012CEE000100000001 /* HomeRecentSectionView.swift in Sources */,
+				1A00C0032CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */,
+				1A00C0052CEE000100000001 /* MeetingsHomeRowView.swift in Sources */,
+				1A00C0072CEE000100000001 /* MeetingsSearchBarView.swift in Sources */,
+				1A00C0092CEE000100000001 /* VerifyEmailView.swift in Sources */,
+				1A00C00B2CEE000100000001 /* WelcomeAndSignInView.swift in Sources */,
+				1A00C00D2CEE000100000001 /* OtpDigitsRowView.swift in Sources */,
+				1A00C00F2CEE000100000001 /* SignInPanelSubviews.swift in Sources */,
+				1A00C0112CEE000100000001 /* MicrophoneCheckView.swift in Sources */,
+				1A00C0132CEE000100000001 /* MicWaveformCardView.swift in Sources */,
+				1A00C0002CEE000100000001 /* AnalysisCoordinator.swift in Sources */,
+				1A00C0022CEE000100000001 /* AnalysisJobStore.swift in Sources */,
+				1A00C0042CEE000100000001 /* AppleCalendarService.swift in Sources */,
+				1A00C0062CEE000100000001 /* MeetingPrepStore.swift in Sources */,
+				1A00C0082CEE000100000001 /* MeetingRecurrence.swift in Sources */,
+				1A00C00A2CEE000100000001 /* MeetingPeopleEditor.swift in Sources */,
+				1A00C00C2CEE000100000001 /* MeetingRecordStore.swift in Sources */,
+				1A00C00E2CEE000100000001 /* LocalDataEraser.swift in Sources */,
+				1A00C0102CEE000100000001 /* LocalInbox.swift in Sources */,
+				1A00C0122CEE000100000001 /* LocalRecordingStorage.swift in Sources */,
+				1A00C0142CEE000100000001 /* MinutesDocumentBuilder.swift in Sources */,
+				1A00C0162CEE000100000001 /* MinutesPDFRenderer.swift in Sources */,
+				1A00C0182CEE000100000001 /* MinutesStudioModels.swift in Sources */,
+				1A00C01A2CEE000100000001 /* MinutesStudioStore.swift in Sources */,
+				1A00C01C2CEE000100000001 /* VidurPreferences.swift in Sources */,
+				1A00C01E2CEE000100000001 /* ActionDraft.swift in Sources */,
+				1A00C0202CEE000100000001 /* ActionListLogic.swift in Sources */,
+				1A00C0222CEE000100000001 /* MeetingRepeatService.swift in Sources */,
+				1A00C0242CEE000100000001 /* TaskResponseStore.swift in Sources */,
+				1A00C0262CEE000100000001 /* MinutesApproval.swift in Sources */,
+				1A00C0282CEE000100000001 /* SeriesDiff.swift in Sources */,
+				1A00C02A2CEE000100000001 /* VidurAnswerService.swift in Sources */,
+				1A00C02C2CEE000100000001 /* ActionTaskDetailView.swift in Sources */,
+				1A00C02E2CEE000100000001 /* NewActionSheet.swift in Sources */,
+				1A00C0302CEE000100000001 /* RepeatMeetingSheet.swift in Sources */,
+				1A00C0322CEE000100000001 /* TaskAssignmentResponseView.swift in Sources */,
+				1A00C0342CEE000100000001 /* ActionFormComponents.swift in Sources */,
+				1A00C0362CEE000100000001 /* ActionsListSectionView.swift in Sources */,
+				1A00C0382CEE000100000001 /* EditSavedMinutesSheet.swift in Sources */,
+				1A00C03A2CEE000100000001 /* MeetingDecisionViews.swift in Sources */,
+				1A00C03C2CEE000100000001 /* MeetingPeopleSheet.swift in Sources */,
+				1A00C03E2CEE000100000001 /* MeetingRecordHeader.swift in Sources */,
+				1A00C0402CEE000100000001 /* MeetingRecordPages.swift in Sources */,
+				1A00C0422CEE000100000001 /* MeetingTaskReviewViews.swift in Sources */,
+				1A00C0442CEE000100000001 /* MinutesSentView.swift in Sources */,
+				1A00C0462CEE000100000001 /* MinutesShareFlow.swift in Sources */,
+				1A00C0482CEE000100000001 /* SharedMinutesViews.swift in Sources */,
+				1A00C04A2CEE000100000001 /* MinutesAttendanceViews.swift in Sources */,
+				1A00C04C2CEE000100000001 /* MinutesDocumentPreviewView.swift in Sources */,
+				1A00C04E2CEE000100000001 /* MinutesStudioModel.swift in Sources */,
+				1A00C0502CEE000100000001 /* MinutesStudioPages.swift in Sources */,
+				1A00C0522CEE000100000001 /* MinutesStudioView.swift in Sources */,
+				1A00C0542CEE000100000001 /* LiveNoteComposeBar.swift in Sources */,
+				1A00C0562CEE000100000001 /* MicrophoneUnavailableView.swift in Sources */,
+				1A00C0582CEE000100000001 /* NotesOnlyMinutes.swift in Sources */,
+				1A00C05A2CEE000100000001 /* NotesOnlyView.swift in Sources */,
+				1A00C05C2CEE000100000001 /* SearchResultSectionsView.swift in Sources */,
+				1A00C05E2CEE000100000001 /* AccountView.swift in Sources */,
+				1A00C0602CEE000100000001 /* LocalRecordingsView.swift in Sources */,
+				1A00C0622CEE000100000001 /* NotificationsInboxView.swift in Sources */,
+				1A00C0642CEE000100000001 /* RecordingPlayerView.swift in Sources */,
+				1A00C0662CEE000100000001 /* VidurSettingsView.swift in Sources */,
+				1A00C0682CEE000100000001 /* AddPeopleSheet.swift in Sources */,
+				1A00C06A2CEE000100000001 /* AppleCalendarAccessView.swift in Sources */,
+				1A00C06C2CEE000100000001 /* PrepComponents.swift in Sources */,
+				1A00C06E2CEE000100000001 /* MinutesApprovalView.swift in Sources */,
+				1A00C0702CEE000100000001 /* SeriesComparisonView.swift in Sources */,
 				A80000000000000000000003 /* OfflineBenchmarkView.swift in Sources */,
-				1AE0002CEE000100000001 /* HomeRecentSectionView.swift in Sources */,
-				1AE0012CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */,
-				1AE0022CEE000100000001 /* MeetingsHomeRowView.swift in Sources */,
-				1AE0032CEE000100000001 /* MeetingsSearchBarView.swift in Sources */,
-				1AE0042CEE000100000001 /* VerifyEmailView.swift in Sources */,
-				1AE0052CEE000100000001 /* WelcomeAndSignInView.swift in Sources */,
-				1AE0062CEE000100000001 /* OtpDigitsRowView.swift in Sources */,
-				1AE0072CEE000100000001 /* SignInPanelSubviews.swift in Sources */,
-				1AE0082CEE000100000001 /* MicrophoneCheckView.swift in Sources */,
-				1AE0092CEE000100000001 /* MicWaveformCardView.swift in Sources */,
 				1A0000302CEE000100000001 /* RemindersSyncServiceProtocol.swift in Sources */,
 				1A0000312CEE000100000001 /* MockRemindersSyncService.swift in Sources */,
 				1A0000322CEE000100000001 /* HomeViewModel.swift in Sources */,
@@ -1393,17 +1401,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1AC06E2CEE000100000001 /* ActionItemWriterTests.swift in Sources */,
-				1AC0702CEE000100000001 /* ActionListLogicTests.swift in Sources */,
-				1AC0722CEE000100000001 /* TaskResponseStoreTests.swift in Sources */,
-				1AC0742CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift in Sources */,
-				1AC0762CEE000100000001 /* MeetingRecordTests.swift in Sources */,
-				1AC0782CEE000100000001 /* MinutesStudioTests.swift in Sources */,
-				1AC07A2CEE000100000001 /* MeetingPreparationTests.swift in Sources */,
-				1AC07C2CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift in Sources */,
-				1AC07E2CEE000100000001 /* LocalInboxTests.swift in Sources */,
-				1AC0802CEE000100000001 /* MinutesApprovalTests.swift in Sources */,
-				1AC0822CEE000100000001 /* SeriesDiffTests.swift in Sources */,
+				1A00C0722CEE000100000001 /* ActionItemWriterTests.swift in Sources */,
+				1A00C0742CEE000100000001 /* ActionListLogicTests.swift in Sources */,
+				1A00C0762CEE000100000001 /* TaskResponseStoreTests.swift in Sources */,
+				1A00C0782CEE000100000001 /* HomeGroupingAndSearchScopeTests.swift in Sources */,
+				1A00C07A2CEE000100000001 /* MeetingRecordTests.swift in Sources */,
+				1A00C07C2CEE000100000001 /* MinutesStudioTests.swift in Sources */,
+				1A00C07E2CEE000100000001 /* MeetingPreparationTests.swift in Sources */,
+				1A00C0802CEE000100000001 /* NotesOnlyMinutesBuilderTests.swift in Sources */,
+				1A00C0822CEE000100000001 /* LocalInboxTests.swift in Sources */,
+				1A00C0842CEE000100000001 /* MinutesApprovalTests.swift in Sources */,
+				1A00C0862CEE000100000001 /* SeriesDiffTests.swift in Sources */,
 				1A00003B2CEE000100000001 /* ActionItemModelTests.swift in Sources */,
 				1A00003C2CEE000100000001 /* MeetingModelTests.swift in Sources */,
 				1A00003D2CEE000100000001 /* SpeakerAndNotesModelTests.swift in Sources */,

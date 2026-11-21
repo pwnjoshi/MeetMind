@@ -16,23 +16,20 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         return (root, audio)
     }
 
-    func testSpeakerFailureResumesWithoutTranscribingAgain() async throws {
+    func testSpeakerFailureContinuesWithTranscriptAndMinutes() async throws {
         let (root, audio) = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let backend = CheckpointTestBackend(root: root, failSpeakers: true)
         let id = UUID(), date = Date(timeIntervalSince1970: 1700000000)
-        let first = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
-        do {
-            _ = try await first.run(meetingID: id, audio: audio, meetingDate: date, timezone: "Asia/Kolkata") { _ in }
-            XCTFail("Injected interruption must surface")
-        } catch { }
-        // New coordinator simulates reopening after the first instance was lost.
-        let resumed = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
-        let result = try await resumed.run(meetingID: id, audio: audio, meetingDate: date, timezone: "Asia/Kolkata") { _ in }
+        let pipeline = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        let result = try await pipeline.run(meetingID: id, audio: audio, meetingDate: date,
+                                            timezone: "Asia/Kolkata") { _ in }
         XCTAssertEqual(result.stage, .completed)
         XCTAssertEqual(backend.counts.0, 1)
-        XCTAssertEqual(backend.counts.1, 2)
+        XCTAssertEqual(backend.counts.1, 1)
         XCTAssertFalse(result.analysis.isEmpty)
+        let warning = await pipeline.lastSpeakerWarning
+        XCTAssertTrue(warning?.contains("unnamed speakers") == true)
         XCTAssertEqual(backend.contextTokens, 2048)
     }
 
@@ -113,7 +110,7 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         XCTAssertEqual(result.turns.map(\.text).joined(), backend.turns.map(\.text).joined())
     }
 
-    func testFinalTranscriptionAndDiarizationOverlapWhenDeviceIsUnconstrained() async throws {
+    func testFinalTranscriptionAndDiarizationAreSerialByDefault() async throws {
         let (root, audio) = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let backend = OverlapTestBackend(root: root)
@@ -122,7 +119,7 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         _ = try await pipeline.run(meetingID: UUID(), audio: audio,
             meetingDate: Date(timeIntervalSince1970: 1_700_000_000), timezone: "UTC") { _ in }
 
-        XCTAssertTrue(backend.didOverlap, "Diarization should begin while final ASR is still running on an unconstrained device.")
+        XCTAssertFalse(backend.didOverlap, "ASR and diarization must remain serial unless a qualified resource governor explicitly admits overlap.")
     }
 
 }
@@ -156,7 +153,7 @@ private final class CheckpointTestBackend: MeetingAnalysisBackend, @unchecked Se
             speakerCalls += 1
             let fail = failSpeakers; failSpeakers = false; return fail
         }
-        if fail { throw CancellationError() }
+        if fail { throw OfflineError.unavailable("Injected diarization failure") }
         return []
     }
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession {

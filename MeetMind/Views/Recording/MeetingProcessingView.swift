@@ -34,6 +34,7 @@ public struct MeetingProcessingView: View {
     @State private var busy = false
     @State private var downloadProgress: Double = 0
     @State private var downloading = false
+    @State private var checkingModels = false
     public let meetingId: UUID
 
     public init(meetingId: UUID, viewModel: ProcessingPipelineViewModel? = nil) {
@@ -92,7 +93,11 @@ public struct MeetingProcessingView: View {
                 }
                 TimelineView(.periodic(from: .now, by: 2)) { _ in
                     VStack(alignment: .leading, spacing: 12) {
-                        if busy {
+                        if checkingModels {
+                            Text("Verifying on-device models").font(.title3.bold())
+                            ProgressView()
+                            Text("Checking each required model before processing starts.").foregroundStyle(.secondary)
+                        } else if busy {
                             Text(processingTitle).font(.title3.bold())
                             ProgressView(value: downloading ? downloadProgress : viewModel.overallProgress)
                             Text("Your audio is saved on this iPhone.").foregroundStyle(.secondary)
@@ -105,6 +110,43 @@ public struct MeetingProcessingView: View {
                             Text(backgroundStatus).font(.title3.bold())
                             Text("Your audio is saved. You can leave and return to this meeting.")
                                 .foregroundStyle(.secondary)
+                        } else if viewModel.jobSnapshot?.state == .queued {
+                            Text("Queued").font(.title3.bold())
+                            Text("Your recording is saved and ready for on-device processing.")
+                                .foregroundStyle(.secondary)
+                            Button("Process Now") { start() }
+                        } else if modelsRequired {
+                            Text("Models Required").font(.title3.bold())
+                            Text("Download or repair these on-device models before processing:")
+                                .foregroundStyle(.secondary)
+                            ForEach(viewModel.modelStatuses.filter { $0.readiness != .ready }) { status in
+                                HStack {
+                                    Text(status.profile.name)
+                                    Spacer()
+                                    Text(ByteCountFormatter.string(fromByteCount: status.profile.downloadBytes, countStyle: .file))
+                                        .foregroundStyle(.secondary)
+                                }
+                                if case .corrupt(let reason) = status.readiness {
+                                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Text("Total download: \(missingModelSize)")
+                                .font(.subheadline.weight(.semibold))
+                            Button("Download & Continue") { start(download: true) }
+                                .buttonStyle(.borderedProminent)
+                        } else if viewModel.jobSnapshot?.state == .paused {
+                            Text("Processing paused").font(.title3.bold())
+                            Text("Your recording and completed steps are saved.").foregroundStyle(.secondary)
+                            Button("Retry") { start() }
+                        } else if let failure = viewModel.jobSnapshot?.failure {
+                            Text("Processing needs attention").font(.title3.bold())
+                            Text(failure.message).foregroundStyle(.secondary)
+                            recoveryButton(for: failure)
+                        } else if viewModel.jobSnapshot?.state == .speakerReview || meeting?.analysisState == "speakerReview" {
+                            Text("Speaker review").font(.title3.bold())
+                            Text(viewModel.jobSnapshot?.warning ?? "Assign detected voices, or continue with unnamed speakers.")
+                                .foregroundStyle(.secondary)
+                            Button("Review Speakers") { showsPeople = true }
                         } else if isReadyForReview {
                             reviewSection
                         } else if selectedSection == "Minutes" {
@@ -195,11 +237,14 @@ public struct MeetingProcessingView: View {
             TimelineView(.periodic(from: .now, by: 2)) { _ in
                 let backgroundRunning = OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
                 let queued = OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil
+                    || viewModel.jobSnapshot?.state == .queued
                 Button {
                     if isReadyForReview { finalizeMinutes() }
-                    else { start(download: true) }
+                    else { start(download: modelsRequired) }
                 } label: {
-                    Text(isReadyForReview ? "Finalize Minutes" : (queued && !backgroundRunning ? "Process Now" : "Generate Minutes"))
+                    Text(isReadyForReview ? "Finalize Minutes" :
+                         (modelsRequired ? "Download & Continue" :
+                          (queued && !backgroundRunning ? "Process Now" : "Generate Minutes")))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -207,7 +252,7 @@ public struct MeetingProcessingView: View {
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
                 .frame(maxWidth: .infinity)
-                .disabled(busy || backgroundRunning)
+                .disabled(busy || checkingModels || backgroundRunning)
                 .padding()
             }
         }
@@ -340,34 +385,69 @@ public struct MeetingProcessingView: View {
                 .disabled(meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .onAppear {
-            if processingError == nil,
-               meeting?.analysisState == "failed" || meeting?.analysisState == "paused" {
-                processingError = AnalysisProblemStore.message(for: meetingId)
-            }
             viewModel.onNavigateToDetail = { id in
                 OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
             }
-            // After saving a recording, begin the smaller, parallel ASR + voice
-            // pass immediately. It reaches a reviewable speaker state before
-            // expensive minutes generation, and checkpoints survive a handoff to
-            // iOS background processing.
-            if meeting?.analysisState == nil, meeting?.transcriptSegments.isEmpty != false,
-               !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) {
-                start(download: true, speakersOnly: true)
+            // Opening this screen verifies local readiness but never starts a
+            // model download or meeting analysis without an explicit tap.
+            checkingModels = true
+            Task { @MainActor in
+                defer { checkingModels = false }
+                do {
+                    try viewModel.prepareForProduction(context: modelContext, settings: settings)
+                    _ = try await viewModel.refreshAnalysisState()
+                    processingError = viewModel.jobSnapshot?.failure?.message
+                } catch {
+                    processingError = (error as? AnalysisCoordinatorError)?.errorDescription
+                        ?? (error as? AnalysisJobStoreError)?.errorDescription
+                        ?? AnalysisFailure.stable(.processingFailed).message
+                }
             }
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background, busy {
-                // Stop cleanly at the next checkpoint, then give iOS an
-                // opportunity to resume private on-device work later.
-                if !preparingSpeakers { OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId) }
-                operation?.cancel()
+                // Release the foreground lease at a checkpoint before enqueueing
+                // the same durable job for an iOS processing window.
+                let foregroundOperation = operation
+                foregroundOperation?.cancel()
+                if !preparingSpeakers {
+                    Task { @MainActor in
+                        if let foregroundOperation { await foregroundOperation.value }
+                        OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
+                    }
+                }
             }
         }
     }
 
     private var meeting: Meeting? { meetings.first { $0.id == meetingId } }
+
+    private var modelsRequired: Bool {
+        viewModel.modelStatuses.contains { $0.readiness != .ready }
+    }
+
+    private var missingModelSize: String {
+        let bytes = viewModel.modelStatuses.filter { $0.readiness != .ready }
+            .reduce(Int64(0)) { $0 + $1.profile.downloadBytes }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    @ViewBuilder
+    private func recoveryButton(for failure: AnalysisFailure) -> some View {
+        switch failure.recoveryAction {
+        case .repairModels:
+            Button("Repair Models") { start(download: true) }
+        case .changeLanguage:
+            Button("Change Language") { processingError = "Choose the recording language in Settings, then tap Retry." }
+        case .openTranscript:
+            Button("Open Transcript") { showsTranscript = true }
+        case .processNow, .retry:
+            Button("Retry") { start() }
+        case .returnToMeetings:
+            Button("Return to Meetings") { dismiss() }
+        }
+    }
 
     private var isReadyForReview: Bool {
         meeting?.analysisState == "completed" && meeting?.summary != nil
@@ -492,7 +572,8 @@ public struct MeetingProcessingView: View {
     }
 
     private var processingTitle: String {
-        if downloading { return "Preparing on-device models" }
+        if viewModel.jobSnapshot?.state == .verifying { return "Verifying on-device models" }
+        if downloading { return "Downloading on-device models" }
         switch viewModel.currentStep {
         case .initial: return "Preparing on-device models"
         case .audio: return "Creating transcript"
@@ -521,9 +602,11 @@ public struct MeetingProcessingView: View {
     }
 
     private func queueAnalysis() {
-        OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
-        operation?.cancel()
+        let foregroundOperation = operation
+        foregroundOperation?.cancel()
         Task { @MainActor in
+            if let foregroundOperation { await foregroundOperation.value }
+            OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
             let center = UNUserNotificationCenter.current()
             if await center.notificationSettings().authorizationStatus == .notDetermined {
                 _ = try? await center.requestAuthorization(options: [.alert, .sound])
@@ -599,11 +682,9 @@ public struct MeetingProcessingView: View {
                 if !missingModels.isEmpty {
                     guard download else { return }
                     downloading = true
-                    for profile in missingModels {
-                        downloadProgress = 0
-                        try await OfflineModelStore.shared.install(profile) { value in
-                            Task { @MainActor in downloadProgress = value }
-                        }
+                    downloadProgress = 0
+                    try await viewModel.downloadAndContinueModels(speakersOnly: speakersOnly) { _, value in
+                        Task { @MainActor in downloadProgress = value }
                     }
                     missingModels = try await viewModel.missingOfflineModels(speakersOnly: speakersOnly)
                     downloading = false
@@ -618,7 +699,10 @@ public struct MeetingProcessingView: View {
             } catch is CancellationError {
                 processingError = "Paused. Your audio, completed steps, and partial model downloads are saved. Tap Resume when you return."
             } catch {
-                processingError = error.localizedDescription
+                processingError = viewModel.jobSnapshot?.failure?.message
+                    ?? (error as? AnalysisCoordinatorError)?.errorDescription
+                    ?? (error as? AnalysisJobStoreError)?.errorDescription
+                    ?? AnalysisFailure.stable(.processingFailed).message
             }
         }
     }
