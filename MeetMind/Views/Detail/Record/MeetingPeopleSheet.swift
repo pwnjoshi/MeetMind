@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// "People" sheet: Voices (per-speaker menus) and Who Was There (present / absent).
+/// "People" sheet. Attendees: everyone who was in the meeting, spoken or not, present or absent.
+/// Detected Voices: unnamed or assigned voices from the transcript.
 @MainActor
 struct MeetingPeopleSheet: View {
     let meeting: Meeting
@@ -13,6 +14,9 @@ struct MeetingPeopleSheet: View {
     @State private var renameText = ""
     @State private var errorMessage: String?
     @State private var playingRowID: String?
+    @State private var showAddPerson = false
+    @State private var editingPerson: Speaker?
+    @State private var removalCandidate: Speaker?
 
     private var voices: [MeetingVoiceRow] {
         MeetingPeopleEditor.voices(in: meeting, record: store.record(for: meeting.id))
@@ -21,34 +25,14 @@ struct MeetingPeopleSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                attendeesSection
                 if !voices.isEmpty {
                     Section {
                         ForEach(voices) { row in voiceRow(row) }
                     } header: {
-                        Text("Voices")
+                        Text("Detected Voices")
                     } footer: {
-                        Text("Named people are marked present. Unnamed voices appear as Speaker 1, 2, 3 in the minutes.")
-                    }
-                }
-                Section("Who Was There") {
-                    if meeting.namedAttendees.isEmpty {
-                        Text("No named people yet").foregroundStyle(.secondary)
-                    }
-                    ForEach(meeting.namedAttendees, id: \.id) { person in
-                        let absent = MeetingPeopleEditor.isAbsent(person, in: meeting)
-                        Button {
-                            run { try MeetingPeopleEditor.setAbsent(!absent, person: person, meeting: meeting, context: context) }
-                        } label: {
-                            HStack {
-                                Text(person.name).foregroundStyle(.primary)
-                                Spacer()
-                                if !absent { Image(systemName: "checkmark").foregroundStyle(.primary) }
-                            }
-                            .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityValue(absent ? "Absent" : "Present")
-                        .accessibilityHint("Toggles whether this person was there")
+                        Text("Assign a voice to a person to name them in the transcript. Unnamed voices appear as Speaker 1, 2, 3 in the minutes.")
                     }
                 }
             }
@@ -65,6 +49,29 @@ struct MeetingPeopleSheet: View {
                     .buttonBorderShape(.circle)
                 }
             }
+            .sheet(isPresented: $showAddPerson) {
+                MeetingAddPersonSheet(meeting: meeting)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+            .sheet(item: $editingPerson) { person in
+                MeetingPersonEditSheet(meeting: meeting, person: person)
+            }
+            .confirmationDialog(
+                "Remove from this meeting?",
+                isPresented: Binding(get: { removalCandidate != nil }, set: { if !$0 { removalCandidate = nil } }),
+                titleVisibility: .visible
+            ) {
+                if let person = removalCandidate {
+                    Button("Remove \(person.name)", role: .destructive) {
+                        run { try MeetingPeopleEditor.removeAttendee(person, from: meeting, context: context) }
+                        removalCandidate = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) { removalCandidate = nil }
+            } message: {
+                Text("They stay in your people list and keep any actions they own.")
+            }
             .alert("Name This Voice", isPresented: Binding(
                 get: { renameRow != nil }, set: { if !$0 { renameRow = nil } }
             )) {
@@ -77,13 +84,94 @@ struct MeetingPeopleSheet: View {
                     renameRow = nil
                 }
             }
-            .alert("Could Not Update People", isPresented: Binding(
-                get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("OK") { errorMessage = nil }
-            } message: { Text(errorMessage ?? "") }
+            .recordErrorAlert("Could Not Update People", message: $errorMessage)
         }
     }
+
+    // MARK: Attendees
+
+    private var attendeesSection: some View {
+        Section {
+            Button {
+                showAddPerson = true
+            } label: {
+                Label("Add Person", systemImage: "person.badge.plus")
+                    .frame(minHeight: 44, alignment: .leading)
+            }
+            .accessibilityHint("Add someone who was in the meeting, even if they did not speak")
+            if meeting.namedAttendees.isEmpty {
+                Text("No one added yet. Add people who attended, even if they did not speak.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(meeting.namedAttendees, id: \.id) { person in
+                attendeeRow(person)
+            }
+        } header: {
+            Text("Attendees")
+        } footer: {
+            Text("Tap a person to switch between present and absent. Attendees can own actions and decisions.")
+        }
+    }
+
+    private func attendeeRow(_ person: Speaker) -> some View {
+        let absent = MeetingPeopleEditor.isAbsent(person, in: meeting)
+        let canRemove = MeetingPeopleEditor.canRemove(person, from: meeting)
+        return HStack(spacing: 4) {
+            Button {
+                run { try MeetingPeopleEditor.setAbsent(!absent, person: person, meeting: meeting, context: context) }
+            } label: {
+                HStack(spacing: 12) {
+                    Text(person.initials)
+                        .font(.footnote.bold())
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color(hex: person.avatarColorHex), in: Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(person.name).font(.subheadline).foregroundStyle(.primary)
+                        if let role = person.role, !role.isEmpty {
+                            Text(role).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Text(absent ? "Absent" : "Present")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(absent ? Color.orange : Theme.Colors.manentAccent)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("\(person.name), \(absent ? "absent" : "present")")
+            .accessibilityHint(absent ? "Marks this person present" : "Marks this person absent")
+            Menu {
+                Button("Edit Details", systemImage: "pencil") { editingPerson = person }
+                Button(absent ? "Mark Present" : "Mark Absent",
+                       systemImage: absent ? "person.fill.checkmark" : "person.fill.xmark") {
+                    run { try MeetingPeopleEditor.setAbsent(!absent, person: person, meeting: meeting, context: context) }
+                }
+                if canRemove {
+                    Divider()
+                    Button("Remove from Meeting", systemImage: "person.badge.minus", role: .destructive) {
+                        removalCandidate = person
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("More options for \(person.name)")
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if canRemove {
+                Button("Remove", systemImage: "person.badge.minus", role: .destructive) { removalCandidate = person }
+            }
+        }
+    }
+
+    // MARK: Detected voices
 
     private func voiceRow(_ row: MeetingVoiceRow) -> some View {
         HStack(spacing: 12) {
@@ -91,26 +179,29 @@ struct MeetingPeopleSheet: View {
                 Button { togglePlay(row) } label: {
                     Image(systemName: playingRowID == row.id && viewModel.isPlaying ? "pause.fill" : "play.fill")
                         .foregroundStyle(Theme.Colors.manentAccent)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .background(Theme.Colors.manentAccent.opacity(0.1), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Play \(row.label)")
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.label)
-                Text("“\(row.sampleText)”")
+                Text(row.label).font(.subheadline)
+                Text("\u{201C}\(row.sampleText)\u{201D}")
                     .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
             voiceMenu(row)
         }
+        .frame(minHeight: 44)
     }
 
     private func voiceMenu(_ row: MeetingVoiceRow) -> some View {
-        let assigned = meeting.namedAttendees.first(where: { $0.id == row.assignedPersonID })
+        let people = meeting.namedAttendees
+        let assigned = people.first(where: { $0.id == row.assignedPersonID })
+        let assignedName = assigned?.name ?? "Unknown"
         return Menu {
-            ForEach(meeting.namedAttendees, id: \.id) { person in
+            ForEach(people, id: \.id) { person in
                 Button {
                     run { try MeetingPeopleEditor.assign(row, to: person, meeting: meeting, context: context, store: store) }
                 } label: {
@@ -125,7 +216,7 @@ struct MeetingPeopleSheet: View {
                 run { try MeetingPeopleEditor.keepUnknown(row, meeting: meeting, context: context, store: store) }
             }
             Divider()
-            Button("Rename…", systemImage: "pencil") {
+            Button("Name as New Person\u{2026}", systemImage: "person.badge.plus") {
                 renameText = assigned?.name ?? ""
                 renameRow = row
             }
@@ -139,19 +230,15 @@ struct MeetingPeopleSheet: View {
                     }
                 }
             }
-            if let assigned {
-                let absent = MeetingPeopleEditor.isAbsent(assigned, in: meeting)
-                Button(absent ? "Mark \(assigned.name) Present" : "Mark \(assigned.name) Absent",
-                       systemImage: absent ? "person.fill.checkmark" : "person.fill.xmark") {
-                    run { try MeetingPeopleEditor.setAbsent(!absent, person: assigned, meeting: meeting, context: context) }
-                }
-            }
         } label: {
             HStack(spacing: 4) {
-                Text(assigned?.name ?? "Unknown").foregroundStyle(.secondary)
+                Text(assignedName).font(.subheadline).foregroundStyle(.secondary)
                 Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(.secondary)
             }
+            .frame(minHeight: 44)
         }
+        .accessibilityLabel("Assign \(row.label)")
+        .accessibilityValue(assignedName)
     }
 
     private func displayName(_ row: MeetingVoiceRow) -> String {

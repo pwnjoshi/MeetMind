@@ -99,6 +99,8 @@ public final class MeetingDetailViewModel {
     private var questionTask: Task<Void, Never>?
     public var isAnsweringQuestion = false
     public var isSyncingReminders = false
+    /// Set when a record edit made through this view model could not be saved. The view shows it and clears it.
+    public var mutationError: String?
     public var meeting: Meeting?
     public var selectedTab: MeetingDetailTab = .summary
     
@@ -159,6 +161,13 @@ public final class MeetingDetailViewModel {
     
     public var actionItems: [ActionItem] {
         meeting?.actionItems ?? []
+    }
+
+    /// The categorized record (summary, agenda, attendees, discussion, decisions, actions, open issues),
+    /// always derived from the live models and the decided-by sidecar.
+    public var minutesContent: MeetingMinutesContent? {
+        guard let meeting else { return nil }
+        return MeetingMinutesContent.make(from: meeting, record: MeetingRecordStore.shared.record(for: meeting.id))
     }
     
     public var notes: [Note] {
@@ -309,15 +318,33 @@ public final class MeetingDetailViewModel {
     }
     
     public func generateCopyableSummaryText() -> String {
-        guard let summary = summary else { return "No summary available." }
-        var result = "Executive Summary:\n\(summary.executiveSummary)\n\n"
-        if !summary.keyPoints.isEmpty {
-            result += "Key Points:\n" + summary.keyPoints.map { "- \($0)" }.joined(separator: "\n") + "\n\n"
+        guard summary != nil, let content = minutesContent else { return "No summary available." }
+        return Self.formattedMinutes(content)
+    }
+
+    /// Plain categorized minutes text. Suggested tasks that were not accepted are left out.
+    static func formattedMinutes(_ content: MeetingMinutesContent) -> String {
+        var blocks: [String] = []
+        func add(_ heading: String, _ lines: [String]) {
+            guard !lines.isEmpty else { return }
+            blocks.append("\(heading):\n" + lines.map { "- \($0)" }.joined(separator: "\n"))
         }
-        if !summary.keyDecisions.isEmpty {
-            result += "Key Decisions:\n" + summary.keyDecisions.map { "- \($0)" }.joined(separator: "\n")
+        if !content.summary.isEmpty { blocks.append("Executive Summary:\n\(content.summary)") }
+        add("Agenda", content.agenda)
+        add(content.hasAttendanceRecord ? "Present" : "Attendees", content.present.map(\.label))
+        add("Absent", content.absent.map(\.label))
+        add("Key Points", content.discussion)
+        add("Open Issues", content.openIssues)
+        add("Key Decisions", content.decisions.map { content.decisionLine($0) })
+        var actionLines: [String] = []
+        for action in content.actions {
+            let mark = action.isCompleted ? "x" : " "
+            var line = "[\(mark)] \(action.title) (Owner: \(action.ownerName)"
+            if let due = action.dueText { line += ", Due: \(due)" }
+            actionLines.append(line + ")")
         }
-        return result
+        add("Action Items", actionLines)
+        return blocks.joined(separator: "\n\n")
     }
     
     public func regenerateSummary(completion: @escaping (Result<Summary, Error>) -> Void) {
@@ -598,8 +625,15 @@ public final class MeetingDetailViewModel {
     }
     
     public func toggleActionItemCompletion(_ item: ActionItem) {
-        item.toggleCompleted()
-        try? modelContext?.save()
+        guard let modelContext else {
+            item.toggleCompleted()
+            return
+        }
+        do {
+            try MeetingRecordEditor.setCompleted(item, !item.isCompleted, context: modelContext)
+        } catch {
+            mutationError = error.localizedDescription
+        }
     }
     
     public func exportPDF() throws -> Data {
@@ -753,17 +787,8 @@ public final class MeetingDetailViewModel {
         let title = meeting?.title ?? "Meeting"
         let subject = "[MeetMind Minutes] \(title)"
         var body = "Hi Team,\n\nHere are the minutes from \(title):\n\n"
-        if let summary = summary {
-            body += "Executive Summary:\n\(summary.executiveSummary)\n\n"
-            if !summary.keyDecisions.isEmpty {
-                body += "Key Decisions:\n" + summary.keyDecisions.map { "- \($0)" }.joined(separator: "\n") + "\n\n"
-            }
-        }
-        if !actionItems.isEmpty {
-            body += "Action Items:\n"
-            for item in actionItems {
-                body += "- \(item.title) (Assignee: \(item.assigneeName))\n"
-            }
+        if let content = minutesContent {
+            body += Self.formattedMinutes(content) + "\n"
         }
         return EmailDraft(subject: subject, body: body)
     }

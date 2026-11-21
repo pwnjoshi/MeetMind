@@ -1,7 +1,10 @@
 import SwiftUI
 import SwiftData
 
-/// "Edit Minutes": agenda, present / absent people, discussion, decisions and action items.
+/// "Edit Minutes": summary, agenda, attendance, discussion and decisions.
+/// Text fields hold a draft until Save; Save writes through `MeetingRecordEditor` so decided-by people follow their
+/// decisions and every other tab sees the change. Actions are edited in the Actions tab.
+@MainActor
 struct EditSavedMinutesSheet: View {
     let meeting: Meeting
     let summary: Summary
@@ -11,93 +14,80 @@ struct EditSavedMinutesSheet: View {
         var text: String
     }
 
-    private struct EditablePerson: Identifiable {
-        let id: UUID
-        var name: String
-        var colorHex: String
-        var isNew: Bool
+    private struct EditableDecision: Identifiable {
+        let id = UUID()
+        let originalIndex: Int?
+        var text: String
     }
 
     private static let palette = ["#30B0C7", "#FF9500", "#FF2D55", "#AF52DE", "#34C759"]
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @State private var store = MeetingRecordStore.shared
+    @State private var overview: String
     @State private var agenda: String
-    @State private var people: [EditablePerson]
     @State private var absentIDs: Set<UUID>
     @State private var discussion: [EditableLine]
-    @State private var decisions: [EditableLine]
-    @State private var actionTitles: [UUID: String]
+    @State private var decisions: [EditableDecision]
     @State private var showAddPerson = false
-    @State private var newPersonName = ""
     @State private var saveError: String?
+    private let initialOverview: String
+    private let initialAbsentIDs: Set<UUID>
 
     init(meeting: Meeting, summary: Summary) {
         self.meeting = meeting
         self.summary = summary
+        let content = MeetingMinutesContent.make(from: meeting, record: MeetingRecordData())
+        let absent = Set(meeting.absentParticipantIDs ?? [])
+        initialOverview = content.summary
+        initialAbsentIDs = absent
+        _overview = State(initialValue: content.summary)
         _agenda = State(initialValue: meeting.agendaText ?? "")
-        _people = State(initialValue: meeting.namedAttendees.map {
-            EditablePerson(id: $0.id, name: $0.name, colorHex: $0.avatarColorHex, isNew: false)
-        })
-        _absentIDs = State(initialValue: Set(meeting.absentParticipantIDs ?? []))
-        _discussion = State(initialValue: summary.discussionLines.map { EditableLine(text: $0) })
-        _decisions = State(initialValue: summary.keyDecisions.map { EditableLine(text: $0) })
-        var titles: [UUID: String] = [:]
-        for item in meeting.actionItems { titles[item.id] = item.title }
-        _actionTitles = State(initialValue: titles)
+        _absentIDs = State(initialValue: absent)
+        _discussion = State(initialValue: summary.keyPoints.map { EditableLine(text: $0) })
+        var lines: [EditableDecision] = []
+        for (index, text) in summary.keyDecisions.enumerated() {
+            lines.append(EditableDecision(originalIndex: index, text: text))
+        }
+        _decisions = State(initialValue: lines)
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Summary") {
+                    TextField("Summary", text: $overview, axis: .vertical)
+                }
                 Section("Agenda") {
                     TextField("Agenda", text: $agenda, axis: .vertical)
                 }
-                Section("Present") {
-                    ForEach(people.filter { !absentIDs.contains($0.id) }) { person in
-                        personRow(person, absent: false)
-                    }
-                    Button {
-                        newPersonName = ""
-                        showAddPerson = true
-                    } label: {
-                        Label {
-                            Text("Add Participant").foregroundStyle(Theme.Colors.manentAccent)
-                        } icon: {
-                            Image(systemName: "plus.circle.fill").foregroundStyle(.green)
-                        }
-                    }
-                }
-                if people.contains(where: { absentIDs.contains($0.id) }) {
-                    Section("Absent") {
-                        ForEach(people.filter { absentIDs.contains($0.id) }) { person in
-                            personRow(person, absent: true)
-                        }
-                    }
-                }
-                Section("Discussion") {
+                attendeesSection
+                Section {
                     ForEach($discussion) { $line in
                         lineField($line, index: discussion.firstIndex(where: { $0.id == line.id }) ?? 0)
                     }
                     .onDelete { discussion.remove(atOffsets: $0) }
                     Button("Add Discussion Point", systemImage: "plus") { discussion.append(EditableLine(text: "")) }
+                        .frame(minHeight: 44)
+                } header: {
+                    Text("Discussion")
+                } footer: {
+                    Text("Points that say something is pending or undecided appear under Open Issues in the minutes.")
                 }
-                Section("Decision") {
+                Section {
                     ForEach($decisions) { $line in
-                        lineField($line, index: decisions.firstIndex(where: { $0.id == line.id }) ?? 0)
+                        decisionField($line, index: decisions.firstIndex(where: { $0.id == line.id }) ?? 0)
                     }
                     .onDelete { decisions.remove(atOffsets: $0) }
-                    Button("Add Decision", systemImage: "plus") { decisions.append(EditableLine(text: "")) }
-                }
-                if !meeting.actionItems.isEmpty {
-                    Section("Action items") {
-                        ForEach(meeting.actionItems) { item in
-                            VStack(alignment: .leading, spacing: 2) {
-                                TextField("Action item", text: titleBinding(for: item), axis: .vertical)
-                                Text(actionDetails(item)).font(.subheadline).foregroundStyle(.secondary)
-                            }
-                        }
+                    Button("Add Decision", systemImage: "plus") {
+                        decisions.append(EditableDecision(originalIndex: nil, text: ""))
                     }
+                    .frame(minHeight: 44)
+                } header: {
+                    Text("Decisions")
+                } footer: {
+                    Text("Edit action items in the Actions tab. Changes there appear in these minutes.")
                 }
             }
             .navigationTitle("Edit Minutes")
@@ -113,35 +103,57 @@ struct EditSavedMinutesSheet: View {
                         .buttonBorderShape(.circle)
                 }
             }
-            .alert("Add Participant", isPresented: $showAddPerson) {
-                TextField("Name", text: $newPersonName)
-                Button("Cancel", role: .cancel) {}
-                Button("Add") { addPerson() }
+            .sheet(isPresented: $showAddPerson) {
+                MeetingAddPersonSheet(meeting: meeting)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
-            .alert("Could Not Save Minutes", isPresented: Binding(
-                get: { saveError != nil }, set: { if !$0 { saveError = nil } }
-            )) {
-                Button("OK") { saveError = nil }
-            } message: { Text(saveError ?? "") }
+            .recordErrorAlert("Could Not Save Minutes", message: $saveError)
         }
     }
 
-    private func personRow(_ person: EditablePerson, absent: Bool) -> some View {
-        Button {
+    // MARK: Attendance
+
+    private var attendeesSection: some View {
+        Section {
+            ForEach(meeting.namedAttendees, id: \.id) { person in
+                personRow(person)
+            }
+            Button {
+                showAddPerson = true
+            } label: {
+                Label("Add Person", systemImage: "person.badge.plus")
+                    .frame(minHeight: 44, alignment: .leading)
+            }
+        } header: {
+            Text("Attendees")
+        } footer: {
+            Text("Tap a person to switch between present and absent.")
+        }
+    }
+
+    private func personRow(_ person: Speaker) -> some View {
+        let absent = absentIDs.contains(person.id)
+        return Button {
             if absent { absentIDs.remove(person.id) } else { absentIDs.insert(person.id) }
         } label: {
-            Label {
-                HStack(spacing: 10) {
-                    Circle().fill(Color(hex: person.colorHex)).frame(width: 10, height: 10)
-                    Text(person.name).foregroundStyle(.primary)
-                }
-            } icon: {
-                Image(systemName: absent ? "plus.circle.fill" : "minus.circle.fill")
-                    .foregroundStyle(absent ? Color.green : Color.red)
+            HStack(spacing: 10) {
+                Circle().fill(Color(hex: person.avatarColorHex)).frame(width: 10, height: 10)
+                Text(person.name).foregroundStyle(.primary)
+                Spacer()
+                Text(absent ? "Absent" : "Present")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(absent ? Color.orange : Theme.Colors.manentAccent)
             }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .accessibilityLabel("Mark \(person.name) \(absent ? "present" : "absent")")
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(person.name), \(absent ? "absent" : "present")")
+        .accessibilityHint(absent ? "Marks this person present" : "Marks this person absent")
     }
+
+    // MARK: Lines
 
     private func lineField(_ line: Binding<EditableLine>, index: Int) -> some View {
         HStack(alignment: .top, spacing: 10) {
@@ -151,65 +163,60 @@ struct EditSavedMinutesSheet: View {
         }
     }
 
-    private func titleBinding(for item: ActionItem) -> Binding<String> {
-        Binding(
-            get: { actionTitles[item.id] ?? item.title },
-            set: { actionTitles[item.id] = $0 }
-        )
+    private func decisionField(_ line: Binding<EditableDecision>, index: Int) -> some View {
+        let deciderName = decider(for: line.wrappedValue.originalIndex)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top, spacing: 10) {
+                Circle().fill(Color(hex: Self.palette[index % Self.palette.count])).frame(width: 10, height: 10)
+                    .padding(.top, 6)
+                TextField("Decision", text: line.text, axis: .vertical)
+            }
+            if let deciderName {
+                Text("Decided by \(deciderName)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 20)
+            }
+        }
     }
 
-    private func actionDetails(_ action: ActionItem) -> String {
-        guard let date = action.dueDate else { return action.assigneeName }
-        return "\(action.assigneeName) · Due \(date.formatted(.dateTime.weekday(.wide).day().month(.wide)))"
+    private func decider(for originalIndex: Int?) -> String? {
+        guard let originalIndex, let id = store.record(for: meeting.id).decider(at: originalIndex) else { return nil }
+        return meeting.participants.first(where: { $0.id == id })?.name
     }
 
-    private func addPerson() {
-        let name = newPersonName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty,
-              !people.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { return }
-        people.append(EditablePerson(id: UUID(), name: name,
-                                     colorHex: Self.palette[people.count % Self.palette.count], isNew: true))
-    }
+    // MARK: Save
 
     private func clean(_ lines: [EditableLine]) -> [String] {
         lines.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
 
     private func save() {
-        let oldDecisions = summary.keyDecisions
+        let oldPoints = summary.keyPoints
+        let newPoints = clean(discussion)
+        let mirroredDiscussion = summary.executiveSummary == oldPoints.joined(separator: "\n")
+        let newOverview = overview.trimmingCharacters(in: .whitespacesAndNewlines)
+
         meeting.agendaText = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
-        for person in people where person.isNew {
-            let speaker = Speaker(id: person.id, name: person.name, avatarColorHex: person.colorHex)
-            context.insert(speaker)
-            meeting.addParticipant(speaker)
+        if absentIDs != initialAbsentIDs {
+            meeting.absentParticipantIDs = absentIDs.sorted { $0.uuidString < $1.uuidString }
         }
-        meeting.absentParticipantIDs = absentIDs.sorted { $0.uuidString < $1.uuidString }
-        let discussionLines = clean(discussion)
-        if discussionLines != summary.discussionLines {
-            summary.executiveSummary = discussionLines.joined(separator: "\n")
-            summary.keyPoints = discussionLines
+        if newOverview != initialOverview {
+            summary.executiveSummary = newOverview
+        } else if mirroredDiscussion && newPoints != oldPoints {
+            // Older minutes stored the discussion as the summary; keep the two in step.
+            summary.executiveSummary = newPoints.joined(separator: "\n")
         }
-        let newDecisions = clean(decisions)
-        summary.keyDecisions = newDecisions
-        for item in meeting.actionItems {
-            let title = (actionTitles[item.id] ?? item.title).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !title.isEmpty && title != item.title { item.title = title }
-        }
+        if newPoints != oldPoints { summary.keyPoints = newPoints }
+
+        let edits = decisions.map { DecisionEdit(originalIndex: $0.originalIndex, text: $0.text) }
         do {
+            try MeetingRecordEditor.applyDecisionEdits(edits, meeting: meeting, context: context, store: store)
             try context.save()
+            dismiss()
         } catch {
             context.rollback()
             saveError = error.localizedDescription
-            return
         }
-        do {
-            try MeetingRecordStore.shared.update(meeting.id) {
-                $0.remapDeciders(oldDecisions: oldDecisions, newDecisions: newDecisions)
-            }
-        } catch {
-            saveError = error.localizedDescription
-            return
-        }
-        dismiss()
     }
 }

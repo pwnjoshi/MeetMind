@@ -7,6 +7,26 @@ public protocol RecordingChunkPreprocessing: Sendable {
         chunk: RecordingAudioChunk,
         languageCode: String?
     ) async throws -> Bool
+
+    /// Optionally analyzes finalized transcript windows while recording continues.
+    /// Returns true when at least one chunk was analyzed. The default does nothing.
+    func preAnalyze(meetingID: UUID, meetingDate: Date, timezone: String) async throws -> Bool
+}
+
+public extension RecordingChunkPreprocessing {
+    func preAnalyze(meetingID: UUID, meetingDate: Date, timezone: String) async throws -> Bool { false }
+}
+
+/// Meeting facts the analysis prompt depends on. Pre-analysis results are reused
+/// only when the final pass uses the same day and time zone.
+public struct RecordingPreAnalysisContext: Sendable, Equatable {
+    public let meetingDate: Date
+    public let timezone: String
+
+    public init(meetingDate: Date, timezone: String) {
+        self.meetingDate = meetingDate
+        self.timezone = timezone
+    }
 }
 
 public struct PipelineRecordingChunkPreprocessor: RecordingChunkPreprocessing {
@@ -30,6 +50,14 @@ public struct PipelineRecordingChunkPreprocessor: RecordingChunkPreprocessing {
             languageCode: languageCode
         )
     }
+
+    public func preAnalyze(meetingID: UUID, meetingDate: Date, timezone: String) async throws -> Bool {
+        // The pipeline enforces thermal, Low Power, model-installed, and memory
+        // admission (with an extra reserve) and analyzes at most one chunk.
+        try await MeetingAnalysisPipeline.shared.preAnalyzeRecording(
+            meetingID: meetingID, meetingDate: meetingDate, timezone: timezone
+        ) > 0
+    }
 }
 
 /// Serial, opportunistic consumer for sealed chunks. Cancellation is immediate
@@ -43,6 +71,8 @@ public final class RecordingPreprocessingWorker: @unchecked Sendable {
     private let preprocessor: any RecordingChunkPreprocessing
     private let metrics: RecordingMetricsCollector
     private let admission: Admission
+    private let preAnalysis: RecordingPreAnalysisContext?
+    private let preAnalysisAdmission: Admission
     private let lock = NSLock()
     private var task: Task<Void, Never>?
 
@@ -52,7 +82,9 @@ public final class RecordingPreprocessingWorker: @unchecked Sendable {
         languageCode: String?,
         preprocessor: any RecordingChunkPreprocessing = PipelineRecordingChunkPreprocessor(),
         metrics: RecordingMetricsCollector = RecordingMetricsCollector(),
-        admission: @escaping Admission = RecordingPreprocessingWorker.defaultAdmission
+        admission: @escaping Admission = RecordingPreprocessingWorker.defaultAdmission,
+        preAnalysis: RecordingPreAnalysisContext? = nil,
+        preAnalysisAdmission: @escaping Admission = RecordingPreprocessingWorker.defaultAdmission
     ) {
         stream = chunks
         self.meetingID = meetingID
@@ -60,6 +92,8 @@ public final class RecordingPreprocessingWorker: @unchecked Sendable {
         self.preprocessor = preprocessor
         self.metrics = metrics
         self.admission = admission
+        self.preAnalysis = preAnalysis
+        self.preAnalysisAdmission = preAnalysisAdmission
     }
 
     public func start() {
@@ -68,7 +102,10 @@ public final class RecordingPreprocessingWorker: @unchecked Sendable {
             lock.unlock()
             return
         }
-        task = Task.detached(priority: .utility) { [stream, meetingID, languageCode, preprocessor, metrics, admission] in
+        task = Task.detached(priority: .utility) { [stream, meetingID, languageCode, preprocessor, metrics, admission, preAnalysis, preAnalysisAdmission] in
+            // Pre-analysis is optional. One unexpected failure turns it off for the
+            // rest of this recording instead of retrying after every chunk.
+            var preAnalysisEnabled = preAnalysis != nil
             for await chunk in stream {
                 guard !Task.isCancelled else {
                     metrics.recordPreprocessingSkipped()
@@ -90,6 +127,19 @@ public final class RecordingPreprocessingWorker: @unchecked Sendable {
                     }
                     if prepared {
                         metrics.recordPreprocessed()
+                        if preAnalysisEnabled, let context = preAnalysis, preAnalysisAdmission() {
+                            do {
+                                _ = try await preprocessor.preAnalyze(
+                                    meetingID: meetingID,
+                                    meetingDate: context.meetingDate,
+                                    timezone: context.timezone
+                                )
+                            } catch is CancellationError {
+                                break
+                            } catch {
+                                preAnalysisEnabled = false
+                            }
+                        }
                     } else {
                         metrics.recordPreprocessingSkipped()
                     }

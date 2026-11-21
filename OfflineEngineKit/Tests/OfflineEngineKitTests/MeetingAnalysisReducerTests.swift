@@ -44,8 +44,9 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         ]))
         XCTAssertEqual(reduced.decisions.count, 1)
         XCTAssertTrue(reduced.decisions[0].text.contains("launch"))
-        XCTAssertEqual(reduced.discussion.count, 1)
-        XCTAssertTrue(reduced.discussion[0].text.contains("not decided"))
+        XCTAssertTrue(reduced.discussion.isEmpty)
+        XCTAssertEqual(reduced.openIssues.count, 1)
+        XCTAssertTrue(reduced.openIssues[0].text.contains("not decided"))
     }
 
     func testChunkParaphrasesAreReducedToOneMinutesPointWithCombinedEvidence() {

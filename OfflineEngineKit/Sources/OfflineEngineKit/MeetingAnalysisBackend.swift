@@ -15,9 +15,17 @@ protocol MeetingAnalysisBackend: Sendable {
     func transcribe(audio: URL, folder: URL, languageCode: String?) async throws -> [AnalysisTurn]
     func diarize(audio: URL, folder: URL) async throws -> [SpeakerSpan]
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession
+    func isInstalled(_ profile: ModelProfile) async -> Bool
+}
+
+extension MeetingAnalysisBackend {
+    func isInstalled(_ profile: ModelProfile) async -> Bool { true }
 }
 
 struct LocalMeetingAnalysisBackend: MeetingAnalysisBackend {
+    func isInstalled(_ profile: ModelProfile) async -> Bool {
+        await OfflineModelStore.shared.isInstalled(profile)
+    }
     func verifiedFolder(_ profile: ModelProfile) async throws -> URL {
         try await OfflineModelStore.shared.verifiedFolder(profile)
     }

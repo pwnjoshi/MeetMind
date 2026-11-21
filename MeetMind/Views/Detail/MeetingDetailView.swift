@@ -21,7 +21,6 @@ public struct MeetingDetailView: View {
     @State private var startSharing = false
     @State private var showKeepPrivate = false
     @State private var showAskAISheet: Bool = false
-    @State private var showActionItemModal: Bool = false
     @State private var showPhotoModal: String? = nil
     @State private var showSpeakerReassign: TranscriptSegment? = nil
     @State private var showDeleteConfirmation = false
@@ -164,17 +163,6 @@ public struct MeetingDetailView: View {
             renameText: $renameText,
             onRenameError: { deletionError = $0.localizedDescription }
         ))
-        .sheet(isPresented: $showActionItemModal) {
-            ActionItemEditModal(onSave: { title, priority, dueDate, assignee in
-                if let meeting = viewModel.meeting {
-                    let action = ActionItem(title: title, assigneeName: assignee, dueDate: dueDate, priority: priority)
-                    if action.assignee != nil { action.assignedByLocalUser = true }
-                    meeting.addActionItem(action)
-                    do { try modelContext.save() } catch { deletionError = error.localizedDescription }
-                }
-                showActionItemModal = false
-            }, onDismiss: { showActionItemModal = false })
-        }
         .sheet(isPresented: $showNoteSheet) {
             LiveNoteTakingSheet(timestamp: viewModel.currentPlayheadTime) { text in
                 if let meeting = viewModel.meeting {
@@ -216,6 +204,7 @@ public struct MeetingDetailView: View {
             Button("OK") { deletionError = nil }
         } message: { Text(deletionError ?? "") }
     }
+
 
     // MARK: - Meeting options
 
@@ -349,33 +338,30 @@ public struct MeetingDetailView: View {
                 .buttonStyle(.borderedProminent).padding(.vertical, 8)
             }
 
-            if recordSection == "Decisions" {
+            switch recordSection {
+            case "Decisions":
                 MeetingDecisionsList(viewModel: viewModel)
-            } else {
-                MeetingDetailTabContentView(
-                    selectedTab: viewModel.selectedTab,
-                    summary: viewModel.summary,
-                    transcriptSegments: viewModel.transcriptSegments,
-                    activeSegmentId: viewModel.activeSegmentId,
-                    transcriptSearch: $transcriptSearch,
-                    actionItems: viewModel.actionItems,
-                    notes: viewModel.notes,
-                    onSeekTranscript: { viewModel.tapToSeek(segment: $0) },
-                    onEditTranscript: { viewModel.beginEditingTranscript(segment: $0) },
-                    onReassignSpeaker: { showSpeakerReassign = $0 },
-                    onToggleAction: { viewModel.toggleActionItemCompletion($0) },
-                    onAddAction: { showActionItemModal = true },
-                    onSyncReminders: {
-                        Task {
-                            do { try await viewModel.syncReviewedTasksToReminders() }
-                            catch { deletionError = error.localizedDescription }
-                        }
-                    },
-                    onAddNote: { showNoteSheet = true },
-                    onSelectPhoto: { showPhotoModal = $0 }
-                )
+            case "Actions":
+                MeetingActionsList(viewModel: viewModel, onSyncReminders: {
+                    Task {
+                        do { try await viewModel.syncReviewedTasksToReminders() }
+                        catch { deletionError = error.localizedDescription }
+                    }
+                })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            default:
+                if let meeting = viewModel.meeting, hasMinutes {
+                    MeetingMinutesView(meeting: meeting, onOpenPeople: { showPeople = true })
+                }
             }
         }
+        .recordErrorAlert("Could Not Update Record", message: mutationErrorBinding)
+    }
+
+    private var mutationErrorBinding: Binding<String?> {
+        Binding(
+            get: { viewModel.mutationError },
+            set: { viewModel.mutationError = $0 }
+        )
     }
 }

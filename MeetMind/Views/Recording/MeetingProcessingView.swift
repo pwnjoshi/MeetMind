@@ -514,7 +514,14 @@ public struct MeetingProcessingView: View {
         switch viewModel.currentStep {
         case .initial: return "Preparing on-device models"
         case .audio: return "Creating transcript"
-        case .diarization: return "Identifying speakers"
+        case .diarization:
+            // Windows transcribed while recording are reused, so the transcript
+            // can already be complete when speaker identification begins.
+            if let reuse = TranscriptReuseRegistry.shared.summary(for: meetingId) {
+                if reuse.fullyReused { return "Transcript ready from recording \u{2014} identifying speakers" }
+                if reuse.partiallyReused { return "Transcript ready \u{2014} identifying speakers" }
+            }
+            return "Identifying speakers"
         case .summarization: return "Creating minutes"
         case .actions, .completed: return "Saving results"
         }
@@ -647,6 +654,24 @@ struct OfflinePipelineSmokeView: View {
                     let transcript = meeting.transcriptSegments.map(\.text).joined(separator: " ").lowercased()
                     let hasExpectedWords = transcript.contains("send") && transcript.contains("estimate") && transcript.contains("tomorrow")
                     print("MEETMIND_PIPELINE result transcript=\(meeting.transcriptSegments.count) decoded=\(analysis != nil) generated_tasks=\(analysis?.analysis.flatMap(\.tasks).count ?? 0) pending=\(meeting.pendingTaskSuggestions.count) active=\(meeting.actionItems.count) expected_words=\(hasExpectedWords)")
+                    fflush(stdout)
+                    // The clip is the public synthetic fixture, never user content,
+                    // so its derived text may be printed to diagnose a failed check.
+                    let reducedResults = analysis?.analysis ?? []
+                    for (index, task) in reducedResults.flatMap(\.tasks).enumerated() {
+                        print("MEETMIND_PIPELINE task index=\(index) title=\(String(reflecting: task.title)) owner=\(task.owner ?? "nil") deadline=\(task.deadlineText ?? "nil") evidence=\(task.evidence.count)")
+                    }
+                    for (index, suggestion) in meeting.pendingTaskSuggestions.enumerated() {
+                        print("MEETMIND_PIPELINE pending index=\(index) title=\(String(reflecting: suggestion.task.title)) owner=\(suggestion.task.owner ?? "nil") deadline=\(suggestion.task.deadlineText ?? "nil")")
+                    }
+                    print("MEETMIND_PIPELINE minutes decisions=\(reducedResults.flatMap(\.decisions).count) open_issues=\(reducedResults.flatMap(\.openIssues).count) discussion=\(reducedResults.flatMap(\.discussion).count)")
+                    for (index, issue) in reducedResults.flatMap(\.openIssues).enumerated() {
+                        print("MEETMIND_PIPELINE open_issue index=\(index) text=\(String(reflecting: issue.text))")
+                    }
+                    for (index, decision) in reducedResults.flatMap(\.decisions).enumerated() {
+                        print("MEETMIND_PIPELINE decision index=\(index) text=\(String(reflecting: decision.text))")
+                    }
+                    print("MEETMIND_PIPELINE transcript_text=\(String(reflecting: String(transcript.prefix(400))))")
                     fflush(stdout)
                     let suggestions = meeting.pendingTaskSuggestions
                     guard vm.pipelineStatus == .completed, !meeting.transcriptSegments.isEmpty,

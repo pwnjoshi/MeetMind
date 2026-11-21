@@ -6,6 +6,8 @@ public struct ReducedMeetingAnalysis: Sendable {
     public let executiveSummary: String
     public let discussion: [SupportedPoint]
     public let decisions: [SupportedPoint]
+    /// Undecided, hypothetical or still-open matters. Never mixed into decisions.
+    public let openIssues: [SupportedPoint]
     public let tasks: [SuggestedTask]
     public let checkpoint: MeetingAnalysisCheckpoint
 }
@@ -15,31 +17,54 @@ public struct ReducedMeetingAnalysis: Sendable {
 /// from a transcript turn and remains subject to user review.
 public enum MeetingAnalysisReducer {
     public static func reduce(_ checkpoint: MeetingAnalysisCheckpoint) -> ReducedMeetingAnalysis {
+        let grounding = Grounding(turns: checkpoint.turns)
         let generatedDiscussion = checkpoint.analysis.flatMap(\.discussion)
         let generatedDecisions = checkpoint.analysis.flatMap(\.decisions)
+        let generatedOpenIssues = checkpoint.analysis.flatMap(\.openIssues)
         let generatedTasks = checkpoint.analysis.flatMap(\.tasks)
 
-        var decisions = deduplicatePoints(generatedDecisions.compactMap(cleanedPoint))
+        // A sentence that says something is undecided can never support a
+        // decision. Model output grounded only in such a sentence is demoted.
+        var openCandidates = generatedOpenIssues.compactMap(cleanedPoint)
+        var decisionCandidates: [SupportedPoint] = []
+        for point in generatedDecisions.compactMap(cleanedPoint) {
+            if isUndecidedPoint(point, grounding) { openCandidates.append(point) } else { decisionCandidates.append(point) }
+        }
+        var discussionCandidates: [SupportedPoint] = []
+        for point in generatedDiscussion.compactMap(cleanedPoint) {
+            if isUndecidedPoint(point, grounding) { openCandidates.append(point) } else { discussionCandidates.append(point) }
+        }
+
+        var decisions = deduplicatePoints(decisionCandidates)
         decisions = mergePoints(decisions, with: explicitDecisions(in: checkpoint.turns))
 
-        var discussion = deduplicatePoints(generatedDiscussion.compactMap(cleanedPoint))
-        discussion = mergePoints(discussion, with: unresolvedOutcomes(in: checkpoint.turns))
-        discussion.removeAll { item in decisions.contains { nearDuplicate(item.text, $0.text) } }
+        var openIssues = deduplicateOpenIssues(openCandidates + unresolvedOutcomes(in: checkpoint.turns), grounding)
+        decisions.removeAll { decision in
+            openIssues.contains { nearDuplicate(decision.text, $0.text) || sharesFocus(decision, $0, grounding) }
+        }
+
+        var discussion = deduplicatePoints(discussionCandidates)
+        discussion.removeAll { item in
+            decisions.contains { nearDuplicate(item.text, $0.text) }
+                || openIssues.contains { nearDuplicate(item.text, $0.text) || sharesFocus(item, $0, grounding) }
+        }
         discussion = Array(discussion.prefix(16))
         decisions = Array(decisions.prefix(12))
+        openIssues = Array(openIssues.prefix(12))
 
-        var tasks = deduplicateTasks(generatedTasks.compactMap(cleanedTask))
+        var tasks = deduplicateTasks(generatedTasks.compactMap(cleanedTask).filter { isGroundedCommitment($0, grounding) })
         tasks = mergeTasks(tasks, with: explicitCommitments(in: checkpoint.turns))
         tasks = Array(tasks.prefix(24))
 
         let executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
-        let merged = LocalAnalysisResult(discussion: discussion, decisions: decisions, tasks: tasks)
+        let merged = LocalAnalysisResult(discussion: discussion, decisions: decisions, tasks: tasks, openIssues: openIssues)
         var normalized = checkpoint
         normalized.analysis = [merged]
         normalized.analyzedChunks = 1
         normalized.chunkTurnIDs = [checkpoint.turns.map(\.id)]
         return ReducedMeetingAnalysis(executiveSummary: executiveSummary, discussion: discussion,
-                                      decisions: decisions, tasks: tasks, checkpoint: normalized)
+                                      decisions: decisions, openIssues: openIssues, tasks: tasks,
+                                      checkpoint: normalized)
     }
 
     private static func cleanedPoint(_ point: SupportedPoint) -> SupportedPoint? {
@@ -90,13 +115,19 @@ public enum MeetingAnalysisReducer {
         for task in values {
             if let index = result.firstIndex(where: { sameTask($0, task) }) {
                 let current = result[index]
+                // Keep the version that carries more actionable detail (owner,
+                // deadline); fill any remaining gaps from the other.
+                let preferNew = completeness(task) > completeness(current)
+                let primary = preferNew ? task : current
+                let secondary = preferNew ? current : task
+                let equal = completeness(task) == completeness(current)
                 result[index] = SuggestedTask(
-                    title: current.title.count >= task.title.count ? current.title : task.title,
-                    category: current.category == "Other" ? task.category : current.category,
-                    owner: current.owner ?? task.owner,
-                    deadlineText: current.deadlineText ?? task.deadlineText,
-                    priority: current.priority ?? task.priority,
-                    evidence: uniqueEvidence(current.evidence + task.evidence)
+                    title: equal && secondary.title.count > primary.title.count ? secondary.title : primary.title,
+                    category: primary.category == "Other" ? secondary.category : primary.category,
+                    owner: primary.owner ?? secondary.owner,
+                    deadlineText: primary.deadlineText ?? secondary.deadlineText,
+                    priority: primary.priority ?? secondary.priority,
+                    evidence: uniqueEvidence(primary.evidence + secondary.evidence)
                 )
             } else {
                 result.append(task)
@@ -119,8 +150,7 @@ public enum MeetingAnalysisReducer {
         var tasks: [SuggestedTask] = []
         for turn in turns {
             for sentence in sentences(in: turn.text) {
-                let lower = sentence.lowercased()
-                guard !containsNegatedCommitment(lower) else { continue }
+                guard !isNonCommittalSentence(sentence) else { continue }
                 let range = NSRange(sentence.startIndex..<sentence.endIndex, in: sentence)
                 guard let match = regex.firstMatch(in: sentence, range: range), match.numberOfRanges >= 3,
                       let ownerRange = Range(match.range(at: 1), in: sentence),
@@ -144,6 +174,54 @@ public enum MeetingAnalysisReducer {
                                            deadlineText: deadlineText, priority: nil, evidence: [evidence]))
             }
         }
+        return tasks + hinglishCommitments(in: turns)
+    }
+
+    /// Definite Hinglish future commitments such as "Rahul kal tak estimate bhej
+    /// dega". The quote is the exact source sentence; the user still reviews it.
+    private static func hinglishCommitments(in turns: [AnalysisTurn]) -> [SuggestedTask] {
+        let pattern = #"^([A-Z][\p{L}'-]+)\s+(.+?)\s+(?i:(bhej\s+(?:dega|degi|denge)|bhejega|bhejegi|bhejenge|karega|karegi|karenge))\s*[.!?]?$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let deadlineRegex = try? NSRegularExpression(pattern: #"(?i)\b(kal|aaj|parso)\b(?:\s+tak)?"#) else { return [] }
+        let nonNames = Set(["hum", "ham", "main", "mai", "aap", "tum", "tu", "woh", "wo", "yeh", "ye", "sab",
+                            "koi", "team", "speaker", "hamara", "log"])
+        var tasks: [SuggestedTask] = []
+        for turn in turns {
+            for sentence in sentences(in: turn.text) {
+                guard !isNonCommittalSentence(sentence) else { continue }
+                let range = NSRange(sentence.startIndex..<sentence.endIndex, in: sentence)
+                guard let match = regex.firstMatch(in: sentence, range: range), match.numberOfRanges >= 4,
+                      let ownerRange = Range(match.range(at: 1), in: sentence),
+                      let bodyRange = Range(match.range(at: 2), in: sentence),
+                      let auxRange = Range(match.range(at: 3), in: sentence) else { continue }
+                let owner = String(sentence[ownerRange])
+                guard !nonNames.contains(owner.lowercased()) else { continue }
+                var body = String(sentence[bodyRange])
+                var deadlineText: String?
+                let bodyNSRange = NSRange(body.startIndex..<body.endIndex, in: body)
+                if let found = deadlineRegex.firstMatch(in: body, range: bodyNSRange),
+                   let foundRange = Range(found.range, in: body) {
+                    deadlineText = String(body[foundRange]).lowercased()
+                    body.removeSubrange(foundRange)
+                }
+                body = body.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                guard !body.isEmpty else { continue }
+                let aux = String(sentence[auxRange]).lowercased()
+                let title: String
+                if aux.hasPrefix("bhej") {
+                    title = polishedTask("Send " + body)
+                } else {
+                    var words = body.split(separator: " ").map(String.init)
+                    guard let last = words.popLast(), actionHasVerb(last), !words.isEmpty else { continue }
+                    title = polishedTask(last + " " + words.joined(separator: " "))
+                }
+                guard isSubstantive(title) else { continue }
+                tasks.append(SuggestedTask(title: title, category: category(for: title), owner: owner,
+                    deadlineText: deadlineText, priority: nil,
+                    evidence: [SourceEvidence(turnID: turn.id, quote: sentence)]))
+            }
+        }
         return tasks
     }
 
@@ -152,7 +230,7 @@ public enum MeetingAnalysisReducer {
                        "is rejected", "we deferred", "decision is", "the decision was"]
         return groundedSentences(in: turns) { sentence in
             let lower = sentence.lowercased()
-            return markers.contains(where: lower.contains) && !containsNegation(lower)
+            return markers.contains(where: lower.contains) && !containsNegation(lower) && !isUndecidedSentence(sentence)
         }
     }
 
@@ -161,7 +239,7 @@ public enum MeetingAnalysisReducer {
                        "not yet agreed", "deferred until", "needs further discussion"]
         return groundedSentences(in: turns) { sentence in
             let lower = sentence.lowercased()
-            return markers.contains(where: lower.contains)
+            return markers.contains(where: lower.contains) || isUndecidedSentence(sentence)
         }
     }
 
@@ -231,7 +309,39 @@ public enum MeetingAnalysisReducer {
     private static func sameTask(_ lhs: SuggestedTask, _ rhs: SuggestedTask) -> Bool {
         let ownersMatch = normalize(lhs.owner ?? "") == normalize(rhs.owner ?? "")
             || lhs.owner == nil || rhs.owner == nil
-        return ownersMatch && nearDuplicate(lhs.title, rhs.title)
+        guard ownersMatch else { return false }
+        if nearDuplicate(lhs.title, rhs.title) { return true }
+        // Tasks that cite the same transcript turn and share their action words
+        // are one commitment phrased twice, even when the titles differ.
+        let shared = sharedEvidence(lhs.evidence, rhs.evidence)
+        guard shared.sameTurn else { return false }
+        let left = actionTokens(lhs), right = actionTokens(rhs)
+        let common = left.intersection(right).count
+        guard common >= 1 else { return false }
+        if shared.sameQuote { return true }
+        let smaller = min(left.count, right.count)
+        return common >= 2 || Double(common) / Double(max(1, smaller)) >= 0.67
+    }
+
+    private static func completeness(_ task: SuggestedTask) -> Int {
+        (task.owner == nil ? 0 : 1) + (task.deadlineText == nil ? 0 : 1)
+    }
+
+    private static func actionTokens(_ task: SuggestedTask) -> Set<String> {
+        let ownerTokens = stems(task.owner ?? "")
+        return stems(task.title).subtracting(ownerTokens)
+    }
+
+    private static func sharedEvidence(_ lhs: [SourceEvidence], _ rhs: [SourceEvidence]) -> (sameTurn: Bool, sameQuote: Bool) {
+        var sameTurn = false, sameQuote = false
+        for left in lhs {
+            for right in rhs where left.turnID == right.turnID {
+                sameTurn = true
+                let a = normalize(left.quote), b = normalize(right.quote)
+                if !a.isEmpty, !b.isEmpty, a == b || a.contains(b) || b.contains(a) { sameQuote = true }
+            }
+        }
+        return (sameTurn, sameQuote)
     }
 
     private static func meaningfulTokens(_ text: String) -> Set<String> {
@@ -259,9 +369,178 @@ public enum MeetingAnalysisReducer {
          "not rejected", "no decision"].contains(where: text.contains)
     }
 
-    private static func containsNegatedCommitment(_ text: String) -> Bool {
-        [" will not ", " won't ", " do not ", " don't ", " cancelled", " canceled", " already completed"]
-            .contains(where: text.contains)
+    // MARK: - Certainty of a sentence
+
+    /// Lowercased, punctuation-free form padded with single spaces so a marker
+    /// can be matched as whole words. Apostrophes are kept ("haven't").
+    private static func clauseKey(_ text: String) -> String {
+        let lowered = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        var result = " "
+        var previousWasSpace = true
+        for scalar in lowered.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) || scalar == "'" {
+                result.unicodeScalars.append(scalar)
+                previousWasSpace = false
+            } else if !previousWasSpace {
+                result.append(" ")
+                previousWasSpace = true
+            }
+        }
+        if !result.hasSuffix(" ") { result.append(" ") }
+        return result
+    }
+
+    private static let undecidedMarkers: [String] = [
+        "not decided", "not yet decided", "haven't decided", "have not decided", "havent decided",
+        "hasn't decided", "has not decided", "hasn't been decided", "has not been decided",
+        "not been decided", "didn't decide", "did not decide", "yet to decide", "yet to be decided",
+        "to be decided", "still deciding", "undecided", "no decision", "tbd", "not finalized",
+        "not finalised", "not agreed", "not yet agreed", "haven't agreed", "have not agreed",
+        "not sure whether", "not sure if", "unsure", "open question", "remains open", "still open",
+        "needs further discussion", "should we", "shall we", "could we", "would we", "what if", "if we",
+        "whether", "maybe", "perhaps", "might",
+        "decide nahi", "decide nahin", "tay nahi", "tay nahin", "fix nahi", "final nahi", "pata nahi",
+        "shayad", "kya hum", "kya humein",
+        "\u{0924}\u{092F} \u{0928}\u{0939}\u{0940}\u{0902}", "\u{0924}\u{092F} \u{0928}\u{0939}\u{0940}",
+        "\u{0936}\u{093E}\u{092F}\u{0926}"
+    ]
+
+    private static let commitmentBlockers: [String] = [
+        "won't", "wont", "will not", "not going to", "don't", "do not", "doesn't", "does not", "didn't",
+        "cannot", "can't", "never", "no need", "not needed", "not required", "cancelled", "canceled",
+        "cancel ho", "cancel kar", "cancel hua", "postponed", "put on hold", "on hold", "dropped",
+        "not this week", "not today", "not tomorrow", "not now", "already completed", "already done",
+        "already sent", "nahi", "nahin", "mat",
+        "\u{0928}\u{0939}\u{0940}\u{0902}", "\u{0928}\u{0939}\u{0940}", "\u{0930}\u{0926}\u{094D}\u{0926}"
+    ]
+
+    /// Undecided, hypothetical or explicitly open ("not decided", "should we").
+    private static func isUndecidedSentence(_ sentence: String) -> Bool {
+        let key = clauseKey(sentence)
+        return undecidedMarkers.contains { key.contains(" " + $0 + " ") }
+    }
+
+    /// True when a sentence cannot support a definite future commitment.
+    private static func isNonCommittalSentence(_ sentence: String) -> Bool {
+        if isUndecidedSentence(sentence) { return true }
+        let key = clauseKey(sentence)
+        return commitmentBlockers.contains { key.contains(" " + $0 + " ") }
+    }
+
+    // MARK: - Grounding
+
+    /// Resolves a model quote (often only a fragment such as "change the design")
+    /// to the whole transcript sentence that contains it, because the negation
+    /// that governs a fragment lives in the surrounding sentence.
+    private struct Grounding {
+        let turns: [String: AnalysisTurn]
+
+        init(turns: [AnalysisTurn]) {
+            self.turns = Dictionary(turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+
+        func sentences(for evidence: [SourceEvidence]) -> [String] {
+            var result: [String] = []
+            for item in evidence {
+                var expanded: [String] = []
+                if let text = turns[item.turnID]?.text, let quoteRange = text.range(of: item.quote) {
+                    text.enumerateSubstrings(in: text.startIndex..<text.endIndex,
+                                             options: [.bySentences, .substringNotRequired]) { _, range, _, _ in
+                        if range.overlaps(quoteRange) {
+                            let value = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !value.isEmpty { expanded.append(value) }
+                        }
+                    }
+                }
+                if expanded.isEmpty { expanded = MeetingAnalysisReducer.sentences(in: item.quote) }
+                result.append(contentsOf: expanded)
+            }
+            return result
+        }
+    }
+
+    private struct Focus {
+        /// Sentences that best support the claim.
+        let sentences: [String]
+        /// False when no sentence shares a word with the claim.
+        let matched: Bool
+        /// Every sentence cited by the claim.
+        let all: [String]
+    }
+
+    private static func focus(for text: String, evidence: [SourceEvidence], _ grounding: Grounding) -> Focus {
+        let target = stems(text)
+        let all = grounding.sentences(for: evidence)
+        let scores: [Int] = all.map { target.intersection(stems($0)).count }
+        let best = scores.max() ?? 0
+        guard best > 0 else { return Focus(sentences: all, matched: false, all: all) }
+        var supporting: [String] = []
+        for (index, sentence) in all.enumerated() where scores[index] == best { supporting.append(sentence) }
+        return Focus(sentences: supporting, matched: true, all: all)
+    }
+
+    private static func isUndecidedPoint(_ point: SupportedPoint, _ grounding: Grounding) -> Bool {
+        let found = focus(for: point.text, evidence: point.evidence, grounding)
+        guard !found.sentences.isEmpty else { return false }
+        return found.sentences.allSatisfy(isUndecidedSentence)
+    }
+
+    private static func focusKeys(_ point: SupportedPoint, _ grounding: Grounding) -> Set<String> {
+        let found = focus(for: point.text, evidence: point.evidence, grounding)
+        // A claim that cites exactly one sentence is about that sentence, even
+        // when the model paraphrased it with different words.
+        guard found.matched || found.all.count == 1 else { return [] }
+        return Set(found.sentences.map(normalize))
+    }
+
+    private static func sharesFocus(_ lhs: SupportedPoint, _ rhs: SupportedPoint, _ grounding: Grounding) -> Bool {
+        !focusKeys(lhs, grounding).isDisjoint(with: focusKeys(rhs, grounding))
+    }
+
+    private static func deduplicateOpenIssues(_ values: [SupportedPoint], _ grounding: Grounding) -> [SupportedPoint] {
+        var result: [SupportedPoint] = []
+        for value in values {
+            if let index = result.firstIndex(where: { nearDuplicate($0.text, value.text) || sharesFocus($0, value, grounding) }) {
+                let preferred = value.text.count > result[index].text.count ? value.text : result[index].text
+                result[index] = SupportedPoint(text: preferred,
+                    evidence: uniqueEvidence(result[index].evidence + value.evidence))
+            } else {
+                result.append(value)
+            }
+        }
+        return result
+    }
+
+    /// A task needs a definite commitment behind it. It is rejected when the
+    /// sentence that best supports it is negated, undecided, hypothetical or
+    /// cancelled, and a "decide ..." task is never created from an undecided point.
+    private static func isGroundedCommitment(_ task: SuggestedTask, _ grounding: Grounding) -> Bool {
+        let found = focus(for: task.title, evidence: task.evidence, grounding)
+        guard !found.all.isEmpty else { return false }
+        if found.matched {
+            if found.sentences.allSatisfy(isNonCommittalSentence) { return false }
+        } else if found.all.count > 1, found.all.contains(where: isNonCommittalSentence) {
+            // The title matches none of several cited sentences, one of which is
+            // non-committal: it is more likely invented from that sentence.
+            return false
+        }
+        let first = normalize(task.title).split(separator: " ").first.map(String.init) ?? ""
+        let decideVerbs = Set(["decide", "determine", "choose", "settle", "resolve", "tay"])
+        if decideVerbs.contains(first) {
+            if !found.matched || found.all.contains(where: isUndecidedSentence) { return false }
+        }
+        return true
+    }
+
+    private static func stems(_ text: String) -> Set<String> {
+        Set(meaningfulTokens(text).map(stem))
+    }
+
+    private static func stem(_ word: String) -> String {
+        for suffix in ["ing", "ed", "es", "s", "e"] where word.count - suffix.count >= 3 && word.hasSuffix(suffix) {
+            return String(word.dropLast(suffix.count))
+        }
+        return word
     }
 
     private static func actionHasVerb(_ text: String) -> Bool {

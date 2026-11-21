@@ -277,6 +277,17 @@ public final class LiveRecordingViewModel {
         self.chunkPreprocessor = chunkPreprocessor
     }
     
+    /// The final analysis pass resolves relative dates against this day and time
+    /// zone, so results prepared during recording are reusable only when they match.
+    /// Without a persisted meeting there is nothing to match, so pre-analysis stays off.
+    private func recordingPreAnalysisContext() -> RecordingPreAnalysisContext? {
+        guard let meeting else { return nil }
+        return RecordingPreAnalysisContext(
+            meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
+            timezone: meeting.analysisTimezone ?? TimeZone.current.identifier
+        )
+    }
+
     public func startSession() {
         guard recordingState == .idle || recordingState == .stopped || recordingState == .saved else { return }
         errorMessage = nil
@@ -315,7 +326,8 @@ public final class LiveRecordingViewModel {
                         meetingID: meetingId,
                         languageCode: offlineLanguageCode,
                         preprocessor: chunkPreprocessor,
-                        metrics: metricsCollector
+                        metrics: metricsCollector,
+                        preAnalysis: recordingPreAnalysisContext()
                     )
                     chunkPump = pump
                     preprocessingWorker = worker

@@ -114,7 +114,8 @@ extension Meeting {
             let name = owner.trimmingCharacters(in: .whitespacesAndNewlines)
             let speaker: Speaker?
             if name.isEmpty { speaker = nil }
-            else if let existing = participants.first(where: { $0.name == name }) { speaker = existing }
+            else if let existing = participants.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { speaker = existing }
+            else if let known = MeetingPeopleEditor.knownSpeaker(named: name, context: context) { speaker = known }
             else {
                 let created = Speaker(name: name)
                 context.insert(created)

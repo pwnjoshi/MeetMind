@@ -1,7 +1,7 @@
 import Foundation
 
 public enum OfflineAnalysisContract {
-    public static let promptVersion = "meeting-analysis-v5"
+    public static let promptVersion = "meeting-analysis-v6"
 }
 
 public struct AnalysisTurn: Codable, Sendable, Identifiable {
@@ -40,6 +40,28 @@ public struct LocalAnalysisResult: Codable, Sendable {
     public let discussion: [SupportedPoint]
     public let decisions: [SupportedPoint]
     public let tasks: [SuggestedTask]
+    /// Undecided, hypothetical or still-open items. The model grammar emits only
+    /// three arrays; the reducer derives this list. Absent in checkpoints saved
+    /// by older versions, which decode with an empty list.
+    public let openIssues: [SupportedPoint]
+
+    public init(discussion: [SupportedPoint], decisions: [SupportedPoint], tasks: [SuggestedTask],
+                openIssues: [SupportedPoint] = []) {
+        self.discussion = discussion
+        self.decisions = decisions
+        self.tasks = tasks
+        self.openIssues = openIssues
+    }
+
+    private enum CodingKeys: String, CodingKey { case discussion, decisions, tasks, openIssues }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        discussion = try container.decode([SupportedPoint].self, forKey: .discussion)
+        decisions = try container.decode([SupportedPoint].self, forKey: .decisions)
+        tasks = try container.decode([SuggestedTask].self, forKey: .tasks)
+        openIssues = try container.decodeIfPresent([SupportedPoint].self, forKey: .openIssues) ?? []
+    }
 
     public func validate(against turns: [AnalysisTurn]) throws {
         guard Set(turns.map(\.id)).count == turns.count else {
@@ -48,7 +70,7 @@ public struct LocalAnalysisResult: Codable, Sendable {
         let sources = Dictionary(uniqueKeysWithValues: turns.map { ($0.id, $0.text) })
         let categories = Set(["Follow-up", "Research", "Create/Update", "Review/Approve", "Coordination", "Other"])
         let priorities = Set(["low", "medium", "high", "urgent"])
-        guard (discussion + decisions).allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+        guard (discussion + decisions + openIssues).allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
             throw OfflineError.unavailable("Analysis returned an empty supported point. Review the transcript and retry.")
         }
         for task in tasks {
@@ -57,7 +79,7 @@ public struct LocalAnalysisResult: Codable, Sendable {
                 throw OfflineError.unavailable("Analysis returned an invalid task. No results were saved to your meetings.")
             }
         }
-        for evidence in discussion.map(\.evidence) + decisions.map(\.evidence) + tasks.map(\.evidence) {
+        for evidence in discussion.map(\.evidence) + decisions.map(\.evidence) + openIssues.map(\.evidence) + tasks.map(\.evidence) {
             guard !evidence.isEmpty, evidence.allSatisfy({ !$0.quote.isEmpty && (sources[$0.turnID]?.contains($0.quote) == true) }) else {
                 throw OfflineError.unavailable("Analysis returned missing or invalid source evidence. Review the transcript and retry.")
             }

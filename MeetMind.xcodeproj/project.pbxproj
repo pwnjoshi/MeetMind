@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C02B2CEE000100000001 /* MeetingMinutesContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C02C2CEE000100000001 /* MeetingMinutesContent.swift */; };
+		1A00C02D2CEE000100000001 /* MeetingRecordEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C02E2CEE000100000001 /* MeetingRecordEditor.swift */; };
+		1A00C02F2CEE000100000001 /* MeetingActionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0302CEE000100000001 /* MeetingActionViews.swift */; };
+		1A00C0312CEE000100000001 /* MeetingAddPersonSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0322CEE000100000001 /* MeetingAddPersonSheet.swift */; };
+		1A00C0332CEE000100000001 /* MeetingMinutesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0342CEE000100000001 /* MeetingMinutesView.swift */; };
+		1A00C0352CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0362CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift */; };
+		1A00C0372CEE000100000001 /* MeetingRecordSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0382CEE000100000001 /* MeetingRecordSyncTests.swift */; };
 		1A00C0292CEE000100000001 /* HomeRedesignComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C02A2CEE000100000001 /* HomeRedesignComponents.swift */; };
 		1A00C01F2CEE000100000001 /* CanonicalRecordingValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0202CEE000100000001 /* CanonicalRecordingValidator.swift */; };
 		1A00C0212CEE000100000001 /* RecordingChunkPump.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0222CEE000100000001 /* RecordingChunkPump.swift */; };
@@ -303,6 +310,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C02C2CEE000100000001 /* MeetingMinutesContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingMinutesContent.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C02E2CEE000100000001 /* MeetingRecordEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MeetingRecordEditor.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0302CEE000100000001 /* MeetingActionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingActionViews.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0322CEE000100000001 /* MeetingAddPersonSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingAddPersonSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0342CEE000100000001 /* MeetingMinutesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingMinutesView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0362CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Analysis/RecordingPreAnalysisWorkerTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0382CEE000100000001 /* MeetingRecordSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/MeetingRecordSyncTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C02A2CEE000100000001 /* HomeRedesignComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/HomeRedesignComponents.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0202CEE000100000001 /* CanonicalRecordingValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Audio/CanonicalRecordingValidator.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0222CEE000100000001 /* RecordingChunkPump.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Audio/RecordingChunkPump.swift"; sourceTree = SOURCE_ROOT; };
@@ -622,6 +636,11 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C02C2CEE000100000001 /* MeetingMinutesContent.swift */,
+				1B00C02E2CEE000100000001 /* MeetingRecordEditor.swift */,
+				1B00C0302CEE000100000001 /* MeetingActionViews.swift */,
+				1B00C0322CEE000100000001 /* MeetingAddPersonSheet.swift */,
+				1B00C0342CEE000100000001 /* MeetingMinutesView.swift */,
 				1B00C02A2CEE000100000001 /* HomeRedesignComponents.swift */,
 				1B00C0202CEE000100000001 /* CanonicalRecordingValidator.swift */,
 				1B00C0222CEE000100000001 /* RecordingChunkPump.swift */,
@@ -836,6 +855,8 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0362CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift */,
+				1B00C0382CEE000100000001 /* MeetingRecordSyncTests.swift */,
 				1B00C0282CEE000100000001 /* RecordingChunkPipelineTests.swift */,
 				1B00C01E2CEE000100000001 /* MeetingLifecycleReviewTests.swift */,
 				1B00C0162CEE000100000001 /* DataLifecycleTests.swift */,
@@ -1199,6 +1220,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C02B2CEE000100000001 /* MeetingMinutesContent.swift in Sources */,
+				1A00C02D2CEE000100000001 /* MeetingRecordEditor.swift in Sources */,
+				1A00C02F2CEE000100000001 /* MeetingActionViews.swift in Sources */,
+				1A00C0312CEE000100000001 /* MeetingAddPersonSheet.swift in Sources */,
+				1A00C0332CEE000100000001 /* MeetingMinutesView.swift in Sources */,
 				1A00C0292CEE000100000001 /* HomeRedesignComponents.swift in Sources */,
 				1A00C01F2CEE000100000001 /* CanonicalRecordingValidator.swift in Sources */,
 				1A00C0212CEE000100000001 /* RecordingChunkPump.swift in Sources */,
@@ -1438,6 +1464,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0352CEE000100000001 /* RecordingPreAnalysisWorkerTests.swift in Sources */,
+				1A00C0372CEE000100000001 /* MeetingRecordSyncTests.swift in Sources */,
 				1A00C0272CEE000100000001 /* RecordingChunkPipelineTests.swift in Sources */,
 				1A00C01D2CEE000100000001 /* MeetingLifecycleReviewTests.swift in Sources */,
 				1A00C0152CEE000100000001 /* DataLifecycleTests.swift in Sources */,

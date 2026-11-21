@@ -357,11 +357,23 @@ public struct MinutesReviewContentSnapshot: Codable, Sendable, Equatable {
             notes: notes,
             discussion: ([meeting.summary?.executiveSummary].compactMap { $0 }
                 + (meeting.summary?.keyPoints ?? [])).map(clean),
-            decisions: (meeting.summary?.keyDecisions ?? []).map(clean),
+            decisions: decisionLines(meeting),
             actions: actions,
             unknownVoiceCount: unknown.count,
             pendingTaskSuggestionCount: meeting.pendingTaskSuggestions.count
         )
+    }
+
+    /// Each decision plus its decided-by person, so changing only the decider
+    /// is a material edit that returns finalized minutes to Draft.
+    @MainActor
+    private static func decisionLines(_ meeting: Meeting) -> [String] {
+        let decisions = meeting.summary?.keyDecisions ?? []
+        let record = MeetingRecordStore.shared.record(for: meeting.id)
+        return decisions.enumerated().map { index, text in
+            let decider = record.decider(at: index)?.uuidString ?? ""
+            return decider.isEmpty ? clean(text) : "\(clean(text))|\(decider)"
+        }
     }
 
     private static func milliseconds(_ seconds: TimeInterval) -> Int64 {

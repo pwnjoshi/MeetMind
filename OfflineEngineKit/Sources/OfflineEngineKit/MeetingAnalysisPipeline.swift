@@ -49,7 +49,7 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
 /// only text and timing in the protected app container; audio remains in the
 /// recording chunk directory. Speaker identity is deliberately finalized over
 /// the complete meeting, where cross-window voice clustering is reliable.
-private struct PreparedRecordingChunk: Codable, Sendable {
+struct PreparedRecordingChunk: Codable, Sendable {
     let sequence: Int
     let contentStartTime: TimeInterval
     let endTime: TimeInterval
@@ -70,14 +70,30 @@ public actor MeetingAnalysisPipeline {
     private var discardActiveCheckpoint = false
     private let backend: any MeetingAnalysisBackend
     private let checkpointRoot: URL?
+    private let resourceGate: @Sendable () -> Bool
+    private var preAnalyzing = false
     public static let analysisModelID = "qwen-4b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
     public static let checkpointFormatVersion = "asr-prefill-v2"
     private static let modelConfiguration = LocalModelConfiguration.compact
     static let analysisChunkBytes = 1800
-    public init() { backend = LocalMeetingAnalysisBackend(); checkpointRoot = nil }
-    init(backend: any MeetingAnalysisBackend, checkpointRoot: URL) {
-        self.backend = backend; self.checkpointRoot = checkpointRoot
+
+    /// Extra memory headroom required before the analysis model may load while a
+    /// recording is still in progress. Recording audio safety comes first.
+    static let preAnalysisExtraReserveBytes: UInt64 = 750_000_000
+
+    public static func defaultResourceGate() -> Bool {
+        ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue
+            && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+
+    public init() {
+        backend = LocalMeetingAnalysisBackend(); checkpointRoot = nil
+        resourceGate = { MeetingAnalysisPipeline.defaultResourceGate() }
+    }
+    init(backend: any MeetingAnalysisBackend, checkpointRoot: URL,
+         resourceGate: @escaping @Sendable () -> Bool = { MeetingAnalysisPipeline.defaultResourceGate() }) {
+        self.backend = backend; self.checkpointRoot = checkpointRoot; self.resourceGate = resourceGate
     }
 
     private func checkpointURL(_ id: UUID) throws -> URL {
@@ -88,8 +104,35 @@ public actor MeetingAnalysisPipeline {
     private func preparationDirectory(meetingID: UUID) throws -> URL {
         // v2: chunks written before the decoder prefill fix are ignored.
         // Those checkpoints could cover a recording with no recognized speech.
-        try OfflineModelStore.privateDirectory("RecordingChunkPreparation-v2")
-            .appendingPathComponent(meetingID.uuidString, isDirectory: true)
+        let base = try checkpointRoot?.appendingPathComponent("RecordingChunkPreparation-v2", isDirectory: true)
+            ?? OfflineModelStore.privateDirectory("RecordingChunkPreparation-v2")
+        return base.appendingPathComponent(meetingID.uuidString, isDirectory: true)
+    }
+
+    private func preAnalysisURL(meetingID: UUID) throws -> URL {
+        let base = try checkpointRoot?.appendingPathComponent("RecordingPreAnalysis-v1", isDirectory: true)
+            ?? OfflineModelStore.privateDirectory("RecordingPreAnalysis-v1")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base.appendingPathComponent(meetingID.uuidString + ".json")
+    }
+
+    private func loadPreAnalysis(meetingID: UUID, contextKey: String) -> PreAnalysisStore? {
+        guard let url = try? preAnalysisURL(meetingID: meetingID),
+              let data = try? Data(contentsOf: url),
+              let store = try? JSONDecoder().decode(PreAnalysisStore.self, from: data),
+              store.contextKey == contextKey else { return nil }
+        return store
+    }
+
+    private func savePreAnalysis(_ store: PreAnalysisStore, meetingID: UUID) throws {
+        try JSONEncoder().encode(store).write(to: try preAnalysisURL(meetingID: meetingID),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    private func removePreAnalysis(meetingID: UUID) {
+        if let url = try? preAnalysisURL(meetingID: meetingID), FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     private func preparationURL(meetingID: UUID, sequence: Int) throws -> URL {
@@ -108,11 +151,9 @@ public actor MeetingAnalysisPipeline {
                                       chunkStartTime: TimeInterval, contentStartTime: TimeInterval,
                                       endTime: TimeInterval, languageCode: String? = nil) async throws -> Bool {
         let key = "\(meetingID.uuidString)-\(sequence)"
-        guard !running, !preparingChunks.contains(key),
-              ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue,
-              !ProcessInfo.processInfo.isLowPowerModeEnabled else { return false }
+        guard !running, !preAnalyzing, !preparingChunks.contains(key), resourceGate() else { return false }
         let profiles = try requiredProfiles(model: .fast)
-        guard await OfflineModelStore.shared.isInstalled(profiles[0]) else { return false }
+        guard await backend.isInstalled(profiles[0]) else { return false }
         preparingChunks.insert(key)
         defer { preparingChunks.remove(key) }
         let folder = try await backend.verifiedFolder(profiles[0])
@@ -136,33 +177,148 @@ public actor MeetingAnalysisPipeline {
         return true
     }
 
-    private func preparedTurns(meetingID: UUID, duration: TimeInterval) throws -> [AnalysisTurn]? {
+    private func preparedWindows(meetingID: UUID) throws -> [PreparedRecordingChunk] {
         let root = try preparationDirectory(meetingID: meetingID)
-        guard FileManager.default.fileExists(atPath: root.path) else { return nil }
+        guard FileManager.default.fileExists(atPath: root.path) else { return [] }
         let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        let windows = try files.map { try JSONDecoder().decode(PreparedRecordingChunk.self, from: Data(contentsOf: $0)) }
-            .sorted { $0.sequence < $1.sequence }
-        guard let first = windows.first, let last = windows.last,
-              first.contentStartTime <= 0.5, last.endTime >= duration - 0.5 else { return nil }
-        var coveredEnd = first.contentStartTime
-        for window in windows {
-            guard window.contentStartTime <= coveredEnd + 0.75 else { return nil }
-            coveredEnd = max(coveredEnd, window.endTime)
+        var windows: [PreparedRecordingChunk] = []
+        for file in files {
+            // A window that cannot be decoded is simply a gap that gets retranscribed.
+            if let data = try? Data(contentsOf: file),
+               let window = try? JSONDecoder().decode(PreparedRecordingChunk.self, from: data) { windows.append(window) }
         }
-        var seen = Set<String>()
-        return windows.flatMap(\.turns).sorted { $0.start < $1.start }.filter { turn in
-            let key = "\(Int(turn.start * 10))|\(turn.text.lowercased())"
-            return seen.insert(key).inserted
-        }
+        return windows.sorted { $0.sequence < $1.sequence }
     }
 
+    /// Reuses prepared windows and transcribes only the time ranges they do not
+    /// cover. When too little is prepared, one pass over the whole recording is
+    /// cheaper than several model loads and is used instead.
+    private func transcribeReusingPreparedWindows(meetingID: UUID, audio: URL, duration: TimeInterval,
+                                                  profile: ModelProfile, languageCode: String?) async throws -> [AnalysisTurn] {
+        let windows = (try? preparedWindows(meetingID: meetingID)) ?? []
+        let plan = RecordingReuse.plan(windows: windows, duration: duration)
+        var turns = plan.turns
+        var transcribedSeconds = 0.0
+        if !plan.gaps.isEmpty {
+            let folder = try await backend.verifiedFolder(profile)
+            var wholeFile = plan.gaps.count == 1 && plan.gaps[0].start <= 0 && plan.gaps[0].end >= duration
+            if !wholeFile {
+                var gapTurns: [AnalysisTurn] = []
+                for (index, gap) in plan.gaps.enumerated() {
+                    try Task.checkCancellation()
+                    let clip: URL
+                    do { clip = try RecordingReuse.extractAudio(from: audio, start: gap.start, end: gap.end) }
+                    catch is CancellationError { throw CancellationError() }
+                    catch { wholeFile = true; break }
+                    defer { RecordingReuse.removeClip(clip) }
+                    let raw = try await backend.transcribe(audio: clip, folder: folder, languageCode: languageCode)
+                    gapTurns.append(contentsOf: RecordingReuse.offsetGapTurns(raw, gap: gap, index: index))
+                    transcribedSeconds += gap.duration
+                }
+                if !wholeFile { turns = (turns + gapTurns).sorted { $0.start < $1.start } }
+            }
+            if wholeFile {
+                var recognized = try await backend.transcribe(audio: audio, folder: folder, languageCode: languageCode)
+                // A forced language that yields nothing is retried with detection.
+                // The recording is unchanged; only the decoder anchor changes.
+                if recognized.isEmpty, languageCode != nil {
+                    recognized = try await backend.transcribe(audio: audio, folder: folder, languageCode: nil)
+                }
+                turns = recognized
+                transcribedSeconds = duration
+            }
+        }
+        TranscriptReuseRegistry.shared.record(TranscriptReuseSummary(totalSeconds: duration,
+            reusedSeconds: max(0, duration - transcribedSeconds),
+            transcribedSeconds: transcribedSeconds), for: meetingID)
+        return turns
+    }
+
+    /// Analyzes finalized transcript chunks while recording continues, so the
+    /// post-recording pass can reuse them. Everything here is optional work:
+    /// it does nothing unless the device is cool, not in Low Power Mode, the
+    /// analysis model is installed, and memory passes with a generous extra
+    /// reserve. It never runs concurrently with Whisper and stops at the first
+    /// cancellation check (Stop cancels the calling task). At most `maxChunks`
+    /// chunks are analyzed per call so transcription keeps priority.
+    @discardableResult
+    public func preAnalyzeRecording(meetingID: UUID, meetingDate: Date, timezone: String,
+                                    model: VidurModel = .selected, maxChunks: Int = 1) async throws -> Int {
+        guard !running, !preAnalyzing, preparingChunks.isEmpty, maxChunks > 0,
+              !discardedPreparationMeetingIDs.contains(meetingID), resourceGate() else { return 0 }
+        let profiles = try requiredProfiles(model: model)
+        let profile = profiles[2]
+        guard await backend.isInstalled(profile) else { return 0 }
+        let configuration = Self.preAnalysisConfiguration
+        let contextKey = RecordingReuse.contextKey(profile: profile, configuration: Self.modelConfiguration,
+            chunkBytes: Self.analysisChunkBytes, meetingDate: meetingDate, timezone: timezone)
+        let prefix = Self.splitTurns(RecordingReuse.contiguousPrefixTurns(try preparedWindows(meetingID: meetingID)))
+        guard !prefix.isEmpty else { return 0 }
+        var store = loadPreAnalysis(meetingID: meetingID, contextKey: contextKey)
+            ?? PreAnalysisStore(contextKey: contextKey, entries: [], checkedChunkCount: 0)
+        // A chunk closes after about 1800 bytes of new transcript, so a changed
+        // chunk count is the "enough new text" trigger. A chunk is final only once
+        // a later chunk exists. This byte plan needs no model, so it is cheap.
+        let roughCount = Self.analysisChunks(prefix, maxJSONBytes: Self.analysisChunkBytes).count
+        guard roughCount >= 2, roughCount > store.checkedChunkCount else { return 0 }
+
+        preAnalyzing = true
+        defer { preAnalyzing = false }
+        try Task.checkCancellation()
+        let folder = try await backend.verifiedFolder(profile)
+        // The final pass may have started while this call was suspended; never
+        // hold two language models, and stop at once when Stop cancelled us.
+        try Task.checkCancellation()
+        guard !running, resourceGate() else { return 0 }
+        let session: any MeetingAnalysisSession
+        do { session = try backend.makeSession(folder: folder, configuration: configuration) }
+        catch let error as OfflineError {
+            // Not enough headroom while recording is a normal, silent outcome.
+            if case .memoryBudget = error { return 0 }
+            throw error
+        }
+        let fitted = try Self.fittedAnalysisChunks(prefix, model: session, meetingDate: meetingDate,
+            timezone: timezone, maxJSONBytes: Self.analysisChunkBytes)
+        let closed = Array(fitted.dropLast())
+        let known = Set(store.entries.map(\.key))
+        let pending = closed.filter { !known.contains(RecordingReuse.chunkKey($0)) }
+        var analyzed = 0
+        for chunk in pending {
+            try Task.checkCancellation()
+            guard resourceGate(), !discardedPreparationMeetingIDs.contains(meetingID) else { break }
+            let result = try session.analyze(turns: chunk, meetingDate: meetingDate, timezone: timezone, question: nil)
+            try result.validate(against: chunk)
+            store.entries.append(PreAnalysisEntry(key: RecordingReuse.chunkKey(chunk), result: result))
+            if discardedPreparationMeetingIDs.contains(meetingID) { throw CancellationError() }
+            analyzed += 1
+            if analyzed >= pending.count { store.checkedChunkCount = roughCount }
+            try savePreAnalysis(store, meetingID: meetingID)
+            if analyzed >= maxChunks { break }
+        }
+        if pending.isEmpty {
+            // Nothing new to analyze (or an equivalent chunk is already stored).
+            store.checkedChunkCount = roughCount
+            try savePreAnalysis(store, meetingID: meetingID)
+        }
+        return analyzed
+    }
+
+    private static var preAnalysisConfiguration: LocalModelConfiguration {
+        let base = modelConfiguration
+        return LocalModelConfiguration(contextTokens: base.contextTokens, inputTokens: base.inputTokens,
+            outputTokens: base.outputTokens, batchTokens: base.batchTokens,
+            microBatchTokens: base.microBatchTokens,
+            reserveBytes: base.reserveBytes + preAnalysisExtraReserveBytes)
+    }
     public func discardCheckpoint(meetingID: UUID) throws {
         if activeMeetingID == meetingID { discardActiveCheckpoint = true }
         let url = try checkpointURL(meetingID)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
         let preparation = try preparationDirectory(meetingID: meetingID)
         if FileManager.default.fileExists(atPath: preparation.path) { try FileManager.default.removeItem(at: preparation) }
+        removePreAnalysis(meetingID: meetingID)
+        TranscriptReuseRegistry.shared.clear(meetingID: meetingID)
     }
 
     /// Signals an active run to cancel and waits briefly for it to relinquish
@@ -171,7 +327,7 @@ public actor MeetingAnalysisPipeline {
         discardedPreparationMeetingIDs.insert(meetingID)
         try discardCheckpoint(meetingID: meetingID)
         let deadline = Date().addingTimeInterval(timeout)
-        while activeMeetingID == meetingID || preparingChunks.contains(where: { $0.hasPrefix(meetingID.uuidString + "-") }) {
+        while activeMeetingID == meetingID || preAnalyzing || preparingChunks.contains(where: { $0.hasPrefix(meetingID.uuidString + "-") }) {
             guard Date() < deadline else {
                 throw OfflineError.unavailable("Analysis is still stopping. Retry deletion after processing has stopped.")
             }
@@ -239,6 +395,8 @@ public actor MeetingAnalysisPipeline {
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
         let preparation = try preparationDirectory(meetingID: meetingID)
         if FileManager.default.fileExists(atPath: preparation.path) { try FileManager.default.removeItem(at: preparation) }
+        removePreAnalysis(meetingID: meetingID)
+        TranscriptReuseRegistry.shared.clear(meetingID: meetingID)
     }
 
     public func modelReadiness(model: VidurModel = .large, speakersOnly: Bool = false) async throws -> [(ModelProfile, ModelReadiness)] {
@@ -308,20 +466,11 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .transcription {
             try checkConditions()
             await progress(.transcription)
-            if let prepared = try preparedTurns(meetingID: meetingID, duration: duration), !prepared.isEmpty {
-                checkpoint.turns = Self.splitTurns(prepared)
-            } else {
-                let transcriptionFolder = try await backend.verifiedFolder(profiles[0])
-                var recognized = Self.splitTurns(try await backend.transcribe(
-                    audio: audio, folder: transcriptionFolder, languageCode: languageCode))
-                // A forced language that yields nothing is retried with detection.
-                // The recording is unchanged; only the decoder anchor changes.
-                if recognized.isEmpty, languageCode != nil {
-                    recognized = Self.splitTurns(try await backend.transcribe(
-                        audio: audio, folder: transcriptionFolder, languageCode: nil))
-                }
-                checkpoint.turns = recognized
-            }
+            // Windows transcribed during recording are reused; only the time
+            // ranges they do not cover are transcribed now.
+            checkpoint.turns = Self.splitTurns(try await transcribeReusingPreparedWindows(
+                meetingID: meetingID, audio: audio, duration: duration, profile: profiles[0],
+                languageCode: languageCode))
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
             try save()
@@ -354,6 +503,11 @@ public actor MeetingAnalysisPipeline {
             await progress(.analysis)
             let folder = try await backend.verifiedFolder(profiles[2])
             let model = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
+            let preAnalysisKey = RecordingReuse.contextKey(profile: profiles[2], configuration: Self.modelConfiguration,
+                chunkBytes: Self.analysisChunkBytes, meetingDate: meetingDate, timezone: timezone)
+            let preAnalyzed: [String: LocalAnalysisResult] = Dictionary(
+                (loadPreAnalysis(meetingID: meetingID, contextKey: preAnalysisKey)?.entries ?? []).map { ($0.key, $0.result) },
+                uniquingKeysWith: { first, _ in first })
             if checkpoint.chunkTurnIDs == nil {
                 let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: model,
                     meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes)
@@ -382,14 +536,22 @@ public actor MeetingAnalysisPipeline {
             }
             for index in checkpoint.analyzedChunks..<chunks.count {
                 try checkConditions()
-                let result = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone, question: nil)
-                try result.validate(against: chunks[index])
+                let result: LocalAnalysisResult
+                if let cached = preAnalyzed[RecordingReuse.chunkKey(chunks[index])],
+                   (try? cached.validate(against: chunks[index])) != nil {
+                    // Identical turn IDs and texts were analyzed during recording.
+                    result = cached
+                } else {
+                    result = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone, question: nil)
+                    try result.validate(against: chunks[index])
+                }
                 checkpoint.analysis.append(result)
                 checkpoint.analyzedChunks = index + 1
                 try save()
             }
             checkpoint.stage = .completed
             try save()
+            removePreAnalysis(meetingID: meetingID)
         }
         try Task.checkCancellation()
         if discardActiveCheckpoint { throw CancellationError() }
@@ -507,7 +669,13 @@ public actor MeetingAnalysisPipeline {
         let fragments = splitTurns(turns)
         let encoder = JSONEncoder()
         func inputBytes(_ values: [AnalysisTurn]) -> Int {
-            (try? encoder.encode(values).count) ?? Int.max
+            // Speaker labels are unknown while recording and present afterwards.
+            // Budgeting with a fixed label keeps the plan identical in both cases,
+            // so chunks analyzed during recording can be reused.
+            let budgeted = values.map {
+                AnalysisTurn(id: $0.id, text: $0.text, start: $0.start, end: $0.end, speaker: "Speaker 1")
+            }
+            return (try? encoder.encode(budgeted).count) ?? Int.max
         }
         var result: [[AnalysisTurn]] = [], chunk: [AnalysisTurn] = []
         for turn in fragments {

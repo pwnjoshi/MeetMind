@@ -12,6 +12,7 @@ struct MinutesActionLine: Equatable, Sendable {
     let title: String
     let owner: String?
     let due: Date?
+    var isCompleted: Bool = false
 }
 
 /// Plain-value copy of the meeting content used to build the document.
@@ -26,6 +27,12 @@ struct MinutesMeetingSnapshot: Equatable, Sendable {
     var decisions: [String]
     var actionItems: [MinutesActionLine]
     var isFinalized: Bool
+    /// Executive summary text; empty when the minutes have none (or repeat the discussion).
+    var summary: String = ""
+    /// Unresolved discussion points, derived by `MeetingMinutesContent`.
+    var openIssues: [String] = []
+    /// Decided-by names, parallel to `decisions`.
+    var decisionDeciders: [String?] = []
 
     @MainActor
     static func make(from meeting: Meeting) -> MinutesMeetingSnapshot {
@@ -36,8 +43,9 @@ struct MinutesMeetingSnapshot: Equatable, Sendable {
                 role: $0.role?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? $0.role : nil
             )
         }
-        let actions = meeting.actionItems.map {
-            MinutesActionLine(title: $0.title, owner: $0.assignee?.name, due: $0.dueDate)
+        let content = MeetingMinutesContent.make(from: meeting, record: MeetingRecordStore.shared.record(for: meeting.id))
+        let actions = content.actions.map {
+            MinutesActionLine(title: $0.title, owner: $0.owner, due: $0.due, isCompleted: $0.isCompleted)
         }
         let summary = meeting.summary
         return MinutesMeetingSnapshot(
@@ -47,10 +55,13 @@ struct MinutesMeetingSnapshot: Equatable, Sendable {
             agenda: meeting.agendaText,
             participants: participants,
             defaultAbsentIDs: meeting.absentParticipantIDs ?? [],
-            discussion: summary?.discussionLines ?? [],
-            decisions: summary?.keyDecisions ?? [],
+            discussion: content.discussion,
+            decisions: content.decisions.map(\.text),
             actionItems: actions,
-            isFinalized: summary != nil && meeting.minutesNeedFinalization != true
+            isFinalized: summary != nil && meeting.minutesNeedFinalization != true,
+            summary: content.summary,
+            openIssues: content.openIssues,
+            decisionDeciders: content.decisions.map(\.decidedBy)
         )
     }
 }
@@ -132,6 +143,11 @@ enum MinutesDocumentBuilder {
     ) -> MinutesDocument {
         var blocks: [MinutesDocument.Block] = []
 
+        let overview = snapshot.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !overview.isEmpty {
+            blocks.append(.init(id: "summary", heading: "Summary", lines: [overview], style: .heading))
+        }
+
         let agenda = (snapshot.agenda ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !agenda.isEmpty {
             let agendaLines = agenda.split(whereSeparator: \.isNewline)
@@ -143,6 +159,12 @@ enum MinutesDocumentBuilder {
         for section in config.orderedEnabledSections where section != .participantNames {
             if let block = block(for: section, snapshot: snapshot, config: config) {
                 blocks.append(block)
+            }
+            if section == .discussion {
+                let issues = snapshot.openIssues.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                if !issues.isEmpty {
+                    blocks.append(.init(id: "openIssues", heading: "Open issues", lines: issues, style: .heading))
+                }
             }
         }
 
@@ -209,15 +231,25 @@ enum MinutesDocumentBuilder {
 
         case .discussion:
             var lines = snapshot.discussion.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            if lines.isEmpty { lines = ["No discussion summary recorded."] }
+            if lines.isEmpty {
+                // The Summary block already carries the text when only a summary exists.
+                if !snapshot.summary.isEmpty { return nil }
+                lines = ["No discussion summary recorded."]
+            }
             if brief { lines = Array(lines.prefix(3)) }
             return .init(id: "discussion", heading: "Discussion summary", lines: lines, style: .heading)
 
         case .decisions:
-            let decisions = snapshot.decisions.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            let lines = decisions.isEmpty
-                ? ["No decisions recorded."]
-                : decisions.enumerated().map { "\($0.offset + 1). \($0.element)" }
+            var lines: [String] = []
+            for (index, text) in snapshot.decisions.enumerated() {
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+                var line = "\(lines.count + 1). \(text)"
+                if snapshot.decisionDeciders.indices.contains(index), let name = snapshot.decisionDeciders[index] {
+                    line += " (Decided by \(name))"
+                }
+                lines.append(line)
+            }
+            if lines.isEmpty { lines = ["No decisions recorded."] }
             return .init(id: "decisions", heading: "Decisions", lines: lines, style: .heading)
 
         case .actionItems:
@@ -227,11 +259,13 @@ enum MinutesDocumentBuilder {
                     lines.append("\(index + 1). \(item.title)")
                     let owner = item.owner ?? "Unassigned"
                     let due = item.due.map(shortDate) ?? "No deadline"
-                    lines.append("Owner: \(owner) · Deadline: \(due)")
+                    let status = item.isCompleted ? " · Done" : ""
+                    lines.append("Owner: \(owner) · Deadline: \(due)\(status)")
                 } else {
                     var parts = [item.title]
                     if let owner = item.owner { parts.append(owner) }
                     if let due = item.due { parts.append("Due \(shortDate(due))") }
+                    if item.isCompleted { parts.append("Done") }
                     lines.append(parts.joined(separator: " · "))
                 }
             }

@@ -30,25 +30,37 @@ public struct DocumentSnapshot: Equatable, Sendable {
     public let status: String
     public let sections: [Section]
     public let actions: [Action]
+    /// Sections printed after the action items (open issues).
+    public let closingSections: [Section]
     public let transcript: [TranscriptLine]
 
-    public static func make(from meeting: Meeting) -> Self {
-        let absentIDs = Set(meeting.absentParticipantIDs ?? [])
-        let present = meeting.namedAttendees.filter { !absentIDs.contains($0.id) }.map(\.displayLabel)
-        let absent = meeting.namedAttendees.filter { absentIDs.contains($0.id) }.map(\.displayLabel)
-        let agenda = (meeting.agendaText ?? "").split(whereSeparator: \.isNewline).map(String.init)
-        let presentHeading = meeting.absentParticipantIDs == nil ? "Attendees" : "Present"
-        var sections = [Section(heading: "Agenda", lines: agenda),
-                        Section(heading: presentHeading, lines: present),
-                        Section(heading: "Absent", lines: absent)].filter { !$0.lines.isEmpty }
-        if let summary = meeting.summary {
-            let overview = summary.executiveSummary
-            let points = summary.discussionLines
-            let discussion = points.joined(separator: "\n") == overview ? [] : points
-            sections += [Section(heading: "Executive Summary", lines: overview.isEmpty ? [] : [overview]),
-                         Section(heading: "Discussion", lines: discussion),
-                         Section(heading: "Key Decisions", lines: summary.keyDecisions)]
-                .filter { !$0.lines.isEmpty }
+    /// Builds the snapshot from the same categorized content the Minutes tab shows.
+    /// Suggested tasks that were not accepted are not part of the minutes and are never exported.
+    /// `record` carries the decided-by metadata; when nil the shared record store is read (main thread only).
+    public static func make(from meeting: Meeting, record: MeetingRecordData? = nil) -> Self {
+        let resolved = record ?? currentRecord(for: meeting.id)
+        let content = MeetingMinutesContent.make(from: meeting, record: resolved)
+        return make(from: meeting, content: content)
+    }
+
+    static func make(from meeting: Meeting, content: MeetingMinutesContent) -> Self {
+        let presentHeading = content.hasAttendanceRecord ? "Present" : "Attendees"
+        let candidates: [Section] = [
+            Section(heading: "Executive Summary", lines: content.summary.isEmpty ? [] : [content.summary]),
+            Section(heading: "Agenda", lines: content.agenda),
+            Section(heading: presentHeading, lines: content.present.map(\.label)),
+            Section(heading: "Absent", lines: content.absent.map(\.label)),
+            Section(heading: "Discussion", lines: content.discussion),
+            Section(heading: "Key Decisions", lines: content.decisions.map { content.decisionLine($0) })
+        ]
+        let sections = candidates.filter { !$0.lines.isEmpty }
+        let closing = [Section(heading: "Open Issues", lines: content.openIssues)].filter { !$0.lines.isEmpty }
+        let actions = content.actions.map { line in
+            Action(title: line.title, assignee: line.ownerName, dueDate: line.dueText,
+                   priority: line.priorityName, isCompleted: line.isCompleted)
+        }
+        let transcript = meeting.orderedTranscriptSegments.map {
+            TranscriptLine(speaker: $0.speakerDisplayName, timestamp: $0.formattedStartTime, text: $0.text)
         }
         return Self(
             meetingID: meeting.id,
@@ -57,14 +69,21 @@ public struct DocumentSnapshot: Equatable, Sendable {
             formattedDuration: meeting.formattedDuration,
             status: meeting.status.displayName,
             sections: sections,
-            actions: meeting.actionItems.map {
-                Action(title: $0.title, assignee: $0.assigneeName, dueDate: $0.formattedDueDate,
-                       priority: $0.priorityDisplayName, isCompleted: $0.isCompleted)
-            },
-            transcript: meeting.orderedTranscriptSegments.map {
-                TranscriptLine(speaker: $0.speakerDisplayName, timestamp: $0.formattedStartTime, text: $0.text)
-            }
+            actions: actions,
+            closingSections: closing,
+            transcript: transcript
         )
+    }
+
+    /// The same document without the transcript, for email bodies and the clipboard.
+    public func withoutTranscript() -> Self {
+        Self(meetingID: meetingID, title: title, formattedDate: formattedDate, formattedDuration: formattedDuration,
+             status: status, sections: sections, actions: actions, closingSections: closingSections, transcript: [])
+    }
+
+    private static func currentRecord(for meetingID: UUID) -> MeetingRecordData {
+        guard Thread.isMainThread else { return MeetingRecordData() }
+        return MainActor.assumeIsolated { MeetingRecordStore.shared.record(for: meetingID) }
     }
 }
 
@@ -162,6 +181,7 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
                     "\($0.isCompleted ? "[X]" : "[  ]")  \($0.title)  (\($0.assignee))  [Priority: \($0.priority)]"
                 }, color: .systemGreen)
             }
+            for section in snapshot.closingSections { drawSection(section.heading, lines: section.lines) }
             if !snapshot.transcript.isEmpty {
                 drawSection("Transcript", lines: snapshot.transcript.map {
                     "\($0.speaker) [\($0.timestamp)]:\n\($0.text)"
@@ -192,6 +212,11 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
             }
             text += "\n"
         }
+        for section in snapshot.closingSections {
+            text += "## \(section.heading)\n"
+            text += section.lines.map { "- \($0)\n" }.joined()
+            text += "\n"
+        }
         if !snapshot.transcript.isEmpty {
             text += "## Transcript\n"
             for line in snapshot.transcript {
@@ -219,6 +244,11 @@ public final class ExportService: ExportServiceProtocol, @unchecked Sendable {
                 let due = action.dueDate.map { " (Due: \($0))" } ?? ""
                 text += "[\(action.isCompleted ? "X" : " ")] \(action.title) (\(action.assignee))\(due) [\(action.priority)]\n"
             }
+            text += "\n"
+        }
+        for section in snapshot.closingSections {
+            text += "\(section.heading.uppercased()):\n"
+            text += section.lines.map { "• \($0)\n" }.joined()
             text += "\n"
         }
         if !snapshot.transcript.isEmpty {

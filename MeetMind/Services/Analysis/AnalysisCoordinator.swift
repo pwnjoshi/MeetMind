@@ -250,7 +250,9 @@ public final class AnalysisCoordinator {
 
     private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
         let reduced = MeetingAnalysisReducer.reduce(result)
-        let points = reduced.discussion.map(\.text)
+        // Open issues live in the checkpoint as their own list; the minutes
+        // content builder renders them in a dedicated Open Issues section.
+        let points = uniqueTexts(reduced.discussion.map(\.text))
         let decisions = reduced.decisions.map(\.text)
         if let old = meeting.summary { context.delete(old) }
         meeting.summary = Summary(executiveSummary: reduced.executiveSummary,

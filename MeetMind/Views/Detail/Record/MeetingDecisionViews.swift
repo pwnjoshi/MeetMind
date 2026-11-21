@@ -25,7 +25,7 @@ struct MeetingDecisionDetail: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("\(meeting.title) · \((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.day().month(.abbreviated))) · Decision")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text(decision).font(.title.bold())
+                    Text(decision).font(.title3.bold())
                     Text("Agreed")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(Color(red: 0.13, green: 0.55, blue: 0.24))
@@ -53,10 +53,24 @@ struct MeetingDecisionDetail: View {
             }
         }
         .sheet(isPresented: $editing) {
-            if let decision {
-                MeetingDecisionEditSheet(initialText: decision, onSave: saveDecision, onDelete: deleteDecision)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
+            if let decision, let meeting = viewModel.meeting {
+                MeetingDecisionEditSheet(
+                    title: "Edit Decision",
+                    people: MeetingPeopleEditor.ownerChoices(for: meeting),
+                    initialText: decision,
+                    initialDecider: store.record(for: meeting.id).decider(at: index),
+                    onSave: { text, decider in
+                        try MeetingRecordEditor.updateDecision(at: index, text: text, decidedBy: decider,
+                                                               meeting: meeting, context: context, store: store)
+                    },
+                    onDelete: {
+                        try MeetingRecordEditor.deleteDecision(at: index, meeting: meeting, context: context, store: store)
+                        editing = false
+                        dismiss()
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
         }
         .alert("Could Not Update Decision", isPresented: Binding(
@@ -165,7 +179,7 @@ struct MeetingDecisionDetail: View {
     }
 
     private func setDecider(_ id: UUID?, meeting: Meeting) {
-        do { try store.update(meeting.id) { $0.setDecider(id, at: index) } }
+        do { try MeetingRecordEditor.setDecider(id, at: index, meeting: meeting, store: store) }
         catch { saveError = error.localizedDescription }
     }
 
@@ -177,36 +191,6 @@ struct MeetingDecisionDetail: View {
             viewModel.seek(to: moment.start)
             if !viewModel.isPlaying { viewModel.togglePlayPause() }
             playingTurnID = moment.turnID
-        }
-    }
-
-    private func saveDecision(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let summary = viewModel.summary, summary.keyDecisions.indices.contains(index) else { return }
-        let previous = summary.keyDecisions
-        summary.keyDecisions[index] = trimmed
-        do {
-            try context.save()
-            editing = false
-        } catch {
-            summary.keyDecisions = previous
-            saveError = error.localizedDescription
-        }
-    }
-
-    private func deleteDecision() {
-        guard let meeting = viewModel.meeting, let summary = viewModel.summary,
-              summary.keyDecisions.indices.contains(index) else { return }
-        let previous = summary.keyDecisions
-        summary.keyDecisions.remove(at: index)
-        do {
-            try context.save()
-            try? store.update(meeting.id) { $0.removeDecision(at: index) }
-            editing = false
-            dismiss()
-        } catch {
-            summary.keyDecisions = previous
-            saveError = error.localizedDescription
         }
     }
 
@@ -233,20 +217,35 @@ struct MeetingDecisionDetail: View {
     }
 }
 
-/// "Edit Decision" sheet with a text field and Delete Decision.
+/// New or edit decision sheet: text, decided-by picker and (when editing) Delete Decision.
+/// Save and delete errors are shown in the sheet; the sheet closes only when the change was saved.
 struct MeetingDecisionEditSheet: View {
+    let title: String
+    let people: [Speaker]
     let initialText: String
-    let onSave: (String) -> Void
-    let onDelete: () -> Void
+    let initialDecider: UUID?
+    let onSave: (String, UUID?) throws -> Void
+    let onDelete: (() throws -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var text: String
+    @State private var deciderID: UUID?
     @State private var confirmDelete = false
+    @State private var errorMessage: String?
 
-    init(initialText: String, onSave: @escaping (String) -> Void, onDelete: @escaping () -> Void) {
+    init(title: String, people: [Speaker], initialText: String, initialDecider: UUID?,
+         onSave: @escaping (String, UUID?) throws -> Void, onDelete: (() throws -> Void)?) {
+        self.title = title
+        self.people = people
         self.initialText = initialText
+        self.initialDecider = initialDecider
         self.onSave = onSave
         self.onDelete = onDelete
         _text = State(initialValue: initialText)
+        _deciderID = State(initialValue: initialDecider)
+    }
+
+    private var deciderName: String {
+        people.first(where: { $0.id == deciderID })?.name ?? "Not set"
     }
 
     var body: some View {
@@ -266,19 +265,23 @@ struct MeetingDecisionEditSheet: View {
                     }
                     .frame(height: 120)
                     .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                    Button("Delete Decision", role: .destructive) { confirmDelete = true }
+                    deciderRow
+                    if onDelete != nil {
+                        Button("Delete Decision", role: .destructive) { confirmDelete = true }
+                            .frame(minHeight: 44)
+                    }
                 }
                 .padding(16)
             }
             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("Edit Decision")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", systemImage: "checkmark") { onSave(text) }
+                    Button("Save", systemImage: "checkmark") { save() }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.circle)
@@ -286,9 +289,61 @@ struct MeetingDecisionEditSheet: View {
                 }
             }
             .confirmationDialog("Delete this decision?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete Decision", role: .destructive, action: onDelete)
+                Button("Delete Decision", role: .destructive) { remove() }
                 Button("Cancel", role: .cancel) {}
             }
+            .recordErrorAlert("Could Not Save Decision", message: $errorMessage)
+        }
+    }
+
+    private var deciderRow: some View {
+        HStack {
+            Text("Decided By")
+            Spacer()
+            Menu {
+                Button("Not set") { deciderID = nil }
+                ForEach(people, id: \.id) { person in
+                    Button {
+                        deciderID = person.id
+                    } label: {
+                        if person.id == deciderID {
+                            Label(person.name, systemImage: "checkmark")
+                        } else {
+                            Text(person.name)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(deciderName).foregroundStyle(deciderID == nil ? Color.secondary : Color.primary)
+                    Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(.secondary)
+                }
+                .frame(minHeight: 44)
+            }
+            .disabled(people.isEmpty)
+            .accessibilityLabel("Decided by")
+            .accessibilityValue(deciderName)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
+        .background(.background, in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    private func save() {
+        do {
+            try onSave(text, deciderID)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func remove() {
+        do {
+            try onDelete?()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

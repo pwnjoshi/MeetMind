@@ -91,6 +91,16 @@ struct SuggestedTaskEditor: View {
             Section("Task") {
                 TextField("Title", text: $title, axis: .vertical)
                 TextField("Owner (optional)", text: $owner)
+                let people = MeetingPeopleEditor.ownerChoices(for: meeting)
+                if !people.isEmpty {
+                    Menu("Choose From People", systemImage: "person.2") {
+                        ForEach(people, id: \.id) { person in
+                            Button(person.name) { owner = person.name }
+                        }
+                        Button("No Owner") { owner = "" }
+                    }
+                    .frame(minHeight: 44)
+                }
                 Picker("Category", selection: $category) {
                     ForEach(["Follow-up", "Research", "Create/Update", "Review/Approve", "Coordination", "Other"], id: \.self) {
                         Text($0).tag($0)
