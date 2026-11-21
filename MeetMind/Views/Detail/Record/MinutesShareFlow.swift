@@ -2,8 +2,8 @@ import SwiftUI
 import MessageUI
 import UIKit
 
-/// Choose recipients, confirm, hand the minutes to Mail or the share sheet, then show "Minutes Sent".
-/// The user sends the message. Manent only records that the user did so (`MeetingRecordStore`).
+/// Choose recipients, confirm, hand the minutes to Mail or the share sheet, then show the confirmed outcome.
+/// Mail can confirm `.sent`; a generic activity can only confirm shared/exported completion.
 @MainActor
 struct MinutesShareFlowModifier: ViewModifier {
     let meeting: Meeting?
@@ -23,6 +23,7 @@ struct MinutesShareFlowModifier: ViewModifier {
     @State private var subject = ""
     @State private var bodyText = ""
     @State private var sentRecipients: [SharedMinutesRecipient] = []
+    @State private var resultTitle = "Minutes Shared"
     @State private var sentMessage = ""
 
     private var candidates: [Speaker] {
@@ -85,7 +86,7 @@ struct MinutesShareFlowModifier: ViewModifier {
                 .presentationDetents([.medium, .large])
             }
             .navigationDestination(isPresented: $showSent) {
-                MinutesSentView(recipients: sentRecipients, message: sentMessage, meeting: meeting,
+                MinutesSentView(title: resultTitle, recipients: sentRecipients, message: sentMessage, meeting: meeting,
                                 onBackToMeetings: onBackToMeetings)
                     .toolbar(.hidden, for: .tabBar)
             }
@@ -124,10 +125,12 @@ struct MinutesShareFlowModifier: ViewModifier {
         }
         sentRecipients = recipients
         if recipients.isEmpty {
-            sentMessage = "The minutes were shared from this iPhone."
+            resultTitle = "Minutes Shared or Exported"
+            sentMessage = "You completed an activity from the system share sheet. Manent cannot tell whether it was sent, saved, copied, or exported."
         } else {
+            resultTitle = "Minutes Sent"
             let names = MeetingRecordFormatting.joinedNames(recipients.map { MeetingRecordFormatting.firstName($0.name) })
-            sentMessage = "\(names) \(recipients.count == 1 ? "has" : "have") the minutes and their action items."
+            sentMessage = "Mail confirmed that you sent the minutes to \(names)."
         }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(350))

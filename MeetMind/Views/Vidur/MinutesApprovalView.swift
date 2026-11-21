@@ -4,7 +4,8 @@ import UIKit
 
 /// Local adaptation of "Send for Approval". The user picks a reviewer from the meeting's participants,
 /// checks the review list, and sends the minutes text themselves (Mail or the share sheet).
-/// Manent keeps a record of who it was sent to and when. It never learns whether the reviewer approved.
+/// Manent keeps a local record of Mail-confirmed sends and completed share/export activities.
+/// It never learns whether the reviewer approved.
 @MainActor
 public struct MinutesApprovalView: View {
     public let meeting: Meeting
@@ -67,13 +68,15 @@ public struct MinutesApprovalView: View {
                 Section {
                     ForEach(records) { record in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Sent by you to \(record.reviewerName)")
+                            Text(record.channel == .mail
+                                 ? "Sent by you to \(record.reviewerName)"
+                                 : "Shared or exported by you for review with \(record.reviewerName)")
                             Text("\(record.sentAt.formatted(date: .abbreviated, time: .shortened)) \u{00B7} \(record.channel == .mail ? "Mail" : "Share sheet") \u{00B7} version \(record.versionTag)")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                     }
                 } header: {
-                    Text("Approval Submitted")
+                    Text("Approval Activity")
                 } footer: {
                     Text("These minutes stay unapproved until the reviewer responds. Manent does not track replies.")
                 }
@@ -110,11 +113,15 @@ public struct MinutesApprovalView: View {
         } message: {
             Text(reviewMessage)
         }
-        .alert("Sent by You", isPresented: $showsSentAlert) {
+        .alert(pendingChannel == .mail ? "Sent by You" : "Shared or Exported", isPresented: $showsSentAlert) {
             Button("Return to Meeting") { dismiss() }
             Button("Close", role: .cancel) {}
         } message: {
-            Text("You sent these minutes to \(sentReviewerName). They stay unapproved until the reviewer responds. Manent does not track replies.")
+            if pendingChannel == .mail {
+                Text("Mail confirmed that you sent these minutes to \(sentReviewerName). They stay unapproved until the reviewer responds.")
+            } else {
+                Text("You completed a system share activity for \(sentReviewerName). Manent cannot tell whether it was sent, saved, copied, or exported. The minutes remain unapproved.")
+            }
         }
     }
 
@@ -177,7 +184,7 @@ public struct MinutesApprovalView: View {
             showsReviewAlert = true
             return
         }
-        pendingText = MinutesApprovalText.build(ApprovalMinutesInput.make(from: meeting))
+        pendingText = ExportService().generatePlainText(for: meeting)
         if MFMailComposeViewController.canSendMail() {
             pendingChannel = .mail
             showsMail = true

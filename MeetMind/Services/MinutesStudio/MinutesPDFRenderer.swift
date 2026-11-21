@@ -30,7 +30,7 @@ enum MinutesPDFRenderer {
     private static let margin: CGFloat = 48
 
     @MainActor
-    static func render(document: MinutesDocument, letterhead: UIImage?) -> Data {
+    static func render(document: MinutesDocument, letterhead: UIImage?) throws -> Data {
         let page = pageSize
         let margin = Self.margin
         let contentWidth = page.width - margin * 2
@@ -38,7 +38,7 @@ enum MinutesPDFRenderer {
         let drawOptions: NSStringDrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: page))
 
-        return renderer.pdfData { context in
+        let data = renderer.pdfData { context in
             context.beginPage()
             var y = margin
 
@@ -102,12 +102,17 @@ enum MinutesPDFRenderer {
                 y += 12
             }
         }
+        guard data.starts(with: Data("%PDF-".utf8)), data.count > 20,
+              let parsed = PDFDocument(data: data), parsed.pageCount > 0 else {
+            throw ExportError.pdfGenerationFailed("Minutes Studio did not produce a valid PDF document.")
+        }
+        return data
     }
 
     /// Writes the PDF to the temporary directory for ShareLink.
     @MainActor
-    static func writeTemporaryPDF(document: MinutesDocument, letterhead: UIImage?) -> URL? {
-        let data = render(document: document, letterhead: letterhead)
+    static func writeTemporaryPDF(document: MinutesDocument, letterhead: UIImage?) throws -> URL {
+        let data = try render(document: document, letterhead: letterhead)
         let invalid = CharacterSet(charactersIn: "/\\:?%*|\"<>")
         let base = document.title.components(separatedBy: invalid).joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -117,7 +122,7 @@ enum MinutesPDFRenderer {
             try data.write(to: url, options: .atomic)
             return url
         } catch {
-            return nil
+            throw ExportError.fileWriteFailed(error.localizedDescription)
         }
     }
 }

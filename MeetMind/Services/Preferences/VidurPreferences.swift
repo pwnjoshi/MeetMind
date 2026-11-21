@@ -67,7 +67,7 @@ public final class VidurPreferences {
     }
 
     private let defaults: UserDefaults
-
+    private var loadFailure: String?
     public var answerLength: VidurAnswerLength {
         didSet { defaults.set(answerLength.rawValue, forKey: Key.answerLength) }
     }
@@ -84,8 +84,15 @@ public final class VidurPreferences {
         answerLength = defaults.string(forKey: Key.answerLength).flatMap(VidurAnswerLength.init) ?? .standard
         searchScope = defaults.string(forKey: Key.searchScope).flatMap(VidurSearchScope.init) ?? .thisMeeting
         showsSources = defaults.object(forKey: Key.showSources) as? Bool ?? true
-        history = defaults.data(forKey: Key.history)
-            .flatMap { try? JSONDecoder().decode([VidurHistoryEntry].self, from: $0) } ?? []
+        if let data = defaults.data(forKey: Key.history) {
+            do { history = try JSONDecoder().decode([VidurHistoryEntry].self, from: data) }
+            catch {
+                history = []
+                loadFailure = error.localizedDescription
+            }
+        } else {
+            history = []
+        }
     }
 
     public func record(_ entry: VidurHistoryEntry) {
@@ -100,8 +107,30 @@ public final class VidurPreferences {
 
     public func clearHistory() {
         history = []
+        defaults.removeObject(forKey: Key.history)
+    }
+
+    public func remove(meetingID: UUID) throws {
+        if loadFailure != nil { throw SidecarStoreError.corrupt("Vidur history") }
+        history.removeAll { $0.meetingID == meetingID }
         persistHistory()
     }
+
+    /// Removes private Vidur history and user choices. The selected downloaded
+    /// model is owned by OfflineEngineKit and is deliberately preserved.
+    public func eraseAll() {
+        history = []
+        loadFailure = nil
+        answerLength = .standard
+        searchScope = .thisMeeting
+        showsSources = true
+        defaults.removeObject(forKey: Key.history)
+        defaults.removeObject(forKey: Key.answerLength)
+        defaults.removeObject(forKey: Key.searchScope)
+        defaults.removeObject(forKey: Key.showSources)
+    }
+
+    public var isEmpty: Bool { history.isEmpty }
 
     private func persistHistory() {
         if let data = try? JSONEncoder().encode(history) {

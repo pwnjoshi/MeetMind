@@ -28,6 +28,7 @@ final class MinutesStudioStore {
 
     private let directory: URL
     private let fileManager = FileManager.default
+    private var loadFailure: String?
 
     var templates: [MinutesCustomTemplate] { library.templates }
     var letterheads: [MinutesCustomLetterhead] { library.letterheads }
@@ -44,10 +45,26 @@ final class MinutesStudioStore {
         }
         self.directory = base
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        self.library = Self.read(MinutesStudioLibrary.self, from: base.appendingPathComponent("library.json"))
-            ?? .empty
-        self.configFile = Self.read(MinutesStudioConfigFile.self, from: base.appendingPathComponent("configs.json"))
-            ?? MinutesStudioConfigFile(configs: [:])
+        let libraryURL = base.appendingPathComponent("library.json")
+        let configURL = base.appendingPathComponent("configs.json")
+        var loadedLibrary = MinutesStudioLibrary.empty
+        var loadedConfig = MinutesStudioConfigFile(configs: [:])
+        var decodingFailure: String?
+        do {
+            if FileManager.default.fileExists(atPath: libraryURL.path) {
+                loadedLibrary = try Self.readThrowing(MinutesStudioLibrary.self, from: libraryURL)
+            }
+            if FileManager.default.fileExists(atPath: configURL.path) {
+                loadedConfig = try Self.readThrowing(MinutesStudioConfigFile.self, from: configURL)
+            }
+        } catch {
+            loadedLibrary = .empty
+            loadedConfig = MinutesStudioConfigFile(configs: [:])
+            decodingFailure = error.localizedDescription
+        }
+        self.library = loadedLibrary
+        self.configFile = loadedConfig
+        self.loadFailure = decodingFailure
     }
 
     // MARK: Paths
@@ -76,9 +93,38 @@ final class MinutesStudioStore {
     }
 
     func removeConfig(for meetingID: UUID) {
-        configFile.configs.removeValue(forKey: meetingID.uuidString)
-        persistConfigs()
+        try? remove(meetingID: meetingID)
     }
+
+    func remove(meetingID: UUID) throws {
+        if loadFailure != nil { throw SidecarStoreError.corrupt("Minutes Studio") }
+        let previous = configFile
+        configFile.configs.removeValue(forKey: meetingID.uuidString)
+        do { try Self.writeThrowing(configFile, to: directory.appendingPathComponent("configs.json")) }
+        catch {
+            configFile = previous
+            throw error
+        }
+    }
+
+    func eraseAll() throws {
+        let oldLibrary = library
+        let oldConfigs = configFile
+        do {
+            if fileManager.fileExists(atPath: directory.path) {
+                try fileManager.removeItem(at: directory)
+            }
+            library = .empty
+            configFile = MinutesStudioConfigFile(configs: [:])
+            loadFailure = nil
+        } catch {
+            library = oldLibrary
+            configFile = oldConfigs
+            throw error
+        }
+    }
+
+    var isEmpty: Bool { library.templates.isEmpty && library.letterheads.isEmpty && configFile.configs.isEmpty }
 
     // MARK: Lookup
 
@@ -233,15 +279,19 @@ final class MinutesStudioStore {
         Self.write(configFile, to: directory.appendingPathComponent("configs.json"))
     }
 
-    private static func read<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(T.self, from: data)
+    private static func readThrowing<T: Decodable>(_ type: T.Type, from url: URL) throws -> T {
+        try JSONDecoder().decode(T.self, from: Data(contentsOf: url))
     }
 
     private static func write<T: Encodable>(_ value: T, to url: URL) {
+        try? writeThrowing(value, to: url)
+    }
+
+    private static func writeThrowing<T: Encodable>(_ value: T, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(value) else { return }
-        try? data.write(to: url, options: .atomic)
+        let data = try encoder.encode(value)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }

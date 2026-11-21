@@ -24,13 +24,17 @@ public final class MeetingPrepStore {
     private let defaults: UserDefaults
     private let key: String
     private var cache: [String: MeetingPrepRecord]
+    private var loadFailure: String?
 
     public init(defaults: UserDefaults = .standard, key: String = "manent.meetingPrep.v1") {
         self.defaults = defaults
         self.key = key
-        if let data = defaults.data(forKey: key),
-           let decoded = try? JSONDecoder().decode([String: MeetingPrepRecord].self, from: data) {
-            self.cache = decoded
+        if let data = defaults.data(forKey: key) {
+            do { self.cache = try JSONDecoder().decode([String: MeetingPrepRecord].self, from: data) }
+            catch {
+                self.cache = [:]
+                self.loadFailure = error.localizedDescription
+            }
         } else {
             self.cache = [:]
         }
@@ -60,9 +64,22 @@ public final class MeetingPrepStore {
     }
 
     public func remove(_ meetingID: UUID) {
+        try? remove(meetingID: meetingID)
+    }
+
+    public func remove(meetingID: UUID) throws {
+        if loadFailure != nil { throw SidecarStoreError.corrupt("Meeting preparation") }
         cache.removeValue(forKey: meetingID.uuidString)
         persist()
     }
+
+    public func eraseAll() {
+        cache.removeAll()
+        loadFailure = nil
+        defaults.removeObject(forKey: key)
+    }
+
+    public var isEmpty: Bool { cache.isEmpty }
 
     /// Meeting ids that currently repeat.
     public var repeatingMeetingIDs: [UUID] {

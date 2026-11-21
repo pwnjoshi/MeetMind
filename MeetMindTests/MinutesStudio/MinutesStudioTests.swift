@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import PDFKit
 @testable import MeetMind
 
 @MainActor
@@ -293,5 +294,14 @@ final class MinutesStudioTests: XCTestCase {
         XCTAssertEqual(MinutesDocumentBuilder.headerLines(config: config), ["Acme Ltd", "1 Main Road"])
         config.letterheadID = "office"
         XCTAssertEqual(MinutesDocumentBuilder.headerLines(config: config), ["Acme Ltd"])
+    }
+
+    func testRenderedDocumentIsAParseablePDF() throws {
+        let document = MinutesDocumentBuilder.build(
+            snapshot: snapshot(), config: .standard(), templateName: "Project review", documentHeading: "Minutes"
+        )
+        let data = try MinutesPDFRenderer.render(document: document, letterhead: nil)
+        XCTAssertTrue(data.starts(with: Data("%PDF-".utf8)))
+        XCTAssertGreaterThan(try XCTUnwrap(PDFDocument(data: data)).pageCount, 0)
     }
 }

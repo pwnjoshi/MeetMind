@@ -182,8 +182,10 @@ public struct MeetingDetailView: View {
         .onDisappear { viewModel.stopPlayback() }
         .alert("Delete meeting?", isPresented: $showDeleteConfirmation) {
             Button("Delete", role: .destructive) {
-                do { try viewModel.deleteMeeting(); dismiss() }
-                catch { deletionError = error.localizedDescription }
+                Task { @MainActor in
+                    do { try await viewModel.deleteMeeting(); dismiss() }
+                    catch { deletionError = error.localizedDescription }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: { Text("This deletes the meeting, transcript, notes, and action items.") }

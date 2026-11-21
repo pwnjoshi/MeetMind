@@ -66,6 +66,7 @@ public actor MeetingAnalysisPipeline {
     /// Set when speaker separation fails but transcription can still continue.
     public private(set) var lastSpeakerWarning: String?
     private var preparingChunks = Set<String>()
+    private var discardedPreparationMeetingIDs = Set<UUID>()
     private var discardActiveCheckpoint = false
     private let backend: any MeetingAnalysisBackend
     private let checkpointRoot: URL?
@@ -126,6 +127,7 @@ public actor MeetingAnalysisPipeline {
                                 start: max(start, contentStartTime), end: end, speaker: nil)
         }
         guard !turns.isEmpty else { return false }
+        if discardedPreparationMeetingIDs.contains(meetingID) { throw CancellationError() }
         let checkpoint = PreparedRecordingChunk(sequence: sequence, contentStartTime: contentStartTime,
                                                 endTime: endTime, turns: turns)
         let url = try preparationURL(meetingID: meetingID, sequence: sequence)
@@ -161,6 +163,22 @@ public actor MeetingAnalysisPipeline {
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
         let preparation = try preparationDirectory(meetingID: meetingID)
         if FileManager.default.fileExists(atPath: preparation.path) { try FileManager.default.removeItem(at: preparation) }
+    }
+
+    /// Signals an active run to cancel and waits briefly for it to relinquish
+    /// the meeting before destructive deletion continues.
+    public func discardCheckpointAndWait(meetingID: UUID, timeout: TimeInterval = 30) async throws {
+        discardedPreparationMeetingIDs.insert(meetingID)
+        try discardCheckpoint(meetingID: meetingID)
+        let deadline = Date().addingTimeInterval(timeout)
+        while activeMeetingID == meetingID || preparingChunks.contains(where: { $0.hasPrefix(meetingID.uuidString + "-") }) {
+            guard Date() < deadline else {
+                throw OfflineError.unavailable("Analysis is still stopping. Retry deletion after processing has stopped.")
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        // An in-flight save may have completed while cancellation propagated.
+        try discardCheckpoint(meetingID: meetingID)
     }
 
     public func answer(question: String, turns: [AnalysisTurn], model: VidurModel = .large) async throws -> [SupportedPoint] {

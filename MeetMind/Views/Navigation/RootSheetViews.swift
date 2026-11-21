@@ -56,7 +56,7 @@ public struct RootExportMinutesSheet: View {
     
     public var body: some View {
         MeetingExportSheet(
-            onExportPDF: { try? viewModel.exportPDF() },
+            onExportPDF: { try viewModel.exportPDF() },
             onExportMarkdown: { viewModel.exportMarkdown() },
             onExportEmailDraft: { viewModel.generateEmailDraft() },
             onDismiss: onDismiss

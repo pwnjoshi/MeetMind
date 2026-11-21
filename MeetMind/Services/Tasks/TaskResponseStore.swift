@@ -45,6 +45,7 @@ public final class TaskResponseStore {
     public static let shared = TaskResponseStore()
 
     private let fileURL: URL?
+    private var loadFailure: String?
     private var responses: [String: TaskResponse] = [:]
 
     /// Pass `nil` for a memory-only store (tests, previews).
@@ -69,6 +70,7 @@ public final class TaskResponseStore {
     public var count: Int { responses.count }
 
     public func record(_ response: TaskResponse, for actionItemID: UUID) throws {
+        if loadFailure != nil { throw SidecarStoreError.corrupt("Task responses") }
         let previous = responses[actionItemID.uuidString]
         responses[actionItemID.uuidString] = response
         do {
@@ -81,16 +83,47 @@ public final class TaskResponseStore {
 
     /// Removes any response for the task. Does nothing when none exists.
     public func remove(for actionItemID: UUID) {
-        guard responses.removeValue(forKey: actionItemID.uuidString) != nil else { return }
-        try? persist()
+        try? remove(actionItemIDs: [actionItemID])
     }
 
-    private func load() {
-        guard let fileURL, let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([String: TaskResponse].self, from: data) else {
-            return
+    public func remove(actionItemIDs: [UUID]) throws {
+        if loadFailure != nil { throw SidecarStoreError.corrupt("Task responses") }
+        let previous = responses
+        for id in actionItemIDs { responses.removeValue(forKey: id.uuidString) }
+        guard responses != previous else { return }
+        do { try persist() }
+        catch {
+            responses = previous
+            throw error
         }
-        responses = decoded
+    }
+
+    /// Meeting ownership is supplied by the coordinator because legacy records
+    /// are keyed by action-item ID and changing that on-disk format would risk data loss.
+    public func remove(meetingID: UUID, actionItemIDs: [UUID]) throws {
+        try remove(actionItemIDs: actionItemIDs)
+    }
+
+    public func eraseAll() throws {
+        let previous = responses
+        responses.removeAll()
+        do {
+            if let fileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+            loadFailure = nil
+        } catch {
+            responses = previous
+            throw error
+        }
+    }
+
+    public var isEmpty: Bool { responses.isEmpty }
+
+    private func load() {
+        guard let fileURL, FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        do { responses = try JSONDecoder().decode([String: TaskResponse].self, from: Data(contentsOf: fileURL)) }
+        catch { loadFailure = error.localizedDescription }
     }
 
     private func persist() throws {

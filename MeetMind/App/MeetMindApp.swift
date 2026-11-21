@@ -36,6 +36,8 @@ struct MeetMindApp: App {
     @UIApplicationDelegateAdaptor(MeetMindAppDelegate.self) private var appDelegate
     @State private var container: ModelContainer?
     @State private var startupError: String?
+    @State private var deletionRecoveryComplete: Bool
+    @State private var deletionRecoveryError: String?
     @State private var appState: AppState
     @State private var router: NavigationRouter
     @State private var settingsVM: SettingsViewModel
@@ -53,6 +55,9 @@ struct MeetMindApp: App {
         }
         _container = State(initialValue: initializedContainer)
         _startupError = State(initialValue: initializationError)
+        let deletionJournal = UserContentInventory.live().journalURL
+        _deletionRecoveryComplete = State(initialValue: !FileManager.default.fileExists(atPath: deletionJournal.path))
+        _deletionRecoveryError = State(initialValue: nil)
         
         let state = AppState()
         let navRouter = NavigationRouter()
@@ -74,7 +79,20 @@ struct MeetMindApp: App {
             Group {
                 if let container {
                     Group {
-                        if ProcessInfo.processInfo.arguments.contains("--offline-benchmark") {
+                        if !deletionRecoveryComplete {
+                            VStack(spacing: 16) {
+                                if let deletionRecoveryError {
+                                    Image(systemName: "externaldrive.badge.exclamationmark").font(.largeTitle)
+                                    Text("Local data erasure is incomplete").font(.title2)
+                                    Text(deletionRecoveryError).font(.caption).multilineTextAlignment(.center)
+                                    Button("Retry Erasure") { Task { await resumeDeletion(using: container) } }
+                                        .buttonStyle(.borderedProminent)
+                                } else {
+                                    ProgressView("Finishing local data erasure…")
+                                }
+                            }
+                            .padding()
+                        } else if ProcessInfo.processInfo.arguments.contains("--offline-benchmark") {
                             NavigationStack { OfflineBenchmarkView() }
                         } else if ProcessInfo.processInfo.arguments.contains("--offline-pipeline-smoke") {
                             OfflinePipelineSmokeView()
@@ -106,7 +124,14 @@ struct MeetMindApp: App {
                 }
             }
                 .task(id: container != nil) {
-                    OfflineAnalysisBackgroundScheduler.useApplicationContainer(container)
+                    guard let container else {
+                        OfflineAnalysisBackgroundScheduler.useApplicationContainer(nil)
+                        return
+                    }
+                    await resumeDeletion(using: container)
+                    if deletionRecoveryComplete {
+                        OfflineAnalysisBackgroundScheduler.useApplicationContainer(container)
+                    }
                 }
                 .environment(appState)
                 .environment(router)
@@ -139,6 +164,18 @@ struct MeetMindApp: App {
             @unknown default:
                 break
             }
+        }
+    }
+
+    @MainActor
+    private func resumeDeletion(using container: ModelContainer) async {
+        deletionRecoveryError = nil
+        do {
+            _ = try await DeletionCoordinator(modelContext: container.mainContext).resumePendingDeletionIfNeeded()
+            deletionRecoveryComplete = true
+        } catch {
+            deletionRecoveryComplete = false
+            deletionRecoveryError = error.localizedDescription
         }
     }
 

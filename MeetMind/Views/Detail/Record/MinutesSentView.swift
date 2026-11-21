@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// "Minutes Sent" (Delivery status → settled). Shown after the user finished sending from Mail or the share sheet.
-/// It states what the user did. It does not claim anyone opened the minutes.
+/// Delivery result shown after Mail confirms `.sent` or a generic share/export activity completes.
+/// It never claims that a recipient received or opened the minutes.
 struct MinutesSentView: View {
+    let title: String
     let recipients: [SharedMinutesRecipient]
     let message: String
     let meeting: Meeting?
@@ -48,7 +49,7 @@ struct MinutesSentView: View {
             }
             .frame(height: 300)
             .accessibilityHidden(true)
-            Text("Minutes Sent").font(.title3.bold()).padding(.top, 8)
+            Text(title).font(.title3.bold()).padding(.top, 8)
             Text(message)
                 .font(.subheadline).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

@@ -300,4 +300,27 @@ final class ExportServiceTests: XCTestCase {
         let data = try mockService.generatePDFReport(for: sampleMeeting)
         XCTAssertEqual(data, customData)
     }
+
+    func testProductionPDFHasHeaderAndParsesAsNonEmptyDocument() throws {
+        let data = try exportService.generatePDFReport(for: sampleMeeting)
+        XCTAssertTrue(data.starts(with: Data("%PDF-".utf8)))
+        let document = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertGreaterThan(document.pageCount, 0)
+        XCTAssertFalse((document.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    func testRendererFailureAndFakePDFBytesAreRejected() throws {
+        let thrown = ExportService(pdfRenderer: { _ in
+            throw CocoaError(.fileWriteUnknown)
+        })
+        XCTAssertThrowsError(try thrown.generatePDFReport(for: sampleMeeting)) { error in
+            XCTAssertNotNil(error as? ExportError)
+        }
+
+        let fake = ExportService(pdfRenderer: { _ in Data("%PDF- this is plain text".utf8) })
+        XCTAssertThrowsError(try fake.generatePDFReport(for: sampleMeeting)) { error in
+            XCTAssertEqual(error as? ExportError,
+                           .pdfGenerationFailed("The renderer did not produce a valid PDF document."))
+        }
+    }
 }

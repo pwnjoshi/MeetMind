@@ -83,6 +83,7 @@ struct MinutesDocumentCardView: View {
 struct MinutesDocumentPreviewView: View {
     let model: MinutesStudioModel
     @State private var pdfURL: URL?
+    @State private var exportError: String?
 
     private struct RenderKey: Equatable {
         let document: MinutesDocument
@@ -120,7 +121,20 @@ struct MinutesDocumentPreviewView: View {
             .background(Color(uiColor: .systemGroupedBackground))
         }
         .task(id: RenderKey(document: document, letterheadID: model.config.letterheadID)) {
-            pdfURL = MinutesPDFRenderer.writeTemporaryPDF(document: document, letterhead: model.letterheadImage())
+            do {
+                pdfURL = try MinutesPDFRenderer.writeTemporaryPDF(document: document, letterhead: model.letterheadImage())
+                exportError = nil
+            } catch {
+                pdfURL = nil
+                exportError = error.localizedDescription
+            }
+        }
+        .alert("PDF export failed", isPresented: Binding(
+            get: { exportError != nil }, set: { if !$0 { exportError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportError ?? "")
         }
     }
 }

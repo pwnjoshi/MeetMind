@@ -1,5 +1,4 @@
 import Foundation
-import OfflineEngineKit
 import SwiftData
 import Observation
 
@@ -33,6 +32,7 @@ public final class HomeViewModel {
     
     public var isShowingDeleteConfirmationAlert: Bool = false
     public var pendingMeetingToDelete: Meeting? = nil
+    public var deletionErrorMessage: String? = nil
     public var isShowingFolderPickerSheet: Bool = false
     public var selectedMeetingForFolder: Meeting? = nil
     
@@ -242,33 +242,34 @@ public final class HomeViewModel {
     }
     
     public func confirmDelete() {
-        if let meeting = pendingMeetingToDelete {
-            deleteMeeting(meeting)
-            pendingMeetingToDelete = nil
-            isShowingDeleteConfirmationAlert = false
+        guard let meeting = pendingMeetingToDelete else { return }
+        pendingMeetingToDelete = nil
+        isShowingDeleteConfirmationAlert = false
+        Task { @MainActor in
+            do { try await deleteMeeting(meeting) }
+            catch { deletionErrorMessage = error.localizedDescription }
         }
     }
     
     public func confirmDeleteMeeting(_ meeting: Meeting) {
-        deleteMeeting(meeting)
         pendingMeetingToDelete = nil
         isShowingDeleteConfirmationAlert = false
-    }
-    
-    public func deleteMeeting(id: UUID) {
-        if let meeting = meetings.first(where: { $0.id == id }) {
-            deleteMeeting(meeting)
+        Task { @MainActor in
+            do { try await deleteMeeting(meeting) }
+            catch { deletionErrorMessage = error.localizedDescription }
         }
     }
     
-    public func deleteMeeting(_ meeting: Meeting) {
+    public func deleteMeeting(id: UUID) async throws {
+        if let meeting = meetings.first(where: { $0.id == id }) {
+            try await deleteMeeting(meeting)
+        }
+    }
+    
+    public func deleteMeeting(_ meeting: Meeting) async throws {
         let id = meeting.id
         if let context = modelContext {
-            context.delete(meeting)
-            do {
-                try context.save()
-                Task { try? await MeetingAnalysisPipeline.shared.discardCheckpoint(meetingID: id) }
-            } catch { context.rollback(); return }
+            _ = try await DeletionCoordinator(modelContext: context).deleteMeeting(meeting)
         }
         inMemoryMeetings.removeAll { $0.id == id }
         upcomingMeetings.removeAll { $0.id == id }

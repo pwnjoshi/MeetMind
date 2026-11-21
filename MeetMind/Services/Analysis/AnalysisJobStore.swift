@@ -320,10 +320,22 @@ public actor AnalysisJobStore {
     }
 
     public func remove(_ meetingID: UUID) throws {
+        try remove(meetingID: meetingID)
+    }
+
+    public func remove(meetingID: UUID) throws {
         var envelope = try load()
-        envelope.jobs.removeValue(forKey: meetingID)
+        guard envelope.jobs.removeValue(forKey: meetingID) != nil else { return }
         try save(envelope)
     }
+
+    public func eraseAll() throws {
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try FileManager.default.removeItem(at: fileURL)
+        }
+    }
+
+    public func isEmpty() throws -> Bool { try load().jobs.isEmpty }
 
     private func mutateLease(_ lease: AnalysisJobLease,
                              _ mutation: (inout AnalysisJobRecord, Date) -> Void) throws {

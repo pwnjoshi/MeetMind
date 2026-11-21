@@ -482,13 +482,10 @@ public final class MeetingDetailViewModel {
         try modelContext?.save()
     }
 
-    public func deleteMeeting() throws {
+    public func deleteMeeting() async throws {
         guard let meeting, let modelContext else { return }
         playbackService?.stop()
-        let id = meeting.id
-        modelContext.delete(meeting)
-        try modelContext.save()
-        Task { try? await MeetingAnalysisPipeline.shared.discardCheckpoint(meetingID: id) }
+        _ = try await DeletionCoordinator(modelContext: modelContext).deleteMeeting(meeting)
     }
     
     public func setPlaybackRate(_ rate: Float) {
@@ -607,10 +604,7 @@ public final class MeetingDetailViewModel {
     
     public func exportPDF() throws -> Data {
         guard let meeting = meeting else { throw ExportError.emptyMeetingData }
-        if let exportService = exportService {
-            return try exportService.generatePDFReport(for: meeting)
-        }
-        return Data("MeetMind PDF Report".utf8)
+        return try (exportService ?? ExportService()).generatePDFReport(for: meeting)
     }
     
     public func exportMarkdown() -> String {

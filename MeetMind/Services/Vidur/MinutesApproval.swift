@@ -192,16 +192,23 @@ public final class MinutesApprovalStore {
     public static let shared = MinutesApprovalStore()
 
     private let fileURL: URL
+    private var loadFailure: String?
     public private(set) var recordsByMeeting: [String: [MinutesApprovalRecord]]
     public private(set) var lastSaveError: String?
 
     public init(fileURL: URL? = nil) {
         let url = fileURL ?? MinutesApprovalStore.defaultURL()
         self.fileURL = url
-        if let data = try? Data(contentsOf: url), !data.isEmpty {
+        if FileManager.default.fileExists(atPath: url.path) {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            self.recordsByMeeting = (try? decoder.decode([String: [MinutesApprovalRecord]].self, from: data)) ?? [:]
+            do {
+                let data = try Data(contentsOf: url)
+                self.recordsByMeeting = data.isEmpty ? [:] : try decoder.decode([String: [MinutesApprovalRecord]].self, from: data)
+            } catch {
+                self.recordsByMeeting = [:]
+                self.loadFailure = error.localizedDescription
+            }
         } else {
             self.recordsByMeeting = [:]
         }
@@ -220,23 +227,53 @@ public final class MinutesApprovalStore {
     }
 
     public func add(_ record: MinutesApprovalRecord) {
+        guard loadFailure == nil else {
+            lastSaveError = SidecarStoreError.corrupt("Approval history").localizedDescription
+            return
+        }
         var list = recordsByMeeting[record.meetingID.uuidString] ?? []
         list.append(record)
         recordsByMeeting[record.meetingID.uuidString] = list
-        persist()
+        do { try persist() }
+        catch { lastSaveError = error.localizedDescription }
     }
 
-    private func persist() {
+    public func remove(meetingID: UUID) throws {
+        if loadFailure != nil { throw SidecarStoreError.corrupt("Approval history") }
+        let previous = recordsByMeeting.removeValue(forKey: meetingID.uuidString)
+        guard previous != nil else { return }
+        do { try persist() }
+        catch {
+            recordsByMeeting[meetingID.uuidString] = previous
+            throw error
+        }
+    }
+
+    public func eraseAll() throws {
+        let previous = recordsByMeeting
+        recordsByMeeting.removeAll()
         do {
-            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys]
-            try encoder.encode(recordsByMeeting).write(to: fileURL, options: .atomic)
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+            loadFailure = nil
             lastSaveError = nil
         } catch {
+            recordsByMeeting = previous
             lastSaveError = error.localizedDescription
+            throw error
         }
+    }
+
+    public var isEmpty: Bool { recordsByMeeting.isEmpty }
+
+    private func persist() throws {
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(recordsByMeeting).write(to: fileURL, options: .atomic)
+        lastSaveError = nil
     }
 }

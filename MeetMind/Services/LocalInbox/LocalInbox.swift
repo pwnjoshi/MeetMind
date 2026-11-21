@@ -179,4 +179,18 @@ public final class LocalInboxReadStore {
     public func reset() {
         defaults.removeObject(forKey: Self.defaultsKey)
     }
+
+    public func remove(meetingID: UUID, actionItemIDs: [UUID]) {
+        let meetingSuffix = meetingID.uuidString
+        let taskSuffixes = Set(actionItemIDs.map(\.uuidString))
+        let remaining = readIDs.filter { id in
+            if id.hasSuffix(meetingSuffix) { return false }
+            return !taskSuffixes.contains(where: { id.hasSuffix($0) })
+        }
+        if remaining.isEmpty {
+            reset()
+        } else {
+            defaults.set(Array(remaining).sorted(), forKey: Self.defaultsKey)
+        }
+    }
 }

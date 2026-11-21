@@ -19,7 +19,7 @@ struct OpenSharedMinutesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Open Shared Minutes").font(.largeTitle.bold())
-            Text("Choose a copy you shared from this iPhone. Manent keeps the exact text you sent and does not know whether anyone opened it.")
+            Text("Choose a copy you shared or exported from this iPhone. Manent keeps the exact text passed to the selected activity and does not know whether anyone opened it.")
                 .font(.subheadline).foregroundStyle(.secondary)
                 .padding(.top, 6)
             if entries.isEmpty {
@@ -128,7 +128,7 @@ struct SharedMinutesView: View {
                     Text(entry.subject).font(.largeTitle.bold())
                     Text("Shared minutes · \(entry.date.formatted(date: .abbreviated, time: .shortened))")
                         .font(.subheadline).foregroundStyle(.secondary)
-                    Text("Read-only copy of what you sent from this iPhone.")
+                    Text("Read-only copy of what you passed to \(entry.channel == .mail ? "Mail" : "the system share activity") from this iPhone.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 ForEach(blocks) { block in

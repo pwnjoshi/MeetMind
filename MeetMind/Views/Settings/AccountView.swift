@@ -36,16 +36,16 @@ struct AccountView: View {
             Section {
                 Button("Erase All Local Data", role: .destructive) { showingEraseAlert = true }
             } footer: {
-                Text("Permanently deletes all \(meetings.count) meetings, transcripts, minutes, tasks, notes, recordings, Vidur history and your profile from this iPhone, then returns to onboarding. This cannot be undone.")
+                Text("Permanently deletes all \(meetings.count) meetings, transcripts, minutes, tasks, notes, recordings, photos, custom document templates, processing records, Vidur history, your profile and private settings from this iPhone, then returns to onboarding. Downloaded public models and the selected model are kept. This cannot be undone.")
             }
         }
-        .navigationTitle("Account")
+        .navigationTitle("Profile & Privacy")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Erase everything on this iPhone?", isPresented: $showingEraseAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Erase Everything", role: .destructive) { eraseEverything() }
         } message: {
-            Text("This permanently deletes every meeting, transcript, minutes, task, note and audio recording Manent saved, plus your profile and Vidur history. Downloaded offline models are kept. There is no backup and no way to undo this.")
+            Text("This permanently deletes every meeting, transcript, minute, task, note, recording, attachment, custom template and processing record Manent saved, plus your profile, Vidur history and private settings. Downloaded public models and your selected model are kept. There is no backup and no way to undo this.")
         }
         .alert("Could not erase everything", isPresented: Binding(
             get: { errorMessage != nil },
@@ -58,16 +58,18 @@ struct AccountView: View {
     }
 
     private func eraseEverything() {
-        do {
-            _ = try LocalDataEraser.eraseAll(modelContext: modelContext)
-            viewModel.userProfile = .defaultProfile
-            router?.popToRoot(on: .home)
-            router?.popToRoot(on: .actionItems)
-            router?.popToRoot(on: .search)
-            router?.popToRoot(on: .settings)
-            appState?.resetOnboarding()
-        } catch {
-            errorMessage = error.localizedDescription
+        Task { @MainActor in
+            do {
+                _ = try await DeletionCoordinator(modelContext: modelContext).eraseAll()
+                viewModel.userProfile = .defaultProfile
+                router?.popToRoot(on: .home)
+                router?.popToRoot(on: .actionItems)
+                router?.popToRoot(on: .search)
+                router?.popToRoot(on: .settings)
+                appState?.resetOnboarding()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }

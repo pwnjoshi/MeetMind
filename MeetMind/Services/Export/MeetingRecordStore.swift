@@ -134,6 +134,7 @@ public final class MeetingRecordStore {
     public static let shared = MeetingRecordStore()
 
     @ObservationIgnored private let fileURL: URL?
+    @ObservationIgnored private var loadFailure: String?
     private var records: [String: MeetingRecordData] = [:]
 
     public nonisolated static func defaultFileURL() -> URL? {
@@ -144,9 +145,9 @@ public final class MeetingRecordStore {
     /// Pass `nil` for an in-memory store (used by tests).
     public init(fileURL: URL? = MeetingRecordStore.defaultFileURL()) {
         self.fileURL = fileURL
-        if let fileURL, let data = try? Data(contentsOf: fileURL),
-           let decoded = try? JSONDecoder().decode([String: MeetingRecordData].self, from: data) {
-            records = decoded
+        if let fileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+            do { records = try JSONDecoder().decode([String: MeetingRecordData].self, from: Data(contentsOf: fileURL)) }
+            catch { loadFailure = error.localizedDescription }
         }
     }
 
@@ -156,6 +157,7 @@ public final class MeetingRecordStore {
 
     /// Applies `change` and writes the file. When writing fails the in-memory record is restored and the error is thrown.
     public func update(_ meetingID: UUID, _ change: (inout MeetingRecordData) -> Void) throws {
+        if loadFailure != nil { throw SidecarStoreError.corrupt("Meeting records") }
         let key = meetingID.uuidString
         let previous = records[key]
         var updated = previous ?? MeetingRecordData()
@@ -168,6 +170,33 @@ public final class MeetingRecordStore {
             throw error
         }
     }
+
+    public func remove(meetingID: UUID) throws {
+        if loadFailure != nil { throw SidecarStoreError.corrupt("Meeting records") }
+        let previous = records.removeValue(forKey: meetingID.uuidString)
+        guard previous != nil else { return }
+        do { try persist() }
+        catch {
+            records[meetingID.uuidString] = previous
+            throw error
+        }
+    }
+
+    public func eraseAll() throws {
+        let previous = records
+        records.removeAll()
+        do {
+            if let fileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+            loadFailure = nil
+        } catch {
+            records = previous
+            throw error
+        }
+    }
+
+    public var isEmpty: Bool { records.isEmpty }
 
     private func persist() throws {
         guard let fileURL else { return }

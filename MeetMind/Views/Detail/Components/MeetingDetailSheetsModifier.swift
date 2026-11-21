@@ -13,7 +13,7 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
         content
             .sheet(isPresented: $showExportSheet) {
                 MeetingExportSheet(
-                    onExportPDF: { try? viewModel.exportPDF() },
+                    onExportPDF: { try viewModel.exportPDF() },
                     onExportMarkdown: { viewModel.exportMarkdown() },
                     onExportEmailDraft: { viewModel.generateEmailDraft() },
                     onDismiss: { showExportSheet = false }
