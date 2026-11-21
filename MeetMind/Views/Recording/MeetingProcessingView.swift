@@ -645,11 +645,12 @@ struct OfflinePipelineSmokeView: View {
                     try await vm.startPipeline()
                     let analysis = meeting.offlineAnalysis
                     let transcript = meeting.transcriptSegments.map(\.text).joined(separator: " ").lowercased()
-                    print("MEETMIND_PIPELINE result transcript=\(meeting.transcriptSegments.count) decoded=\(analysis != nil) generated_tasks=\(analysis?.analysis.flatMap(\.tasks).count ?? 0) pending=\(meeting.pendingTaskSuggestions.count) active=\(meeting.actionItems.count) expected_words=\(transcript.contains("send") && transcript.contains("estimate") && transcript.contains("tomorrow"))")
+                    let hasExpectedWords = transcript.contains("send") && transcript.contains("estimate") && transcript.contains("tomorrow")
+                    print("MEETMIND_PIPELINE result transcript=\(meeting.transcriptSegments.count) decoded=\(analysis != nil) generated_tasks=\(analysis?.analysis.flatMap(\.tasks).count ?? 0) pending=\(meeting.pendingTaskSuggestions.count) active=\(meeting.actionItems.count) expected_words=\(hasExpectedWords)")
                     fflush(stdout)
                     guard vm.pipelineStatus == .completed, !meeting.transcriptSegments.isEmpty,
-                          meeting.summary != nil, meeting.actionItems.isEmpty else {
-                        throw OfflineError.unavailable("Synthetic processing did not complete transcription and grounded minutes.")
+                          meeting.summary != nil, meeting.actionItems.isEmpty, hasExpectedWords else {
+                        throw OfflineError.unavailable("Synthetic processing did not produce the expected grounded transcript and minutes.")
                     }
                     // A conservative local model may correctly return no task for a
                     // short synthetic clip. That is not a pipeline failure: never
@@ -692,7 +693,9 @@ struct OfflinePipelineSmokeView: View {
             }
         }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { operation?.cancel() } }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { operation?.cancel() }
+        }
     }
 }
 

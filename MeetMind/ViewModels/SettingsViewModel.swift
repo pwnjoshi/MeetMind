@@ -106,7 +106,7 @@ public enum SavedRecordingLanguage: String, CaseIterable, Sendable, Identifiable
     public var id: String { rawValue }
     public var title: String {
         switch self {
-        case .hinglish: return "Hindi + English (recommended)"
+        case .hinglish: return "Hindi + English (automatic)"
         case .hindi: return "Hindi"
         case .english: return "English"
         case .automatic: return "Automatic detection"
@@ -116,9 +116,9 @@ public enum SavedRecordingLanguage: String, CaseIterable, Sendable, Identifiable
     /// anchor for Hinglish and still recognizes English terms in a multilingual model.
     public var whisperCode: String? {
         switch self {
-        case .hinglish, .hindi: return "hi"
+        case .hinglish, .automatic: return nil
+        case .hindi: return "hi"
         case .english: return "en"
-        case .automatic: return nil
         }
     }
 }
