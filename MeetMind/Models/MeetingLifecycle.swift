@@ -293,15 +293,14 @@ public struct MinutesReviewContentSnapshot: Codable, Sendable, Equatable {
     }
 
     public var fingerprint: String {
-        let materialActions = actions.map {
-            MinutesFingerprintPayload.Action(title: $0.title, owner: $0.owner,
-                                             dueMilliseconds: $0.dueMilliseconds, completed: $0.completed)
-        }.sorted {
-            [$0.title, $0.owner, String($0.dueMilliseconds ?? Int64.min), String($0.completed)]
-                .joined(separator: "\u{0}")
-                < [$1.title, $1.owner, String($1.dueMilliseconds ?? Int64.min), String($1.completed)]
-                    .joined(separator: "\u{0}")
-        }
+        let materialActions = actions.map { action in
+            MinutesFingerprintPayload.Action(
+                title: action.title,
+                owner: action.owner,
+                dueMilliseconds: action.dueMilliseconds,
+                completed: action.completed
+            )
+        }.sorted { actionSortKey($0) < actionSortKey($1) }
         let payload = MinutesFingerprintPayload(
             agenda: agenda,
             attendance: attendance,
@@ -315,6 +314,12 @@ public struct MinutesReviewContentSnapshot: Codable, Sendable, Equatable {
         encoder.outputFormatting = [.sortedKeys]
         let data = (try? encoder.encode(payload)) ?? Data()
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func actionSortKey(_ action: MinutesFingerprintPayload.Action) -> String {
+        let due = action.dueMilliseconds.map(String.init) ?? ""
+        return [action.title, action.owner, due, action.completed ? "1" : "0"]
+            .joined(separator: "\u{0}")
     }
 
     @MainActor

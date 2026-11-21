@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Register every Swift file under MeetMind/ and MeetMindTests/ that project.pbxproj does not reference by path.
 
 App files join the MeetMind group and app Sources phase; test files join the MeetMindTests group and test
@@ -16,8 +16,21 @@ TARGETS = {
 
 def main():
     check = "--check" in sys.argv
-    pbx = open(PBX, encoding="utf-8").read()
-    referenced = set(re.findall(r'path = "?([^";]+\.swift)"?;', pbx))
+    pbx = open(PBX, encoding="utf-8-sig").read()
+    object_tokens = re.findall(r"\b[0-9A-F]{20,26}\b", pbx)
+    malformed_ids = sorted({token for token in object_tokens if len(token) != 24})
+    declarations = re.findall(r"^\s*([0-9A-F]{24}) /\*.*?\*/ =", pbx, re.MULTILINE)
+    duplicate_ids = sorted({value for value in declarations if declarations.count(value) > 1})
+    paths = re.findall(r'path = "?([^";]+\.swift)"?;', pbx)
+    duplicate_paths = sorted({value for value in paths if paths.count(value) > 1})
+    integrity_errors = []
+    if malformed_ids:
+        integrity_errors.append(f"malformed object IDs: {', '.join(malformed_ids)}")
+    if duplicate_ids:
+        integrity_errors.append(f"duplicate object declarations: {', '.join(duplicate_ids)}")
+    if duplicate_paths:
+        integrity_errors.append(f"duplicate Swift file references: {', '.join(duplicate_paths)}")
+    referenced = set(paths)
     used = set(re.findall(r"[0-9A-F]{24}", pbx))
     counter = [0xC000]
 
@@ -38,8 +51,12 @@ def main():
                     if rel not in referenced:
                         missing.append((top, name, rel))
 
+    for error in integrity_errors:
+        print("project error:", error)
     for _, _, rel in missing:
         print("missing:", rel)
+    if integrity_errors:
+        sys.exit(1)
     if check:
         sys.exit(1 if missing else 0)
     if not missing:

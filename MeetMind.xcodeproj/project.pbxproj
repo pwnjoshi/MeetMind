@@ -207,7 +207,6 @@
 		1A0000882CEE000100000001 /* RecordFABButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000882CEE000100000001 /* RecordFABButton.swift */; };
 		1A0000892CEE000100000001 /* HomeHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000892CEE000100000001 /* HomeHeaderView.swift */; };
 		1A00008A2CEE000100000001 /* NewMeetingOptionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008A2CEE000100000001 /* NewMeetingOptionCard.swift */; };
-		1A00008B2CEE000100000001 /* MeetingTemplatePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008B2CEE000100000001 /* MeetingTemplatePicker.swift */; };
 		1A00008C2CEE000100000001 /* ParticipantTokenChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008C2CEE000100000001 /* ParticipantTokenChip.swift */; };
 		1A00008D2CEE000100000001 /* FolderPickerModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008D2CEE000100000001 /* FolderPickerModal.swift */; };
 		1A00008E2CEE000100000001 /* FolderCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008E2CEE000100000001 /* FolderCreationSheet.swift */; };
@@ -506,7 +505,6 @@
 		1B0000882CEE000100000001 /* RecordFABButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/RecordFABButton.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000892CEE000100000001 /* HomeHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/HomeHeaderView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00008A2CEE000100000001 /* NewMeetingOptionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/NewMeetingOptionCard.swift"; sourceTree = SOURCE_ROOT; };
-		1B00008B2CEE000100000001 /* MeetingTemplatePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/MeetingTemplatePicker.swift"; sourceTree = SOURCE_ROOT; };
 		1B00008C2CEE000100000001 /* ParticipantTokenChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/ParticipantTokenChip.swift"; sourceTree = SOURCE_ROOT; };
 		1B00008D2CEE000100000001 /* FolderPickerModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/FolderPickerModal.swift"; sourceTree = SOURCE_ROOT; };
 		1B00008E2CEE000100000001 /* FolderCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/FolderCreationSheet.swift"; sourceTree = SOURCE_ROOT; };
@@ -978,12 +976,12 @@
 				1D0000192CEE000100000001 /* Navigation */,
 				1D00001A2CEE000100000001 /* Onboarding */,
 				1D00001B2CEE000100000001 /* Settings */,
-				1D0000202CEE000100000001 /* Recording */,
+				1D00F0202CEE000100000001 /* Recording */,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
-		1D0000202CEE000100000001 /* Recording */ = {
+		1D00F0202CEE000100000001 /* Recording */ = {
 			isa = PBXGroup;
 			children = (
 				1B0000972CEE000100000001 /* LiveRecordingView.swift */,
@@ -1045,7 +1043,6 @@
 				1B00007D2CEE000100000001 /* NewMeetingSheet.swift */,
 				1B00008A2CEE000100000001 /* NewMeetingOptionCard.swift */,
 				1B00007E2CEE000100000001 /* ScheduleMeetingView.swift */,
-				1B00008B2CEE000100000001 /* MeetingTemplatePicker.swift */,
 				1B0000802CEE000100000001 /* ParticipantManagerView.swift */,
 				1B00008C2CEE000100000001 /* ParticipantTokenChip.swift */,
 				1B0000812CEE000100000001 /* AudioImportView.swift */,
@@ -1358,7 +1355,6 @@
 				1A0000882CEE000100000001 /* RecordFABButton.swift in Sources */,
 				1A0000892CEE000100000001 /* HomeHeaderView.swift in Sources */,
 				1A00008A2CEE000100000001 /* NewMeetingOptionCard.swift in Sources */,
-				1A00008B2CEE000100000001 /* MeetingTemplatePicker.swift in Sources */,
 				1A00008C2CEE000100000001 /* ParticipantTokenChip.swift in Sources */,
 				1A00008D2CEE000100000001 /* FolderPickerModal.swift in Sources */,
 				1A00008E2CEE000100000001 /* FolderCreationSheet.swift in Sources */,
