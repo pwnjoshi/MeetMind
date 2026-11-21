@@ -22,10 +22,12 @@ public protocol AnalysisPipelineRunning: Sendable {
     func savedCheckpoint(meetingID: UUID) async -> MeetingAnalysisCheckpoint?
     func speakerWarning() async -> String?
     func analysisReuseCounts() async -> (reused: Int, analyzed: Int)
+    func analysisFallbackSummary() async -> (chunks: Int, reason: String?)
 }
 
 extension AnalysisPipelineRunning {
     public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { (0, 0) }
+    public func analysisFallbackSummary() async -> (chunks: Int, reason: String?) { (0, nil) }
 
     /// Conformers that predate participant/agenda context still work; the
     /// extra context only improves owner resolution in the real pipeline.
@@ -49,6 +51,9 @@ extension MeetingAnalysisPipeline: AnalysisPipelineRunning {
     }
     public func speakerWarning() async -> String? { lastSpeakerWarning }
     public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { lastAnalysisReuse }
+    public func analysisFallbackSummary() async -> (chunks: Int, reason: String?) {
+        (lastAnalysisFallbackChunks, lastAnalysisFallbackReason)
+    }
 }
 
 public enum AnalysisCoordinatorError: LocalizedError {
@@ -234,9 +239,10 @@ public final class AnalysisCoordinator {
             try commitMinutes(result, to: meeting)
             try context.save()
             let reuse = await pipeline.analysisReuseCounts()
+            let fallback = await pipeline.analysisFallbackSummary()
             let transcriptReuse = TranscriptReuseRegistry.shared.summary(for: meetingID)
             Logger(subsystem: "com.meetmind.app", category: "Analysis").notice(
-                "Analysis timing total_ms=\(Int(Date().timeIntervalSince(runStarted) * 1_000), privacy: .public) audio_s=\(Int(transcriptReuse?.totalSeconds ?? 0), privacy: .public) transcript_reused_s=\(Int(transcriptReuse?.reusedSeconds ?? 0), privacy: .public) minutes_chunks_reused=\(reuse.reused, privacy: .public) minutes_chunks_analyzed=\(reuse.analyzed, privacy: .public)")
+                "Analysis timing total_ms=\(Int(Date().timeIntervalSince(runStarted) * 1_000), privacy: .public) audio_s=\(Int(transcriptReuse?.totalSeconds ?? 0), privacy: .public) transcript_reused_s=\(Int(transcriptReuse?.reusedSeconds ?? 0), privacy: .public) minutes_chunks_reused=\(reuse.reused, privacy: .public) minutes_chunks_analyzed=\(reuse.analyzed, privacy: .public) fallback_chunks=\(fallback.chunks, privacy: .public) fallback_reason=\(fallback.reason ?? "none", privacy: .public)")
             try await jobs.complete(lease, warning: warning)
             return try await requiredSnapshot(meetingID)
         } catch is CancellationError {
@@ -251,8 +257,10 @@ public final class AnalysisCoordinator {
             meeting.analysisState = "failed"
             try? context.save()
             try? await jobs.fail(lease, failure: failure)
+            // OfflineError text is authored by the engine (no transcript content).
+            let engineReason = (error as? OfflineError)?.errorDescription ?? String(describing: type(of: error))
             Logger(subsystem: "com.meetmind.app", category: "Analysis")
-                .error("Meeting analysis failed with code \(failure.code.rawValue, privacy: .public)")
+                .error("Meeting analysis failed with code \(failure.code.rawValue, privacy: .public) reason=\(engineReason, privacy: .public)")
             throw AnalysisCoordinatorError.failed(failure)
         }
     }

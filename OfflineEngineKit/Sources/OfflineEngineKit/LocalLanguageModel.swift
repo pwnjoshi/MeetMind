@@ -217,8 +217,7 @@ final class LocalLanguageModel {
             let token = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, token) {
                 let result = try JSONDecoder().decode(LocalAnalysisResult.self, from: output)
-                try result.validate(against: turns)
-                return result
+                return result.sanitized(against: turns)
             }
             var bytes = [CChar](repeating: 0, count: 256)
             let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)

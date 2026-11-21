@@ -68,6 +68,10 @@ public actor MeetingAnalysisPipeline {
     /// Content-free counts from the last final pass: minutes chunks reused from
     /// recording-time pre-analysis versus analyzed after Stop.
     public private(set) var lastAnalysisReuse: (reused: Int, analyzed: Int) = (0, 0)
+    /// Chunks whose model output was unusable and fell back to grounded rules.
+    public private(set) var lastAnalysisFallbackChunks = 0
+    /// Engine-authored error text for the last fallback; never transcript content.
+    public private(set) var lastAnalysisFallbackReason: String?
     private var preparingChunks = Set<String>()
     private var discardedPreparationMeetingIDs = Set<UUID>()
     private var discardActiveCheckpoint = false
@@ -440,6 +444,8 @@ public actor MeetingAnalysisPipeline {
         defer { running = false; activeMeetingID = nil; discardActiveCheckpoint = false }
         lastSpeakerWarning = nil
         lastAnalysisReuse = (0, 0)
+        lastAnalysisFallbackChunks = 0
+        lastAnalysisFallbackReason = nil
         guard audio.isFileURL else { throw OfflineError.unavailable("Choose a recording saved on this iPhone.") }
         let duration = try await AVURLAsset(url: audio).load(.duration).seconds
         guard duration.isFinite, duration > 0, duration <= 3600 else {
@@ -549,10 +555,24 @@ public actor MeetingAnalysisPipeline {
                     result = cached
                     lastAnalysisReuse.reused += 1
                 } else {
-                    result = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone,
-                        question: nil, participants: participants, agenda: agenda)
-                    try result.validate(against: chunks[index])
-                    lastAnalysisReuse.analyzed += 1
+                    do {
+                        let raw = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone,
+                            question: nil, participants: participants, agenda: agenda)
+                        result = raw.sanitized(against: chunks[index])
+                        lastAnalysisReuse.analyzed += 1
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch OfflineError.memoryBudget(let required, let budget) {
+                        throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
+                    } catch {
+                        // Unparseable or over-long model output for one chunk. Keep
+                        // the meeting going: the reducer's grounded transcript rules
+                        // still extract this chunk's explicit actions and decisions.
+                        try checkConditions()
+                        result = LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
+                        lastAnalysisFallbackChunks += 1
+                        lastAnalysisFallbackReason = (error as? LocalizedError)?.errorDescription ?? "model output unusable"
+                    }
                 }
                 checkpoint.analysis.append(result)
                 checkpoint.analyzedChunks = index + 1

@@ -63,6 +63,31 @@ public struct LocalAnalysisResult: Codable, Sendable {
         openIssues = try container.decodeIfPresent([SupportedPoint].self, forKey: .openIssues) ?? []
     }
 
+    /// Keeps only items whose every quote is an exact substring of its cited
+    /// turn, and tasks with a valid title, category and priority. A small local
+    /// model sometimes copies a prompt example or garbles one quote; dropping
+    /// that item is safer than discarding the whole meeting, and never invents.
+    public func sanitized(against turns: [AnalysisTurn]) -> LocalAnalysisResult {
+        let sources = Dictionary(turns.map { ($0.id, $0.text) }, uniquingKeysWith: { first, _ in first })
+        let categories = Set(["Follow-up", "Research", "Create/Update", "Review/Approve", "Coordination", "Other"])
+        let priorities = Set(["low", "medium", "high", "urgent"])
+        func grounded(_ evidence: [SourceEvidence]) -> Bool {
+            !evidence.isEmpty && evidence.allSatisfy { item in
+                !item.quote.isEmpty && (sources[item.turnID]?.contains(item.quote) == true)
+            }
+        }
+        func keep(_ point: SupportedPoint) -> Bool {
+            !point.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && grounded(point.evidence)
+        }
+        let validTasks = tasks.filter { task in
+            let titled = !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let priorityOK = task.priority.map { priorities.contains($0) } ?? true
+            return titled && categories.contains(task.category) && priorityOK && grounded(task.evidence)
+        }
+        return LocalAnalysisResult(discussion: discussion.filter(keep), decisions: decisions.filter(keep),
+                                   tasks: validTasks, openIssues: openIssues.filter(keep))
+    }
+
     public func validate(against turns: [AnalysisTurn]) throws {
         guard Set(turns.map(\.id)).count == turns.count else {
             throw OfflineError.unavailable("Transcript turn IDs must be unique.")
