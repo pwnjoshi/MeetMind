@@ -15,6 +15,10 @@ public protocol AnalysisPipelineRunning: Sendable {
     func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String?,
              model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
              progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint
+    func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String?,
+             model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
+             participants: [String], agenda: String?,
+             progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint
     func savedCheckpoint(meetingID: UUID) async -> MeetingAnalysisCheckpoint?
     func speakerWarning() async -> String?
     func analysisReuseCounts() async -> (reused: Int, analyzed: Int)
@@ -22,9 +26,27 @@ public protocol AnalysisPipelineRunning: Sendable {
 
 extension AnalysisPipelineRunning {
     public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { (0, 0) }
+
+    /// Conformers that predate participant/agenda context still work; the
+    /// extra context only improves owner resolution in the real pipeline.
+    public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String?,
+                    model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
+                    participants: [String], agenda: String?,
+                    progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
+        try await run(meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: timezone,
+                      languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
+                      reviewedTurns: reviewedTurns, progress: progress)
+    }
 }
 
 extension MeetingAnalysisPipeline: AnalysisPipelineRunning {
+    public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String?,
+                    model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
+                    progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
+        try await run(meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: timezone,
+                      languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
+                      reviewedTurns: reviewedTurns, participants: [], agenda: nil, progress: progress)
+    }
     public func speakerWarning() async -> String? { lastSpeakerWarning }
     public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { lastAnalysisReuse }
 }
