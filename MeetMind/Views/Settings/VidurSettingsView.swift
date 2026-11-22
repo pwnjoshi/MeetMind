@@ -22,6 +22,13 @@ public struct VidurSettingsView: View {
     public var body: some View {
         Form {
             Section {
+                SettingsBanner(title: "Vidur", detail: "Runs on this iPhone. Your meetings never leave the device.",
+                               systemImage: "sparkles", tint: Theme.Colors.manentAccent)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+
+            Section {
                 Picker("Model", selection: $vidurModel) {
                     ForEach(VidurModel.allCases, id: \.self) { model in
                         Text(model.title).tag(model)

@@ -7,6 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C08B2CEE000100000001 /* OrganizationProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08C2CEE000100000001 /* OrganizationProfileStore.swift */; };
+		1A00C08D2CEE000100000001 /* NameSpeakersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08E2CEE000100000001 /* NameSpeakersView.swift */; };
+		1A00C08F2CEE000100000001 /* ContactsDirectoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0902CEE000100000001 /* ContactsDirectoryView.swift */; };
+		1A00C0912CEE000100000001 /* ExportAllMinutesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0922CEE000100000001 /* ExportAllMinutesView.swift */; };
+		1A00C0932CEE000100000001 /* LetterheadAndLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0942CEE000100000001 /* LetterheadAndLogoView.swift */; };
+		1A00C0952CEE000100000001 /* MinutesStudioSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0962CEE000100000001 /* MinutesStudioSettingsView.swift */; };
+		1A00C0972CEE000100000001 /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0982CEE000100000001 /* SettingsComponents.swift */; };
+		1A00C0992CEE000100000001 /* TestMicrophoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C09A2CEE000100000001 /* TestMicrophoneView.swift */; };
+		1A00C09B2CEE000100000001 /* NameSpeakerSuggestionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C09C2CEE000100000001 /* NameSpeakerSuggestionTests.swift */; };
+		1A00C09D2CEE000100000001 /* SettingsV5Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C09E2CEE000100000001 /* SettingsV5Tests.swift */; };
 		1A00C08A2CEE000100000001 /* HindiPipelineSmokeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08B2CEE000100000001 /* HindiPipelineSmokeView.swift */; };
 		1A00C0882CEE000100000001 /* MoMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0892CEE000100000001 /* MoMTests.swift */; };
 		1A00C0832CEE000100000001 /* MoMDocumentScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0842CEE000100000001 /* MoMDocumentScreen.swift */; };
@@ -353,6 +363,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C08C2CEE000100000001 /* OrganizationProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Preferences/OrganizationProfileStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C08E2CEE000100000001 /* NameSpeakersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/NameSpeakersView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0902CEE000100000001 /* ContactsDirectoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/ContactsDirectoryView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0922CEE000100000001 /* ExportAllMinutesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/ExportAllMinutesView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0942CEE000100000001 /* LetterheadAndLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/LetterheadAndLogoView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0962CEE000100000001 /* MinutesStudioSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/MinutesStudioSettingsView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0982CEE000100000001 /* SettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/SettingsComponents.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C09A2CEE000100000001 /* TestMicrophoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/TestMicrophoneView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C09C2CEE000100000001 /* NameSpeakerSuggestionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Recording/NameSpeakerSuggestionTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C09E2CEE000100000001 /* SettingsV5Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Settings/SettingsV5Tests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C08B2CEE000100000001 /* HindiPipelineSmokeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Analysis/HindiPipelineSmokeView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0892CEE000100000001 /* MoMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/MoMTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0842CEE000100000001 /* MoMDocumentScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MoM/MoMDocumentScreen.swift"; sourceTree = SOURCE_ROOT; };
@@ -722,6 +742,14 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C08C2CEE000100000001 /* OrganizationProfileStore.swift */,
+				1B00C08E2CEE000100000001 /* NameSpeakersView.swift */,
+				1B00C0902CEE000100000001 /* ContactsDirectoryView.swift */,
+				1B00C0922CEE000100000001 /* ExportAllMinutesView.swift */,
+				1B00C0942CEE000100000001 /* LetterheadAndLogoView.swift */,
+				1B00C0962CEE000100000001 /* MinutesStudioSettingsView.swift */,
+				1B00C0982CEE000100000001 /* SettingsComponents.swift */,
+				1B00C09A2CEE000100000001 /* TestMicrophoneView.swift */,
 				1B00C08B2CEE000100000001 /* HindiPipelineSmokeView.swift */,
 				1B00C0842CEE000100000001 /* MoMDocumentScreen.swift */,
 				1B00C0862CEE000100000001 /* MoMEditMinutesSheet.swift */,
@@ -975,6 +1003,8 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C09C2CEE000100000001 /* NameSpeakerSuggestionTests.swift */,
+				1B00C09E2CEE000100000001 /* SettingsV5Tests.swift */,
 				1B00C0892CEE000100000001 /* MoMTests.swift */,
 				1B00C0722CEE000100000001 /* SignatureStoreTests.swift */,
 				1B00C0622CEE000100000001 /* QuickMeetingRecentTests.swift */,
@@ -1349,6 +1379,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C08B2CEE000100000001 /* OrganizationProfileStore.swift in Sources */,
+				1A00C08D2CEE000100000001 /* NameSpeakersView.swift in Sources */,
+				1A00C08F2CEE000100000001 /* ContactsDirectoryView.swift in Sources */,
+				1A00C0912CEE000100000001 /* ExportAllMinutesView.swift in Sources */,
+				1A00C0932CEE000100000001 /* LetterheadAndLogoView.swift in Sources */,
+				1A00C0952CEE000100000001 /* MinutesStudioSettingsView.swift in Sources */,
+				1A00C0972CEE000100000001 /* SettingsComponents.swift in Sources */,
+				1A00C0992CEE000100000001 /* TestMicrophoneView.swift in Sources */,
 				1A00C08A2CEE000100000001 /* HindiPipelineSmokeView.swift in Sources */,
 				1A00C0832CEE000100000001 /* MoMDocumentScreen.swift in Sources */,
 				1A00C0852CEE000100000001 /* MoMEditMinutesSheet.swift in Sources */,
@@ -1627,6 +1665,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C09B2CEE000100000001 /* NameSpeakerSuggestionTests.swift in Sources */,
+				1A00C09D2CEE000100000001 /* SettingsV5Tests.swift in Sources */,
 				1A00C0882CEE000100000001 /* MoMTests.swift in Sources */,
 				1A00C0712CEE000100000001 /* SignatureStoreTests.swift in Sources */,
 				1A00C0612CEE000100000001 /* QuickMeetingRecentTests.swift in Sources */,

@@ -4,14 +4,26 @@ import OfflineEngineKit
 import PhotosUI
 import UIKit
 import EventKit
+import UserNotifications
 
-/// Main Settings page for Manent (Figma 161:2315).
+/// Profile and Settings (v5 H1). Rows are grouped like the Figma frame; every row opens a
+/// screen that exists in this build. Manent is account-free and local-only.
 public struct SettingsView: View {
     @Environment(SettingsViewModel.self) private var environmentViewModel: SettingsViewModel?
     @State private var localViewModel = SettingsViewModel()
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AppState.self) private var appState: AppState?
+    @Environment(NavigationRouter.self) private var router: NavigationRouter?
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
-    @AppStorage("Manent.workspaceName") private var workspace = "iOS Center"
-    @Environment(\.openURL) private var openURL
+    @Query private var actionItems: [ActionItem]
+    @Query private var speakers: [Speaker]
+    @AppStorage(OrganizationProfileStore.nameKey) private var workspace = "iOS Center"
+    @AppStorage(MinutesLanguagePreference.key) private var minutesLanguage = MinutesLanguage.english.rawValue
+    @State private var studio = MinutesStudioStore.shared
+    @State private var notificationsStatus = "Off"
+    @State private var showsEraseAlert = false
+    @State private var eraseError: String?
+    @State private var isErasing = false
 
     private var viewModel: SettingsViewModel {
         environmentViewModel ?? localViewModel
@@ -20,53 +32,27 @@ public struct SettingsView: View {
     public init() {}
 
     public var body: some View {
-        Form {
+        List {
             Section {
-                NavigationLink { AccountView(viewModel: viewModel) } label: {
-                    HStack(spacing: 12) {
-                        SettingsProfileAvatar(profile: viewModel.userProfile ?? .defaultProfile, size: 52)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(viewModel.userProfile?.name ?? UserProfile.defaultLocalName)
-                                .font(.headline).foregroundStyle(.primary)
-                            Text(profileSubtitle).font(.subheadline).foregroundStyle(.secondary)
-                        }
-                    }
-                }
+                profileHeader
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
             }
-            Section("Meetings") {
+            youSection
+            organizationSection
+            recordingSection
+            vidurSection
+            connectionsSection
+            privacySection
+            Section("Models and Storage") {
                 NavigationLink {
-                    Form {
-                        Section {
-                            TextField("Workspace name", text: $workspace)
-                        } footer: {
-                            Text("Manent keeps one workspace on this iPhone. This name is only a local label.")
-                        }
-                    }
-                    .navigationTitle("Workspace")
+                    OfflineAnalysisModelsView()
                 } label: {
-                    LabeledContent("Workspace", value: workspace.isEmpty ? "Local workspace" : workspace)
+                    SettingsRowLabel(title: "Offline Analysis Models", systemImage: "cpu", color: .indigo)
                 }
-                NavigationLink { AppleCalendarAccessView() } label: {
-                    LabeledContent("Apple Calendar", value: calendarAccess)
-                }
-                NavigationLink("Notifications") { NotificationsInboxView() }
-                NavigationLink("Name and Title") { NameAndTitleView(viewModel: viewModel) }
-                NavigationLink("Signature") { SignatureSettingsView() }
-                NavigationLink("Minutes Language") { MinutesLanguageView() }
             }
-            Section {
-                NavigationLink {
-                    LocalRecordingsView()
-                } label: {
-                    LabeledContent("Local Recordings", value: meetings.filter { $0.resolvedAudioFileURL != nil }.count.formatted())
-                }
-                NavigationLink("Vidur") { VidurSettingsView() }
-            } header: {
-                Text("Recordings & Vidur")
-            } footer: {
-                Text("Manent \(appVersion) · Recordings stay on this iPhone.")
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
+            SettingsStorageAndCacheSection(viewModel: viewModel)
+            SettingsThemeAndAppearanceSection(viewModel: viewModel)
             Section("Developer Settings") {
                 NavigationLink("Diagnostics") {
                     Form {
@@ -75,28 +61,187 @@ public struct SettingsView: View {
                     }
                     .navigationTitle("Diagnostics")
                 }
+            } footer: {
+                Text("Manent \(appVersion) \u{00B7} Recordings and minutes stay on this iPhone.")
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
-            SettingsAudioQualitySection(viewModel: viewModel)
-            SettingsStorageAndCacheSection(viewModel: viewModel)
-            SettingsThemeAndAppearanceSection(viewModel: viewModel)
         }
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.large)
+        .listStyle(.insetGrouped)
+        .navigationTitle("Profile")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .tint(Theme.Colors.manentAccent)
+        .task { await refreshNotificationStatus() }
+        .alert("Delete All Data?", isPresented: $showsEraseAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { eraseEverything() }
+        } message: {
+            Text("This deletes every recording, transcript and minute on this iPhone. This can\u{2019}t be undone.")
+        }
+        .alert("Could not delete everything", isPresented: Binding(
+            get: { eraseError != nil }, set: { if !$0 { eraseError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(eraseError ?? "")
+        }
+    }
+
+    // MARK: Header
+
+    private var profile: UserProfile { viewModel.userProfile ?? .defaultProfile }
+
+    private var profileHeader: some View {
+        VStack(spacing: 8) {
+            NavigationLink {
+                ProfileEditorView(viewModel: viewModel)
+            } label: {
+                SettingsProfileAvatar(profile: profile, size: 88)
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "camera.fill")
+                            .font(.caption2.bold())
+                            .foregroundStyle(Theme.Colors.manentAccent)
+                            .frame(width: 26, height: 26)
+                            .background(.white, in: Circle())
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Edit profile photo")
+            Text(profile.name).font(.title2.bold())
+            Text(profileSubtitle).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            HStack(spacing: 10) {
+                SettingsStatTile(value: meetings.count.formatted(), label: "Meetings")
+                SettingsStatTile(value: recordedText, label: "Recorded")
+                SettingsStatTile(value: openActionCount.formatted(), label: "Open actions", tint: Theme.Colors.warmAmber)
+            }
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
     }
 
     private var profileSubtitle: String {
-        if let email = viewModel.userProfile?.email, !email.isEmpty { return email }
-        return "Local profile"
+        var parts: [String] = []
+        if !profile.role.isEmpty { parts.append(profile.role) }
+        if !workspace.isEmpty { parts.append(workspace) }
+        if parts.isEmpty { return "Local profile" }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
+    private var openActionCount: Int {
+        actionItems.filter { !$0.isCompleted }.count
+    }
+
+    private var recordedText: String {
+        let seconds = meetings.reduce(0.0) { $0 + max(0, $1.duration) }
+        let hours = seconds / 3600
+        if hours >= 1 { return "\(Int(hours.rounded())) h" }
+        return "\(Int((seconds / 60).rounded())) m"
+    }
+
+    // MARK: Sections
+
+    private var youSection: some View {
+        Section("You") {
+            NavigationLink { NameAndTitleView(viewModel: viewModel) } label: {
+                SettingsRowLabel(title: "Name and Title", systemImage: "person.fill", color: .indigo, value: profile.role)
+            }
+            NavigationLink { SignatureSettingsView() } label: {
+                SettingsRowLabel(title: "Signature", systemImage: "signature", color: .purple,
+                                 value: SignatureStore.shared.hasSignature ? "Added" : "Set Up")
+            }
+        }
+    }
+
+    private var organizationSection: some View {
+        Section("Organization and Minutes") {
+            NavigationLink { LetterheadAndLogoView() } label: {
+                SettingsRowLabel(title: "Letterhead and Logo", systemImage: "doc.text.image", color: .teal,
+                                 value: studio.letterheads.isEmpty ? workspace : "Added")
+            }
+            NavigationLink { MinutesLanguageView() } label: {
+                SettingsRowLabel(title: "Minutes Language", systemImage: "globe", color: .blue,
+                                 value: (MinutesLanguage(rawValue: minutesLanguage) ?? .english).title)
+            }
+            NavigationLink { MinutesStudioSettingsView() } label: {
+                SettingsRowLabel(title: "Minutes Studio", systemImage: "doc.richtext", color: .pink)
+            }
+        }
+    }
+
+    private var recordingSection: some View {
+        Section("Recording") {
+            NavigationLink { LocalRecordingsView() } label: {
+                SettingsRowLabel(title: "Recordings on This iPhone", systemImage: "waveform", color: .indigo,
+                                 value: recordingsSizeText)
+            }
+            NavigationLink {
+                Form { SettingsAudioQualitySection(viewModel: viewModel) }
+                    .navigationTitle("Audio Quality")
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                SettingsRowLabel(title: "Audio Quality", systemImage: "speaker.wave.2.fill", color: .pink,
+                                 value: viewModel.audioQuality == .high ? "High" : "Standard")
+            }
+            NavigationLink { TestMicrophoneView() } label: {
+                SettingsRowLabel(title: "Test Microphone", systemImage: "mic.fill", color: .red)
+            }
+        }
+    }
+
+    private var vidurSection: some View {
+        Section("Vidur") {
+            NavigationLink { VidurSettingsView() } label: {
+                SettingsRowLabel(title: "Vidur", systemImage: "sparkles", color: Theme.Colors.manentAccent, value: "On this iPhone")
+            }
+        }
+    }
+
+    private var connectionsSection: some View {
+        Section("Connections") {
+            NavigationLink { AppleCalendarAccessView() } label: {
+                SettingsRowLabel(title: "Apple Calendar", systemImage: "calendar", color: .red, value: calendarAccess)
+            }
+            NavigationLink { ContactsDirectoryView() } label: {
+                SettingsRowLabel(title: "Contacts", systemImage: "person.crop.circle.fill", color: .gray,
+                                 value: ContactsDirectory.people(from: speakers, query: "").count.formatted())
+            }
+            NavigationLink { NotificationsInboxView() } label: {
+                SettingsRowLabel(title: "Notifications", systemImage: "bell.fill", color: .red, value: notificationsStatus)
+            }
+        }
+    }
+
+    private var privacySection: some View {
+        Section("Privacy and Data") {
+            NavigationLink { ExportAllMinutesView() } label: {
+                SettingsRowLabel(title: "Export All Minutes", systemImage: "square.and.arrow.up", color: .blue)
+            }
+            Button(role: .destructive) {
+                showsEraseAlert = true
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIconTile(systemImage: "trash.fill", color: .red)
+                    Text("Delete All Data").font(.subheadline).foregroundStyle(.red)
+                    Spacer()
+                }
+            }
+            .disabled(isErasing)
+        }
+    }
+
+    // MARK: Values
+
+    private var recordingsSizeText: String {
+        var total: Int64 = 0
+        for meeting in meetings {
+            if let url = meeting.resolvedAudioFileURL { total += LocalRecordingStorage.fileSize(at: url) }
+        }
+        return LocalRecordingStorage.formatted(bytes: total)
     }
 
     private var appVersion: String {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
-    }
-
-    private func openSystemSettings() {
-        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
     }
 
     private var calendarAccess: String {
@@ -104,6 +249,33 @@ public struct SettingsView: View {
         case .fullAccess: return "Allowed"
         case .writeOnly: return "Add Only"
         default: return "Not Allowed"
+        }
+    }
+
+    private func refreshNotificationStatus() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: notificationsStatus = "On"
+        default: notificationsStatus = "Off"
+        }
+    }
+
+    private func eraseEverything() {
+        guard !isErasing else { return }
+        isErasing = true
+        Task { @MainActor in
+            defer { isErasing = false }
+            do {
+                _ = try await DeletionCoordinator(modelContext: modelContext).eraseAll()
+                OrganizationProfileStore().eraseAll()
+                viewModel.userProfile = .defaultProfile
+                router?.popToRoot(on: .home)
+                router?.popToRoot(on: .actionItems)
+                router?.popToRoot(on: .search)
+                appState?.resetOnboarding()
+            } catch {
+                eraseError = error.localizedDescription
+            }
         }
     }
 }
@@ -205,7 +377,7 @@ struct OfflineAnalysisModelsView: View {
             Section {
                 Text("Meeting audio, transcripts, and analysis stay on this iPhone. Internet is needed only to download public model files. Keep the app open during downloads and meeting analysis.")
                     .font(.footnote).foregroundStyle(.secondary)
-                Text("Hindiâ€“English accuracy is still being evaluated. Review generated tasks and source quotes before accepting them.")
+                Text("Hindi–English accuracy is still being evaluated. Review generated tasks and source quotes before accepting them.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if !message.isEmpty { Text(message) }
                 if busy {

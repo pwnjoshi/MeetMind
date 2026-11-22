@@ -70,7 +70,11 @@ public struct LiveRecordingView: View {
 
                 Spacer(minLength: 20)
                 recordingControls
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 6)
+                Text("Saved on this iPhone as you record")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.bottom, 4)
             }
             .padding(.horizontal, 28)
             .padding(.top, 12)
@@ -264,8 +268,8 @@ public struct LiveRecordingView: View {
     private func liveTranscriptCard(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Live transcript · Provisional")
-                    .font(.subheadline.weight(.medium))
+                Text("Live transcript")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                 Spacer()
                 Toggle("Live transcript", isOn: $showsLiveTranscript)
@@ -286,6 +290,17 @@ public struct LiveRecordingView: View {
                                     Text(segment.text)
                                         .font(.body)
                                         .foregroundStyle(.white.opacity(0.92))
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            ForEach(Array(viewModel.bookmarks.enumerated()), id: \.element.id) { index, mark in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Bookmark \u{00B7} \(transcriptTimestamp(mark.timestamp))")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.Colors.warmAmber)
+                                    Text("Bookmark \(index + 1)")
+                                        .font(.body)
+                                        .foregroundStyle(Theme.Colors.warmAmber)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }

@@ -38,13 +38,21 @@ public struct LocalRecordingsView: View {
                 .listRowBackground(Color.clear)
             } else {
                 Section {
+                    storageCard(total: total)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+                Section {
                     ForEach(rows, id: \.file.id) { row in
                         NavigationLink {
                             RecordingPlayerView(meeting: row.meeting)
                         } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(row.file.title)
-                                Text(subtitle(for: row.file)).font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 12) {
+                                dateTile(row.file.date)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.file.title).font(.subheadline)
+                                    Text(subtitle(for: row.file)).font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -84,6 +92,46 @@ public struct LocalRecordingsView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private func storageCard(total: Int64) -> some View {
+        let capacity = deviceCapacityBytes()
+        let fraction = capacity > 0 ? min(1, Double(total) / Double(capacity)) : 0
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(LocalRecordingStorage.formatted(bytes: total)).font(.title2.bold())
+                if capacity > 0 {
+                    Text("of \(LocalRecordingStorage.formatted(bytes: capacity)) on this iPhone")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            ProgressView(value: fraction)
+                .tint(Theme.Colors.manentAccent)
+            Text("Audio kept for your meetings. Minutes, decisions and actions are kept when audio is deleted.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func dateTile(_ date: Date) -> some View {
+        VStack(spacing: 0) {
+            Text(date.formatted(.dateTime.month(.abbreviated)).uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.red)
+            Text(date.formatted(.dateTime.day()))
+                .font(.subheadline.weight(.semibold))
+        }
+        .frame(width: 38, height: 38)
+        .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    private func deviceCapacityBytes() -> Int64 {
+        let values = try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeTotalCapacityKey])
+        return Int64(values?.volumeTotalCapacity ?? 0)
     }
 
     private func subtitle(for file: LocalRecordingFile) -> String {

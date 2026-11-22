@@ -30,7 +30,7 @@ public final class OnboardingViewModel {
         OnboardingSlide(
             id: 2,
             title: "Ask Vidur Anything",
-            subtitle: "Find what was said or decided. Your recordings stay on this iPhone.",
+            subtitle: "Find what was said or decided.",
             imageName: "sparkles"
         )
     ]

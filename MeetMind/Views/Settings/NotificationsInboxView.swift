@@ -100,3 +100,43 @@ public struct NotificationsInboxView: View {
         }
     }
 }
+
+/// H8 Allow Notifications row. Shows the real iOS authorization state and opens the right place to change it.
+private struct NotificationAccessRow: View {
+    @Environment(\.openURL) private var openURL
+    @State private var status: UNAuthorizationStatus = .notDetermined
+
+    private var isOn: Bool {
+        status == .authorized || status == .provisional || status == .ephemeral
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingsIconTile(systemImage: "bell.fill", color: .red)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Allow Notifications").font(.subheadline)
+                Text(isOn ? "Minutes ready and task reminders can alert you." : "Off. Manent will not alert you.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(isOn ? "Manage" : (status == .notDetermined ? "Allow" : "Open Settings")) { change() }
+                .font(.subheadline.weight(.semibold))
+        }
+        .task { await refresh() }
+    }
+
+    private func refresh() async {
+        status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    private func change() {
+        if status == .notDetermined {
+            Task {
+                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+                await refresh()
+            }
+        } else if let url = URL(string: UIApplication.openSettingsURLString) {
+            openURL(url)
+        }
+    }
+}

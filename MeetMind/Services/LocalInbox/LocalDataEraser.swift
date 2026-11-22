@@ -347,6 +347,7 @@ public final class DeletionCoordinator {
             attempt("minutes review states") { try reviewStates.eraseAll() }
         attempt("minutes of meeting") { try momSidecars.eraseAll() }
         attempt("signature") { try SignatureStore.shared.eraseAll() }
+        OrganizationProfileStore().eraseAll(defaults: defaults)
             do { try await jobs.eraseAll() }
             catch { failures.append(DeletionFailure(artifact: "analysis jobs", reason: error.localizedDescription)) }
             for key in UserContentInventory.privateDefaultsKeys where key != "Manent.vidurModel" {

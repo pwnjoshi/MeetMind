@@ -14,6 +14,7 @@ public struct MeetingProcessingView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Query private var meetings: [Meeting]
     @State private var selectedSection = "Minutes"
+    @State private var showsNameSpeakers = false
     @State private var showsPeople = false
     @State private var showsRename = false
     @State private var meetingTitleDraft = ""
@@ -67,25 +68,7 @@ public struct MeetingProcessingView: View {
                 }.pickerStyle(.segmented)
                 TimelineView(.periodic(from: .now, by: 2)) { _ in
                     if busy || OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Processing Steps").font(.headline)
-                        if let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId), !busy {
-                            Label(backgroundStatus, systemImage: "clock")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        let stageIsRunning = busy || OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
-                        ForEach(Array(processingSteps.enumerated()), id: \.offset) { index, step in
-                            Label(step, systemImage: index < activeStep ? "checkmark.circle.fill" :
-                                  index == activeStep && stageIsRunning ? "circle.dotted" : "circle")
-                                .font(.subheadline)
-                                .foregroundStyle(index < activeStep || (index == activeStep && stageIsRunning) ? Color.primary : Color.secondary)
-                                .accessibilityValue(index < activeStep ? "Complete" :
-                                                    index == activeStep && stageIsRunning ? "Current stage" : "Pending")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                    progressCard
                     }
                 }
                 TimelineView(.periodic(from: .now, by: 2)) { _ in
@@ -143,7 +126,7 @@ public struct MeetingProcessingView: View {
                             Text("Speaker review").font(.title3.bold())
                             Text(viewModel.jobSnapshot?.warning ?? "Assign detected voices, or continue with unnamed speakers.")
                                 .foregroundStyle(.secondary)
-                            Button("Review Speakers") { showsPeople = true }
+                            Button("Review Speakers") { showsNameSpeakers = true }
                         } else if isReadyForReview {
                             reviewSection
                         } else if selectedSection == "Minutes" {
@@ -164,7 +147,7 @@ public struct MeetingProcessingView: View {
                             }
                             Button {
                                 if meeting?.analysisState == "speakerReview" {
-                                    showsPeople = true
+                                    showsNameSpeakers = true
                                 } else {
                                     start(download: true, speakersOnly: true)
                                 }
@@ -258,6 +241,12 @@ public struct MeetingProcessingView: View {
         }
         .navigationDestination(isPresented: $showsReviewChecklist) {
             if let meeting { MinutesReviewChecklistView(meeting: meeting) }
+        }
+        .sheet(isPresented: $showsNameSpeakers) {
+            if let meeting {
+                NameSpeakersView(meeting: meeting)
+                    .presentationDragIndicator(.visible)
+            }
         }
         .sheet(isPresented: $showsPeople) {
             if let meeting {
@@ -460,6 +449,59 @@ public struct MeetingProcessingView: View {
         }
     }
 
+    private var stageRows: [(title: String, index: Int)] {
+        let rows: [(title: String, index: Int)] = [
+            ("Transcribing", 1),
+            ("Identifying speakers", 2),
+            ("Writing minutes", 3),
+            ("Saving", 4)
+        ]
+        return preparingSpeakers ? Array(rows.prefix(2)) : rows
+    }
+
+    private func stageDetail(_ index: Int, running: Bool) -> (text: String, done: Bool, working: Bool) {
+        if index < activeStep { return ("Done", true, false) }
+        if index == activeStep && running { return ("Working", false, true) }
+        return ("Waiting", false, false)
+    }
+
+    private var progressCard: some View {
+        let running = busy || OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
+        let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Progress").font(.headline)
+            if let backgroundStatus, !busy {
+                Label(backgroundStatus, systemImage: "clock")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("Recording saved").font(.subheadline)
+                    Spacer()
+                }
+                .padding(.vertical, 12)
+                ForEach(stageRows, id: \.index) { row in
+                    Divider()
+                    let detail = stageDetail(row.index, running: running)
+                    HStack(spacing: 12) {
+                        Image(systemName: detail.done ? "checkmark.circle.fill" : (detail.working ? "circle.dotted" : "circle"))
+                            .foregroundStyle(detail.done ? Color.green : (detail.working ? Theme.Colors.manentAccent : Color.secondary))
+                        Text(row.title).font(.subheadline)
+                        Spacer()
+                        Text(detail.text)
+                            .font(.subheadline)
+                            .foregroundStyle(detail.working ? Theme.Colors.manentAccent : Color.secondary)
+                    }
+                    .padding(.vertical, 12)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .padding(.horizontal, 16)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+    }
+
     private var processingSteps: [String] {
         let preparation = ["Prepare on-device models", "Create transcript", "Identify speakers"]
         return preparingSpeakers ? preparation : preparation + ["Generate minutes", "Save results"]
@@ -593,7 +635,7 @@ public struct MeetingProcessingView: View {
                 try Task.checkCancellation()
                 if speakersOnly {
                     try await viewModel.prepareSpeakerReview()
-                    showsPeople = true
+                    showsNameSpeakers = true
                 } else {
                     try await viewModel.startPipeline()
                 }

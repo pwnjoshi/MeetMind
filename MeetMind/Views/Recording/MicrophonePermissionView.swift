@@ -3,43 +3,52 @@ import AVFoundation
 
 /// B1 Microphone permission. Shown once, before the first recording, while
 /// the permission is still undetermined. The system prompt follows Allow.
+/// Styled as the v5 alert-style card over a dimmed backdrop.
 struct MicrophonePermissionView: View {
     let onAllow: () -> Void
     let onNotNow: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "mic.fill")
-                .font(.system(size: 34))
-                .foregroundStyle(.white)
-                .frame(width: 72, height: 72)
-                .background(Theme.Colors.manentAccent, in: Circle())
-                .accessibilityHidden(true)
-            Text("Allow Microphone Access")
-                .font(.title2.bold())
-                .foregroundStyle(.white)
+        ZStack {
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+            Color.black.opacity(0.28).ignoresSafeArea()
+            card
+                .padding(.horizontal, 40)
+        }
+    }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\u{201C}Manent\u{201D} Would Like to Access the Microphone")
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Manent records your meetings on this iPhone. Audio never leaves your device.")
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.75))
-                .multilineTextAlignment(.center)
-            Spacer()
-            Button(action: onAllow) {
-                Text("Continue")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .foregroundStyle(.white)
-                    .background(Theme.Colors.manentAccent, in: Capsule())
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 8) {
+                Button(action: onAllow) {
+                    Text("Allow")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(.white)
+                        .background(Theme.Colors.manentAccent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                Button(action: onNotNow) {
+                    Text("Don\u{2019}t Allow")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(.primary)
+                        .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
-            Button("Not Now", action: onNotNow)
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.75))
-                .frame(minHeight: 44)
+            .padding(.top, 8)
         }
-        .padding(.horizontal, 28)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .accessibilityElement(children: .contain)
     }
 }
