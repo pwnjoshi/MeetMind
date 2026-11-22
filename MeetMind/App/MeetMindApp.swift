@@ -4,6 +4,7 @@ import OSLog
 import Darwin
 import UIKit
 import UserNotifications
+import OfflineEngineKit
 
 final class MeetMindAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     @Published private(set) var completedMeetingID: UUID?
@@ -12,7 +13,23 @@ final class MeetMindAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         OfflineAnalysisBackgroundScheduler.register()
         UNUserNotificationCenter.current().delegate = self
+        trackGPUAvailability(launchedInBackground: application.applicationState == .background)
         return true
+    }
+
+    /// iOS rejects GPU work from a backgrounded iPhone app, so on-device models switch
+    /// to the CPU and Neural Engine while the app is in the background.
+    private func trackGPUAvailability(launchedInBackground: Bool) {
+        ComputeEnvironment.setGPUAvailable(!launchedInBackground)
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { _ in
+            ComputeEnvironment.setGPUAvailable(false)
+        }
+        for name in [UIApplication.willEnterForegroundNotification, UIApplication.didBecomeActiveNotification] {
+            center.addObserver(forName: name, object: nil, queue: nil) { _ in
+                ComputeEnvironment.setGPUAvailable(true)
+            }
+        }
     }
 
     nonisolated func userNotificationCenter(

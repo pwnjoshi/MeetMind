@@ -23,9 +23,11 @@ public protocol AnalysisPipelineRunning: Sendable {
     func speakerWarning() async -> String?
     func analysisReuseCounts() async -> (reused: Int, analyzed: Int)
     func analysisFallbackSummary() async -> (chunks: Int, reason: String?)
+    func stageTimings() async -> AnalysisStageTimings
 }
 
 extension AnalysisPipelineRunning {
+    public func stageTimings() async -> AnalysisStageTimings { AnalysisStageTimings() }
     public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { (0, 0) }
     public func analysisFallbackSummary() async -> (chunks: Int, reason: String?) { (0, nil) }
 
@@ -50,6 +52,7 @@ extension MeetingAnalysisPipeline: AnalysisPipelineRunning {
                       reviewedTurns: reviewedTurns, participants: [], agenda: nil, progress: progress)
     }
     public func speakerWarning() async -> String? { lastSpeakerWarning }
+    public func stageTimings() async -> AnalysisStageTimings { lastStageTimings }
     public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { lastAnalysisReuse }
     public func analysisFallbackSummary() async -> (chunks: Int, reason: String?) {
         (lastAnalysisFallbackChunks, lastAnalysisFallbackReason)
@@ -241,6 +244,10 @@ public final class AnalysisCoordinator {
             let reuse = await pipeline.analysisReuseCounts()
             let fallback = await pipeline.analysisFallbackSummary()
             let transcriptReuse = TranscriptReuseRegistry.shared.summary(for: meetingID)
+            let stages = await pipeline.stageTimings()
+            let backgrounded = !ComputeEnvironment.gpuAvailable
+            Logger(subsystem: "com.meetmind.app", category: "Analysis").notice(
+                "Analysis stages \(stages.logDescription, privacy: .public) ended_in_background=\(backgrounded, privacy: .public)")
             Logger(subsystem: "com.meetmind.app", category: "Analysis").notice(
                 "Analysis timing total_ms=\(Int(Date().timeIntervalSince(runStarted) * 1_000), privacy: .public) audio_s=\(Int(transcriptReuse?.totalSeconds ?? 0), privacy: .public) transcript_reused_s=\(Int(transcriptReuse?.reusedSeconds ?? 0), privacy: .public) minutes_chunks_reused=\(reuse.reused, privacy: .public) minutes_chunks_analyzed=\(reuse.analyzed, privacy: .public) fallback_chunks=\(fallback.chunks, privacy: .public) fallback_reason=\(fallback.reason ?? "none", privacy: .public)")
             try await jobs.complete(lease, warning: warning)

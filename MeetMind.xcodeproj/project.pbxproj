@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C08C2CEE000100000001 /* ContinuedAnalysisRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08D2CEE000100000001 /* ContinuedAnalysisRun.swift */; };
+		1A00C08E2CEE000100000001 /* ContinuedAnalysisRunTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08F2CEE000100000001 /* ContinuedAnalysisRunTests.swift */; };
 		1A00C08B2CEE000100000001 /* OrganizationProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08C2CEE000100000001 /* OrganizationProfileStore.swift */; };
 		1A00C08D2CEE000100000001 /* NameSpeakersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08E2CEE000100000001 /* NameSpeakersView.swift */; };
 		1A00C08F2CEE000100000001 /* ContactsDirectoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0902CEE000100000001 /* ContactsDirectoryView.swift */; };
@@ -363,6 +365,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C08D2CEE000100000001 /* ContinuedAnalysisRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Background/ContinuedAnalysisRun.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C08F2CEE000100000001 /* ContinuedAnalysisRunTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Background/ContinuedAnalysisRunTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C08C2CEE000100000001 /* OrganizationProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Preferences/OrganizationProfileStore.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C08E2CEE000100000001 /* NameSpeakersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/NameSpeakersView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0902CEE000100000001 /* ContactsDirectoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/ContactsDirectoryView.swift"; sourceTree = SOURCE_ROOT; };
@@ -742,6 +746,7 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C08D2CEE000100000001 /* ContinuedAnalysisRun.swift */,
 				1B00C08C2CEE000100000001 /* OrganizationProfileStore.swift */,
 				1B00C08E2CEE000100000001 /* NameSpeakersView.swift */,
 				1B00C0902CEE000100000001 /* ContactsDirectoryView.swift */,
@@ -1003,6 +1008,7 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C08F2CEE000100000001 /* ContinuedAnalysisRunTests.swift */,
 				1B00C09C2CEE000100000001 /* NameSpeakerSuggestionTests.swift */,
 				1B00C09E2CEE000100000001 /* SettingsV5Tests.swift */,
 				1B00C0892CEE000100000001 /* MoMTests.swift */,
@@ -1379,6 +1385,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C08C2CEE000100000001 /* ContinuedAnalysisRun.swift in Sources */,
 				1A00C08B2CEE000100000001 /* OrganizationProfileStore.swift in Sources */,
 				1A00C08D2CEE000100000001 /* NameSpeakersView.swift in Sources */,
 				1A00C08F2CEE000100000001 /* ContactsDirectoryView.swift in Sources */,
@@ -1665,6 +1672,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C08E2CEE000100000001 /* ContinuedAnalysisRunTests.swift in Sources */,
 				1A00C09B2CEE000100000001 /* NameSpeakerSuggestionTests.swift in Sources */,
 				1A00C09D2CEE000100000001 /* SettingsV5Tests.swift in Sources */,
 				1A00C0882CEE000100000001 /* MoMTests.swift in Sources */,

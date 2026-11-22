@@ -28,14 +28,28 @@ enum OfflineAnalysisBackgroundScheduler {
     }
 
     static func stage(for meetingID: UUID) -> MeetingAnalysisStage? {
-        activeMeetingID == meetingID ? activeStage : nil
+        if ContinuedAnalysisRun.shared.isRunning(meetingID: meetingID) {
+            return ContinuedAnalysisRun.shared.stage(for: meetingID)
+        }
+        return activeMeetingID == meetingID ? activeStage : nil
     }
 
+    /// True while this meeting is processing anywhere: a run the person started
+    /// (which continues after leaving its screen) or an iOS processing window.
     static func isRunning(meetingID: UUID) -> Bool {
-        activeMeetingID == meetingID
+        activeMeetingID == meetingID || ContinuedAnalysisRun.shared.isRunning(meetingID: meetingID)
     }
 
     static func status(for meetingID: UUID) -> String? {
+        if ContinuedAnalysisRun.shared.isRunning(meetingID: meetingID) {
+            switch ContinuedAnalysisRun.shared.stage(for: meetingID) {
+            case .transcription: return "Transcribing"
+            case .speakers: return "Identifying speakers"
+            case .analysis: return "Writing minutes"
+            case .completed: return "Saving minutes"
+            case nil: return "Preparing on-device models"
+            }
+        }
         if activeMeetingID == meetingID {
             switch activeStage {
             case .transcription: return "Transcribing in background"
@@ -148,6 +162,11 @@ enum OfflineAnalysisBackgroundScheduler {
             }
             await importLegacyQueueIfNeeded()
             await refreshCache()
+            // A run the person started is using the models; only one meeting runs at a time.
+            guard !ContinuedAnalysisRun.shared.hasActiveRun else {
+                succeeded = true
+                return
+            }
             guard let record = cachedJobs.values
                 .filter({ $0.state == .queued })
                 .sorted(by: { $0.createdAt < $1.createdAt }).first else {
@@ -240,7 +259,7 @@ enum OfflineAnalysisBackgroundScheduler {
         }
     }
 
-    private static func postCompletionNotification(meetingID: UUID, title: String) async {
+    static func postCompletionNotification(meetingID: UUID, title: String) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
         let content = UNMutableNotificationContent()

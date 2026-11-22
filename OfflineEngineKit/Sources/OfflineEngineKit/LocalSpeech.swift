@@ -73,6 +73,50 @@ public struct SpeakerSpan: Codable, Sendable {
     public let end: Double
 }
 
+/// Holds at most one loaded Whisper engine. 	ake hands it out exclusively, so two
+/// concurrent transcriptions never share an engine; the second simply loads its own.
+private final class SpeechEngineCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var engine: LocalOnlyWhisper?
+    private var folder: String?
+    private var generation = 0
+    private var prewarmed: Set<String> = []
+
+    func take(folder: String) -> LocalOnlyWhisper? {
+        lock.lock(); defer { lock.unlock() }
+        guard self.folder == folder, let engine else { return nil }
+        self.engine = nil
+        self.folder = nil
+        generation += 1
+        return engine
+    }
+
+    /// Stores the engine and returns a generation token for idle eviction.
+    func put(_ engine: LocalOnlyWhisper, folder: String) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        self.engine = engine
+        self.folder = folder
+        generation += 1
+        return generation
+    }
+
+    func evict(ifGeneration expected: Int? = nil) -> LocalOnlyWhisper? {
+        lock.lock(); defer { lock.unlock() }
+        if let expected, expected != generation { return nil }
+        let engine = self.engine
+        self.engine = nil
+        self.folder = nil
+        generation += 1
+        return engine
+    }
+
+    /// True only for the first load of older in this process.
+    func claimPrewarm(folder: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return prewarmed.insert(folder).inserted
+    }
+}
+
 enum LocalSpeech {
     /// Hindi-English conversations are commonly misidentified as Urdu by automatic
     /// detection. A nil language keeps automatic detection (Hinglish), but a result other
@@ -81,8 +125,18 @@ enum LocalSpeech {
     static func transcribe(audio: URL, folder: URL, languageCode: String? = nil,
                            vocabulary: SpeechVocabulary? = nil,
                            memory: SpeechLanguageMemory? = nil) async throws -> [AnalysisTurn] {
-        let engine = try await LocalOnlyWhisper(WhisperKitConfig(modelFolder: folder.path,
-            verbose: false, logLevel: .none, prewarm: true, load: true, download: false))
+        let engine: LocalOnlyWhisper
+        if let cached = engineCache.take(folder: folder.path) {
+            engine = cached
+        } else {
+            if let stale = engineCache.evict() { await stale.unloadModels() }
+            // Prewarming specializes each Core ML model with a lower memory peak but
+            // doubles load time, so only the first load of a model per launch does it.
+            engine = try await LocalOnlyWhisper(WhisperKitConfig(modelFolder: folder.path,
+                computeOptions: speechComputeOptions,
+                verbose: false, logLevel: .none, prewarm: engineCache.claimPrewarm(folder: folder.path),
+                load: true, download: false))
+        }
         do {
             _ = try? await engine.loadTokenizerIfNeeded()
             var language: String? = languageCode ?? memory?.code
@@ -98,13 +152,40 @@ enum LocalSpeech {
                 }
                 if language == "hi" { memory?.remember("hi") }
             }
-            await engine.unloadModels()
             try Task.checkCancellation()
+            // Live recording windows arrive every 30 seconds and the final pass follows
+            // soon after Stop, so the loaded engine is kept briefly instead of reloaded.
+            keep(engine, folder: folder.path)
             return pass.turns
         } catch {
             await engine.unloadModels()
             throw error
         }
+    }
+
+    /// Mel spectrogram on the CPU and encoder/decoder on the Neural Engine. WhisperKit's
+    /// default mel stage uses the GPU, which iOS denies to a backgrounded iPhone app.
+    private static var speechComputeOptions: ModelComputeOptions {
+        ModelComputeOptions(melCompute: .cpuOnly, audioEncoderCompute: .cpuAndNeuralEngine,
+                            textDecoderCompute: .cpuAndNeuralEngine)
+    }
+
+    private static let engineCache = SpeechEngineCache()
+    /// An idle cached engine is unloaded after this long.
+    static let engineIdleSeconds: UInt64 = 90
+
+    private static func keep(_ engine: LocalOnlyWhisper, folder: String) {
+        let generation = engineCache.put(engine, folder: folder)
+        Task.detached(priority: .utility) {
+            try? await Task.sleep(nanoseconds: engineIdleSeconds * 1_000_000_000)
+            if let idle = engineCache.evict(ifGeneration: generation) { await idle.unloadModels() }
+        }
+    }
+
+    /// Unloads the cached speech engine. Called before diarization or a language model
+    /// loads, so two large models are never resident together.
+    static func releaseCachedEngine() async {
+        if let engine = engineCache.evict() { await engine.unloadModels() }
     }
 
     /// Encodes the vocabulary prompt with the engine tokenizer. Returns nil when the tokenizer is unavailable.
@@ -136,8 +217,27 @@ enum LocalSpeech {
         return (turns, results.first?.language)
     }
     static func diarize(audio: URL, folder: URL, expectedSpeakers: Int? = nil) async throws -> [SpeakerSpan] {
+        await releaseCachedEngine()
+        // All compute units in the foreground. In the background iOS denies the GPU,
+        // so only the CPU and Neural Engine are requested.
+        let units: MLComputeUnits = ComputeEnvironment.gpuAvailable ? .all : .cpuAndNeuralEngine
+        do {
+            return try await diarizeOnce(audio: audio, folder: folder, expectedSpeakers: expectedSpeakers,
+                                         computeUnits: units)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // The app moved to the background mid-run and its GPU work was rejected.
+            guard units == .all, !ComputeEnvironment.gpuAvailable else { throw error }
+            return try await diarizeOnce(audio: audio, folder: folder, expectedSpeakers: expectedSpeakers,
+                                         computeUnits: .cpuAndNeuralEngine)
+        }
+    }
+
+    private static func diarizeOnce(audio: URL, folder: URL, expectedSpeakers: Int?,
+                                    computeUnits: MLComputeUnits) async throws -> [SpeakerSpan] {
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .all
+        configuration.computeUnits = computeUnits
         func load(_ name: String) throws -> MLModel {
             try MLModel(contentsOf: folder.appendingPathComponent(name + ".mlmodelc"), configuration: configuration)
         }

@@ -84,12 +84,21 @@ public struct MeetingProcessingView: View {
                             if preparingSpeakers {
                                 Button("Pause speaker review") { operation?.cancel() }
                             } else {
-                                Button("Keep in Background", systemImage: "clock") { queueAnalysis() }
+                                HStack {
+                                    Button("Keep in Background", systemImage: "clock") { queueAnalysis() }
+                                    Spacer()
+                                    Button("Pause", systemImage: "pause.fill") { operation?.cancel() }
+                                }
                             }
                         } else if let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId) {
                             Text(backgroundStatus).font(.title3.bold())
                             Text("Your audio is saved. You can leave and return to this meeting.")
                                 .foregroundStyle(.secondary)
+                            if ContinuedAnalysisRun.shared.isRunning(meetingID: meetingId) {
+                                Button("Pause", systemImage: "pause.fill") {
+                                    ContinuedAnalysisRun.shared.cancel(meetingID: meetingId)
+                                }
+                            }
                         } else if viewModel.jobSnapshot?.state == .queued {
                             Text("Queued").font(.title3.bold())
                             Text("Your recording is saved and ready for on-device processing.")
@@ -327,7 +336,9 @@ public struct MeetingProcessingView: View {
                 OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
             }
             // Opening this screen verifies local readiness but never starts a
-            // model download or meeting analysis without an explicit tap.
+            // model download or meeting analysis without an explicit tap. A run that
+            // is already processing this meeting owns its job record; leave it alone.
+            guard !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) else { return }
             checkingModels = true
             Task { @MainActor in
                 defer { checkingModels = false }
@@ -342,21 +353,7 @@ public struct MeetingProcessingView: View {
                 }
             }
         }
-        .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .background, busy {
-                // Release the foreground lease at a checkpoint before enqueueing
-                // the same durable job for an iOS processing window.
-                let foregroundOperation = operation
-                foregroundOperation?.cancel()
-                if !preparingSpeakers {
-                    Task { @MainActor in
-                        if let foregroundOperation { await foregroundOperation.value }
-                        OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
-                    }
-                }
-            }
-        }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
 
     private var meeting: Meeting? { meetings.first { $0.id == meetingId } }
@@ -587,12 +584,11 @@ public struct MeetingProcessingView: View {
         }
     }
 
+    /// Processing continues after this screen closes (and, on iOS 26, after the app
+    /// is backgrounded). Only the notification permission is requested here, so the
+    /// person hears when the minutes are ready.
     private func queueAnalysis() {
-        let foregroundOperation = operation
-        foregroundOperation?.cancel()
         Task { @MainActor in
-            if let foregroundOperation { await foregroundOperation.value }
-            OfflineAnalysisBackgroundScheduler.schedule(meetingID: meetingId)
             let center = UNUserNotificationCenter.current()
             if await center.notificationSettings().authorizationStatus == .notDetermined {
                 _ = try? await center.requestAuthorization(options: [.alert, .sound])
@@ -604,7 +600,11 @@ public struct MeetingProcessingView: View {
     private func start(download: Bool = false, speakersOnly: Bool = false) {
         guard !busy else { return }
         guard !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) else {
-            processingError = "This meeting is already running in the background. Follow its progress above."
+            processingError = "This meeting is already processing. Follow its progress above."
+            return
+        }
+        guard !ContinuedAnalysisRun.shared.hasActiveRun else {
+            processingError = "Another meeting is processing. This one can start when it finishes."
             return
         }
         OfflineAnalysisBackgroundScheduler.remove(meetingID: meetingId)
@@ -612,7 +612,13 @@ public struct MeetingProcessingView: View {
         preparingSpeakers = speakersOnly
         processingError = nil
         UIApplication.shared.isIdleTimerDisabled = true
-        operation = Task { @MainActor in
+        let id = meetingId
+        viewModel.onOfflineStageChanged = { stage in
+            ContinuedAnalysisRun.shared.report(stage, meetingID: id)
+        }
+        // The run belongs to the app, not this screen: leaving the screen or the app
+        // does not stop it. Pause, or Stop in the iOS Live Activity, does.
+        let work: @MainActor () async -> Bool = {
             defer {
                 busy = false
                 preparingSpeakers = false
@@ -623,7 +629,7 @@ public struct MeetingProcessingView: View {
                 try viewModel.prepareForProduction(context: modelContext, settings: settings)
                 missingModels = try await viewModel.missingOfflineModels(speakersOnly: speakersOnly)
                 if !missingModels.isEmpty {
-                    guard download else { return }
+                    guard download else { return false }
                     downloading = true
                     downloadProgress = 0
                     try await viewModel.downloadAndContinueModels(speakersOnly: speakersOnly) { _, value in
@@ -639,6 +645,7 @@ public struct MeetingProcessingView: View {
                 } else {
                     try await viewModel.startPipeline()
                 }
+                return true
             } catch is CancellationError {
                 processingError = "Paused. Your audio, completed steps, and partial model downloads are saved. Tap Resume when you return."
             } catch {
@@ -647,7 +654,17 @@ public struct MeetingProcessingView: View {
                     ?? (error as? AnalysisJobStoreError)?.errorDescription
                     ?? AnalysisFailure.stable(.processingFailed).message
             }
+            return false
         }
+        guard let task = ContinuedAnalysisRun.shared.start(meetingID: id, title: meeting?.title ?? "Meeting minutes",
+                                                          work: work) else {
+            busy = false
+            preparingSpeakers = false
+            UIApplication.shared.isIdleTimerDisabled = false
+            processingError = "Another meeting is processing. This one can start when it finishes."
+            return
+        }
+        operation = task
     }
 }
 

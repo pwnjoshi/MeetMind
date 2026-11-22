@@ -76,6 +76,8 @@ public actor MeetingAnalysisPipeline {
     public private(set) var lastAnalysisFallbackChunks = 0
     /// Engine-authored error text for the last fallback; never transcript content.
     public private(set) var lastAnalysisFallbackReason: String?
+    /// Content-free stage durations from the last run, for the timing log.
+    public private(set) var lastStageTimings = AnalysisStageTimings()
     private var preparingChunks = Set<String>()
     private var discardedPreparationMeetingIDs = Set<UUID>()
     private var discardActiveCheckpoint = false
@@ -277,7 +279,9 @@ public actor MeetingAnalysisPipeline {
     @discardableResult
     public func preAnalyzeRecording(meetingID: UUID, meetingDate: Date, timezone: String,
                                     model: VidurModel = .selected, maxChunks: Int = 1) async throws -> Int {
-        guard !running, !preAnalyzing, preparingChunks.isEmpty, maxChunks > 0,
+        // A backgrounded recording keeps capturing audio; the language model would have
+        // to run on the CPU next to it, so minutes wait for the final pass instead.
+        guard !running, !preAnalyzing, preparingChunks.isEmpty, maxChunks > 0, ComputeEnvironment.gpuAvailable,
               !discardedPreparationMeetingIDs.contains(meetingID), resourceGate() else { return 0 }
         let profiles = try requiredProfiles(model: model)
         let profile = profiles[2]
@@ -303,6 +307,7 @@ public actor MeetingAnalysisPipeline {
         // hold two language models, and stop at once when Stop cancelled us.
         try Task.checkCancellation()
         guard !running, resourceGate() else { return 0 }
+        await backend.releaseSpeechEngine()
         let session: any MeetingAnalysisSession
         do { session = try backend.makeSession(folder: folder, configuration: configuration) }
         catch let error as OfflineError {
@@ -383,6 +388,7 @@ public actor MeetingAnalysisPipeline {
             throw OfflineError.unavailable("The offline analysis model is unavailable.")
         }
         let folder = try await backend.verifiedFolder(profile)
+        await backend.releaseSpeechEngine()
         let model = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
         let referenceDate = Date(), timezone = TimeZone.current.identifier
         var points: [SupportedPoint] = []
@@ -472,6 +478,8 @@ public actor MeetingAnalysisPipeline {
         lastAnalysisReuse = (0, 0)
         lastAnalysisFallbackChunks = 0
         lastAnalysisFallbackReason = nil
+        lastStageTimings = AnalysisStageTimings()
+        func elapsedMs(_ start: Date) -> Int { Int(Date().timeIntervalSince(start) * 1_000) }
         guard audio.isFileURL else { throw OfflineError.unavailable("Choose a recording saved on this iPhone.") }
         let duration = try await AVURLAsset(url: audio).load(.duration).seconds
         guard duration.isFinite, duration > 0, duration <= 3600 else {
@@ -503,11 +511,14 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .transcription {
             try checkConditions()
             await progress(.transcription)
+            let started = Date()
             // Windows transcribed during recording are reused; only the time
             // ranges they do not cover are transcribed now.
             checkpoint.turns = Self.splitTurns(try await transcribeReusingPreparedWindows(
                 meetingID: meetingID, audio: audio, duration: duration, profile: profiles[0],
                 languageCode: languageCode, participants: participants, agenda: agenda))
+            lastStageTimings.transcriptionMs = elapsedMs(started)
+            await backend.releaseSpeechEngine()
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
             try save()
@@ -515,6 +526,9 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .speakers {
             try checkConditions()
             await progress(.speakers)
+            let speakersStarted = Date()
+            defer { lastStageTimings.speakersMs = elapsedMs(speakersStarted) }
+            await backend.releaseSpeechEngine()
             let rawSpans: [SpeakerSpan]
             do {
                 let folder = try await backend.verifiedFolder(profiles[1])
@@ -541,15 +555,53 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .analysis {
             try checkConditions()
             await progress(.analysis)
+            let minutesStarted = Date()
+            defer { lastStageTimings.minutesMs = elapsedMs(minutesStarted) }
+            await backend.releaseSpeechEngine()
             let folder = try await backend.verifiedFolder(profiles[2])
-            let model = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
+            // Optional so the old model is freed before a replacement loads; two
+            // resident language models would exceed the memory budget.
+            var session: (any MeetingAnalysisSession)?
+            func currentSession() throws -> any MeetingAnalysisSession {
+                if let session, !ComputeEnvironment.needsReload(session.placement) { return session }
+                session = nil
+                let loadStarted = Date()
+                let loaded = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
+                lastStageTimings.modelLoadMs += elapsedMs(loadStarted)
+                lastStageTimings.modelLoads += 1
+                session = loaded
+                return loaded
+            }
+            func analyzeOnce(_ chunk: [AnalysisTurn], placement: inout ComputePlacement) throws -> LocalAnalysisResult {
+                let active = try currentSession()
+                placement = active.placement
+                return try active.analyze(turns: chunk, meetingDate: meetingDate, timezone: timezone,
+                    question: nil, participants: participants, agenda: agenda)
+            }
+            /// A chunk interrupted by the move to the background (iOS rejects the GPU
+            /// work) is analyzed again on the CPU instead of falling back to rules.
+            func analyzeChunk(_ chunk: [AnalysisTurn]) throws -> LocalAnalysisResult {
+                var placement = ComputePlacement.independent
+                do {
+                    let result = try analyzeOnce(chunk, placement: &placement)
+                    if placement == .cpu { lastStageTimings.cpuChunks += 1 }
+                    return result
+                } catch {
+                    guard !(error is CancellationError), placement == .gpu, !ComputeEnvironment.gpuAvailable else { throw error }
+                    lastStageTimings.backgroundRetries += 1
+                    let result = try analyzeOnce(chunk, placement: &placement)
+                    if placement == .cpu { lastStageTimings.cpuChunks += 1 }
+                    return result
+                }
+            }
+
             let preAnalysisKey = RecordingReuse.contextKey(profile: profiles[2], configuration: Self.modelConfiguration,
                 chunkBytes: Self.analysisChunkBytes, meetingDate: meetingDate, timezone: timezone)
             let preAnalyzed: [String: LocalAnalysisResult] = Dictionary(
                 (loadPreAnalysis(meetingID: meetingID, contextKey: preAnalysisKey)?.entries ?? []).map { ($0.key, $0.result) },
                 uniquingKeysWith: { first, _ in first })
             if checkpoint.chunkTurnIDs == nil {
-                let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: model,
+                let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: try currentSession(),
                     meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes,
                     participants: participants, agenda: agenda)
                 var seen = Set<String>()
@@ -585,8 +637,9 @@ public actor MeetingAnalysisPipeline {
                     lastAnalysisReuse.reused += 1
                 } else {
                     do {
-                        let raw = try model.analyze(turns: chunks[index], meetingDate: meetingDate, timezone: timezone,
-                            question: nil, participants: participants, agenda: agenda)
+                        let chunkStarted = Date()
+                        let raw = try analyzeChunk(chunks[index])
+                        lastStageTimings.chunkMs.append(elapsedMs(chunkStarted))
                         result = raw.sanitized(against: chunks[index])
                         lastAnalysisReuse.analyzed += 1
                     } catch is CancellationError {

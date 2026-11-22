@@ -8,9 +8,14 @@ final class LocalLanguageModel {
     private let context: OpaquePointer
     private let vocab: OpaquePointer
     private let configuration: LocalModelConfiguration
+    /// GPU in the foreground; CPU while the app is in the background, where iOS
+    /// rejects Metal work on iPhone. Chosen once, when the model loads.
+    let placement: ComputePlacement
 
-    init(url: URL, configuration: LocalModelConfiguration = .standard) throws {
+    init(url: URL, configuration: LocalModelConfiguration = .standard,
+         placement: ComputePlacement = ComputeEnvironment.preferredPlacement) throws {
         self.configuration = configuration
+        self.placement = placement
         try Task.checkCancellation()
         guard let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber else {
             throw OfflineError.unavailable("Unable to determine the model's memory requirements.")
@@ -30,10 +35,7 @@ final class LocalLanguageModel {
             !Task.isCancelled && ModelMemoryAdmission.footprint() < ModelMemoryAdmission.maximumBudget
         }
         parameters.load_mode = LLAMA_LOAD_MODE_MMAP
-        parameters.n_gpu_layers = 99
-        #if targetEnvironment(simulator)
-        parameters.n_gpu_layers = 0
-        #endif
+        parameters.n_gpu_layers = placement == .gpu ? 99 : 0
         guard let model = llama_model_load_from_file(url.path, parameters) else {
             try Task.checkCancellation()
             throw OfflineError.unavailable("Unable to load the local language model.")
@@ -58,6 +60,12 @@ final class LocalLanguageModel {
         options.n_ubatch = configuration.microBatchTokens
         options.n_threads = 4
         options.n_threads_batch = 4
+        if placement != .gpu {
+            // Keep the KV cache and prompt batches on the CPU too; otherwise llama.cpp
+            // may still submit Metal work, which fails in the background.
+            options.offload_kqv = false
+            options.op_offload = false
+        }
         guard let context = llama_init_from_model(model, options) else {
             llama_model_free(model)
             throw OfflineError.unavailable("Not enough resources to initialize the language model.")

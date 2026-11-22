@@ -50,6 +50,10 @@
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
         <string>com.meetmind.app.offline-analysis</string>
+        <!-- One continued-processing task per user-started meeting analysis (iOS 26+).
+             The second pattern covers the bundle identifier the sideloaded build uses. -->
+        <string>com.meetmind.app.continued-analysis.*</string>
+        <string>com.meetmind.app.JK2M3K5ACG.continued-analysis.*</string>
     </array>
     
     <!-- Custom URL Schemes for Deep Linking -->

@@ -265,7 +265,11 @@ public actor VidurAnswerEngine {
                       }
                       return profile
                   },
-                  folderResolver: { try await OfflineModelStore.shared.verifiedFolder($0) },
+                  folderResolver: { profile in
+                      // Never hold a cached speech engine and the answer model together.
+                      await LocalSpeech.releaseCachedEngine()
+                      return try await OfflineModelStore.shared.verifiedFolder(profile)
+                  },
                   sessionMaker: { folder in
                       try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"), configuration: .answer)
                   },

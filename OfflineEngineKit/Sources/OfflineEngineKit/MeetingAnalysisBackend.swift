@@ -4,6 +4,9 @@ import Foundation
 /// actual production inference path with a heuristic fallback.
 protocol MeetingAnalysisSession {
     var inputTokenLimit: Int { get }
+    /// Where this session runs. The pipeline reloads a GPU session on the CPU when the
+    /// app moves to the background, and back on the GPU when it returns.
+    var placement: ComputePlacement { get }
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult
     /// Participant names and the agenda are untrusted prompt context. Conformers that
@@ -15,6 +18,8 @@ protocol MeetingAnalysisSession {
 }
 
 extension MeetingAnalysisSession {
+    var placement: ComputePlacement { .independent }
+
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?,
                          participants: [String], agenda: String?) throws -> Int {
         try inputTokenCount(turns: turns, meetingDate: meetingDate, timezone: timezone, question: question)
@@ -38,10 +43,14 @@ protocol MeetingAnalysisBackend: Sendable {
     func diarize(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> [SpeakerSpan]
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession
     func isInstalled(_ profile: ModelProfile) async -> Bool
+    /// Frees a speech engine kept loaded between transcription calls, before another
+    /// large model loads. Conformers without a cache inherit the no-op.
+    func releaseSpeechEngine() async
 }
 
 extension MeetingAnalysisBackend {
     func isInstalled(_ profile: ModelProfile) async -> Bool { true }
+    func releaseSpeechEngine() async {}
     func transcribe(audio: URL, folder: URL, request: SpeechRequest) async throws -> [AnalysisTurn] {
         try await transcribe(audio: audio, folder: folder, languageCode: request.languageCode)
     }
@@ -72,5 +81,8 @@ struct LocalMeetingAnalysisBackend: MeetingAnalysisBackend {
     }
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession {
         try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"), configuration: configuration)
+    }
+    func releaseSpeechEngine() async {
+        await LocalSpeech.releaseCachedEngine()
     }
 }

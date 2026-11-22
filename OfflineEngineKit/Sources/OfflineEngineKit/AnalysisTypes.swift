@@ -111,3 +111,31 @@ public struct LocalAnalysisResult: Codable, Sendable {
         }
     }
 }
+
+/// Content-free durations for one analysis run, logged so slow stages can be found
+/// on a device without exposing meeting text.
+public struct AnalysisStageTimings: Sendable, Equatable {
+    public var transcriptionMs = 0
+    public var speakersMs = 0
+    /// Language model loads, including reloads when the app changes foreground state.
+    public var modelLoadMs = 0
+    public var modelLoads = 0
+    /// Whole minutes stage, including model loads and every chunk.
+    public var minutesMs = 0
+    /// Per-chunk model time for chunks not reused from recording-time pre-analysis.
+    public var chunkMs: [Int] = []
+    /// Chunks the language model ran on the CPU because the app was in the background.
+    public var cpuChunks = 0
+    /// Chunks redone on the CPU after the move to the background interrupted them.
+    public var backgroundRetries = 0
+
+    public init() {}
+
+    public var logDescription: String {
+        let average = chunkMs.isEmpty ? 0 : chunkMs.reduce(0, +) / chunkMs.count
+        return "transcribe_ms=\(transcriptionMs) speakers_ms=\(speakersMs) minutes_ms=\(minutesMs) "
+            + "model_load_ms=\(modelLoadMs) model_loads=\(modelLoads) chunks=\(chunkMs.count) "
+            + "chunk_avg_ms=\(average) chunk_max_ms=\(chunkMs.max() ?? 0) cpu_chunks=\(cpuChunks) "
+            + "background_retries=\(backgroundRetries)"
+    }
+}
