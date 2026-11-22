@@ -82,7 +82,7 @@ jobs:
               CODE_SIGN_IDENTITY="" \
               CODE_SIGNING_REQUIRED=NO \
               CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGN_STYLE="Manual" 2>&1 | tee build/xcodebuild-app.log
+              CODE_SIGN_STYLE="Manual" "$@" 2>&1 | tee build/xcodebuild-app.log
           }
           dump_crashes() {
             for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | grep -Ei 'SWBBuildService|XCBBuildService|swift' | head -3); do
@@ -92,11 +92,15 @@ jobs:
           if build_app; then exit 0; fi
           dump_crashes
           if grep -q "build system has crashed" build/xcodebuild-app.log; then
-            echo "Build system crashed; retrying once with clean app intermediates"
+            echo "::group::standalone driver planning for MeetMind"
+            DRIVER_CMD=$(grep -m1 -E 'builtin-SwiftDriver -- .*-module-name MeetMind ' build/xcodebuild-app.log | sed 's/.*builtin-SwiftDriver -- //')
+            echo "${DRIVER_CMD:0:3000}"
+            (eval "$DRIVER_CMD -driver-print-jobs" 2>&1 | tail -c 20000) || true
+            echo "::endgroup::"
+            echo "Build system crashed; retrying once with explicit modules disabled"
             rm -rf build/DerivedData/Build/Intermediates.noindex/MeetMind.build \
-                   build/DerivedData/Build/Intermediates.noindex/XCBuildData \
                    build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
-            if build_app; then exit 0; fi
+            if build_app SWIFT_ENABLE_EXPLICIT_MODULES=NO; then exit 0; fi
             dump_crashes
           fi
           exit 1
