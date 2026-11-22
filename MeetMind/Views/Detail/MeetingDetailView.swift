@@ -40,6 +40,11 @@ public struct MeetingDetailView: View {
     @State private var showsSeriesComparison = false
     @State private var showsSharedMinutes = false
     @State private var showsReviewChecklist = false
+    @State private var externalShare: MinutesShareRequest?
+    @State private var showsPDFPreview = false
+    @State private var showClassicEditor = false
+    @State private var showDraftShareAlert = false
+    @Query(sort: \Meeting.createdAt) private var allMeetings: [Meeting]
 
     public init(viewModel: MeetingDetailViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -72,8 +77,21 @@ public struct MeetingDetailView: View {
 
     public var body: some View {
         Group {
-            if recordSection == "Minutes", hasMinutes {
-                ScrollView { recordContent }
+            if recordSection == "Minutes", hasMinutes, let meeting = viewModel.meeting {
+                MoMDocumentScreen(
+                    meeting: meeting,
+                    viewModel: viewModel,
+                    isFinalized: lifecycleResolution?.state == .finalized,
+                    userName: settings.userProfile?.name,
+                    onRename: {
+                        renameText = viewModel.headerTitle
+                        showRenameAlert = true
+                    },
+                    onEdit: { showMinutesEditor = true },
+                    onOpenMeeting: { id in router.navigate(to: .meetingDetail(id: id), in: .home) },
+                    onScheduleNext: { beginFollowUp(for: meeting) },
+                    onOpenStudio: { showsStudio = true }
+                )
             } else {
                 recordContent
             }
@@ -92,6 +110,13 @@ public struct MeetingDetailView: View {
                                      onSelectPhoto: { showPhotoModal = $0 })
                 .navigationTitle("Notes & Media")
                 .toolbar(.hidden, for: .tabBar)
+        }
+        .navigationDestination(isPresented: $showsPDFPreview) {
+            if let document = momDocument() {
+                MoMPDFPreviewView(document: document) { url in
+                    startExternalShare(url, text: document.plainText)
+                }
+            }
         }
         .navigationDestination(isPresented: $showsStudio) {
             if let meeting = viewModel.meeting { MinutesStudioView(meeting: meeting) }
@@ -114,6 +139,13 @@ public struct MeetingDetailView: View {
                 Button("Vidur", systemImage: "sparkles") { showAskAISheet = true }
                     .labelStyle(.iconOnly)
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Transcript", systemImage: "doc.text") { showsTranscriptPage = true }
+                    .labelStyle(.iconOnly)
+            }
+            if hasMinutes {
+                ToolbarItem(placement: .topBarTrailing) { shareMenu }
+            }
             ToolbarItem(placement: .topBarTrailing) { optionsMenu }
         }
         .modifier(MinutesShareFlowModifier(
@@ -121,9 +153,18 @@ public struct MeetingDetailView: View {
             viewModel: viewModel,
             userName: settings.userProfile?.name,
             isStarting: $startSharing,
-            onBackToMeetings: { dismiss() },
-            onError: { deletionError = $0 }
+            externalRequest: $externalShare,
+            onBackToMeetings: { router.popToRoot(on: .home) },
+            onError: { deletionError = $0 },
+            shareText: { momDocument()?.plainText ?? viewModel.exportPlainText() }
         ))
+        .alert("Share Draft Minutes?", isPresented: $showDraftShareAlert) {
+            Button("Review First") { showsReviewChecklist = true }
+            Button("Share Draft") { startSharing = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("These minutes are still a draft. Review and finalize them first, or share the draft as it is.")
+        }
         .alert("Keep Minutes Private?", isPresented: $showKeepPrivate) {
             Button("Cancel", role: .cancel) {}
             Button("Keep Private") { keepMinutesPrivate() }
@@ -137,6 +178,18 @@ public struct MeetingDetailView: View {
             }
         }
         .sheet(isPresented: $showMinutesEditor) {
+            if let meeting = viewModel.meeting, let document = momDocument() {
+                MoMEditMinutesSheet(meeting: meeting, document: document) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(400))
+                        showClassicEditor = true
+                    }
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+        .sheet(isPresented: $showClassicEditor) {
             if let summary = viewModel.summary, let meeting = viewModel.meeting {
                 EditSavedMinutesSheet(meeting: meeting, summary: summary)
                     .presentationDetents([.large])
@@ -161,7 +214,11 @@ public struct MeetingDetailView: View {
             showAskAISheet: $showAskAISheet,
             showRenameAlert: $showRenameAlert,
             renameText: $renameText,
-            onRenameError: { deletionError = $0.localizedDescription }
+            onRenameError: { deletionError = $0.localizedDescription },
+            onShareFile: { url in
+                showExportSheet = false
+                startExternalShare(url, text: viewModel.exportPlainText())
+            }
         ))
         .sheet(isPresented: $showNoteSheet) {
             LiveNoteTakingSheet(timestamp: viewModel.currentPlayheadTime) { text in
@@ -210,15 +267,18 @@ public struct MeetingDetailView: View {
 
     private var optionsMenu: some View {
         Menu {
-            Button("Meeting Details", systemImage: "info.circle") { recordSection = "Minutes" }
-            if let meeting = viewModel.meeting, meeting.status == .completed {
-                Button("Schedule Follow-Up", systemImage: "calendar") { beginFollowUp(for: meeting) }
+            if hasMinutes {
+                Button("Edit Minutes", systemImage: "square.and.pencil") { showMinutesEditor = true }
+                Button("Change Format", systemImage: "list.bullet") { showsStudio = true }
             }
             Button("Show Transcript", systemImage: "doc.text") { showsTranscriptPage = true }
+            if let meeting = viewModel.meeting, meeting.status == .completed {
+                Button("Schedule Follow-Up", systemImage: "calendar.badge.plus") { beginFollowUp(for: meeting) }
+            }
             if hasMinutes {
-                Button("Edit Minutes", systemImage: "pencil") { showMinutesEditor = true }
                 Divider()
-                Button("Document Format", systemImage: "doc.richtext") { showsStudio = true }
+                Button("Actions List", systemImage: "checklist") { recordSection = "Actions" }
+                Button("Decisions List", systemImage: "checkmark.seal") { recordSection = "Decisions" }
                 Button("Submit for Approval", systemImage: "checkmark.seal") { showsApproval = true }
                 if viewModel.meeting?.seriesID != nil {
                     Button("Compare Series", systemImage: "chart.line.uptrend.xyaxis") { showsSeriesComparison = true }
@@ -228,11 +288,44 @@ public struct MeetingDetailView: View {
                     Button("Shared Minutes", systemImage: "paperplane") { showsSharedMinutes = true }
                 }
             }
+            Divider()
+            Button("Delete Meeting", systemImage: "trash", role: .destructive) { showDeleteConfirmation = true }
         } label: {
             Label("Meeting options", systemImage: "ellipsis").labelStyle(.iconOnly)
         }
     }
 
+    private var shareMenu: some View {
+        Menu {
+            Button("Share Minutes", systemImage: "square.and.arrow.up") { requestShare() }
+            Button("Preview PDF", systemImage: "doc.richtext") { showsPDFPreview = true }
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up").labelStyle(.iconOnly)
+        }
+    }
+
+    /// Every Share entry point (bottom button, toolbar, PDF preview, Export) ends in the share flow.
+    private func requestShare() {
+        if lifecycleResolution?.state == .finalized {
+            startSharing = true
+        } else {
+            showDraftShareAlert = true
+        }
+    }
+
+    private func startExternalShare(_ url: URL, text: String) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            externalShare = MinutesShareRequest(fileURL: url, text: text)
+        }
+    }
+
+    private func momDocument() -> MoMDocumentModel? {
+        guard let meeting = viewModel.meeting else { return nil }
+        return MoMDocumentBuilder.current(meeting: meeting, allMeetings: allMeetings,
+                                          userName: settings.userProfile?.name,
+                                          isFinalized: lifecycleResolution?.state == .finalized)
+    }
     private func beginFollowUp(for meeting: Meeting) {
         followUpDraft = MinutesFollowUpDraft.make(from: meeting, modelContext: modelContext)
         showFollowUp = true
@@ -255,38 +348,27 @@ public struct MeetingDetailView: View {
 
     @ViewBuilder
     private var bottomBar: some View {
-        if recordSection == "Minutes", let meeting = viewModel.meeting, hasMinutes {
-            if lifecycleResolution?.state != .finalized {
-                Button {
-                    showsReviewChecklist = true
-                } label: {
-                    Text(reviewStatusText == "Ready to finalize" ? "Review and Finalize" : "Continue Review")
-                        .frame(maxWidth: .infinity)
+        if recordSection == "Minutes", viewModel.meeting != nil, hasMinutes {
+            VStack(spacing: 6) {
+                Button { requestShare() } label: {
+                    Text("Share Minutes").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                        .foregroundStyle(.white)
+                        .background(Theme.Colors.manentAccent, in: Capsule())
                 }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
-                .background(.regularMaterial)
-            } else {
-                VStack(spacing: 6) {
-                    Button { startSharing = true } label: {
-                        Text("Share Minutes").frame(maxWidth: .infinity, minHeight: 50)
-                            .foregroundStyle(.white)
-                            .background(Theme.Colors.manentAccent, in: Capsule())
-                    }
+                if lifecycleResolution?.state != .finalized {
+                    Button("Review and Finalize") { showsReviewChecklist = true }
+                        .frame(minHeight: 44)
+                } else {
                     Button("Continue Without Sharing") { showKeepPrivate = true }
                         .frame(minHeight: 44)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.manentAccent)
-                .padding(.horizontal, 16)
-                .background(.regularMaterial)
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Colors.manentAccent)
+            .padding(.horizontal, 16)
+            .background(.regularMaterial)
         }
     }
-
     private var recordContent: some View {
         VStack(spacing: 0) {
             MeetingRecordHeader(

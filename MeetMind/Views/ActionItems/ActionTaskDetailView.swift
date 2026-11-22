@@ -52,11 +52,24 @@ struct ActionTaskDetailView: View {
 
     private var content: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                ActionFormCards(draft: $draft, meetings: meetings, localName: localName, dueFirst: false)
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                ActionFormCards(
+                    draft: $draft,
+                    meetings: meetings,
+                    localName: localName,
+                    dueFirst: false,
+                    showsTitle: false,
+                    showsNotes: false
+                )
                 if let meeting = item.meeting {
                     meetingCard(meeting)
                 }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Notes").font(.title3.weight(.semibold)).padding(.horizontal, 2)
+                    ActionNotesCard(note: $draft.note, placeholder: "Add a note")
+                }
+                .padding(.top, 8)
                 completionCard
                 if isWaitingOnOthers {
                     assignmentCard
@@ -117,16 +130,41 @@ struct ActionTaskDetailView: View {
 
     // MARK: Cards
 
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let pill = statusPill {
+                Text(pill.text)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(pill.color)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(pill.color.opacity(0.14), in: Capsule())
+            }
+            TextField("Title", text: $draft.title, axis: .vertical)
+                .font(.title.bold())
+                .accessibilityLabel("Action title")
+        }
+    }
+
+    private var statusPill: (text: String, color: Color)? {
+        if isCompleted { return ("Done", Color.green) }
+        guard let due = ActionListLogic.dueInfo(for: item) else { return nil }
+        if due.isOverdue {
+            let day = item.dueDate?.formatted(.dateTime.weekday(.abbreviated)) ?? ""
+            return ("Overdue \u{00B7} \(day)", Color.red)
+        }
+        return (due.text, Theme.Colors.manentAccent)
+    }
+
     private func meetingCard(_ meeting: Meeting) -> some View {
         ActionFormCard {
             VStack(alignment: .leading, spacing: 10) {
                 if let evidence = item.sourceEvidence, !evidence.isEmpty {
-                    Text("From the meeting")
+                    Text("Said in the Meeting")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(evidence)
-                        .font(.subheadline)
-                        .italic()
+                    Text("\u{201C}\(evidence)\u{201D}")
+                        .font(.body)
                         .textSelection(.enabled)
                 }
                 Button {
@@ -164,31 +202,23 @@ struct ActionTaskDetailView: View {
     }
 
     private var completionCard: some View {
-        ActionFormCard {
-            Button {
-                if isCompleted {
-                    setCompleted(false)
-                } else if isWaitingOnOthers {
-                    showsDoneAlert = true
-                } else {
-                    setCompleted(true)
-                }
-            } label: {
-                HStack {
-                    Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isCompleted ? Theme.Colors.manentAccent : Color.secondary)
-                    Text(isCompleted ? "Done. Tap to reopen" : "Mark as Done")
-                        .foregroundStyle(.primary)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .frame(minHeight: 52)
-                .contentShape(Rectangle())
+        Button {
+            if isCompleted {
+                setCompleted(false)
+            } else if isWaitingOnOthers {
+                showsDoneAlert = true
+            } else {
+                setCompleted(true)
             }
-            .buttonStyle(.plain)
+        } label: {
+            Text(isCompleted ? "Done. Tap to reopen" : "Mark as Done")
+                .frame(maxWidth: .infinity, minHeight: 28)
         }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(Theme.Colors.manentAccent)
     }
-
     private var assignmentCard: some View {
         ActionFormCard {
             VStack(alignment: .leading, spacing: 0) {

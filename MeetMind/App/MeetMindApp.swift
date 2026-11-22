@@ -96,6 +96,8 @@ struct MeetMindApp: App {
                             NavigationStack { OfflineBenchmarkView() }
                         } else if ProcessInfo.processInfo.arguments.contains("--offline-pipeline-smoke") {
                             OfflinePipelineSmokeView()
+                        } else if ProcessInfo.processInfo.arguments.contains("--offline-hindi-smoke") {
+                            HindiPipelineSmokeView()
                         } else {
                             appContent
                         }

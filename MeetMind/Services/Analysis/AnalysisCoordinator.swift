@@ -298,24 +298,52 @@ public final class AnalysisCoordinator {
         // ("Pawan, can you ...") and to first-person promises. Generic labels never count.
         // Includes voices the user assigned in People, not only label speakers.
         let speakerNames = MeetingSpeakerNames(meeting: meeting, store: MeetingRecordStore.shared).assignedLabels
+        let zone = TimeZone(identifier: meeting.analysisTimezone ?? "") ?? TimeZone.current
         let reduced = MeetingAnalysisReducer.reduce(result, participants: meeting.namedAttendees.map(\.name),
-                                                    speakerNames: speakerNames)
+                                                    speakerNames: speakerNames,
+                                                    meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
+                                                    timeZone: zone)
+        let minutes = reduced.minutes
         // Open issues live in the checkpoint as their own list; the minutes
         // content builder renders them in a dedicated Open Issues section.
-        let points = uniqueTexts(reduced.discussion.map(\.text))
-        let decisions = reduced.decisions.map(\.text)
+        // Topic bullets are rephrased English; a model discussion point never replaces them.
+        var pointSource: [String] = []
+        for topic in minutes.topics { pointSource.append(contentsOf: topic.discussion) }
+        if pointSource.isEmpty { pointSource = reduced.discussion.map(\.text) }
+        let points = uniqueTexts(pointSource)
+        var decisionSource = minutes.resolutions.map(\.text)
+        if decisionSource.isEmpty { decisionSource = reduced.decisions.map(\.text) }
+        let decisions = uniqueTexts(decisionSource)
+        let overview = minutes.topics.isEmpty || minutes.executiveSummary.isEmpty
+            ? reduced.executiveSummary : minutes.executiveSummary
         if let old = meeting.summary { context.delete(old) }
-        meeting.summary = Summary(executiveSummary: reduced.executiveSummary,
+        meeting.summary = Summary(executiveSummary: overview,
             keyPoints: points, keyDecisions: decisions, meeting: meeting)
+        // Tasks stay review suggestions (never auto-accepted); owner and context are preassigned in the checkpoint.
+        // Suggested attendees live in `minutes.suggestedAttendees` and are never added automatically.
         meeting.offlineAnalysisData = try JSONEncoder().encode(reduced.checkpoint)
-        // An empty agenda is filled with the topics heard in the meeting; the user can edit it later.
+        // An empty or placeholder agenda is filled with the topics heard in the meeting; the user can edit it later.
         let currentAgenda = (meeting.agendaText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if currentAgenda.isEmpty, !reduced.agendaTopics.isEmpty {
-            meeting.agendaText = reduced.agendaTopics.joined(separator: "\n")
+        let topicAgenda = minutes.topics.isEmpty ? reduced.agendaTopics.joined(separator: "\n") : minutes.agendaText
+        if !topicAgenda.isEmpty, currentAgenda.isEmpty || isPlaceholderAgenda(currentAgenda) {
+            meeting.agendaText = topicAgenda
         }
         meeting.status = .completed
         meeting.analysisState = "completed"
         meeting.minutesNeedFinalization = true
+    }
+
+    /// True when the agenda is one of the built-in template agendas the user never edited.
+    private func isPlaceholderAgenda(_ agenda: String) -> Bool {
+        let key = normalizedAgendaKey(agenda)
+        for template in MeetingTemplateType.allCases where normalizedAgendaKey(template.defaultAgenda) == key {
+            return true
+        }
+        return false
+    }
+
+    private func normalizedAgendaKey(_ text: String) -> String {
+        text.lowercased().split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
     private func replaceTranscript(of meeting: Meeting, with turns: [AnalysisTurn]) {

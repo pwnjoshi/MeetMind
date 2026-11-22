@@ -13,6 +13,9 @@ public struct ReducedMeetingAnalysis: Sendable {
     /// Topics the meeting covered, in order of appearance, derived from agenda statements,
     /// topic shifts and open issues. Short Title-case phrases for an editable agenda.
     public let agendaTopics: [String]
+    /// Document-grade minutes: topics with outcomes, formal resolutions, contextual actions,
+    /// formal open issues, suggested attendees and an English executive summary.
+    public let minutes: MinutesContent
 }
 
 /// Converts independent chunk outputs into one coherent meeting record. It does
@@ -25,7 +28,11 @@ public enum MeetingAnalysisReducer {
     ///   - speakerNames: Maps a transcript speaker label to the attendee the user named,
     ///     so first-person commitments ("I will ...") can receive an owner.
     public static func reduce(_ checkpoint: MeetingAnalysisCheckpoint, participants: [String] = [],
-                              speakerNames: [String: String] = [:]) -> ReducedMeetingAnalysis {
+                              speakerNames: [String: String] = [:], meetingDate: Date? = nil,
+                              timeZone: TimeZone = TimeZone.current) -> ReducedMeetingAnalysis {
+        // A vocative ("Pawan, ...") names the next voice; a self-introduction names the current one.
+        let speakerNames = SpeakerNameInference.infer(turns: checkpoint.turns, participants: participants,
+                                                      speakerNames: speakerNames)
         let context = ExtractionContext(participants: participants, speakerNames: speakerNames)
         let grounding = Grounding(turns: checkpoint.turns)
         let hindi = HindiMeetingExtractor.analyze(checkpoint.turns, context: context)
@@ -58,6 +65,7 @@ public enum MeetingAnalysisReducer {
 
         var decisions = deduplicatePoints(decisionCandidates)
         decisions = mergePoints(decisions, with: explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi))
+        decisions.removeAll { isContentlessDecision($0.text) }
 
         var openIssues = deduplicateOpenIssues(openCandidates + unresolvedOutcomes(in: checkpoint.turns, hindi: hindi) + hindiOpenPoints(hindi), grounding)
         decisions.removeAll { decision in
@@ -83,34 +91,97 @@ public enum MeetingAnalysisReducer {
         tasks = Array(tasks.prefix(24))
 
         var executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
-        if hindi.hasDevanagari {
-            let composed = composeHindiMinutes(hindi, participants: participants, speakerNames: speakerNames,
-                                               decisions: decisions, openIssues: openIssues, tasks: tasks)
-            if !composed.summary.isEmpty {
-                executiveSummary = composed.summary
-            } else if HindiText.containsDevanagari(executiveSummary) {
+        let minutes = MinutesBuilder.build(MinutesBuilder.Input(
+            turns: checkpoint.turns, hindi: hindi, decisions: decisions, openIssues: openIssues, tasks: tasks,
+            participants: participants, speakerNames: speakerNames, meetingDate: meetingDate, timeZone: timeZone))
+        // The deterministic path is primary whenever it found structure, for any script. Model discussion
+        // that copies the transcript, or is not English, never reaches Discussion or the summary.
+        if hindi.isActive {
+            let composed = composeMinutes(hindi, minutes: minutes)
+            if !minutes.executiveSummary.isEmpty {
+                executiveSummary = minutes.executiveSummary
+            } else if HindiText.looksHindi(executiveSummary) {
                 executiveSummary = hindiFallbackSummary
             }
-            if !composed.discussion.isEmpty {
-                var merged = composed.discussion
-                for point in discussion where !HindiText.containsDevanagari(point.text) {
-                    if !merged.contains(where: { nearDuplicate($0.text, point.text) }) { merged.append(point) }
-                }
-                discussion = Array(merged.prefix(16))
+            var merged = composed
+            for point in discussion where !isTranscriptCopy(point, turns: checkpoint.turns) {
+                if !merged.contains(where: { nearDuplicate($0.text, point.text) }) { merged.append(point) }
             }
+            discussion = Array(merged.prefix(16))
         }
-        let merged = LocalAnalysisResult(discussion: discussion, decisions: decisions, tasks: tasks, openIssues: openIssues)
+        // The stored checkpoint carries the document-grade wording: contextual action titles, formal
+        // resolutions and formal open issues, each with its original evidence.
+        var storedTasks: [SuggestedTask] = []
+        for (index, task) in tasks.enumerated() {
+            guard index < minutes.actions.count else { storedTasks.append(task); continue }
+            let action = minutes.actions[index]
+            storedTasks.append(SuggestedTask(title: action.title, category: task.category, owner: action.owner ?? task.owner,
+                                             deadlineText: action.deadlineText ?? task.deadlineText, priority: task.priority,
+                                             evidence: task.evidence))
+        }
+        var storedDecisions: [SupportedPoint] = []
+        for (index, point) in decisions.enumerated() {
+            let formal = index < minutes.resolutions.count ? minutes.resolutions[index].text : point.text
+            storedDecisions.append(SupportedPoint(text: formal, evidence: point.evidence))
+        }
+        var storedOpen: [SupportedPoint] = []
+        for (index, point) in openIssues.enumerated() {
+            let formal = index < minutes.openIssues.count ? minutes.openIssues[index].text : point.text
+            storedOpen.append(SupportedPoint(text: formal, evidence: point.evidence))
+        }
+        let stored = LocalAnalysisResult(discussion: discussion, decisions: storedDecisions, tasks: storedTasks,
+                                         openIssues: storedOpen)
         var normalized = checkpoint
-        normalized.analysis = [merged]
+        normalized.analysis = [stored]
         normalized.analyzedChunks = 1
         normalized.chunkTurnIDs = [checkpoint.turns.map(\.id)]
+        normalized.minutes = minutes
         return ReducedMeetingAnalysis(executiveSummary: executiveSummary, discussion: discussion,
                                       decisions: decisions, openIssues: openIssues, tasks: tasks,
-                                      checkpoint: normalized, agendaTopics: hindi.agendaTopics)
+                                      checkpoint: normalized, agendaTopics: hindi.agendaTopics, minutes: minutes)
     }
 
     private static let hindiFallbackSummary =
         "This meeting was held in Hindi. Review the decisions, tasks and open issues below, or open the transcript, for details."
+
+    /// Discussion points composed from the deterministic findings. Devanagari and romanized Hindi use the
+    /// outcome-oriented composer; other meetings use the rephrased topic bullets.
+    private static func composeMinutes(_ hindi: HindiAnalysis, minutes: MinutesContent) -> [SupportedPoint] {
+        if !hindi.decisions.isEmpty || !hindi.openIssues.isEmpty || !hindi.opinions.isEmpty {
+            return MinutesComposer.discussion(hindi)
+        }
+        var points: [SupportedPoint] = []
+        for topic in minutes.topics where !topic.evidence.isEmpty {
+            let text = topic.title + ": " + topic.discussion.joined(separator: " ")
+            points.append(SupportedPoint(text: text, evidence: topic.evidence))
+        }
+        return points
+    }
+
+    /// A model point that is not English or that nearly repeats a transcript sentence adds nothing to minutes.
+    private static func isTranscriptCopy(_ point: SupportedPoint, turns: [AnalysisTurn]) -> Bool {
+        if HindiText.looksHindi(point.text) { return true }
+        let tokens = meaningfulTokens(point.text)
+        guard !tokens.isEmpty else { return false }
+        for turn in turns {
+            for sentence in sentences(in: turn.text) {
+                let other = meaningfulTokens(sentence)
+                if other.isEmpty { continue }
+                let overlap = Double(tokens.intersection(other).count) / Double(tokens.count)
+                if overlap >= 0.7 { return true }
+            }
+        }
+        return false
+    }
+
+    /// "That is final." says a decision was settled but not which one.
+    private static func isContentlessDecision(_ text: String) -> Bool {
+        let filler: Set<String> = ["final", "decided", "agreed", "finalized", "finalised", "approved", "settled", "done",
+                                   "confirmed", "okay", "ok", "yes", "fine", "good", "hai", "hain", "ho", "gaya", "hua", "tay",
+                                   "yahi", "yehi", "ye", "yeh", "yah"]
+        let tokens = meaningfulTokens(text)
+        return tokens.isEmpty || tokens.isSubset(of: filler)
+    }
 
     private static func hindiDecisionPoints(_ hindi: HindiAnalysis) -> [SupportedPoint] {
         hindi.decisions.map { SupportedPoint(text: polished($0.text), evidence: uniqueEvidence($0.evidence)) }
@@ -118,30 +189,6 @@ public enum MeetingAnalysisReducer {
 
     private static func hindiOpenPoints(_ hindi: HindiAnalysis) -> [SupportedPoint] {
         hindi.openIssues.map { SupportedPoint(text: polished($0.text), evidence: uniqueEvidence($0.evidence)) }
-    }
-
-    private static func composeHindiMinutes(_ hindi: HindiAnalysis, participants: [String], speakerNames: [String: String],
-                                            decisions: [SupportedPoint], openIssues: [SupportedPoint],
-                                            tasks: [SuggestedTask]) -> (summary: String, discussion: [SupportedPoint]) {
-        var names: [String] = []
-        for name in participants where !name.lowercased().hasPrefix("speaker") && !names.contains(name) { names.append(name) }
-        if names.isEmpty {
-            for name in speakerNames.values.sorted() where !names.contains(name) { names.append(name) }
-        }
-        if names.isEmpty {
-            for task in tasks { if let owner = task.owner, !names.contains(owner) { names.append(owner) } }
-        }
-        let known = Set(hindi.decisions.map { normalize($0.text) })
-        var phrases: [String] = []
-        for decision in decisions where known.contains(normalize(decision.text)) { phrases.append(decision.text) }
-        var subjects: [String] = []
-        for issue in hindi.openIssues {
-            let text = polished(issue.text)
-            if openIssues.contains(where: { normalize($0.text) == normalize(text) }) { subjects.append(issue.subject) }
-        }
-        let summary = MinutesComposer.executiveSummary(names: names, topics: hindi.agendaTopics, decisionPhrases: phrases,
-                                                       tasks: tasks, openSubjects: subjects)
-        return (summary, MinutesComposer.discussion(hindi))
     }
 
     private static func cleanedPoint(_ point: SupportedPoint) -> SupportedPoint? {

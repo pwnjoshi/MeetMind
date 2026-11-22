@@ -2,16 +2,33 @@ import SwiftUI
 import MessageUI
 import UIKit
 
+/// Something other than the plain minutes text to hand over, for example the PDF opened from the preview.
+/// It always goes through the same share-sheet path as the Share button, so it reaches the outcome screens.
+struct MinutesShareRequest: Identifiable, Equatable {
+    let id = UUID()
+    var fileURL: URL
+    var text: String
+}
+
 /// Choose recipients, confirm, hand the minutes to Mail or the share sheet, then show the confirmed outcome.
 /// Mail can confirm `.sent`; a generic activity can only confirm shared/exported completion.
+///
+/// Every route that hands minutes to the system (Share button, toolbar share, PDF preview, Export) must end in
+/// `handle(_:)`. The outcome screens (animated B9, settled B10) are presented with `fullScreenCover`, not with a
+/// push, because the Meetings tab uses a path-bound NavigationStack and a pushed `isPresented` destination is
+/// dropped when the path is rewritten. The cover is shown from the dismissal callback of the Mail or share sheet,
+/// with a timed fallback, because UIKit may report completion before or after SwiftUI sees the sheet go away.
 @MainActor
 struct MinutesShareFlowModifier: ViewModifier {
     let meeting: Meeting?
     let viewModel: MeetingDetailViewModel
     let userName: String?
     @Binding var isStarting: Bool
+    @Binding var externalRequest: MinutesShareRequest?
     let onBackToMeetings: () -> Void
     let onError: (String) -> Void
+    /// Text handed to Mail and the share sheet. Defaults to the plain-text export.
+    var shareText: (() -> String)? = nil
 
     @State private var showRecipients = false
     @State private var proceedToConfirm = false
@@ -19,9 +36,11 @@ struct MinutesShareFlowModifier: ViewModifier {
     @State private var showMail = false
     @State private var showActivity = false
     @State private var showSent = false
+    @State private var pendingSent = false
     @State private var selectedIDs = Set<UUID>()
     @State private var subject = ""
     @State private var bodyText = ""
+    @State private var activityFile: URL?
     @State private var sentState: MinutesSentState?
     @State private var sentEntry: SharedMinutesEntry?
 
@@ -47,6 +66,11 @@ struct MinutesShareFlowModifier: ViewModifier {
                     begin()
                 }
             }
+            .onChange(of: externalRequest) { _, request in
+                guard let request else { return }
+                externalRequest = nil
+                beginExternal(request)
+            }
             .sheet(isPresented: $showRecipients, onDismiss: {
                 if proceedToConfirm {
                     proceedToConfirm = false
@@ -67,31 +91,36 @@ struct MinutesShareFlowModifier: ViewModifier {
                 Text(MeetingRecordFormatting.joinedNames(chosen.map { MeetingRecordFormatting.firstName($0.name) })
                      + " get the minutes and their action items.")
             }
-            .sheet(isPresented: $showMail) {
+            .sheet(isPresented: $showMail, onDismiss: presentSentIfPending) {
                 RecordMailComposer(recipients: chosen.compactMap(\.email), subject: subject, bodyText: bodyText) { result, error in
                     showMail = false
                     handle(MinutesShareOutcome.fromMail(result, error: error))
                 }
             }
-            .sheet(isPresented: $showActivity) {
-                RecordActivitySheet(text: bodyText) { completed in
+            .sheet(isPresented: $showActivity, onDismiss: presentSentIfPending) {
+                RecordActivitySheet(text: bodyText, fileURL: activityFile) { completed in
                     showActivity = false
                     handle(MinutesShareOutcome.fromActivity(completed: completed))
                 }
                 .presentationDetents([.medium, .large])
             }
-            .navigationDestination(isPresented: $showSent) {
-                if let sentState {
-                    MinutesSentView(state: sentState, entry: sentEntry, meeting: meeting,
-                                    onBackToMeetings: onBackToMeetings)
-                        .toolbar(.hidden, for: .tabBar)
+            .fullScreenCover(isPresented: $showSent, onDismiss: { sentState = nil }) {
+                NavigationStack {
+                    if let sentState {
+                        MinutesSentView(state: sentState, entry: sentEntry, meeting: meeting) {
+                            showSent = false
+                            onBackToMeetings()
+                        }
+                    }
                 }
+                .tint(Theme.Colors.manentAccent)
             }
     }
 
     private func begin() {
         subject = viewModel.headerTitle
-        bodyText = viewModel.exportPlainText()
+        bodyText = shareText?() ?? viewModel.exportPlainText()
+        activityFile = nil
         if candidates.isEmpty {
             selectedIDs = []
             showActivity = true
@@ -99,6 +128,14 @@ struct MinutesShareFlowModifier: ViewModifier {
             selectedIDs = Set(candidates.map(\.id))
             showRecipients = true
         }
+    }
+
+    private func beginExternal(_ request: MinutesShareRequest) {
+        subject = viewModel.headerTitle
+        bodyText = request.text
+        activityFile = request.fileURL
+        selectedIDs = []
+        showActivity = true
     }
 
     private func deliver() {
@@ -132,10 +169,19 @@ struct MinutesShareFlowModifier: ViewModifier {
         }
         sentEntry = entry
         sentState = MinutesSentState.make(outcome: outcome, recipients: recipients)
+        pendingSent = sentState != nil
+        // The sheet's dismissal callback normally presents the cover. This covers the case where the
+        // completion callback arrives after SwiftUI already finished dismissing the sheet.
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            showSent = sentState != nil
+            try? await Task.sleep(for: .milliseconds(700))
+            presentSentIfPending()
         }
+    }
+
+    private func presentSentIfPending() {
+        guard pendingSent, sentState != nil, !showMail, !showActivity else { return }
+        pendingSent = false
+        showSent = true
     }
 }
 
@@ -223,10 +269,16 @@ struct RecordMailComposer: UIViewControllerRepresentable {
 /// System share sheet. `completion(true)` means the user finished an activity (sent, saved or copied).
 struct RecordActivitySheet: UIViewControllerRepresentable {
     let text: String
+    var fileURL: URL?
     let completion: (Bool) -> Void
 
+    private var items: [Any] {
+        if let fileURL { return [fileURL] }
+        return [text]
+    }
+
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
         let completion = self.completion
         controller.completionWithItemsHandler = { _, completed, _, _ in
             completion(completed)

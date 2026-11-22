@@ -29,8 +29,6 @@ public struct HomeDashboardView: View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    homeHeader
-
                     if let loadingError = viewModel.loadingErrorMessage {
                         ContentUnavailableView {
                             Label("Meetings Unavailable", systemImage: "calendar.badge.exclamationmark")
@@ -64,7 +62,12 @@ public struct HomeDashboardView: View {
                 .padding(.bottom, 10)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle("Meetings")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { vidurButton }
+            ToolbarItem(placement: .topBarTrailing) { profileButton }
+        }
         .sheet(isPresented: $showsSeries) {
             if let id = selectedSeriesID {
                 NavigationStack { LocalSeriesTimeline(seriesID: id) }
@@ -72,20 +75,22 @@ public struct HomeDashboardView: View {
         }
         .sheet(isPresented: $showsAllUpcoming) {
             NavigationStack {
-                HomeMeetingCollectionView(
-                    title: "Upcoming Meetings",
-                    meetings: viewModel.filteredUpcomingMeetings,
-                    recentSubtitle: recentSubtitle
+                AllMeetingsView(
+                    upcoming: viewModel.filteredUpcomingMeetings,
+                    earlier: viewModel.filteredRecentMeetings,
+                    subtitle: recentSubtitle,
+                    statusColor: recentStatusColor
                 )
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsAllUpcoming = false } } }
             }
         }
         .sheet(isPresented: $showsAllRecent) {
             NavigationStack {
-                HomeMeetingCollectionView(
-                    title: "Recent Meetings",
-                    meetings: viewModel.filteredRecentMeetings,
-                    recentSubtitle: recentSubtitle
+                AllMeetingsView(
+                    upcoming: viewModel.filteredUpcomingMeetings,
+                    earlier: viewModel.filteredRecentMeetings,
+                    subtitle: recentSubtitle,
+                    statusColor: recentStatusColor
                 )
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsAllRecent = false } } }
             }
@@ -106,26 +111,14 @@ public struct HomeDashboardView: View {
         .onChange(of: router.homePath.count) { _, _ in viewModel.fetchMeetings() }
     }
 
-    private var homeHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text("Meetings")
-                .font(.system(size: 36, weight: .bold, design: .rounded))
-                .minimumScaleFactor(0.8)
-            Spacer()
-            Button { showsVidur = true } label: {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 23, weight: .medium))
-                    .foregroundStyle(Theme.Colors.manentAccent)
-                    .frame(width: 50, height: 50)
-                    .background(.background, in: Circle())
-                    .overlay(Circle().stroke(Color(uiColor: .separator).opacity(0.6)))
-            }
-            .buttonStyle(.plain)
-            .disabled(vidurMeeting == nil)
-            .accessibilityLabel("Ask Vidur")
-            .accessibilityHint(vidurMeeting == nil ? "Available after a meeting has been saved" : "Ask about your latest meeting")
-            profileButton
+    private var vidurButton: some View {
+        Button { showsVidur = true } label: {
+            Image(systemName: "sparkles")
+                .foregroundStyle(Theme.Colors.manentAccent)
         }
+        .disabled(vidurMeeting == nil)
+        .accessibilityLabel("Ask Vidur")
+        .accessibilityHint(vidurMeeting == nil ? "Available after a meeting has been saved" : "Ask about your latest meeting")
     }
 
     @ViewBuilder
@@ -204,15 +197,10 @@ public struct HomeDashboardView: View {
             Button("Schedule Meet", systemImage: "calendar.badge.plus") { appState.activeSheet = .scheduleMeeting }
             Button("Import Audio", systemImage: "square.and.arrow.down") { appState.activeSheet = .audioImport }
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 25, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 54, height: 54)
-                .background(Theme.Colors.manentAccent, in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 1))
-                .shadow(color: Theme.Colors.manentAccent.opacity(0.28), radius: 12, y: 6)
+            CreateMenuLabel()
         }
         .menuOrder(.fixed)
+        .modifier(GlassCircleButtonStyle())
         .accessibilityLabel("New meeting")
         .accessibilityHint("Choose Quick Meet, Schedule Meet, or Import Audio")
     }

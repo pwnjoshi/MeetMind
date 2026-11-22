@@ -121,7 +121,7 @@ struct MinutesSentView: View {
                 .accessibilityElement(children: .combine)
         } else {
             Button(action: planNextMeeting) {
-                Text("Schedule Next Meeting")
+                Text("Plan Next Meeting")
                     .font(.body.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 50)
                     .foregroundStyle(.white)

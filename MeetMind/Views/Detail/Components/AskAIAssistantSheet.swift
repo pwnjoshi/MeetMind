@@ -154,6 +154,9 @@ public struct AskAIAssistantSheet: View {
         .navigationTitle("Vidur")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                PrepCloseButton(action: onDismiss)
+            }
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
                     Text("Vidur").font(.headline)
@@ -223,21 +226,46 @@ public struct AskAIAssistantSheet: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.title).foregroundStyle(Theme.Colors.manentAccent)
-                .frame(width: 68, height: 68)
-                .background(Theme.Colors.manentAccent.opacity(0.08), in: Circle())
-            Text("Ask About \(meetingTitle)").font(.title3.bold()).multilineTextAlignment(.center)
-            Text(scopeExplanation)
-                .foregroundStyle(.secondary).font(.subheadline).multilineTextAlignment(.center)
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.body)
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.Colors.manentAccent, in: Circle())
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(scope == .allMeetings && meeting != nil ? "Ask about your meetings" : "Ask About \(meetingTitle)")
+                        .font(.subheadline.weight(.semibold))
+                    Text(scopeExplanation)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(
+                LinearGradient(
+                    colors: [Theme.Colors.manentAccent.opacity(0.14), Color.cyan.opacity(0.12)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .accessibilityElement(children: .combine)
             VStack(alignment: .leading, spacing: 8) {
-                Text("Suggested Questions").font(.subheadline).foregroundStyle(.secondary)
-                    .padding(.leading, 16)
+                Text("SUGGESTED")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 12)
                 VStack(spacing: 0) {
                     ForEach(Array(suggestions.enumerated()), id: \.offset) { offset, suggestion in
                         Button { send(suggestion.question) } label: {
-                            HStack {
+                            HStack(spacing: 12) {
+                                Image(systemName: "sparkle")
+                                    .foregroundStyle(Theme.Colors.manentAccent)
+                                    .frame(width: 24)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(suggestion.question).foregroundStyle(.primary)
                                     Text(suggestion.detail).font(.footnote).foregroundStyle(.secondary)
@@ -250,16 +278,14 @@ public struct AskAIAssistantSheet: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(busy)
-                        if offset < suggestions.count - 1 { Divider().padding(.horizontal, 16) }
+                        if offset < suggestions.count - 1 { Divider().padding(.leading, 52) }
                     }
                 }
-                .background(.background, in: RoundedRectangle(cornerRadius: 22))
+                .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
-            .padding(.top, 32)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
-
     private var scopeExplanation: String {
         guard meeting != nil else { return "Answers come from this meeting\u{2019}s minutes, transcript and notes." }
         switch scope {
@@ -281,8 +307,19 @@ public struct AskAIAssistantSheet: View {
                 .background(Theme.Colors.manentAccent, in: RoundedRectangle(cornerRadius: 22))
                 .frame(maxWidth: .infinity, alignment: .trailing)
             VStack(alignment: .leading, spacing: 8) {
-                Label("Vidur", systemImage: "sparkle")
-                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.Colors.manentAccent)
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(Theme.Colors.manentAccent, in: Circle())
+                        .accessibilityHidden(true)
+                    Text("Vidur").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if let origin = sourceCountText(item.citations) {
+                        Text(origin).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 if item.answerText.isEmpty {
                     VidurThinkingShimmer()
                 } else {
@@ -317,6 +354,12 @@ public struct AskAIAssistantSheet: View {
         }
     }
 
+    private func sourceCountText(_ citations: [VidurCitation]) -> String? {
+        let titles = Set(citations.map { $0.meetingTitle })
+        guard !titles.isEmpty else { return nil }
+        return titles.count == 1 ? "From 1 meeting" : "From \(titles.count) meetings"
+    }
+
     private func chipTitle(_ citation: VidurCitation) -> String {
         var parts: [String] = []
         if !isCurrentMeeting(citation) { parts.append(String(citation.meetingTitle.prefix(18))) }
@@ -337,7 +380,7 @@ public struct AskAIAssistantSheet: View {
                     Button {
                         if isExpanded { expandedSources.remove(citation.id) } else { expandedSources.insert(citation.id) }
                     } label: {
-                        Label(chipTitle(citation), systemImage: citation.sourceLabel == nil ? "quote.bubble" : "doc.text")
+                        Label(chipTitle(citation), systemImage: citation.sourceLabel == nil ? "waveform" : "doc.text")
                             .font(.caption.weight(.medium))
                             .lineLimit(1)
                             .padding(.horizontal, 10).padding(.vertical, 6)
@@ -424,6 +467,9 @@ public struct AskAIAssistantSheet: View {
 
     private var inputBar: some View {
         HStack(spacing: Spacing.sm) {
+            Image(systemName: "sparkle")
+                .foregroundStyle(Theme.Colors.manentAccent)
+                .accessibilityHidden(true)
             TextField(inputPlaceholder, text: $queryText)
                 .textFieldStyle(.plain)
                 .submitLabel(.send)

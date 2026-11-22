@@ -16,6 +16,8 @@ public struct ActionItemsConsoleView: View {
     @State private var showsDoneAlert = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var documentRaised = false
+    @State private var showsVidur = false
+    @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
 
     public init(viewModel: ActionItemsViewModel = ActionItemsViewModel()) {
         _viewModel = State(initialValue: viewModel)
@@ -33,82 +35,41 @@ public struct ActionItemsConsoleView: View {
                 emptyStateView
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        if !sections.yours.isEmpty {
+                    VStack(alignment: .leading, spacing: 24) {
+                        ActionsWeekSummaryCard(summary: weekSummary)
+                        ForEach(buckets) { bucket in
                             ActionsListSectionView(
-                                title: "Yours",
-                                items: sections.yours,
-                                showsOwner: false,
-                                footer: nil,
-                                onToggle: handleToggle,
-                                onOpen: { selectedTaskID = $0.id }
-                            )
-                        }
-                        if !sections.waitingOnOthers.isEmpty {
-                            ActionsListSectionView(
-                                title: "Waiting on others",
-                                items: sections.waitingOnOthers,
+                                title: bucket.title,
+                                titleColor: bucket.isOverdue ? Color.red : Color.primary,
+                                items: bucket.items,
                                 showsOwner: true,
-                                footer: "Marking these done here only updates this iPhone.",
+                                footer: nil,
                                 onToggle: handleToggle,
                                 onOpen: { selectedTaskID = $0.id }
                             )
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 14)
+                    .padding(.top, 8)
                     .padding(.bottom, 110)
                 }
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .overlay(alignment: .bottomTrailing) { newActionButton }        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Actions")
         .tint(Theme.Colors.manentAccent)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
-                    viewModel.presentCreateSheet()
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("New action")
-                Menu {
-                    Section("Sort by") {
-                        Picker("Sort by", selection: $vm.selectedSort) {
-                            ForEach(ActionSortOrder.allCases) { order in
-                                Text(order.title).tag(order)
-                            }
-                        }
-                    }
-                    Section("Show") {
-                        Picker("Owner", selection: $vm.selectedOwnerScope) {
-                            ForEach(ActionOwnerScope.allCases) { scope in
-                                Text(scope.title).tag(scope)
-                            }
-                        }
-                        Picker("Status", selection: $vm.selectedFilterScope) {
-                            Text("All statuses").tag(ActionItemFilterScope.all)
-                            Text("Open").tag(ActionItemFilterScope.pending)
-                            Text("Done").tag(ActionItemFilterScope.completed)
-                        }
-                    }
-                    Divider()
-                    Button {
-                        Task {
-                            do { try await viewModel.syncAllToAppleReminders() }
-                            catch { syncError = error.localizedDescription }
-                        }
-                    } label: {
-                        Label(viewModel.isSyncingReminders ? "Syncing Reminders" : "Sync Reminders", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    .disabled(viewModel.isSyncingReminders)
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
-                }
-                .accessibilityLabel("Sort and filter")
-            }
+            ToolbarItem(placement: .topBarTrailing) { filterMenu }
+            ToolbarItem(placement: .topBarTrailing) { vidurButton }
+            ToolbarItem(placement: .topBarTrailing) { ProfileToolbarButton(tab: .actionItems) }
         }
-        .navigationDestination(item: $selectedTaskID) { id in
+        .sheet(isPresented: $showsVidur) {
+            if let meeting = allMeetings.first {
+                NavigationStack {
+                    RootAskAISheet(meetingId: meeting.id, modelContext: modelContext) { showsVidur = false }
+                }
+            }
+        }        .navigationDestination(item: $selectedTaskID) { id in
             taskDetail(for: id)
         }
         .sheet(isPresented: $vm.isShowingActionItemSheet) {
@@ -150,6 +111,74 @@ public struct ActionItemsConsoleView: View {
         .alert("Reminders sync failed", isPresented: Binding(get: { syncError != nil }, set: { if !$0 { syncError = nil } })) {
             Button("OK") { syncError = nil }
         } message: { Text(syncError ?? "") }
+    }
+
+    private var showCompleted: Binding<Bool> {
+        Binding(
+            get: { viewModel.selectedFilterScope != .pending },
+            set: { viewModel.selectedFilterScope = $0 ? .all : .pending }
+        )
+    }
+
+    private var filterMenu: some View {
+        @Bindable var vm = viewModel
+        return Menu {
+            Picker("Owner", selection: $vm.selectedOwnerScope) {
+                Text("Assigned to Me").tag(ActionOwnerScope.assignedToMe)
+                Text("Delegated").tag(ActionOwnerScope.assignedByMe)
+                Text("All Actions").tag(ActionOwnerScope.all)
+            }
+            Divider()
+            Toggle("Show Completed", isOn: showCompleted)
+            Section("Sort by") {
+                Picker("Sort by", selection: $vm.selectedSort) {
+                    ForEach(ActionSortOrder.allCases) { order in
+                        Text(order.title).tag(order)
+                    }
+                }
+            }
+            Divider()
+            Button {
+                Task {
+                    do { try await viewModel.syncAllToAppleReminders() }
+                    catch { syncError = error.localizedDescription }
+                }
+            } label: {
+                Label(viewModel.isSyncingReminders ? "Syncing Reminders" : "Sync Reminders", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(viewModel.isSyncingReminders)
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+        }
+        .accessibilityLabel("Filter and sort")
+    }
+
+    private var vidurButton: some View {
+        Button { showsVidur = true } label: {
+            Image(systemName: "sparkles").foregroundStyle(Theme.Colors.manentAccent)
+        }
+        .disabled(allMeetings.isEmpty)
+        .accessibilityLabel("Ask Vidur")
+    }
+
+    private var newActionButton: some View {
+        Button {
+            viewModel.presentCreateSheet()
+        } label: {
+            CreateMenuLabel()
+        }
+        .modifier(GlassCircleButtonStyle())
+        .padding(.trailing, 22)
+        .padding(.bottom, 10)
+        .accessibilityLabel("New action")
+    }
+
+    private var buckets: [ActionTimeBucket] {
+        ActionTimeBucket.make(from: viewModel.visibleActionItems)
+    }
+
+    private var weekSummary: ActionWeekSummary {
+        ActionWeekSummary.make(from: viewModel.allActionItems)
     }
 
     @ViewBuilder

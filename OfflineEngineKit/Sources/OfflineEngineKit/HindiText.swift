@@ -410,6 +410,7 @@ enum HindiText {
                 }
             } else {
                 key = word.lowercased().replacingOccurrences(of: "\u{2019}", with: "").replacingOccurrences(of: "'", with: "")
+                if let alias = romanAliases[key] { key = alias }
                 display = word
             }
             if key.isEmpty { key = word }
@@ -427,20 +428,82 @@ enum HindiText {
         return String(source[first.start..<last.chunkEnd])
     }
 
-    /// Splits a sentence into clauses before "ab" (now) when a clause precedes it, because
-    /// transcripts often drop the punctuation between "यह final है" and "अब vendor ...".
+    /// Splits a sentence into clauses. A clause also ends after a Hindi clause-final word ("hai", "hua",
+    /// "karenge") when the next word opens a new clause, and before "ab" (now), because transcripts
+    /// often drop the punctuation between "yah final hai" and "ab vendor ...".
     static func clauses(of tokens: [HindiToken]) -> [[HindiToken]] {
         var result: [[HindiToken]] = []
         var current: [HindiToken] = []
         for token in tokens {
-            if token.key == "ab", current.count >= 2 {
-                result.append(current)
-                current = []
+            if current.count >= 2 {
+                let previous = current[current.count - 1].key
+                let splitBefore = token.key == "ab"
+                    || (clauseEndMarkers.contains(previous) && clauseStarters.contains(token.key))
+                if splitBefore {
+                    result.append(current)
+                    current = []
+                }
             }
             current.append(token)
         }
         if !current.isEmpty { result.append(current) }
         return result
+    }
+
+    /// Words that finish a Hindi clause.
+    static let clauseEndMarkers: Set<String> = ["hai", "hain", "hoon", "tha", "thi", "gaya", "gayi", "hua", "hui",
+                                                 "karenge", "karte", "hoga", "rahega", "kiya", "chahiye"]
+    /// Words that usually open the next clause when punctuation is missing.
+    static let clauseStarters: Set<String> = ["ab", "phir", "chalo", "accha", "haan", "thik", "okay", "ok", "lekin",
+                                               "pehle", "agli", "agle", "aaj", "tumhe", "tum", "aap"]
+
+    /// Common romanized spellings folded onto the keys the grammar uses (Latin words only).
+    static let romanAliases: [String: String] = [
+        "yeh": "ye", "yey": "ye", "humein": "hamein", "hume": "hamein", "humko": "hamein", "hamko": "hamein",
+        "theek": "thik", "teek": "thik", "achha": "accha", "acha": "accha", "achcha": "accha",
+        "han": "haan", "haa": "haan", "jaroor": "zaroor", "zarur": "zaroor", "zaruur": "zaroor",
+        "nahin": "nahi", "nahee": "nahi", "nhi": "nahi", "me": "mein", "mei": "mein", "meinn": "mein",
+        "hun": "hoon", "huaa": "hua", "huee": "hui", "tai": "tay", "taye": "tay", "bare": "baare",
+        "chahie": "chahiye", "chaiye": "chahiye", "tumhein": "tumhe", "rahegaa": "rahega", "karungaa": "karunga",
+        "dungaa": "dunga", "dungii": "dungi", "karni": "karni", "karnaa": "karna", "taiyar": "taiyaar",
+        "tayyar": "taiyaar", "tayaar": "taiyaar", "woh": "wo", "vo": "wo", "voh": "wo", "kyunki": "kyonki",
+        "kyuki": "kyonki", "kyonki": "kyonki"
+    ]
+
+    /// Distinct romanized Hindi words. Two of them, or one strong word, mark a Latin-script sentence as Hinglish.
+    private static let romanMarkers: Set<String> = [
+        "hai", "hain", "hoon", "tha", "thi", "gaya", "hua", "hui", "nahi", "kya", "kal", "tum", "aap", "mujhe",
+        "hamein", "karna", "karni", "karenge", "karte", "kar", "karo", "dunga", "dungi", "denge", "dena", "bhej",
+        "bana", "baat", "agli", "agle", "aur", "ko", "ke", "ka", "ki", "mein", "ho", "hoga", "chahiye", "accha",
+        "thik", "haan", "zaroor", "bilkul", "tak", "abhi", "wala", "bhi", "sakte", "sakta", "sakti", "uska",
+        "uski", "iska", "wo", "ye", "yah", "yahi", "sahi", "rahega", "lagta", "kitna", "kyonki", "tay", "pending",
+        "tumhe", "mere", "meri", "mera", "kuch", "sab", "lekin", "isliye", "ab", "phir", "pehle"
+    ]
+    private static let romanStrong: Set<String> = [
+        "hai", "hain", "hoon", "nahi", "kya", "karenge", "karte", "dunga", "dungi", "chahiye", "haan", "zaroor",
+        "sakte", "rahega", "kyonki", "lagta", "karni", "hua", "denge"
+    ]
+
+    /// A common romanized Hindi word; such a word is never a person's name.
+    static func isRomanHindiWord(_ key: String) -> Bool {
+        romanMarkers.contains(key) || romanStrong.contains(key)
+    }
+
+    /// True for Latin-script Hindi ("Neha, kya tum Friday tak agenda bana sakte ho?").
+    static func looksRomanizedHindi(_ text: String) -> Bool {
+        var seen = Set<String>()
+        for token in tokenize(text) where !token.isDevanagari {
+            let key = token.key
+            if romanStrong.contains(key) { return true }
+            if romanMarkers.contains(key) { seen.insert(key) }
+            if seen.count >= 2 { return true }
+        }
+        return false
+    }
+
+    /// Hindi in either script.
+    static func looksHindi(_ text: String) -> Bool {
+        containsDevanagari(text) || looksRomanizedHindi(text)
     }
 
     /// Stable key used to recognize a sentence regardless of end punctuation.

@@ -35,7 +35,7 @@ enum MinutesComposer {
         return verbatim
     }
 
-    private static func words(_ text: String) -> Set<String> {
+    static func words(_ text: String) -> Set<String> {
         let generic: Set<String> = ["date", "the", "on", "go", "with", "finalize", "set", "to", "not", "yet", "decided",
                                     "is", "still", "pending", "be", "discussed", "in", "next", "meeting", "a", "of"]
         var result = Set<String>()
@@ -46,18 +46,18 @@ enum MinutesComposer {
         return result
     }
 
-    private static func related(_ topic: String, _ text: String) -> Bool {
+    static func related(_ topic: String, _ text: String) -> Bool {
         let left = words(topic)
         let right = words(text)
         return !left.isDisjoint(with: right)
     }
 
-    private static func unique(_ evidence: [SourceEvidence]) -> [SourceEvidence] {
+    static func unique(_ evidence: [SourceEvidence]) -> [SourceEvidence] {
         var seen = Set<String>()
         return evidence.filter { seen.insert($0.turnID + "\u{0}" + $0.quote).inserted }
     }
 
-    private static func stripPeriod(_ text: String) -> String {
+    static func stripPeriod(_ text: String) -> String {
         text.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
     }
 
@@ -72,7 +72,8 @@ enum MinutesComposer {
             sentences.append(subject + " the " + list(lowered) + ".")
         }
         if !decisionPhrases.isEmpty {
-            sentences.append("Decided to " + list(decisionPhrases.map { HindiText.lowercaseFirst(stripPeriod($0)) }) + ".")
+            let lead = names.count > 1 ? "They decided to " : "Decided to "
+            sentences.append(lead + list(decisionPhrases.map { HindiText.lowercaseFirst(stripPeriod($0)) }) + ".")
         }
         if !tasks.isEmpty {
             var lines: [String] = []

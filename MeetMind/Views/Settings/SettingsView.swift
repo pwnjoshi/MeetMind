@@ -50,6 +50,9 @@ public struct SettingsView: View {
                     LabeledContent("Apple Calendar", value: calendarAccess)
                 }
                 NavigationLink("Notifications") { NotificationsInboxView() }
+                NavigationLink("Name and Title") { NameAndTitleView(viewModel: viewModel) }
+                NavigationLink("Signature") { SignatureSettingsView() }
+                NavigationLink("Minutes Language") { MinutesLanguageView() }
             }
             Section {
                 NavigationLink {

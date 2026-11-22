@@ -31,10 +31,13 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public var analysis: [LocalAnalysisResult]
     public var analyzedChunks: Int
     public var chunkTurnIDs: [[String]]? = nil
+    /// Document-grade minutes (topics, resolutions, contextual actions, suggested attendees).
+    /// Written by the reducer; absent in checkpoints saved by older versions.
+    public var minutes: MinutesContent? = nil
 
     public init(sourceSignature: String, stage: MeetingAnalysisStage, turns: [AnalysisTurn],
                 speakers: [SpeakerSpan], analysis: [LocalAnalysisResult], analyzedChunks: Int,
-                chunkTurnIDs: [[String]]? = nil) {
+                chunkTurnIDs: [[String]]? = nil, minutes: MinutesContent? = nil) {
         self.sourceSignature = sourceSignature
         self.stage = stage
         self.turns = turns
@@ -42,6 +45,7 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
         self.analysis = analysis
         self.analyzedChunks = analyzedChunks
         self.chunkTurnIDs = chunkTurnIDs
+        self.minutes = minutes
     }
 }
 

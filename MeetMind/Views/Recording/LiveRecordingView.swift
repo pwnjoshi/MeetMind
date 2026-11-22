@@ -15,6 +15,7 @@ public struct LiveRecordingView: View {
     @State private var isFinishing = false
     @State private var isNotesOnlyPresented = false
     @State private var showsLiveTranscript = true
+    @State private var showsMicrophonePrimer = false
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize = 60
     public let meetingId: UUID
     private let automaticallyStartsSession: Bool
@@ -88,6 +89,21 @@ public struct LiveRecordingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
+        .overlay {
+            if showsMicrophonePrimer {
+                MicrophonePermissionView(
+                    onAllow: {
+                        showsMicrophonePrimer = false
+                        viewModel.startSession()
+                    },
+                    onNotNow: {
+                        showsMicrophonePrimer = false
+                        viewModel.isMicrophoneUnavailable = true
+                    }
+                )
+            }
+        }
+        .onChange(of: viewModel.recordingState) { _, state in updateLiveActivity(state) }
         .toolbar(.hidden, for: .tabBar)
         .navigationBarHidden(true)
         .sensoryFeedback(.success, trigger: viewModel.bookmarks.count)
@@ -154,7 +170,13 @@ public struct LiveRecordingView: View {
         .task {
             do {
                 try viewModel.prepareSession(context: modelContext, settings: settings)
-                if automaticallyStartsSession, viewModel.recordingState == .idle { viewModel.startSession() }
+                if automaticallyStartsSession, viewModel.recordingState == .idle {
+                    if AVAudioApplication.shared.recordPermission == .undetermined {
+                        showsMicrophonePrimer = true
+                    } else {
+                        viewModel.startSession()
+                    }
+                }
             } catch { viewModel.errorMessage = error.localizedDescription }
         }
         .onDisappear {
@@ -384,6 +406,21 @@ public struct LiveRecordingView: View {
         }
         .buttonStyle(.plain)
         .padding(20)
+    }
+
+    private func updateLiveActivity(_ state: RecordingState) {
+        let controller = RecordingLiveActivityController.shared
+        switch state {
+        case .recording:
+            controller.start(title: viewModel.meetingTitle, elapsed: viewModel.elapsedDuration)
+            controller.update(isPaused: false, elapsed: viewModel.elapsedDuration)
+        case .paused, .interrupted:
+            controller.update(isPaused: true, elapsed: viewModel.elapsedDuration)
+        case .stopping, .stopped, .stoppedUnsaved, .saveFailed, .saved, .idle:
+            controller.end()
+        case .preparing:
+            break
+        }
     }
 
     private func handleStop() {

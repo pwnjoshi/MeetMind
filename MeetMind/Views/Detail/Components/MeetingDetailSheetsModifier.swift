@@ -10,6 +10,7 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
     @Binding public var showRenameAlert: Bool
     @Binding public var renameText: String
     var onRenameError: (Error) -> Void
+    var onShareFile: ((URL) -> Void)? = nil
     
     public func body(content: Content) -> some View {
         content
@@ -18,7 +19,8 @@ public struct MeetingDetailSheetsModifier: ViewModifier {
                     onExportPDF: { try viewModel.exportPDF() },
                     onExportMarkdown: { viewModel.exportMarkdown() },
                     onExportEmailDraft: { viewModel.generateEmailDraft() },
-                    onDismiss: { showExportSheet = false }
+                    onDismiss: { showExportSheet = false },
+                    onShareFile: onShareFile
                 )
             }
             .navigationDestination(isPresented: $showAskAISheet) {

@@ -7,6 +7,28 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C08A2CEE000100000001 /* HindiPipelineSmokeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08B2CEE000100000001 /* HindiPipelineSmokeView.swift */; };
+		1A00C0882CEE000100000001 /* MoMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0892CEE000100000001 /* MoMTests.swift */; };
+		1A00C0832CEE000100000001 /* MoMDocumentScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0842CEE000100000001 /* MoMDocumentScreen.swift */; };
+		1A00C0852CEE000100000001 /* MoMEditMinutesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0862CEE000100000001 /* MoMEditMinutesSheet.swift */; };
+		1A00C0872CEE000100000001 /* MoMPDFPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0882CEE000100000001 /* MoMPDFPreviewView.swift */; };
+		1A00C0892CEE000100000001 /* MoMPersonPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C08A2CEE000100000001 /* MoMPersonPage.swift */; };
+		1A00C0732CEE000100000001 /* MoMEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0742CEE000100000001 /* MoMEditor.swift */; };
+		1A00C0752CEE000100000001 /* MoMDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0762CEE000100000001 /* MoMDocument.swift */; };
+		1A00C0772CEE000100000001 /* MoMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0782CEE000100000001 /* MoMModels.swift */; };
+		1A00C0792CEE000100000001 /* MoMPDFRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C07A2CEE000100000001 /* MoMPDFRenderer.swift */; };
+		1A00C07B2CEE000100000001 /* MoMSidecarStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C07C2CEE000100000001 /* MoMSidecarStore.swift */; };
+		1A00C07D2CEE000100000001 /* ActionsV5Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C07E2CEE000100000001 /* ActionsV5Components.swift */; };
+		1A00C07F2CEE000100000001 /* MoMComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0802CEE000100000001 /* MoMComponents.swift */; };
+		1A00C0812CEE000100000001 /* MoMSignatureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0822CEE000100000001 /* MoMSignatureSheet.swift */; };
+		1A00C0632CEE000100000001 /* MinutesLanguagePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0642CEE000100000001 /* MinutesLanguagePreference.swift */; };
+		1A00C0652CEE000100000001 /* RecordingLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0662CEE000100000001 /* RecordingLiveActivity.swift */; };
+		1A00C0672CEE000100000001 /* SignatureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0682CEE000100000001 /* SignatureStore.swift */; };
+		1A00C0692CEE000100000001 /* MicrophonePermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C06A2CEE000100000001 /* MicrophonePermissionView.swift */; };
+		1A00C06B2CEE000100000001 /* MinutesLanguageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C06C2CEE000100000001 /* MinutesLanguageView.swift */; };
+		1A00C06D2CEE000100000001 /* NameAndTitleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C06E2CEE000100000001 /* NameAndTitleView.swift */; };
+		1A00C06F2CEE000100000001 /* SignatureSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0702CEE000100000001 /* SignatureSettingsView.swift */; };
+		1A00C0712CEE000100000001 /* SignatureStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0722CEE000100000001 /* SignatureStoreTests.swift */; };
 		1A00C0612CEE000100000001 /* QuickMeetingRecentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0622CEE000100000001 /* QuickMeetingRecentTests.swift */; };
 		1A00C05D2CEE000100000001 /* SpeakerNamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05E2CEE000100000001 /* SpeakerNamingTests.swift */; };
 		1A00C05F2CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0602CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift */; };
@@ -331,6 +353,28 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C08B2CEE000100000001 /* HindiPipelineSmokeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Analysis/HindiPipelineSmokeView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0892CEE000100000001 /* MoMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/MoMTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0842CEE000100000001 /* MoMDocumentScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MoM/MoMDocumentScreen.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0862CEE000100000001 /* MoMEditMinutesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MoM/MoMEditMinutesSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0882CEE000100000001 /* MoMPDFPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MoM/MoMPDFPreviewView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C08A2CEE000100000001 /* MoMPersonPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MoM/MoMPersonPage.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0742CEE000100000001 /* MoMEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Export/MoMEditor.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0762CEE000100000001 /* MoMDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MoMDocument.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0782CEE000100000001 /* MoMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MoMModels.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C07A2CEE000100000001 /* MoMPDFRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MoMPDFRenderer.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C07C2CEE000100000001 /* MoMSidecarStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/MinutesStudio/MoMSidecarStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C07E2CEE000100000001 /* ActionsV5Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionsV5Components.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0802CEE000100000001 /* MoMComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MoM/MoMComponents.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0822CEE000100000001 /* MoMSignatureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MoM/MoMSignatureSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0642CEE000100000001 /* MinutesLanguagePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Preferences/MinutesLanguagePreference.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0662CEE000100000001 /* RecordingLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Preferences/RecordingLiveActivity.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0682CEE000100000001 /* SignatureStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Preferences/SignatureStore.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C06A2CEE000100000001 /* MicrophonePermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/MicrophonePermissionView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C06C2CEE000100000001 /* MinutesLanguageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/MinutesLanguageView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C06E2CEE000100000001 /* NameAndTitleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/NameAndTitleView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0702CEE000100000001 /* SignatureSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/SignatureSettingsView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0722CEE000100000001 /* SignatureStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Settings/SignatureStoreTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0622CEE000100000001 /* QuickMeetingRecentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Recording/QuickMeetingRecentTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C05E2CEE000100000001 /* SpeakerNamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/SpeakerNamingTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0602CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/VoiceSamplesAndTranscriptTests.swift"; sourceTree = SOURCE_ROOT; };
@@ -678,6 +722,26 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C08B2CEE000100000001 /* HindiPipelineSmokeView.swift */,
+				1B00C0842CEE000100000001 /* MoMDocumentScreen.swift */,
+				1B00C0862CEE000100000001 /* MoMEditMinutesSheet.swift */,
+				1B00C0882CEE000100000001 /* MoMPDFPreviewView.swift */,
+				1B00C08A2CEE000100000001 /* MoMPersonPage.swift */,
+				1B00C0742CEE000100000001 /* MoMEditor.swift */,
+				1B00C0762CEE000100000001 /* MoMDocument.swift */,
+				1B00C0782CEE000100000001 /* MoMModels.swift */,
+				1B00C07A2CEE000100000001 /* MoMPDFRenderer.swift */,
+				1B00C07C2CEE000100000001 /* MoMSidecarStore.swift */,
+				1B00C07E2CEE000100000001 /* ActionsV5Components.swift */,
+				1B00C0802CEE000100000001 /* MoMComponents.swift */,
+				1B00C0822CEE000100000001 /* MoMSignatureSheet.swift */,
+				1B00C0642CEE000100000001 /* MinutesLanguagePreference.swift */,
+				1B00C0662CEE000100000001 /* RecordingLiveActivity.swift */,
+				1B00C0682CEE000100000001 /* SignatureStore.swift */,
+				1B00C06A2CEE000100000001 /* MicrophonePermissionView.swift */,
+				1B00C06C2CEE000100000001 /* MinutesLanguageView.swift */,
+				1B00C06E2CEE000100000001 /* NameAndTitleView.swift */,
+				1B00C0702CEE000100000001 /* SignatureSettingsView.swift */,
 				1B00C0122CEE000100000001 /* MeetingSpeakerNames.swift */,
 				1B00C04C2CEE000100000001 /* MeetingVoiceSamples.swift */,
 				1B00C04E2CEE000100000001 /* VidurGroundedAnswer.swift */,
@@ -911,6 +975,8 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0892CEE000100000001 /* MoMTests.swift */,
+				1B00C0722CEE000100000001 /* SignatureStoreTests.swift */,
 				1B00C0622CEE000100000001 /* QuickMeetingRecentTests.swift */,
 				1B00C05E2CEE000100000001 /* SpeakerNamingTests.swift */,
 				1B00C0602CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift */,
@@ -1283,6 +1349,26 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C08A2CEE000100000001 /* HindiPipelineSmokeView.swift in Sources */,
+				1A00C0832CEE000100000001 /* MoMDocumentScreen.swift in Sources */,
+				1A00C0852CEE000100000001 /* MoMEditMinutesSheet.swift in Sources */,
+				1A00C0872CEE000100000001 /* MoMPDFPreviewView.swift in Sources */,
+				1A00C0892CEE000100000001 /* MoMPersonPage.swift in Sources */,
+				1A00C0732CEE000100000001 /* MoMEditor.swift in Sources */,
+				1A00C0752CEE000100000001 /* MoMDocument.swift in Sources */,
+				1A00C0772CEE000100000001 /* MoMModels.swift in Sources */,
+				1A00C0792CEE000100000001 /* MoMPDFRenderer.swift in Sources */,
+				1A00C07B2CEE000100000001 /* MoMSidecarStore.swift in Sources */,
+				1A00C07D2CEE000100000001 /* ActionsV5Components.swift in Sources */,
+				1A00C07F2CEE000100000001 /* MoMComponents.swift in Sources */,
+				1A00C0812CEE000100000001 /* MoMSignatureSheet.swift in Sources */,
+				1A00C0632CEE000100000001 /* MinutesLanguagePreference.swift in Sources */,
+				1A00C0652CEE000100000001 /* RecordingLiveActivity.swift in Sources */,
+				1A00C0672CEE000100000001 /* SignatureStore.swift in Sources */,
+				1A00C0692CEE000100000001 /* MicrophonePermissionView.swift in Sources */,
+				1A00C06B2CEE000100000001 /* MinutesLanguageView.swift in Sources */,
+				1A00C06D2CEE000100000001 /* NameAndTitleView.swift in Sources */,
+				1A00C06F2CEE000100000001 /* SignatureSettingsView.swift in Sources */,
 				1A00C0112CEE000100000001 /* MeetingSpeakerNames.swift in Sources */,
 				1A00C04B2CEE000100000001 /* MeetingVoiceSamples.swift in Sources */,
 				1A00C04D2CEE000100000001 /* VidurGroundedAnswer.swift in Sources */,
@@ -1541,6 +1627,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0882CEE000100000001 /* MoMTests.swift in Sources */,
+				1A00C0712CEE000100000001 /* SignatureStoreTests.swift in Sources */,
 				1A00C0612CEE000100000001 /* QuickMeetingRecentTests.swift in Sources */,
 				1A00C05D2CEE000100000001 /* SpeakerNamingTests.swift in Sources */,
 				1A00C05F2CEE000100000001 /* VoiceSamplesAndTranscriptTests.swift in Sources */,

@@ -42,13 +42,10 @@ struct NewActionSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", systemImage: "xmark", action: onCancel)
-                        .labelStyle(.iconOnly)
+                    PrepCloseButton(action: onCancel)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", systemImage: "checkmark") { save() }
-                        .labelStyle(.iconOnly)
-                        .disabled(!draft.isValid)
+                    PrepConfirmButton(isEnabled: draft.isValid) { save() }
                 }
             }
             .alert("Could Not Save Action", isPresented: Binding(

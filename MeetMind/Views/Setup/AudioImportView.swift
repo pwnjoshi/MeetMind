@@ -30,64 +30,35 @@ public struct AudioImportView: View {
     
     public var body: some View {
         NavigationStack {
-            Form {
-                Section("Audio File") {
-                    if let selectedURL {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(selectedURL.lastPathComponent)
-                            if !fileDetails.isEmpty { Text(fileDetails).font(.subheadline).foregroundStyle(.secondary) }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    fileSection
+                    titleSection
+                    detailsSection
+                    if isProcessing {
+                        ProgressView("Saving audio on this iPhone...")
+                            .frame(maxWidth: .infinity)
                     }
-                    Button(selectedURL == nil ? "Choose Audio File..." : "Choose Another File...") {
-                        isPickerPresented = true
-                    }
-                    .disabled(isProcessing)
                 }
-                Section("Title") {
-                    TextField("Meeting title", text: $viewModel.title)
-                        .disabled(isProcessing)
-                }
-                Section {
-                    DatePicker("Recorded", selection: $recordedAt, in: ...Date(),
-                        displayedComponents: [.date, .hourAndMinute])
-                        .disabled(isProcessing)
-                    Menu {
-                        Picker("Series", selection: $selectedSeriesID) {
-                            Text("None").tag(nil as UUID?)
-                            ForEach(seriesOptions, id: \.id) { series in Text(series.name).tag(Optional(series.id)) }
-                        }
-                        Button("New Seriesâ€¦") {
-                            seriesNameDraft = ""
-                            isNewSeriesPresented = true
-                        }
-                    } label: {
-                        LabeledContent("Series") {
-                            Text(seriesOptions.first { $0.id == selectedSeriesID }?.name ?? "None")
-                            Image(systemName: "chevron.up.chevron.down").font(.caption)
-                        }
-                    }.disabled(isProcessing)
-                } header: {
-                    Text("Details")
-                } footer: {
-                    Text("Audio stays on this iPhone. Manent creates a meeting with a transcript and speakers to review.")
-                }
-                Section {
-                    if isProcessing { ProgressView("Saving audio on this iPhone...") }
-                    processButton
-                }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
-            .textCase(nil)
+            .scrollDismissesKeyboard(.interactively)
+            .background(PrepStyle.background.ignoresSafeArea())
             .tint(Theme.Colors.manentAccent)
             .task(id: selectedURL) { await loadFileDetails() }
             .navigationTitle("Import Audio")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Back", systemImage: "chevron.left") { dismiss() }.labelStyle(.iconOnly)
+                    PrepCloseButton { dismiss() }
                         .disabled(isProcessing)
                 }
-            }
-            .fileImporter(
+                ToolbarItem(placement: .confirmationAction) {
+                    PrepConfirmButton(isEnabled: selectedURL != nil && !isProcessing) { startImport() }
+                }
+            }            .fileImporter(
                 isPresented: $isPickerPresented,
                 allowedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav],
                 allowsMultipleSelection: false
@@ -155,34 +126,119 @@ public struct AudioImportView: View {
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    private var processButton: some View {
-        Button {
-            guard let url = selectedURL else { return }
-            viewModel.importedRecordingDate = recordedAt
-            viewModel.importedSeriesID = selectedSeriesID
-            viewModel.importedSeriesName = seriesOptions.first { $0.id == selectedSeriesID }?.name
-            isProcessing = true
-            Task {
-                do {
-                    let meeting = try await viewModel.importAudioFile(url: url)
-                    isProcessing = false
-                    onImportComplete?(meeting)
-                    dismiss()
-                } catch {
-                    isProcessing = false
-                    errorMessage = error.localizedDescription
-                    showErrorAlert = true
+    private var fileSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PrepSectionLabel(text: "FILE").font(.footnote)
+            PrepCard {
+                HStack(spacing: 12) {
+                    Image(systemName: "waveform")
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(selectedURL?.lastPathComponent ?? "No file chosen")
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        if selectedURL != nil, !fileDetails.isEmpty {
+                            Text(fileDetails)
+                                .font(.subheadline)
+                                .foregroundStyle(PrepStyle.secondaryText)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Button(selectedURL == nil ? "Choose" : "Replace") { isPickerPresented = true }
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                        .disabled(isProcessing)
+                        .accessibilityLabel(selectedURL == nil ? "Choose audio file" : "Replace audio file")
                 }
+                .padding(.horizontal, 16)
+                .frame(minHeight: 60)
             }
         }
-        label: {
-            Text("Import Recording").frame(maxWidth: .infinity, minHeight: 50)
-                .foregroundStyle(.white).background(Theme.Colors.manentAccent, in: Capsule())
+    }
+
+    private var titleSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PrepSectionLabel(text: "MEETING").font(.footnote)
+            PrepCard {
+                TextField("Meeting title", text: $viewModel.title)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 52)
+                    .disabled(isProcessing)
+            }
         }
-        .disabled(selectedURL == nil || isProcessing)
-        .opacity(selectedURL == nil || isProcessing ? 0.5 : 1)
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
-        .frame(height: 50)
+    }
+
+    private var detailsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PrepCard {
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar").foregroundStyle(.red).frame(width: 24)
+                        .accessibilityHidden(true)
+                    DatePicker("Recorded", selection: $recordedAt, in: ...Date(),
+                        displayedComponents: [.date, .hourAndMinute])
+                        .disabled(isProcessing)
+                }
+                .padding(.horizontal, 16)
+                .frame(minHeight: 52)
+                Divider().padding(.leading, 52)
+                seriesMenu
+            }
+            Text("Audio stays on this iPhone. Import creates a new meeting.")
+                .font(.footnote)
+                .foregroundStyle(PrepStyle.secondaryText)
+                .padding(.horizontal, 16)
+        }
+    }
+
+    private var seriesMenu: some View {
+        Menu {
+            Picker("Series", selection: $selectedSeriesID) {
+                Text("None").tag(nil as UUID?)
+                ForEach(seriesOptions, id: \.id) { series in Text(series.name).tag(Optional(series.id)) }
+            }
+            Button("New Series…") {
+                seriesNameDraft = ""
+                isNewSeriesPresented = true
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "repeat").foregroundStyle(Theme.Colors.manentAccent).frame(width: 24)
+                    .accessibilityHidden(true)
+                Text("Series").foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(seriesOptions.first { $0.id == selectedSeriesID }?.name ?? "None")
+                    .foregroundStyle(PrepStyle.secondaryText)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .disabled(isProcessing)
+    }
+
+    private func startImport() {
+        guard let url = selectedURL, !isProcessing else { return }
+        viewModel.importedRecordingDate = recordedAt
+        viewModel.importedSeriesID = selectedSeriesID
+        viewModel.importedSeriesName = seriesOptions.first { $0.id == selectedSeriesID }?.name
+        isProcessing = true
+        Task {
+            do {
+                let meeting = try await viewModel.importAudioFile(url: url)
+                isProcessing = false
+                onImportComplete?(meeting)
+                dismiss()
+            } catch {
+                isProcessing = false
+                errorMessage = error.localizedDescription
+                showErrorAlert = true
+            }
+        }
     }
 }

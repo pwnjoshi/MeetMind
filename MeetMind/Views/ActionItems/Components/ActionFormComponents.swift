@@ -168,6 +168,8 @@ struct ActionFormCards: View {
     let localName: String
     /// New Action lists Due first; the task detail lists Assigned To first.
     let dueFirst: Bool
+    var showsTitle: Bool = true
+    var showsNotes: Bool = true
 
     @State private var showsNewPerson = false
     @State private var newPersonName = ""
@@ -177,32 +179,31 @@ struct ActionFormCards: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            ActionFormCard {
-                TextField("Title", text: $draft.title)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                Divider().padding(.leading, 16)
-                TextField("Notes", text: $draft.note, axis: .vertical)
-                    .lineLimit(1...5)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
+        VStack(alignment: .leading, spacing: 24) {
+            if showsTitle {
+                VStack(alignment: .leading, spacing: 8) {
+                    ActionSectionLabel(text: "ACTION")
+                    ActionFormCard {
+                        TextField("Title", text: $draft.title)
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 52)
+                    }
+                }
             }
             ActionFormCard {
-                if dueFirst {
-                    dueRow
-                    Divider().padding(.leading, 16)
-                    ownerRow
-                } else {
-                    ownerRow
-                    Divider().padding(.leading, 16)
-                    dueRow
-                }
-                Divider().padding(.leading, 16)
+                ownerRow
+                Divider().padding(.leading, 52)
+                dueRow
+                Divider().padding(.leading, 52)
                 meetingRow
             }
-        }
-        .alert("New Person", isPresented: $showsNewPerson) {
+            if showsNotes {
+                VStack(alignment: .leading, spacing: 8) {
+                    ActionSectionLabel(text: "NOTES")
+                    ActionNotesCard(note: $draft.note)
+                }
+            }
+        }        .alert("New Person", isPresented: $showsNewPerson) {
             TextField("Name", text: $newPersonName)
             Button("Cancel", role: .cancel) { newPersonName = "" }
             Button("Add") { addPerson() }
@@ -212,7 +213,11 @@ struct ActionFormCards: View {
     }
 
     private var dueRow: some View {
-        HStack {
+        HStack(spacing: 12) {
+            Image(systemName: "calendar")
+                .foregroundStyle(.red)
+                .frame(width: 28)
+                .accessibilityHidden(true)
             Text("Due")
             Spacer()
             ActionDuePill(dueDate: $draft.dueDate)
@@ -222,8 +227,9 @@ struct ActionFormCards: View {
     }
 
     private var ownerRow: some View {
-        HStack {
-            Text("Assigned To")
+        HStack(spacing: 12) {
+            ownerAvatar
+            Text("Owner")
             Spacer()
             ActionOwnerMenu(
                 ownerName: $draft.ownerName,
@@ -242,13 +248,33 @@ struct ActionFormCards: View {
     }
 
     private var meetingRow: some View {
-        HStack {
+        HStack(spacing: 12) {
+            Image(systemName: "waveform")
+                .foregroundStyle(Theme.Colors.manentAccent)
+                .frame(width: 28)
+                .accessibilityHidden(true)
             Text("Meeting")
             Spacer()
             ActionMeetingMenu(meetingID: $draft.meetingID, meetings: meetings)
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 52)
+    }
+
+    private var ownerAvatar: some View {
+        let name = draft.ownerName ?? ""
+        let words = name.split(separator: " ").prefix(2)
+        let initials = words.compactMap { $0.first.map { String($0) } }.joined().uppercased()
+        return ZStack {
+            Circle().fill(Color.green)
+            if initials.isEmpty {
+                Image(systemName: "person.fill").font(.caption).foregroundStyle(.white)
+            } else {
+                Text(initials).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+            }
+        }
+        .frame(width: 28, height: 28)
+        .accessibilityHidden(true)
     }
 
     private func addPerson() {
@@ -259,5 +285,32 @@ struct ActionFormCards: View {
             draft.extraOwners.append(name)
         }
         draft.ownerName = name
+    }
+}
+
+/// Small grey caption above a form card ("ACTION", "NOTES").
+struct ActionSectionLabel: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(Color(uiColor: .secondaryLabel))
+            .padding(.horizontal, 12)
+    }
+}
+
+/// Single-field notes card with an "Optional" placeholder.
+struct ActionNotesCard: View {
+    @Binding var note: String
+    var placeholder: String = "Optional"
+
+    var body: some View {
+        ActionFormCard {
+            TextField(placeholder, text: $note, axis: .vertical)
+                .lineLimit(1...5)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .accessibilityLabel("Notes")
+        }
     }
 }

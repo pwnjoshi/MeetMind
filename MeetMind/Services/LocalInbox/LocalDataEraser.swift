@@ -24,6 +24,7 @@ extension MeetingRecordStore: MeetingSidecarStore {}
 extension MeetingPrepStore: MeetingSidecarStore {}
 extension MinutesApprovalStore: MeetingSidecarStore {}
 extension MinutesStudioStore: MeetingSidecarStore {}
+extension MoMSidecarStore: MeetingSidecarStore {}
 
 /// The allowlisted locations and defaults keys that can contain private user content.
 /// `OfflineIntelligence/Models` is intentionally absent from every deletion list.
@@ -152,6 +153,7 @@ public final class DeletionCoordinator {
     private let vidur: VidurPreferences
     private let jobs: AnalysisJobStore
     private let reviewStates: ReviewStateStore
+    private let momSidecars: MoMSidecarStore
     private let clearsSystemNotifications: Bool
     private let clearsLiveAnalysisPipeline: Bool
     private let interruptAfterJournalWrite: Bool
@@ -167,7 +169,7 @@ public final class DeletionCoordinator {
          meetingRecords: MeetingRecordStore, taskResponses: TaskResponseStore,
          minutesStudio: MinutesStudioStore, meetingPrep: MeetingPrepStore,
          approvals: MinutesApprovalStore, vidur: VidurPreferences, jobs: AnalysisJobStore,
-         reviewStates: ReviewStateStore = .shared,
+         reviewStates: ReviewStateStore = .shared, momSidecars: MoMSidecarStore = .shared,
          fileManager: FileManager = .default, clearsSystemNotifications: Bool = true,
          clearsLiveAnalysisPipeline: Bool = true, interruptAfterJournalWrite: Bool = false) {
         self.context = context
@@ -181,6 +183,7 @@ public final class DeletionCoordinator {
         self.vidur = vidur
         self.jobs = jobs
         self.reviewStates = reviewStates
+        self.momSidecars = momSidecars
         self.fileManager = fileManager
         self.clearsSystemNotifications = clearsSystemNotifications
         self.clearsLiveAnalysisPipeline = clearsLiveAnalysisPipeline
@@ -300,6 +303,7 @@ public final class DeletionCoordinator {
                 attempt("approval history \(meetingID)") { try approvals.remove(meetingID: meetingID) }
                 attempt("Vidur history \(meetingID)") { try vidur.remove(meetingID: meetingID) }
                 attempt("minutes review state \(meetingID)") { try reviewStates.remove(meetingID: meetingID) }
+        attempt("minutes of meeting \(meetingID)") { try momSidecars.remove(meetingID: meetingID) }
                 do { try await jobs.remove(meetingID: meetingID) }
                 catch { failures.append(DeletionFailure(artifact: "analysis job \(meetingID)", reason: error.localizedDescription)) }
             }
@@ -341,6 +345,8 @@ public final class DeletionCoordinator {
             attempt("approval history") { try approvals.eraseAll() }
             vidur.eraseAll()
             attempt("minutes review states") { try reviewStates.eraseAll() }
+        attempt("minutes of meeting") { try momSidecars.eraseAll() }
+        attempt("signature") { try SignatureStore.shared.eraseAll() }
             do { try await jobs.eraseAll() }
             catch { failures.append(DeletionFailure(artifact: "analysis jobs", reason: error.localizedDescription)) }
             for key in UserContentInventory.privateDefaultsKeys where key != "Manent.vidurModel" {

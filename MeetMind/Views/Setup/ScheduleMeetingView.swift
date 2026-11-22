@@ -46,7 +46,7 @@ public struct ScheduleMeetingView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(PrepStyle.background.ignoresSafeArea())
-            .navigationTitle(isFollowUp ? "Follow-Up" : "")
+            .navigationTitle(isFollowUp ? "Follow-Up" : "New Meeting")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(true)
             .toolbar {
@@ -55,20 +55,6 @@ public struct ScheduleMeetingView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     PrepConfirmButton(isEnabled: viewModel.isFormValid) { save() }
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                if !isFollowUp {
-                    Button { save() } label: {
-                        Text("Schedule meeting").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
-                    .tint(Theme.Colors.manentAccent)
-                    .disabled(!viewModel.isFormValid)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
                 }
             }
             .navigationDestination(isPresented: $showsSeries) {
@@ -139,22 +125,23 @@ public struct ScheduleMeetingView: View {
 
     // MARK: Meeting details
 
-    private var titleButton: some View {
-        Button { showsTitleSheet = true } label: {
-            Text(viewModel.title.isEmpty ? "Title" : viewModel.title)
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(viewModel.title.isEmpty ? Color(uiColor: .placeholderText) : Color.primary)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    private var titleField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PrepSectionLabel(text: "MEETING")
+                .font(.footnote)
+            PrepCard {
+                TextField("Title", text: $viewModel.title)
+                    .font(.body)
+                    .submitLabel(.done)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 52)
+                    .accessibilityLabel("Meeting title")
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Meeting title")
-        .accessibilityValue(viewModel.title)
     }
-
     @ViewBuilder
     private var detailsBody: some View {
-        titleButton
+        titleField
         PrepCard {
             dateRow
             Divider().padding(.leading, 16)
@@ -165,13 +152,12 @@ public struct ScheduleMeetingView: View {
                 Divider().padding(.leading, 16)
                 seriesRow
             }
-            Divider().padding(.leading, 16)
-            calendarRow
         }
         if let error = viewModel.dateValidationError {
             Text(error).font(.footnote).foregroundStyle(Theme.Colors.coralRed).padding(.horizontal, 16)
         }
         peopleSection
+        optionsSection
     }
 
     private var startBinding: Binding<Date> {
@@ -180,7 +166,7 @@ public struct ScheduleMeetingView: View {
 
     private var dateRow: some View {
         Button { showsDatePopover = true } label: {
-            rowLabel("Date & Time", value: viewModel.startDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + ", " + viewModel.startDate.formatted(date: .omitted, time: .shortened), chevron: "chevron.right")
+            rowLabel("Date & Time", icon: ("calendar", Color.red), value: viewModel.startDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + ", " + viewModel.startDate.formatted(date: .omitted, time: .shortened), chevron: "chevron.right")
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showsDatePopover) {
@@ -198,14 +184,14 @@ public struct ScheduleMeetingView: View {
             Divider()
             Button("Custom\u{2026}") { showsCustomRepeat = true }
         } label: {
-            rowLabel("Repeat", value: MeetingRecurrence.title(for: viewModel.recurrence), chevron: "chevron.up.chevron.down")
+            rowLabel("Repeat", icon: ("repeat", Theme.Colors.manentAccent), value: MeetingRecurrence.title(for: viewModel.recurrence), chevron: "chevron.up.chevron.down")
         }
         .buttonStyle(.plain)
     }
 
     private var agendaRow: some View {
         Button { showsAgendaSheet = true } label: {
-            rowLabel("Agenda", value: agendaPreview, chevron: "chevron.right")
+            rowLabel("Agenda", icon: ("list.bullet", Color.orange), value: agendaPreview, chevron: "chevron.right")
         }
         .buttonStyle(.plain)
     }
@@ -218,17 +204,34 @@ public struct ScheduleMeetingView: View {
         return firstLine.isEmpty ? "Add agenda" : firstLine
     }
 
-    private var calendarRow: some View {
-        NavigationLink {
-            AppleCalendarAccessView()
-        } label: {
-            rowLabel("Apple Calendar", value: viewModel.calendarService.isConnected ? "On" : "Off", chevron: "chevron.right")
+    private var optionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PrepSectionLabel(text: "OPTIONS")
+                .font(.footnote)
+            PrepCard {
+                NavigationLink {
+                    AppleCalendarAccessView()
+                } label: {
+                    rowLabel(
+                        "Add to Apple Calendar",
+                        icon: ("calendar", Color.red),
+                        value: viewModel.calendarService.isConnected ? "On" : "Off",
+                        chevron: "chevron.right"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
     }
-
-    private func rowLabel(_ title: String, value: String, chevron: String) -> some View {
-        HStack(spacing: 8) {
+    private func rowLabel(_ title: String, icon: (String, Color)? = nil, value: String, chevron: String) -> some View {
+        HStack(spacing: 12) {
+            if let icon {
+                Image(systemName: icon.0)
+                    .font(.body)
+                    .foregroundStyle(icon.1)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+            }
             Text(title).foregroundStyle(.primary)
             Spacer(minLength: 12)
             Text(value)
@@ -256,7 +259,7 @@ public struct ScheduleMeetingView: View {
     private var peopleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                PrepSectionLabel(text: "People")
+                PrepSectionLabel(text: "PEOPLE")
                 Spacer()
                 Button("Edit") { showsPeople = true }
                     .foregroundStyle(Theme.Colors.manentAccent)
@@ -271,10 +274,12 @@ public struct ScheduleMeetingView: View {
                             }
                         }
                 }
-                Button("Add People") { showsPeople = true }
-                    .foregroundStyle(Theme.Colors.manentAccent)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                Button { showsPeople = true } label: {
+                    Label("Add People", systemImage: "plus")
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                }
             }
         }
     }

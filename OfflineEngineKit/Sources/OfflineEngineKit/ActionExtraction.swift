@@ -69,8 +69,33 @@ enum ActionExtractor {
                 sentence.components(separatedBy: "\u{0964}")
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
+                    .flatMap { splitRunOn($0) }
             }
         }
+    }
+
+    private static let runOnPattern = #"(?i)\s+(?=(?:now\s+)?(?:let's|let\u2019s|lets|okay|alright|thanks|thank\s+you)\b)"#
+
+    /// Whisper sometimes drops sentence punctuation. A long English stretch with no punctuation at all is
+    /// cut before the usual sentence openers ("okay", "now let's", "thank you"). Pieces stay exact substrings.
+    private static func splitRunOn(_ piece: String) -> [String] {
+        guard !HindiText.containsDevanagari(piece),
+              piece.rangeOfCharacter(from: CharacterSet(charactersIn: ".!?,;:")) == nil,
+              piece.split(whereSeparator: { $0.isWhitespace }).count >= 10,
+              let regex = try? NSRegularExpression(pattern: runOnPattern) else { return [piece] }
+        let range = NSRange(piece.startIndex..<piece.endIndex, in: piece)
+        var result: [String] = []
+        var start = piece.startIndex
+        for match in regex.matches(in: piece, options: [], range: range) {
+            guard let cut = Range(match.range, in: piece) else { continue }
+            let head = piece[start..<cut.lowerBound]
+            guard head.split(whereSeparator: { $0.isWhitespace }).count >= 3 else { continue }
+            result.append(String(head).trimmingCharacters(in: .whitespacesAndNewlines))
+            start = cut.upperBound
+        }
+        let tail = String(piece[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { result.append(tail) }
+        return result.isEmpty ? [piece] : result
     }
 
     // MARK: - Replies (acceptance and refusal)
@@ -171,7 +196,7 @@ enum ActionExtractor {
 
     // MARK: - Names
 
-    private static let nameStopwords: Set<String> = Set<String>([
+    static let nameStopwords: Set<String> = Set<String>([
         "i", "i'll", "i'm", "i've", "we'll", "we're", "you'll", "it's", "that's", "there's", "we", "you", "he", "she", "it", "they", "me", "us", "them", "this", "that", "these", "those", "there",
         "here", "the", "a", "an", "and", "or", "but", "so", "also", "then", "now", "well", "okay", "ok", "yes", "no",
         "yeah", "yep", "nope", "sure", "thanks", "thank", "hello", "hi", "hey", "please", "sorry", "right", "great",
@@ -635,6 +660,16 @@ enum DecisionExtractor {
         if chaloWords.contains(where: has) && chaloFollowers.contains(where: has) {
             // A Devanagari "chalo ... karte hain" opens or paces a meeting unless it names a date or stresses the choice.
             if HindiText.containsDevanagari(sentence) { return HindiMeetingExtractor.settlesChoice(sentence) }
+            // "Chalo, meeting shuru karte hain" opens a meeting; it settles nothing.
+            let opening: Set<String> = ["shuru", "start", "begin", "meeting", "session", "suru"]
+            let keys = HindiText.tokenize(sentence).map { $0.key }
+            if !Set(keys).isDisjoint(with: opening) {
+                if keys.contains("final") { return true }
+                for index in 0..<keys.count where index + 1 < keys.count {
+                    if Int(keys[index]) != nil, HindiText.months.contains(keys[index + 1]) { return true }
+                }
+                return false
+            }
             return true
         }
         return false

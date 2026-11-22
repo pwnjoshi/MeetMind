@@ -229,11 +229,12 @@ enum HindiMeetingExtractor {
             prescan()
             for (turnIndex, turn) in turns.enumerated() {
                 for (pieceIndex, piece) in pieces[turnIndex].enumerated() {
-                    guard HindiText.containsDevanagari(piece) else {
-                        addEnglishTopics(piece, turn: turn)
-                        continue
-                    }
-                    analysis.hasDevanagari = true
+                    let devanagari = HindiText.containsDevanagari(piece)
+                    if !devanagari { addEnglishTopics(piece, turn: turn) }
+                    // Devanagari and romanized Hindi share one grammar (the lexicon folds Devanagari
+                    // onto the same keys). Plain English is left to the English rules.
+                    guard devanagari || HindiText.looksRomanizedHindi(piece) else { continue }
+                    if devanagari { analysis.hasDevanagari = true }
                     var claimed = false
                     for clause in HindiText.clauses(of: HindiText.tokenize(piece)) {
                         if processClause(clause, piece: piece, turnIndex: turnIndex, pieceIndex: pieceIndex, turn: turn) {
@@ -250,7 +251,7 @@ enum HindiMeetingExtractor {
         // MARK: Names
 
         func prescan() {
-            for piece in pieces.flatMap({ $0 }) where HindiText.containsDevanagari(piece) {
+            for piece in pieces.flatMap({ $0 }) where HindiText.looksHindi(piece) {
                 let scan = scanLead(HindiText.tokenize(piece))
                 if let vocative = scan.vocative { observed.append(vocative.raw) }
             }
@@ -408,12 +409,13 @@ enum HindiMeetingExtractor {
                 #"(?i)\bon\s+the\s+agenda\s+(?:is|are)\s*:?\s+(.+?)[.!?]*$"#
             ]
             let banned: Set<String> = ["it", "this", "that", "them", "tomorrow", "later", "today", "next", "again", "more", "now"]
+            let matchText = piece.replacingOccurrences(of: "\u{2019}", with: "'")
             for pattern in patterns {
                 guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-                let range = NSRange(piece.startIndex..<piece.endIndex, in: piece)
-                guard let match = regex.firstMatch(in: piece, options: [], range: range), match.numberOfRanges > 1,
-                      let found = Range(match.range(at: 1), in: piece) else { continue }
-                let list = String(piece[found]).replacingOccurrences(of: " and ", with: ",")
+                let range = NSRange(matchText.startIndex..<matchText.endIndex, in: matchText)
+                guard let match = regex.firstMatch(in: matchText, options: [], range: range), match.numberOfRanges > 1,
+                      let found = Range(match.range(at: 1), in: matchText) else { continue }
+                let list = String(matchText[found]).replacingOccurrences(of: " and ", with: ",")
                 for part in list.split(separator: ",") {
                     var words = part.split(separator: " ").map(String.init)
                     if words.first?.lowercased() == "the" { words.removeFirst() }

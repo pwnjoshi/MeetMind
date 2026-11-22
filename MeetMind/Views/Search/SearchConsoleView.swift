@@ -51,6 +51,9 @@ public struct SearchConsoleView: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { ProfileToolbarButton(tab: .search) }
+        }
         .tint(Color(hex: "#4B3FF0"))
         .onSubmit(of: .search) { viewModel.performSearch(query: viewModel.searchQuery) }
         .onAppear {
@@ -77,31 +80,42 @@ public struct SearchConsoleView: View {
                 if !viewModel.recentSearches.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Recent Searches").font(.headline)
+                            Text("Recent").font(.title3.weight(.semibold))
                             Spacer()
                             Button("Clear") { viewModel.recentSearches.removeAll() }
+                                .foregroundStyle(Theme.Colors.manentAccent)
                         }
                         .padding(.horizontal, 14)
                         VStack(spacing: 0) {
-                            ForEach(viewModel.recentSearches, id: \.self) { query in
+                            ForEach(Array(viewModel.recentSearches.enumerated()), id: \.element) { index, query in
                                 Button { viewModel.performSearch(query: query) } label: {
-                                    Text(query).frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, 15).frame(minHeight: 56)
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "clock")
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 30)
+                                            .accessibilityHidden(true)
+                                        Text(query).frame(maxWidth: .infinity, alignment: .leading)
+                                        Image(systemName: "chevron.right")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.horizontal, 15).frame(minHeight: 52)
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
+                                if index < viewModel.recentSearches.count - 1 { Divider().padding(.leading, 59) }
                             }
                         }
-                        .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                     }
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Suggestions").font(.headline).padding(.horizontal, 14)
+                }                VStack(alignment: .leading, spacing: 10) {
+                    Text("Browse").font(.title3.weight(.semibold)).padding(.horizontal, 14)
                     VStack(spacing: 0) {
-                        domainSuggestionRow("Decisions this week", "Decisions saved in meetings this week", suggestion: .decisionsThisWeek)
-                        Divider().padding(.leading, 15)
-                        domainSuggestionRow("Actions assigned to me", "Assigned to \(settings.userProfile?.name ?? UserProfile.defaultLocalName)", suggestion: .actionsAssignedToMe)
-                        Divider().padding(.leading, 15)
-                        suggestionRow("Mentions of Finance", "In transcripts", scope: .transcripts, query: "Finance")
+                        domainSuggestionRow("Decisions this week", "Decisions saved in meetings this week", suggestion: .decisionsThisWeek, icon: "checkmark.circle.fill", tint: Theme.Colors.manentAccent)
+                        Divider().padding(.leading, 59)
+                        domainSuggestionRow("Actions assigned to me", "Assigned to \(settings.userProfile?.name ?? UserProfile.defaultLocalName)", suggestion: .actionsAssignedToMe, icon: "checklist", tint: Color.orange)
+                        Divider().padding(.leading, 59)
+                        suggestionRow("Mentions of Finance", "In transcripts", scope: .transcripts, query: "Finance", icon: "doc.text.fill", tint: Color.teal)
                     }
                     .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 }
@@ -110,36 +124,42 @@ public struct SearchConsoleView: View {
         }
     }
 
-    private func domainSuggestionRow(_ title: String, _ subtitle: String, suggestion: SearchSuggestion) -> some View {
+    private func domainSuggestionRow(_ title: String, _ subtitle: String, suggestion: SearchSuggestion, icon: String, tint: Color) -> some View {
         Button {
             viewModel.activateSuggestion(
                 suggestion,
                 localUserName: settings.userProfile?.name ?? UserProfile.defaultLocalName
             )
         } label: {
-            suggestionLabel(title, subtitle)
+            suggestionLabel(title, subtitle, icon: icon, tint: tint)
         }
         .buttonStyle(.plain)
     }
 
-    private func suggestionRow(_ title: String, _ subtitle: String, scope: SearchPresentedScope, query: String) -> some View {
+    private func suggestionRow(_ title: String, _ subtitle: String, scope: SearchPresentedScope, query: String, icon: String, tint: Color) -> some View {
         Button {
             viewModel.setPresentedScope(scope)
             viewModel.performSearch(query: query)
         } label: {
-            suggestionLabel(title, subtitle)
+            suggestionLabel(title, subtitle, icon: icon, tint: tint)
         }
         .buttonStyle(.plain)
     }
 
-    private func suggestionLabel(_ title: String, _ subtitle: String) -> some View {
-        HStack {
+    private func suggestionLabel(_ title: String, _ subtitle: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(tint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
         }
         .padding(15)
         .contentShape(Rectangle())

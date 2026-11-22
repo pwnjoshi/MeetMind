@@ -6,6 +6,7 @@ public struct MeetingExportSheet: View {
     public let onExportMarkdown: () -> String
     public let onExportEmailDraft: () -> EmailDraft
     public let onDismiss: () -> Void
+    public var onShareFile: ((URL) -> Void)?
     
     @State private var exportFormat: ExportFormat = .pdf
     @State private var exportedText: String = ""
@@ -16,12 +17,14 @@ public struct MeetingExportSheet: View {
         onExportPDF: @escaping () throws -> Data,
         onExportMarkdown: @escaping () -> String,
         onExportEmailDraft: @escaping () -> EmailDraft,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        onShareFile: ((URL) -> Void)? = nil
     ) {
         self.onExportPDF = onExportPDF
         self.onExportMarkdown = onExportMarkdown
         self.onExportEmailDraft = onExportEmailDraft
         self.onDismiss = onDismiss
+        self.onShareFile = onShareFile
     }
     
     public var body: some View {
@@ -50,7 +53,11 @@ public struct MeetingExportSheet: View {
                             } catch { exportError = error.localizedDescription }
                         } label: { Label("Generate & Share PDF", systemImage: "doc.richtext") }
                         if let exportedURL {
-                            ShareLink(item: exportedURL) { Label("Share PDF", systemImage: "square.and.arrow.up") }
+                            if let onShareFile {
+                                Button { onShareFile(exportedURL) } label: { Label("Share PDF", systemImage: "square.and.arrow.up") }
+                            } else {
+                                ShareLink(item: exportedURL) { Label("Share PDF", systemImage: "square.and.arrow.up") }
+                            }
                         }
                     } else {
                         Button {

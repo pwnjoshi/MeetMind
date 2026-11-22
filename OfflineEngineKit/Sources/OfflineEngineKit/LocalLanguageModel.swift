@@ -103,8 +103,8 @@ final class LocalLanguageModel {
         let input = try encoded(turns)
         var system = """
         Minutes for an in-person Hindi-English meeting. JSON only: discussion[{text,evidence[{turnID,quote}]}], decisions[same], tasks[{title,category,owner,deadlineText,priority,evidence}].
-        discussion: up to 5 stand-alone 12-28 word minutes (topic plus outcome or reason); no greetings.
-        decisions: only settled outcomes ("let's go with", approved, "final hai", "tay hua"); proposals, questions, "if" and "not decided" are not.
+        discussion: up to 5 stand-alone English minutes of 12-28 words (topic plus outcome or reason), rephrased in your own words and never copied from the transcript; no greetings.
+        decisions: only settled outcomes ("let's go with", approved, "final hai", "tay hua"), worded as short formal English resolutions; proposals, questions, "if" and "not decided" are not.
         tasks: every request or promise. A request to someone else ("Pawan, can you...", "Pawan ko ... bhejna hai") is that person's task; "sure"/"haan" confirms it. Refused, negated, hypothetical, cancelled or finished items are not tasks. Title starts with a verb.
         owner: a name spoken in the transcript or in Participants, never a speaker label, else null.
         deadlineText: exact words ("by Friday", "kal tak", EOD) else null; priority null unless stated; category one of Follow-up, Research, Create/Update, Review/Approve, Coordination, Other.
@@ -117,7 +117,7 @@ final class LocalLanguageModel {
             "Pawan, can you prepare the agenda by Friday?" "Sure." -> task Prepare the agenda; owner Pawan; deadlineText "by Friday".
             "Pawan ko agenda bhejna hai kal tak." -> task Send the agenda; owner Pawan; deadlineText "kal tak".
             "Estimate kal bhej dega." -> task Send the estimate; owner null (Estimate is not a name).
-            "Let's go with the Pune vendor." -> decision: The Pune vendor is selected.
+            "Let's go with the Pune vendor." -> decision: The Pune vendor is engaged (lower price).
             "Vendor abhi decide nahi hua." -> no decision, no task.
             "I can't do the report." -> nothing.
             """

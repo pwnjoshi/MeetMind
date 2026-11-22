@@ -123,9 +123,11 @@ public struct SearchResultSectionsView: View {
     }
 
     private func meetingRow(_ hit: MeetingSearchHit) -> some View {
-        let date = meetings.first { $0.id == hit.meetingId }.map { $0.scheduledStartTime ?? $0.createdAt }
         return rowChrome(title: hit.title, subtitle: hit.detail, meetingId: hit.meetingId) {
-            if let date { SearchDateTile(date: date) }
+            Image(systemName: "waveform")
+                .foregroundStyle(Theme.Colors.manentAccent)
+                .frame(width: 28)
+                .accessibilityHidden(true)
         }
     }
 
@@ -134,11 +136,22 @@ public struct SearchResultSectionsView: View {
         let snippet = viewModel.formatSnippet(text: item.snippet, matchTerm: viewModel.trimmedQuery, maxLength: 44)
         let quote = "\u{201C}\(snippet)\u{201D}"
         let subtitle = item.speakerName.map { "\($0): \(quote)" } ?? quote
-        return rowChrome(title: title, subtitle: subtitle, meetingId: item.meetingId) { EmptyView() }
+        return rowChrome(title: title, subtitle: subtitle, meetingId: item.meetingId) {
+            Image(systemName: "doc.text")
+                .foregroundStyle(Color.teal)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+        }
     }
 
     private func actionRow(_ item: SearchResultItem) -> some View {
-        rowChrome(title: item.snippet, subtitle: item.detail, meetingId: item.meetingId) { EmptyView() }
+        rowChrome(title: item.snippet, subtitle: item.detail, meetingId: item.meetingId) {
+            Image(systemName: "circle")
+                .font(.title3)
+                .foregroundStyle(Color.secondary)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+        }
     }
 
     static func clock(_ interval: TimeInterval) -> String {

@@ -62,13 +62,7 @@ struct UpNextMeetingCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
-            .background {
-                LinearGradient(
-                    colors: [Color(hex: 0x4338FF), Color(hex: 0x7545ED), Color(hex: 0xC05EC5)],
-                    startPoint: .bottomLeading,
-                    endPoint: .topTrailing
-                )
-            }
+            .background { UpNextBackground() }
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: Color(hex: 0x4F46E5).opacity(0.18), radius: 20, y: 10)
         }
@@ -291,5 +285,189 @@ struct HomeMeetingCollectionView: View {
             if planned > Date() { return planned.formatted(date: .omitted, time: .shortened) }
         }
         return recentSubtitle(meeting)
+    }
+}
+
+/// v5 Up Next surface: MeshGradient on iOS 18+, LinearGradient before that.
+struct UpNextBackground: View {
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            MeshGradient(
+                width: 3,
+                height: 3,
+                points: Self.points,
+                colors: Self.meshColors
+            )
+        } else {
+            LinearGradient(
+                colors: [Color(hex: 0x4338FF), Color(hex: 0x7545ED), Color(hex: 0xC05EC5)],
+                startPoint: .bottomLeading,
+                endPoint: .topTrailing
+            )
+        }
+    }
+
+    private static let points: [SIMD2<Float>] = [
+        SIMD2<Float>(0.0, 0.0), SIMD2<Float>(0.5, 0.0), SIMD2<Float>(1.0, 0.0),
+        SIMD2<Float>(0.0, 0.5), SIMD2<Float>(0.55, 0.45), SIMD2<Float>(1.0, 0.5),
+        SIMD2<Float>(0.0, 1.0), SIMD2<Float>(0.5, 1.0), SIMD2<Float>(1.0, 1.0)
+    ]
+
+    private static let meshColors: [Color] = [
+        Color(hex: 0x3B2FE0), Color(hex: 0x5B3FF0), Color(hex: 0x8A4DE8),
+        Color(hex: 0x4338FF), Color(hex: 0x7545ED), Color(hex: 0xB654D0),
+        Color(hex: 0x4F46E5), Color(hex: 0x7A4BEA), Color(hex: 0xC05EC5)
+    ]
+}
+/// Label of the floating create (+) menu. Pre-iOS 26 it draws its own accent circle;
+/// on iOS 26 the system glass prominent style (see `GlassCircleButtonStyle`) draws it.
+struct CreateMenuLabel: View {
+    var body: some View {
+        if usesSystemGlass {
+            Image(systemName: "plus")
+                .font(.title2.weight(.medium))
+                .frame(width: 30, height: 30)
+        } else {
+            Image(systemName: "plus")
+                .font(.system(size: 25, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 54, height: 54)
+                .background(Theme.Colors.manentAccent, in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 1))
+                .shadow(color: Theme.Colors.manentAccent.opacity(0.28), radius: 12, y: 6)
+        }
+    }
+
+    private var usesSystemGlass: Bool {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) { return true }
+        #endif
+        return false
+    }
+}
+
+struct GlassCircleButtonStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .tint(Theme.Colors.manentAccent)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+/// A4 All meetings: Upcoming, then earlier meetings grouped by month, with search.
+@MainActor
+struct AllMeetingsView: View {
+    let upcoming: [Meeting]
+    let earlier: [Meeting]
+    let subtitle: (Meeting) -> String?
+    let statusColor: (Meeting) -> Color
+    @State private var query = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            if !filteredUpcoming.isEmpty {
+                Section("Upcoming") {
+                    ForEach(filteredUpcoming) { meeting in
+                        row(meeting, isUpcoming: true)
+                    }
+                }
+            }
+            ForEach(monthGroups, id: \.title) { group in
+                Section(group.title) {
+                    ForEach(group.meetings) { meeting in
+                        row(meeting, isUpcoming: false)
+                    }
+                }
+            }
+            if filteredUpcoming.isEmpty && monthGroups.isEmpty {
+                Text(query.isEmpty ? "No meetings yet" : "No meetings match \"\(query)\"")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .listStyle(.insetGrouped)
+        .headerProminence(.increased)
+        .navigationTitle("All Meetings")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Search meetings")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+        }
+    }
+
+    private var filteredUpcoming: [Meeting] { filtered(upcoming) }
+
+    private func filtered(_ meetings: [Meeting]) -> [Meeting] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return meetings }
+        return meetings.filter { $0.title.localizedCaseInsensitiveContains(trimmed) }
+    }
+
+    private struct MonthGroup {
+        let title: String
+        let meetings: [Meeting]
+    }
+
+    private var monthGroups: [MonthGroup] {
+        let upcomingIDs = Set(upcoming.map { $0.id })
+        let items = filtered(earlier).filter { !upcomingIDs.contains($0.id) }
+        let calendar = Calendar.current
+        var order: [Date] = []
+        var buckets: [Date: [Meeting]] = [:]
+        for meeting in items {
+            let date = HomeViewModel.recencyDate(for: meeting)
+            let comps = calendar.dateComponents([.year, .month], from: date)
+            let key = calendar.date(from: comps) ?? date
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(meeting)
+        }
+        order.sort(by: >)
+        return order.map { key in
+            MonthGroup(title: key.formatted(.dateTime.month(.wide).year()), meetings: buckets[key] ?? [])
+        }
+    }
+
+    private func row(_ meeting: Meeting, isUpcoming: Bool) -> some View {
+        let date = isUpcoming ? (meeting.scheduledStartTime ?? meeting.createdAt) : HomeViewModel.recencyDate(for: meeting)
+        return NavigationLink {
+            MeetingDetailContainerView(meetingId: meeting.id)
+        } label: {
+            HStack(spacing: 12) {
+                HomeDateTile(date: date)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(RecentMeetingPresenter.title(for: meeting))
+                        .lineLimit(1)
+                    if let line = detail(meeting, date: date, isUpcoming: isUpcoming) {
+                        Text(line)
+                            .font(.subheadline)
+                            .foregroundStyle(isUpcoming ? Color.secondary : statusColor(meeting))
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                if isUpcoming {
+                    Text(date.formatted(date: .omitted, time: .shortened))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(minHeight: 52)
+        }
+    }
+
+    private func detail(_ meeting: Meeting, date: Date, isUpcoming: Bool) -> String? {
+        guard isUpcoming else { return subtitle(meeting) }
+        let day = date.formatted(.dateTime.weekday(.abbreviated))
+        let count = meeting.namedAttendees.count
+        if count > 0 { return "\(day) \u{00B7} \(count) \(count == 1 ? "person" : "people")" }
+        return day
     }
 }
