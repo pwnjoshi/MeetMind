@@ -217,7 +217,11 @@ final class HomeViewModelTests: XCTestCase {
     
     /// Tier 1: Feature 20 - Validates "This Week" filter restricts to current 7-day calendar window.
     func test_tier1_feature20_quickFilterThisWeekFiltersCurrentWeekRange() throws {
-        let thisWeekMeeting = createMeeting(title: "Midweek Sync", dateOffset: -86400 * 2, status: .completed)
+        // Place the meeting inside the current calendar week on any weekday (the old
+        // fixed "two days ago" fell into last week on Sundays and Mondays).
+        let weekStart = try XCTUnwrap(Calendar.current.dateInterval(of: .weekOfYear, for: Date())).start
+        let insideWeekOffset = weekStart.addingTimeInterval(3600).timeIntervalSinceNow
+        let thisWeekMeeting = createMeeting(title: "Midweek Sync", dateOffset: insideWeekOffset, status: .completed)
         let lastMonthMeeting = createMeeting(title: "Last Month Sync", dateOffset: -86400 * 30, status: .completed)
         _ = (thisWeekMeeting, lastMonthMeeting)
         
