@@ -70,16 +70,36 @@ jobs:
 
       - name: Build MeetMind iOS App
         run: |
-          xcodebuild build \
-            -project MeetMind.xcodeproj \
-            -scheme MeetMind \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath ./build/DerivedData \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_STYLE="Manual"
+          mkdir -p build
+          build_app() {
+            set -o pipefail
+            xcodebuild build \
+              -project MeetMind.xcodeproj \
+              -scheme MeetMind \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath ./build/DerivedData \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGN_STYLE="Manual" 2>&1 | tee build/xcodebuild-app.log
+          }
+          dump_crashes() {
+            for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | grep -Ei 'SWBBuildService|XCBBuildService|swift' | head -3); do
+              echo "::group::crash report $f"; head -c 60000 "$f"; echo; echo "::endgroup::"
+            done
+          }
+          if build_app; then exit 0; fi
+          dump_crashes
+          if grep -q "build system has crashed" build/xcodebuild-app.log; then
+            echo "Build system crashed; retrying once with clean app intermediates"
+            rm -rf build/DerivedData/Build/Intermediates.noindex/MeetMind.build \
+                   build/DerivedData/Build/Intermediates.noindex/XCBuildData \
+                   build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
+            if build_app; then exit 0; fi
+            dump_crashes
+          fi
+          exit 1
 
       - name: Validate compiled app privacy keys
         run: |
