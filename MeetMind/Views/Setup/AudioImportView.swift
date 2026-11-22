@@ -198,7 +198,7 @@ public struct AudioImportView: View {
                 Text("None").tag(nil as UUID?)
                 ForEach(seriesOptions, id: \.id) { series in Text(series.name).tag(Optional(series.id)) }
             }
-            Button("New Series…") {
+            Button("New Series\u{2026}") {
                 seriesNameDraft = ""
                 isNewSeriesPresented = true
             }

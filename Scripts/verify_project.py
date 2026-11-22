@@ -183,6 +183,7 @@ class ProjectVerifier:
 
         print(f"\n{BOLD}[5/5] Verifying Swift Static Code Quality & Architectural Standards...{RESET}")
         self.verify_swift_code_quality()
+        self.verify_source_encoding()
 
         print("\n" + "=" * 80)
         print(f"{BOLD} VERIFICATION SUMMARY{RESET}")
@@ -200,6 +201,29 @@ class ProjectVerifier:
         else:
             print(f"\n{GREEN}{BOLD}[PASS] Project verification successful with 0 errors!{RESET}")
             return True
+
+    def verify_source_encoding(self):
+        # Invalid UTF-8 in a Swift file crashes Xcode's explicit-module dependency
+        # scanner ("The Xcode build system has crashed") before any compiler error
+        # is printed, so catch it here.
+        bad = []
+        for directory in ("MeetMind", "MeetMindTests", "OfflineEngineKit/Sources", "OfflineEngineKit/Tests"):
+            for root, _, files in os.walk(os.path.join(self.root_dir, directory)):
+                for name in files:
+                    if not name.endswith((".swift", ".gbnf")):
+                        continue
+                    path = os.path.join(root, name)
+                    with open(path, "rb") as handle:
+                        data = handle.read()
+                    try:
+                        data.decode("utf-8")
+                    except UnicodeDecodeError as error:
+                        line = data[:error.start].count(b"\n") + 1
+                        bad.append(f"{os.path.relpath(path, self.root_dir)}:{line}")
+        if bad:
+            self.log_error("Source Encoding", "Invalid UTF-8 in " + ", ".join(bad))
+        else:
+            self.log_pass("Source Encoding", "All Swift and grammar sources are valid UTF-8")
 
     def verify_filesystem_layout(self):
         # 1. State Isolation Check

@@ -53,7 +53,7 @@ public struct SettingsView: View {
             }
             SettingsStorageAndCacheSection(viewModel: viewModel)
             SettingsThemeAndAppearanceSection(viewModel: viewModel)
-            Section("Developer Settings") {
+            Section {
                 NavigationLink("Diagnostics") {
                     Form {
                         NavigationLink("Offline model benchmarks") { OfflineBenchmarkView() }
@@ -61,6 +61,8 @@ public struct SettingsView: View {
                     }
                     .navigationTitle("Diagnostics")
                 }
+            } header: {
+                Text("Developer Settings")
             } footer: {
                 Text("Manent \(appVersion) \u{00B7} Recordings and minutes stay on this iPhone.")
                     .frame(maxWidth: .infinity, alignment: .center)

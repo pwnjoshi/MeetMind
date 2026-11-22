@@ -108,7 +108,8 @@ public struct SearchConsoleView: View {
                         }
                         .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                     }
-                }                VStack(alignment: .leading, spacing: 10) {
+                }
+                VStack(alignment: .leading, spacing: 10) {
                     Text("Browse").font(.title3.weight(.semibold)).padding(.horizontal, 14)
                     VStack(spacing: 0) {
                         domainSuggestionRow("Decisions this week", "Decisions saved in meetings this week", suggestion: .decisionsThisWeek, icon: "checkmark.circle.fill", tint: Theme.Colors.manentAccent)

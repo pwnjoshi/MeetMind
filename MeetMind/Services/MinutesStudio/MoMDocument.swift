@@ -151,11 +151,11 @@ struct MoMDocumentModel: Equatable, Sendable {
 
 @MainActor
 enum MoMDocumentBuilder {
-    static func longDate(_ date: Date) -> String {
+    nonisolated static func longDate(_ date: Date) -> String {
         date.formatted(.dateTime.day().month(.wide).year())
     }
 
-    static func ordinal(_ number: Int) -> String {
+    nonisolated static func ordinal(_ number: Int) -> String {
         let tens = number % 100
         if tens >= 11 && tens <= 13 { return "\(number)th" }
         switch number % 10 {
