@@ -9,6 +9,7 @@ struct LiveTranscriptFeedView: View {
     let bookmarks: [BookmarkItem]
     let interimText: String
 
+    @AppStorage(HindiScriptPreference.key) private var hindiScript = HindiScriptStyle.devanagari.rawValue
     @State private var isFollowing = true
     @State private var isAtBottom = true
     @State private var lastScrollDate = Date.distantPast
@@ -32,7 +33,7 @@ struct LiveTranscriptFeedView: View {
                                 Text("\(segment.speakerName) \u{00B7} \(Self.timecode(segment.startTime))")
                                     .font(.caption)
                                     .foregroundStyle(.white.opacity(0.6))
-                                Text(segment.text)
+                                Text(HindiScriptPreference.display(segment.text, raw: hindiScript))
                                     .font(.body)
                                     .foregroundStyle(.white.opacity(0.92))
                             }
@@ -52,7 +53,7 @@ struct LiveTranscriptFeedView: View {
                             .accessibilityElement(children: .combine)
                         }
                         if !interimText.isEmpty {
-                            Text(interimText)
+                            Text(HindiScriptPreference.display(interimText, raw: hindiScript))
                                 .font(.body)
                                 .foregroundStyle(.white.opacity(0.6))
                                 .frame(maxWidth: .infinity, alignment: .leading)

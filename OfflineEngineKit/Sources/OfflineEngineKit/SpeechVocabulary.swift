@@ -55,8 +55,8 @@ struct SpeechVocabulary: Sendable, Equatable {
     }
 }
 
-/// Remembers the language Whisper settled on for one meeting so that separately
-/// transcribed gaps and recording windows do not each re-detect a different language.
+/// Remembers the language of the last transcribed region of one meeting. It is only a hint for an
+/// uncertain first region of the next window or gap and never forces a language on later speech.
 final class SpeechLanguageMemory: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: String?

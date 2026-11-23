@@ -115,6 +115,8 @@ struct MeetMindApp: App {
                             OfflinePipelineSmokeView()
                         } else if ProcessInfo.processInfo.arguments.contains("--offline-hindi-smoke") {
                             HindiPipelineSmokeView()
+                        } else if ProcessInfo.processInfo.arguments.contains("--offline-evaluation") {
+                            EvaluationRunView()
                         } else {
                             appContent
                         }

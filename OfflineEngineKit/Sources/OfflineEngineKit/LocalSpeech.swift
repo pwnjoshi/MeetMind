@@ -2,6 +2,8 @@ import Foundation
 import WhisperKit
 import FluidAudio
 import CoreML
+import AVFoundation
+import os
 
 /// Overrides the SDK's tokenizer downloader: a corrupt/missing tokenizer fails
 /// locally rather than falling through to a network request during inference.
@@ -118,10 +120,20 @@ private final class SpeechEngineCache: @unchecked Sendable {
 }
 
 enum LocalSpeech {
-    /// Hindi-English conversations are commonly misidentified as Urdu by automatic
-    /// detection. A nil language keeps automatic detection (Hinglish), but a result other
-    /// than Hindi or English is decoded again as Hindi. The first Hindi detection is
-    /// remembered in `memory` so later gaps and windows of the same meeting stay consistent.
+    private static let log = os.Logger(subsystem: "OfflineEngineKit", category: "speech")
+
+    /// Regions shorter than this many samples (0.2 s at 16 kHz) are skipped as noise.
+    private static let minimumRegionSamples = 3_200
+    /// Whisper does not decode a window shorter than its one-second end guard, so shorter regions are
+    /// padded with silence up to this many samples (1.5 s).
+    private static let paddedRegionSamples = 24_000
+
+    /// Transcribes one recording or window.
+    ///
+    /// An explicit `languageCode` ("en", "hi", ...) decodes the whole file in that language. A nil code
+    /// (Hindi + English or automatic) splits the audio into speech regions and decodes each region in its
+    /// own language, so an English sentence is written in Latin letters and a Hindi sentence in Devanagari.
+    /// `memory` only hints the language of an uncertain first region; it never forces a language.
     static func transcribe(audio: URL, folder: URL, languageCode: String? = nil,
                            vocabulary: SpeechVocabulary? = nil,
                            memory: SpeechLanguageMemory? = nil) async throws -> [AnalysisTurn] {
@@ -139,31 +151,222 @@ enum LocalSpeech {
         }
         do {
             _ = try? await engine.loadTokenizerIfNeeded()
-            // Each window detects its own language so an English stretch is written in English
-            // and a Hindi stretch in Hindi. The memory is not used to force later windows into
-            // Hindi; that turned every sentence after the first Hindi one into Devanagari.
-            var language: String? = languageCode
-            let prompt = promptTokens(engine: engine, vocabulary: vocabulary, languageCode: language)
-            var pass = try await decode(engine: engine, audio: audio, language: language, prompt: prompt)
-            if languageCode == nil, language == nil {
-                let detected = (pass.language ?? "").lowercased()
-                if !detected.isEmpty, detected != "hi", detected != "en" {
-                    pass = try await decode(engine: engine, audio: audio, language: "hi", prompt: prompt)
-                    language = "hi"
-                } else if detected == "hi" {
-                    language = "hi"
-                }
-                if language == "hi" { memory?.remember("hi") }
+            var run = SpeechDecodeStats()
+            run.runs = 1
+            let turns: [AnalysisTurn]
+            if let fixed = languageCode, !fixed.isEmpty {
+                turns = try await transcribeWholeFile(engine: engine, audio: audio, fixedLanguage: fixed,
+                                                      vocabulary: vocabulary, memory: memory, stats: &run)
+            } else if let regional = try await transcribeRegions(engine: engine, audio: audio, vocabulary: vocabulary,
+                                                                 memory: memory, stats: &run) {
+                turns = regional
+            } else {
+                turns = try await transcribeWholeFile(engine: engine, audio: audio, fixedLanguage: nil,
+                                                      vocabulary: vocabulary, memory: memory, stats: &run)
             }
+            SpeechDiagnostics.record(run)
+            log.info("\(run.description, privacy: .public)")
             try Task.checkCancellation()
             // Live recording windows arrive every 30 seconds and the final pass follows
             // soon after Stop, so the loaded engine is kept briefly instead of reloaded.
             keep(engine, folder: folder.path)
-            return pass.turns
+            return turns
         } catch {
             await engine.unloadModels()
             throw error
         }
+    }
+
+    // MARK: - Whole-file decode
+
+    /// One decode of the whole file. With `fixedLanguage` nil Whisper detects the language once per
+    /// 30-second window and a result other than Hindi or English is decoded again as Hindi. This is the
+    /// fallback when region planning finds no speech or cannot read the file.
+    private static func transcribeWholeFile(engine: LocalOnlyWhisper, audio: URL, fixedLanguage: String?,
+                                            vocabulary: SpeechVocabulary?, memory: SpeechLanguageMemory?,
+                                            stats: inout SpeechDecodeStats) async throws -> [AnalysisTurn] {
+        stats.wholeFileRuns += 1
+        let started = Date()
+        defer { stats.decodeSeconds += Date().timeIntervalSince(started) }
+        let prompt = promptTokens(engine: engine, vocabulary: vocabulary, languageCode: fixedLanguage)
+        var pass = try await decode(engine: engine, audio: audio, language: fixedLanguage, prompt: prompt)
+        guard fixedLanguage == nil else { return pass.turns }
+        stats.detections += 1
+        let detected = (pass.language ?? "").lowercased()
+        var language = detected
+        if !detected.isEmpty, detected != "hi", detected != "en" {
+            pass = try await decode(engine: engine, audio: audio, language: "hi", prompt: prompt)
+            stats.redecodes += 1
+            language = "hi"
+        }
+        if language == "hi" || language == "en" { memory?.remember(language) }
+        return pass.turns
+    }
+
+    // MARK: - Per-region decode
+
+    private struct RegionPass {
+        var region: SpeechRegion
+        /// Region-relative turns.
+        var turns: [AnalysisTurn]
+        /// The language the decode ran with.
+        var used: String?
+        var confidence: Float?
+    }
+
+    private struct RegionDecode {
+        var turns: [AnalysisTurn]
+        var language: String?
+        var confidence: Float?
+    }
+
+    /// Splits the audio into speech regions, decodes each with automatic language detection (one encoder
+    /// pass per region, detection reuses that pass), resolves one language per region with hysteresis,
+    /// and decodes again only the regions whose language was corrected. Returns nil when there is nothing
+    /// to split, so the caller falls back to the whole-file decode.
+    private static func transcribeRegions(engine: LocalOnlyWhisper, audio: URL, vocabulary: SpeechVocabulary?,
+                                          memory: SpeechLanguageMemory?,
+                                          stats: inout SpeechDecodeStats) async throws -> [AnalysisTurn]? {
+        let planStarted = Date()
+        let regions: [SpeechRegion]
+        let duration: Double
+        do {
+            let plan = try planRegions(audio: audio)
+            regions = plan.regions
+            duration = plan.duration
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return nil
+        }
+        stats.planSeconds += Date().timeIntervalSince(planStarted)
+        stats.audioSeconds += duration
+        guard !regions.isEmpty else { return nil }
+
+        let path = audio.path
+        let automaticPrompt = promptTokens(engine: engine, vocabulary: vocabulary, languageCode: nil)
+        var passes: [RegionPass] = []
+        for region in regions {
+            try Task.checkCancellation()
+            let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, startTime: region.start,
+                                                                   endTime: region.end)
+            guard samples.count >= minimumRegionSamples else {
+                passes.append(RegionPass(region: region, turns: [], used: nil, confidence: nil))
+                continue
+            }
+            let started = Date()
+            let first = try await decodeRegion(engine: engine, samples: samples, language: nil, prompt: automaticPrompt)
+            stats.decodeSeconds += Date().timeIntervalSince(started)
+            stats.regions += 1
+            stats.detections += 1
+            stats.speechSeconds += region.duration
+            passes.append(RegionPass(region: region, turns: first.turns, used: first.language,
+                                     confidence: first.confidence))
+        }
+
+        let evidence = passes.map { pass in
+            RegionLanguageEvidence(detected: pass.turns.isEmpty ? nil : pass.used, confidence: pass.confidence,
+                                   duration: pass.region.duration)
+        }
+        var languages = SpeechLanguageResolver.resolve(evidence, previous: memory?.code)
+
+        for index in passes.indices where !passes[index].turns.isEmpty {
+            var target = languages[index]
+            var redo = SpeechLanguageResolver.needsRedecode(used: passes[index].used, chosen: target)
+            if !redo {
+                let text = passes[index].turns.map { $0.text }.joined(separator: " ")
+                if SpeechLanguageResolver.scriptContradicts(language: target, text: text) {
+                    target = SpeechLanguageResolver.alternate(of: target)
+                    languages[index] = target
+                    redo = true
+                }
+            }
+            guard redo else { continue }
+            try Task.checkCancellation()
+            let region = passes[index].region
+            let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, startTime: region.start,
+                                                                   endTime: region.end)
+            let started = Date()
+            let again = try await decodeRegion(engine: engine, samples: samples, language: target,
+                prompt: promptTokens(engine: engine, vocabulary: vocabulary, languageCode: target))
+            stats.decodeSeconds += Date().timeIntervalSince(started)
+            stats.redecodes += 1
+            if !again.turns.isEmpty {
+                passes[index].turns = again.turns
+                passes[index].used = target
+            }
+        }
+
+        var lastLanguage: String?
+        for (language, pass) in zip(languages, passes) where !pass.turns.isEmpty { lastLanguage = language }
+        if let lastLanguage = lastLanguage { memory?.remember(lastLanguage) }
+
+        var turns: [AnalysisTurn] = []
+        for pass in passes {
+            for turn in pass.turns {
+                let moved = SpeechRegionPlanner.shifted(start: turn.start, end: turn.end, by: pass.region.start,
+                                                        limit: pass.region.duration)
+                turns.append(AnalysisTurn(id: "t\(turns.count + 1)", text: turn.text,
+                                          start: moved.start, end: moved.end, speaker: nil))
+            }
+        }
+        return turns
+    }
+
+    /// Reads the file in one-minute blocks (bounded memory), measures frame energy, and plans regions.
+    private static func planRegions(audio: URL) throws -> (regions: [SpeechRegion], duration: Double) {
+        let parameters = SpeechRegionPlanner.Parameters.standard
+        let file = try AVAudioFile(forReading: audio)
+        let rate = file.fileFormat.sampleRate
+        guard rate > 0 else { return ([], 0) }
+        let duration = Double(file.length) / rate
+        guard duration.isFinite, duration > 0 else { return ([], 0) }
+        let frameLength = max(1, Int((parameters.frameSeconds * Double(WhisperKit.sampleRate)).rounded()))
+        let blockSeconds = 60.0
+        var energies: [Float] = []
+        var start = 0.0
+        while start < duration {
+            try Task.checkCancellation()
+            let end = min(start + blockSeconds, duration)
+            var block: [Float] = []
+            try autoreleasepool {
+                block = try AudioProcessor.loadAudioAsFloatArray(fromPath: audio.path, startTime: start, endTime: end)
+            }
+            // Keep every block on the same time grid even when resampling returns a sample more or less.
+            let expected = max(1, Int(((end - start) / parameters.frameSeconds).rounded()))
+            var frames = SpeechRegionPlanner.frameEnergies(block, frameLength: frameLength)
+            if frames.count > expected { frames.removeLast(frames.count - expected) }
+            if frames.count < expected { frames.append(contentsOf: [Float](repeating: 0, count: expected - frames.count)) }
+            energies.append(contentsOf: frames)
+            start = end
+        }
+        return (SpeechRegionPlanner.plan(energies: energies, parameters: parameters), duration)
+    }
+
+    private static func decodeRegion(engine: LocalOnlyWhisper, samples: [Float], language: String?,
+                                     prompt: [Int]?) async throws -> RegionDecode {
+        var audio = samples
+        if audio.count < paddedRegionSamples {
+            audio.append(contentsOf: [Float](repeating: 0, count: paddedRegionSamples - audio.count))
+        }
+        var options = DecodingOptions(task: .transcribe, language: language,
+            usePrefillPrompt: true, detectLanguage: language == nil,
+            skipSpecialTokens: true, wordTimestamps: true, concurrentWorkerCount: 1)
+        options.promptTokens = prompt
+        let results = try await engine.transcribe(audioArray: audio, decodeOptions: options,
+                                                  callback: { _ in !Task.isCancelled })
+        var turns: [AnalysisTurn] = []
+        var logprobs: [(logprob: Double, seconds: Double)] = []
+        for segment in results.flatMap(\.segments) {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            turns.append(AnalysisTurn(id: "r\(turns.count + 1)", text: segment.text,
+                                      start: Double(segment.start), end: Double(segment.end), speaker: nil))
+            logprobs.append((Double(segment.avgLogprob), Double(segment.end - segment.start)))
+        }
+        let detected = turns.isEmpty ? nil : results.first?.language
+        return RegionDecode(turns: turns, language: detected,
+                            confidence: SpeechLanguageResolver.confidence(avgLogprobs: logprobs))
     }
 
     /// Mel spectrogram on the CPU and encoder/decoder on the Neural Engine. WhisperKit's

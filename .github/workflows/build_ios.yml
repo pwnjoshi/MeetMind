@@ -31,7 +31,9 @@ jobs:
           git diff --check
 
       - name: Test offline qualification scorer (synthetic data only)
-        run: python3 -m unittest discover -s Scripts -p test_evaluate_offline.py
+        run: |
+          python3 -m unittest discover -s Scripts -p test_evaluate_offline.py
+          python3 -m unittest discover -s Scripts -p 'test_eval_*.py'
 
       - name: Identify native toolchain
         id: native-toolchain

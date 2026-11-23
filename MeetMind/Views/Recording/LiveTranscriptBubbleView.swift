@@ -4,6 +4,7 @@ import SwiftUI
 public struct LiveTranscriptBubbleView: View {
     public let segment: LiveTranscriptSegmentItem
     public var avatarColorHex: String = "#3B82F6"
+    @AppStorage(HindiScriptPreference.key) private var hindiScript = HindiScriptStyle.devanagari.rawValue
     
     public init(segment: LiveTranscriptSegmentItem, avatarColorHex: String = "#3B82F6") {
         self.segment = segment
@@ -34,7 +35,7 @@ public struct LiveTranscriptBubbleView: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
             
-            Text(segment.text)
+            Text(HindiScriptPreference.display(segment.text, raw: hindiScript))
                 .font(Typography.body)
                 .fontWeight(.medium)
                 .foregroundStyle(Theme.Colors.textPrimary)

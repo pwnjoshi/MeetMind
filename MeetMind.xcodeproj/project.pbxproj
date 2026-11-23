@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0B02CEE000100000001 /* EvaluationRunView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B12CEE000100000001 /* EvaluationRunView.swift */; };
+		1A00C0B22CEE000100000001 /* EvaluationRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B32CEE000100000001 /* EvaluationRunner.swift */; };
+		1A00C0B42CEE000100000001 /* HindiScriptPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B52CEE000100000001 /* HindiScriptPreference.swift */; };
 		1A00C0A42CEE000100000001 /* LiveCaptionLanguageArbiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A52CEE000100000001 /* LiveCaptionLanguageArbiter.swift */; };
 		1A00C0A62CEE000100000001 /* LiveCaptionLanguageHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A72CEE000100000001 /* LiveCaptionLanguageHub.swift */; };
 		1A00C0A82CEE000100000001 /* LiveCaptionLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A92CEE000100000001 /* LiveCaptionLexicon.swift */; };
@@ -402,6 +405,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0B12CEE000100000001 /* EvaluationRunView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Evaluation/EvaluationRunView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0B32CEE000100000001 /* EvaluationRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Evaluation/EvaluationRunner.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0B52CEE000100000001 /* HindiScriptPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Preferences/HindiScriptPreference.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A52CEE000100000001 /* LiveCaptionLanguageArbiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionLanguageArbiter.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A72CEE000100000001 /* LiveCaptionLanguageHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionLanguageHub.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A92CEE000100000001 /* LiveCaptionLexicon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionLexicon.swift"; sourceTree = SOURCE_ROOT; };
@@ -820,6 +826,9 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0B12CEE000100000001 /* EvaluationRunView.swift */,
+				1B00C0B32CEE000100000001 /* EvaluationRunner.swift */,
+				1B00C0B52CEE000100000001 /* HindiScriptPreference.swift */,
 				1B00C0A52CEE000100000001 /* LiveCaptionLanguageArbiter.swift */,
 				1B00C0A72CEE000100000001 /* LiveCaptionLanguageHub.swift */,
 				1B00C0A92CEE000100000001 /* LiveCaptionLexicon.swift */,
@@ -1496,6 +1505,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0B02CEE000100000001 /* EvaluationRunView.swift in Sources */,
+				1A00C0B22CEE000100000001 /* EvaluationRunner.swift in Sources */,
+				1A00C0B42CEE000100000001 /* HindiScriptPreference.swift in Sources */,
 				1A00C0A42CEE000100000001 /* LiveCaptionLanguageArbiter.swift in Sources */,
 				1A00C0A62CEE000100000001 /* LiveCaptionLanguageHub.swift in Sources */,
 				1A00C0A82CEE000100000001 /* LiveCaptionLexicon.swift in Sources */,

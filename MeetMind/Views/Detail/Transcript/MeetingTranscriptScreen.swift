@@ -10,6 +10,7 @@ public struct MeetingTranscriptScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppState.self) private var appState: AppState?
     @Query private var meetings: [Meeting]
+    @AppStorage(HindiScriptPreference.key) private var hindiScript = HindiScriptStyle.devanagari.rawValue
 
     @State private var audio = TranscriptAudioController()
     @State private var cards: [TranscriptCard] = []
@@ -38,6 +39,7 @@ public struct MeetingTranscriptScreen: View {
         guard TranscriptSearch.isActive(query) else { return cards }
         return cards.filter {
             TranscriptSearch.matches($0.text, query: query) || TranscriptSearch.matches($0.speakerName, query: query)
+                || TranscriptSearch.matches(HindiScriptPreference.display($0.text, raw: hindiScript), query: query)
         }
     }
 
@@ -404,6 +406,7 @@ private struct TranscriptCardView: View {
     let card: TranscriptCard
     let isActive: Bool
     let query: String
+    @AppStorage(HindiScriptPreference.key) private var hindiScript = HindiScriptStyle.devanagari.rawValue
 
     private var background: Color {
         card.isUsedInMinutes ? Theme.Colors.manentAccent.opacity(0.12) : Theme.Colors.cardBackground
@@ -430,7 +433,7 @@ private struct TranscriptCardView: View {
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
-            Text(TranscriptSearch.highlighted(card.text, query: query))
+            Text(TranscriptSearch.highlighted(HindiScriptPreference.display(card.text, raw: hindiScript), query: query))
                 .font(.body)
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .multilineTextAlignment(.leading)

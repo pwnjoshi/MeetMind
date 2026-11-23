@@ -3,6 +3,7 @@ import SwiftUI
 /// Interim speech chunk bubble displaying pending transcription hypotheses
 public struct LiveInterimTranscriptBubbleView: View {
     public let text: String
+    @AppStorage(HindiScriptPreference.key) private var hindiScript = HindiScriptStyle.devanagari.rawValue
     @State private var isPulsing: Bool = false
     
     public init(text: String) {
@@ -18,7 +19,7 @@ public struct LiveInterimTranscriptBubbleView: View {
                 .opacity(isPulsing ? 0.3 : 1.0)
                 .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: isPulsing)
             
-            Text(text)
+            Text(HindiScriptPreference.display(text, raw: hindiScript))
                 .font(Typography.body)
                 .italic()
                 .foregroundStyle(Theme.Colors.textSecondary)
