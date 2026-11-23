@@ -193,12 +193,12 @@ class LogParsingTests(unittest.TestCase):
         self.assertIn("diarization-aaaaaaaaaaaa", " ".join(problems))
         self.assertIn("qwen-1.7b", " ".join(problems))
 
-    def test_zero_available_memory_on_simulator_is_reported(self):
+    def test_zero_available_memory_on_simulator_is_not_a_problem(self):
         lines = ["MEETMIND_EVAL env simulator=1 available_mb=0"] + [
             f"MEETMIND_EVAL model id={m} state=ready dir={m}-x" for m in sim.REQUIRED_MODELS]
         problems = sim.preflight_problems(sim.summarize_events([sim.parse_line(x) for x in lines]))
-        self.assertEqual(len(problems), 1)
-        self.assertIn("targetEnvironment(simulator)", problems[0])
+        # The model loader skips the memory reading on the simulator, so 0 is fine there.
+        self.assertEqual(problems, [])
 
     def test_follower_reads_only_complete_lines(self):
         with tempfile.TemporaryDirectory() as tmp:

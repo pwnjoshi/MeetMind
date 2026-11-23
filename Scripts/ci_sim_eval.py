@@ -83,12 +83,8 @@ def preflight_problems(state):
             problems.append(f"model {model_id}: no status line from the app")
         elif info.get("state") != "ready":
             problems.append(f"model {model_id}: {info.get('state')} (app expects folder {info.get('dir')})")
-    env = state["env"]
-    if env.get("simulator") == "1" and env.get("available_mb") == "0":
-        problems.append(
-            "os_proc_available_memory() returns 0 on the simulator, so LocalLanguageModel rejects every "
-            "model load. LocalLanguageModel.swift needs `#if os(iOS) && !targetEnvironment(simulator)` around "
-            "both os_proc_available_memory() uses.")
+    # available_mb is 0 on the simulator; LocalLanguageModel skips that check there
+    # (#if os(iOS) && !targetEnvironment(simulator)), so it is informational only.
     return problems
 
 
