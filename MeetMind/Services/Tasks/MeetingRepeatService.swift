@@ -70,7 +70,7 @@ public enum MeetingRepeatService {
         )
         occurrence.seriesID = seriesID
         occurrence.seriesName = meeting.seriesName ?? meeting.title
-        occurrence.agendaText = meeting.agendaText
+        occurrence.agendaText = PlannedAgenda.planned(meeting) // never the previous meeting's derived topics
         context.insert(occurrence)
         occurrence.participants = meeting.participants
         do {

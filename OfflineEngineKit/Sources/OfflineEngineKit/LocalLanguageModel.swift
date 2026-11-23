@@ -121,13 +121,13 @@ final class LocalLanguageModel {
         if question == nil {
             system += """
 
-            Examples:
-            "Pawan, can you prepare the agenda by Friday?" "Sure." -> task Prepare the agenda; owner Pawan; deadlineText "by Friday".
-            "Pawan ko agenda bhejna hai kal tak." -> task Send the agenda; owner Pawan; deadlineText "kal tak".
-            "Estimate kal bhej dega." -> task Send the estimate; owner null (Estimate is not a name).
-            "Let's go with the Pune vendor." -> decision: The Pune vendor is engaged (lower price).
-            "Vendor abhi decide nahi hua." -> no decision, no task.
-            "I can't do the report." -> nothing.
+            Examples ([X] = placeholder; use the transcript's own words):
+            "[Name], can you prepare the [document] by [day]?" "Sure." -> task Prepare the [document]; owner [Name]; deadlineText "by [day]".
+            "[Name] ko [document] bhejna hai kal tak." -> task Send the [document]; owner [Name]; deadlineText "kal tak".
+            "[Thing] kal bhej dega." -> task Send the [thing]; owner null ([Thing] is not a name).
+            "Let's go with the [option]." -> decision: The [option] is approved (stated reason).
+            "[Option] abhi decide nahi hua." -> no decision, no task.
+            "I can't do the [document]." -> nothing.
             """
         }
         system += "\nMeeting date: \(ISO8601DateFormatter().string(from: meetingDate)); timezone: \(timezone)."

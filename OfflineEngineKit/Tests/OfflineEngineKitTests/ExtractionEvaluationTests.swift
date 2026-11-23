@@ -467,8 +467,12 @@ final class ExtractionEvaluationTests: XCTestCase {
     func testPromptTeachesRequestAcceptanceHinglishDecisionAndNegation() throws {
         let turn = AnalysisTurn(id: "t1", text: "Hello", start: 0, end: 1, speaker: nil)
         let prompt = try LocalLanguageModel.makePrompt(turns: [turn], meetingDate: Date(), timezone: "UTC")
-        for needle in ["Pawan, can you", "bhejna hai", "let's go with", "decide nahi hua", "I can't do", "Estimate is not a name"] {
+        for needle in ["[Name], can you", "bhejna hai", "let's go with", "decide nahi hua", "I can't do", "is not a name"] {
             XCTAssertTrue(prompt.contains(needle), needle)
+        }
+        // Concrete example nouns were copied into real minutes ("The Pune vendor is engaged").
+        for leaked in ["Pune", "Pawan", "Estimate kal", "vendor"] {
+            XCTAssertFalse(prompt.contains(leaked), leaked)
         }
     }
 

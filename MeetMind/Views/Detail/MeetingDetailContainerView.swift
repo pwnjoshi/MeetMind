@@ -49,6 +49,8 @@ public struct MeetingDetailContainerView: View {
                 )
             }
         }
+        // Every meeting destination (plan, recording, processing, review, minutes) is full screen.
+        .toolbar(.hidden, for: .tabBar)
         .task(id: meeting?.id) { loadReviewState() }
     }
 
@@ -81,9 +83,9 @@ public struct MeetingDetailContainerView: View {
             )
         case .processing:
             MeetingProcessingView(meetingId: meetingId)
-        case .reviewChecklist:
-            MinutesReviewChecklistView(meeting: meeting)
-        case .finalMinutes:
+        case .reviewChecklist, .finalMinutes:
+            // Draft and final minutes both open the B6 minutes document; drafts reach the
+            // review checklist through its "Review and Finalize" action.
             MeetingDetailView(
                 viewModel: MeetingDetailViewModel(meeting: meeting, meetingId: meetingId, modelContext: modelContext)
             )

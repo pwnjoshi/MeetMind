@@ -2,10 +2,23 @@ import SwiftUI
 import SwiftData
 import OfflineEngineKit
 import Darwin
-import AVFoundation
 import UserNotifications
 
-/// Post-recording review and on-device minutes generation.
+private enum ProcessingStageState {
+    case done
+    case working
+    case waiting
+}
+
+private struct ProcessingStageRow: Identifiable {
+    let title: String
+    let first: Int
+    let last: Int
+    var id: Int { first }
+}
+
+/// Post-recording screen (Figma B4 "Writing minutes"). It shows honest progress while the on-device
+/// minutes are written and offers the next steps. When the minutes exist it opens the B6 document.
 public struct MeetingProcessingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -13,18 +26,13 @@ public struct MeetingProcessingView: View {
     @State private var showsVidur = false
     @Environment(\.scenePhase) private var scenePhase
     @Query private var meetings: [Meeting]
-    @State private var selectedSection = "Minutes"
     @State private var showsNameSpeakers = false
     @State private var showsPeople = false
     @State private var showsRename = false
     @State private var meetingTitleDraft = ""
     @State private var preparingSpeakers = false
-    @State private var showsReviewChecklist = false
+    @State private var showsMinutes = false
     @State private var showsTranscript = false
-    @State private var editingSegment: TranscriptSegment?
-    @State private var transcriptDraft = ""
-    @State private var audioPlayer: AVAudioPlayer?
-    @State private var audioPlaying = false
     @State private var processingError: String?
     @State private var viewModel: ProcessingPipelineViewModel
     @State private var missingModels: [ModelProfile] = []
@@ -47,153 +55,27 @@ public struct MeetingProcessingView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Button {
-                    meetingTitleDraft = meeting?.title ?? ""
-                    showsRename = true
-                } label: {
-                    Text(meeting?.title ?? "Quick meeting").font(.title.bold()).multilineTextAlignment(.leading)
-                }
-                .buttonStyle(.plain)
-                .disabled(meeting == nil)
-                .accessibilityHint("Rename this meeting")
-                if let meeting {
-                    Text(meeting.createdAt.formatted(date: .long, time: .shortened))
-                        .font(.footnote).foregroundStyle(.secondary)
-                    MeetingSeriesMenu(meeting: meeting) { processingError = $0 }
-                    ProcessingPeopleRow(meeting: meeting) { showsPeople = true }
-                }
-                Picker("Meeting section", selection: $selectedSection) {
-                    ForEach(["Minutes", "Actions", "Decisions"], id: \.self) { Text($0) }
-                }.pickerStyle(.segmented)
+            VStack(alignment: .leading, spacing: 20) {
+                header
                 TimelineView(.periodic(from: .now, by: 2)) { _ in
-                    if busy || OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil {
-                    progressCard
-                    }
-                }
-                TimelineView(.periodic(from: .now, by: 2)) { _ in
-                    VStack(alignment: .leading, spacing: 12) {
-                        if checkingModels {
-                            Text("Verifying on-device models").font(.title3.bold())
-                            ProgressView()
-                            Text("Checking each required model before processing starts.").foregroundStyle(.secondary)
-                        } else if busy {
-                            Text(processingTitle).font(.title3.bold())
-                            ProgressView(value: downloading ? downloadProgress : viewModel.overallProgress)
-                            Text("Your audio is saved on this iPhone.").foregroundStyle(.secondary)
-                            if preparingSpeakers {
-                                Button("Pause speaker review") { operation?.cancel() }
-                            } else {
-                                HStack {
-                                    Button("Keep in Background", systemImage: "clock") { queueAnalysis() }
-                                    Spacer()
-                                    Button("Pause", systemImage: "pause.fill") { operation?.cancel() }
-                                }
-                            }
-                        } else if let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId) {
-                            Text(backgroundStatus).font(.title3.bold())
-                            Text("Your audio is saved. You can leave and return to this meeting.")
-                                .foregroundStyle(.secondary)
-                            if ContinuedAnalysisRun.shared.isRunning(meetingID: meetingId) {
-                                Button("Pause", systemImage: "pause.fill") {
-                                    ContinuedAnalysisRun.shared.cancel(meetingID: meetingId)
-                                }
-                            }
-                        } else if viewModel.jobSnapshot?.state == .queued {
-                            Text("Queued").font(.title3.bold())
-                            Text("Your recording is saved and ready for on-device processing.")
-                                .foregroundStyle(.secondary)
-                            Button("Process Now") { start() }
-                        } else if modelsRequired {
-                            Text("Models Required").font(.title3.bold())
-                            Text("Download or repair these on-device models before processing:")
-                                .foregroundStyle(.secondary)
-                            ForEach(viewModel.modelStatuses.filter { $0.readiness != .ready }) { status in
-                                HStack {
-                                    Text(status.profile.name)
-                                    Spacer()
-                                    Text(ByteCountFormatter.string(fromByteCount: status.profile.downloadBytes, countStyle: .file))
-                                        .foregroundStyle(.secondary)
-                                }
-                                if case .corrupt(let reason) = status.readiness {
-                                    Text(reason).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            Text("Total download: \(missingModelSize)")
-                                .font(.subheadline.weight(.semibold))
-                            Button("Download & Continue") { start(download: true) }
-                                .buttonStyle(.borderedProminent)
-                        } else if viewModel.jobSnapshot?.state == .paused {
-                            Text("Processing paused").font(.title3.bold())
-                            Text("Your recording and completed steps are saved.").foregroundStyle(.secondary)
-                            Button("Retry") { start() }
-                        } else if let failure = viewModel.jobSnapshot?.failure {
-                            Text("Processing needs attention").font(.title3.bold())
-                            Text(failure.message).foregroundStyle(.secondary)
-                            recoveryButton(for: failure)
-                        } else if viewModel.jobSnapshot?.state == .speakerReview || meeting?.analysisState == "speakerReview" {
-                            Text("Speaker review").font(.title3.bold())
-                            Text(viewModel.jobSnapshot?.warning ?? "Assign detected voices, or continue with unnamed speakers.")
-                                .foregroundStyle(.secondary)
-                            Button("Review Speakers") { showsNameSpeakers = true }
-                        } else if isReadyForReview {
-                            reviewSection
-                        } else if selectedSection == "Minutes" {
-                            if meeting?.analysisState == "failed" || meeting?.analysisState == "paused" {
-                                Text(meeting?.analysisState == "failed" ? "Processing needs attention" : "Processing paused")
-                                    .font(.title3.bold())
-                                Text(processingError ?? "Your audio is saved. You can continue from the last completed step.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text("Who said what?").font(.title3.bold())
-                                Text("Name the voices so the minutes show who decided what and who owns each action.")
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let meeting {
-                                let rows = MeetingPeopleEditor.voices(in: meeting, record: MeetingRecordStore.shared.record(for: meeting.id))
-                                Text("\(rows.count) detected voices · \(rows.filter { $0.assignedPersonID != nil }.count) named")
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Button {
-                                if meeting?.analysisState == "speakerReview" {
-                                    showsNameSpeakers = true
-                                } else {
-                                    start(download: true, speakersOnly: true)
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text(meeting?.analysisState == "speakerReview" ? "Name Detected Voices" : "Detect Voices")
-                                    Image(systemName: "chevron.right").font(.caption)
-                                }
-                            }
-                        } else {
-                            Text("\(selectedSection) will appear after minutes are generated.").font(.headline)
-                            if selectedSection == "Actions" {
-                                Text("Review suggested actions before saving them.").foregroundStyle(.secondary)
-                            }
+                    VStack(alignment: .leading, spacing: 20) {
+                        statusCard
+                        if busy || OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil {
+                            progressSection
                         }
+                        nextSection
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(20)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                }
-                if selectedSection == "Minutes" {
-                    Button { showsTranscript = true } label: {
-                        HStack {
-                            Text("Transcript and audio").font(.headline)
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                            Spacer()
-                        }
-                        .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
                 }
                 if let processingError {
-                    Text(processingError).foregroundStyle(.secondary)
+                    Text(processingError)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }.padding(20)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
@@ -211,6 +93,7 @@ public struct MeetingProcessingView: View {
                             meetingTitleDraft = meeting.title
                             showsRename = true
                         }
+                        Button("People", systemImage: "person.2") { showsPeople = true }
                         Button("Show Transcript", systemImage: "doc.text") {
                             showsTranscript = true
                         }
@@ -222,34 +105,19 @@ public struct MeetingProcessingView: View {
             }
         }
         .tint(Theme.Colors.manentAccent)
-        .safeAreaInset(edge: .bottom) {
-            TimelineView(.periodic(from: .now, by: 2)) { _ in
-                let backgroundRunning = OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
-                let queued = OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil
-                    || viewModel.jobSnapshot?.state == .queued
-                Button {
-                    if isReadyForReview { showsReviewChecklist = true }
-                    else { start(download: modelsRequired) }
-                } label: {
-                    Text(isReadyForReview ? "Review Checklist" :
-                         (modelsRequired ? "Download & Continue" :
-                          (queued && !backgroundRunning ? "Process Now" : "Generate Minutes")))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.Colors.manentAccent)
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
-                .disabled(busy || checkingModels || backgroundRunning)
-                .padding()
-            }
-        }
+        .safeAreaInset(edge: .bottom) { bottomBar }
         .navigationDestination(isPresented: $showsVidur) {
             RootAskAISheet(meetingId: meetingId, modelContext: modelContext) { showsVidur = false }
         }
-        .navigationDestination(isPresented: $showsReviewChecklist) {
-            if let meeting { MinutesReviewChecklistView(meeting: meeting) }
+        .navigationDestination(isPresented: $showsMinutes) {
+            if let meeting {
+                MeetingDetailView(
+                    viewModel: MeetingDetailViewModel(meeting: meeting, meetingId: meetingId, modelContext: modelContext)
+                )
+            }
+        }
+        .navigationDestination(isPresented: $showsTranscript) {
+            MeetingTranscriptScreen(meetingId: meetingId)
         }
         .sheet(isPresented: $showsNameSpeakers) {
             if let meeting {
@@ -264,65 +132,6 @@ public struct MeetingProcessingView: View {
                     viewModel: MeetingDetailViewModel(meeting: meeting, meetingId: meeting.id, modelContext: modelContext)
                 )
                 .presentationDragIndicator(.visible)
-            }
-        }
-        .sheet(isPresented: $showsTranscript, onDismiss: {
-            audioPlayer?.stop()
-            audioPlayer = nil
-            audioPlaying = false
-        }) {
-            NavigationStack {
-                List {
-                    if let url = meeting?.resolvedAudioFileURL {
-                        Button(audioPlaying ? "Pause audio" : "Play audio",
-                               systemImage: audioPlaying ? "pause.fill" : "play.fill") {
-                            toggleSavedAudio(url)
-                        }
-                        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-                            audioPlaying = audioPlayer?.isPlaying == true
-                        }
-                    }
-                    Section("Transcript") {
-                        if let segments = meeting?.transcriptSegments, !segments.isEmpty {
-                            ForEach(segments.sorted { $0.startTime < $1.startTime }, id: \.id) { segment in
-                                Button {
-                                    transcriptDraft = segment.text
-                                    editingSegment = segment
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("\(segment.speakerDisplayName) · \(segment.formattedStartTime)")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                        Text(segment.text).foregroundStyle(.primary)
-                                    }
-                                }
-                                .disabled(OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId))
-                            }
-                        } else {
-                            ContentUnavailableView(
-                                "Transcript Not Available",
-                                systemImage: "doc.text.magnifyingglass",
-                                description: Text(meeting?.analysisState == "failed"
-                                    ? "Processing stopped before a transcript was saved. Retry processing from this meeting."
-                                    : "The transcript will appear after on-device processing completes.")
-                            )
-                        }
-                    }
-                }
-                .navigationTitle("Transcript and Audio")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showsTranscript = false }
-                    }
-                }
-                .alert("Edit Transcript", isPresented: Binding(
-                    get: { editingSegment != nil }, set: { if !$0 { editingSegment = nil } }
-                )) {
-                    TextField("Transcript", text: $transcriptDraft)
-                    Button("Cancel", role: .cancel) {}
-                    Button("Save", action: saveTranscriptCorrection)
-                        .disabled(transcriptDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
             }
         }
         .alert("Rename Meeting", isPresented: $showsRename) {
@@ -358,6 +167,383 @@ public struct MeetingProcessingView: View {
 
     private var meeting: Meeting? { meetings.first { $0.id == meetingId } }
 
+    // MARK: Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                meetingTitleDraft = meeting?.title ?? ""
+                showsRename = true
+            } label: {
+                Text(meeting?.title ?? "Quick meeting")
+                    .font(.largeTitle.bold())
+                    .multilineTextAlignment(.leading)
+            }
+            .buttonStyle(.plain)
+            .disabled(meeting == nil)
+            .accessibilityHint("Rename this meeting")
+            if let meeting {
+                Text(subtitle(for: meeting))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                MeetingSeriesMenu(meeting: meeting) { processingError = $0 }
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    private func subtitle(for meeting: Meeting) -> String {
+        var parts = [meeting.createdAt.formatted(date: .abbreviated, time: .shortened)]
+        if meeting.duration >= 30 {
+            parts.append("\(max(1, Int((meeting.duration / 60).rounded()))) min")
+        }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
+    // MARK: Status card
+
+    private var isRunning: Bool {
+        busy || OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
+    }
+
+    private func panel<Content: View>(highlight: Bool = false, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) { content() }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .background {
+                if highlight {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [Theme.Colors.manentAccent.opacity(0.16), Color.blue.opacity(0.08)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing))
+                } else {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                }
+            }
+    }
+
+    private var runningProgress: Double {
+        if downloading { return max(0, min(1, downloadProgress)) }
+        if busy { return max(0, min(1, viewModel.overallProgress)) }
+        return Double(max(activeStep, 0)) / 5.0
+    }
+
+    private var runningTitle: String {
+        if downloading { return "Downloading models\u{2026}" }
+        switch activeStep {
+        case ..<1: return preparingSpeakers ? "Preparing speaker review\u{2026}" : "Getting ready\u{2026}"
+        case 1: return "Writing the transcript\u{2026}"
+        case 2: return "Finding speakers\u{2026}"
+        default: return "Writing minutes\u{2026}"
+        }
+    }
+
+    private func progressRing(_ value: Double) -> some View {
+        ZStack {
+            Circle().stroke(Theme.Colors.manentAccent.opacity(0.18), lineWidth: 5)
+            Circle()
+                .trim(from: 0, to: max(0.05, min(1, value)))
+                .stroke(Theme.Colors.manentAccent, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 44, height: 44)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var statusCard: some View {
+        if checkingModels {
+            panel {
+                Text("Verifying on-device models").font(.title3.bold())
+                ProgressView()
+                Text("Checking each required model before processing starts.").foregroundStyle(.secondary)
+            }
+        } else if busy {
+            panel(highlight: true) {
+                runningHeader(detail: "Audio and text stay on this iPhone.")
+                if preparingSpeakers {
+                    Button("Pause speaker review", systemImage: "pause.fill") { operation?.cancel() }
+                } else {
+                    HStack {
+                        Button("Keep in Background", systemImage: "clock") { queueAnalysis() }
+                        Spacer()
+                        Button("Pause", systemImage: "pause.fill") { operation?.cancel() }
+                    }
+                }
+            }
+        } else if let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId) {
+            panel(highlight: true) {
+                runningHeader(detail: backgroundStatus)
+                if ContinuedAnalysisRun.shared.isRunning(meetingID: meetingId) {
+                    Button("Pause", systemImage: "pause.fill") {
+                        ContinuedAnalysisRun.shared.cancel(meetingID: meetingId)
+                    }
+                }
+            }
+        } else if viewModel.jobSnapshot?.state == .queued {
+            panel {
+                Text("Queued").font(.title3.bold())
+                Text("Your recording is saved and ready for on-device processing.")
+                    .foregroundStyle(.secondary)
+                Button("Process Now") { start() }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if modelsRequired {
+            panel {
+                Text("Models Required").font(.title3.bold())
+                Text("Download or repair these on-device models before processing:")
+                    .foregroundStyle(.secondary)
+                ForEach(viewModel.modelStatuses.filter { $0.readiness != .ready }) { status in
+                    HStack {
+                        Text(status.profile.name)
+                        Spacer()
+                        Text(ByteCountFormatter.string(fromByteCount: status.profile.downloadBytes, countStyle: .file))
+                            .foregroundStyle(.secondary)
+                    }
+                    if case .corrupt(let reason) = status.readiness {
+                        Text(reason).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("Total download: \(missingModelSize)")
+                    .font(.subheadline.weight(.semibold))
+                Button("Download & Continue") { start(download: true) }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if viewModel.jobSnapshot?.state == .paused {
+            panel {
+                Text("Processing paused").font(.title3.bold())
+                Text("Your recording and completed steps are saved.").foregroundStyle(.secondary)
+                Button("Retry") { start() }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if let failure = viewModel.jobSnapshot?.failure {
+            panel {
+                Text("Processing needs attention").font(.title3.bold())
+                Text(failure.message).foregroundStyle(.secondary)
+                recoveryButton(for: failure)
+            }
+        } else if viewModel.jobSnapshot?.state == .speakerReview || meeting?.analysisState == "speakerReview" {
+            panel {
+                Text("Who said what?").font(.title3.bold())
+                Text(viewModel.jobSnapshot?.warning ?? "Assign detected voices, or continue with unnamed speakers.")
+                    .foregroundStyle(.secondary)
+                Button("Name the Voices") { showsNameSpeakers = true }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if isReadyForReview {
+            panel(highlight: true) {
+                Text("Minutes are ready").font(.title3.bold())
+                Text("Review the draft before you share it.").foregroundStyle(.secondary)
+                Button("Open Minutes") { showsMinutes = true }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else {
+            panel {
+                if meeting?.analysisState == "failed" || meeting?.analysisState == "paused" {
+                    Text(meeting?.analysisState == "failed" ? "Processing needs attention" : "Processing paused")
+                        .font(.title3.bold())
+                    Text(processingError ?? "Your audio is saved. You can continue from the last completed step.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Recording saved").font(.title3.bold())
+                    Text("Your audio is saved on this iPhone. Generate minutes when you are ready.")
+                        .foregroundStyle(.secondary)
+                }
+                if meeting?.analysisState != "speakerReview" && meeting?.analysisState != "completed" {
+                    Button("Detect Voices", systemImage: "waveform") {
+                        start(download: true, speakersOnly: true)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func runningHeader(detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            progressRing(runningProgress)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(runningTitle).font(.headline)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        ProgressView(value: runningProgress)
+            .tint(Theme.Colors.manentAccent)
+            .accessibilityLabel("Progress")
+            .accessibilityValue("\(Int((runningProgress * 100).rounded())) percent")
+        Text("You can close the app. We\u{2019}ll notify you when it\u{2019}s ready.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+    }
+
+    // MARK: Progress
+
+    private var voiceRows: [MeetingVoiceRow] {
+        guard let meeting else { return [] }
+        return MeetingPeopleEditor.voices(in: meeting, record: MeetingRecordStore.shared.record(for: meeting.id))
+    }
+
+    private var stageRows: [ProcessingStageRow] {
+        var rows = [
+            ProcessingStageRow(title: "Transcript", first: 1, last: 1),
+            ProcessingStageRow(title: "Speakers found", first: 2, last: 2)
+        ]
+        if !preparingSpeakers {
+            rows.append(ProcessingStageRow(title: "Minutes, decisions, actions", first: 3, last: 4))
+        }
+        return rows
+    }
+
+    private func stageState(_ row: ProcessingStageRow) -> ProcessingStageState {
+        if activeStep > row.last { return .done }
+        if isRunning && activeStep >= row.first { return .working }
+        return .waiting
+    }
+
+    private func stageDetail(_ row: ProcessingStageRow, state: ProcessingStageState) -> String {
+        switch state {
+        case .working: return "Working"
+        case .waiting: return "Waiting"
+        case .done:
+            if row.first == 2 {
+                let count = voiceRows.count
+                return count > 0 ? (count == 1 ? "1 voice" : "\(count) voices") : "Done"
+            }
+            return "Done"
+        }
+    }
+
+    private var progressSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Progress").font(.title3.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("Recording saved").font(.body)
+                    Spacer(minLength: 8)
+                    if let meeting, meeting.duration >= 30 {
+                        Text("\(max(1, Int((meeting.duration / 60).rounded()))) min")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 14)
+                .accessibilityElement(children: .combine)
+                ForEach(stageRows) { row in
+                    Divider()
+                    let state = stageState(row)
+                    HStack(spacing: 12) {
+                        Image(systemName: state == .done ? "checkmark.circle.fill" : (state == .working ? "circle.dotted" : "circle"))
+                            .foregroundStyle(state == .done ? Color.green : (state == .working ? Theme.Colors.manentAccent : Color.secondary))
+                        Text(row.title).font(.body)
+                        Spacer(minLength: 8)
+                        Text(stageDetail(row, state: state))
+                            .font(.subheadline)
+                            .foregroundStyle(state == .working ? Theme.Colors.manentAccent : Color.secondary)
+                    }
+                    .padding(.vertical, 14)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .padding(.horizontal, 16)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+    }
+
+    // MARK: Next
+
+    @ViewBuilder
+    private var nextSection: some View {
+        let rows = voiceRows
+        let unnamed = rows.filter { $0.assignedPersonID == nil }.count
+        let canNameVoices = unnamed > 0 && (activeStep >= 3 || isReadyForReview)
+        let showsTranscriptRow = meeting?.resolvedAudioFileURL != nil || !(meeting?.transcriptSegments.isEmpty ?? true)
+        if canNameVoices || showsTranscriptRow {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Next").font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                VStack(spacing: 0) {
+                    if canNameVoices {
+                        nextRow(
+                            icon: "person.2.fill",
+                            title: unnamed == 1 ? "Name the voice" : "Name the \(unnamed) voices",
+                            detail: "So minutes show who decided what",
+                            tint: Theme.Colors.manentAccent
+                        ) { showsNameSpeakers = true }
+                    }
+                    if canNameVoices && showsTranscriptRow { Divider().padding(.leading, 56) }
+                    if showsTranscriptRow {
+                        nextRow(
+                            icon: "doc.text",
+                            title: "Transcript and audio",
+                            detail: "Read and play the recording",
+                            tint: Color.primary
+                        ) { showsTranscript = true }
+                        .disabled(busy)
+                    }
+                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            }
+        }
+    }
+
+    private func nextRow(icon: String, title: String, detail: String, tint: Color,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: icon).font(.title3).foregroundStyle(tint).frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.body).foregroundStyle(tint)
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Bottom bar
+
+    @ViewBuilder
+    private var bottomBar: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { _ in
+            let backgroundRunning = OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
+            let queued = OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil
+                || viewModel.jobSnapshot?.state == .queued
+            if !busy && !backgroundRunning {
+                Button {
+                    if isReadyForReview { showsMinutes = true }
+                    else { start(download: modelsRequired) }
+                } label: {
+                    Text(isReadyForReview ? "Open Minutes" :
+                         (modelsRequired ? "Download & Continue" :
+                          (queued ? "Process Now" : "Generate Minutes")))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.Colors.manentAccent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .disabled(checkingModels)
+                .padding()
+            }
+        }
+    }
+
+    // MARK: State
+
     private var modelsRequired: Bool {
         viewModel.modelStatuses.contains { $0.readiness != .ready }
     }
@@ -386,122 +572,6 @@ public struct MeetingProcessingView: View {
 
     private var isReadyForReview: Bool {
         meeting?.analysisState == "completed" && meeting?.summary != nil
-    }
-
-    @ViewBuilder
-    private var reviewSection: some View {
-        switch selectedSection {
-        case "Minutes":
-            Text("Minutes ready for review").font(.title3.bold())
-            if let summary = meeting?.summary {
-                ForEach(Array(summary.keyPoints.prefix(4).enumerated()), id: \.offset) { _, point in
-                    Text(point).font(.body).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Text("Review the transcript or name voices before finalizing.")
-                .font(.subheadline).foregroundStyle(.secondary)
-        case "Actions":
-            let actions = meeting?.actionItems ?? []
-            Text(actions.isEmpty ? "No action items found" : "Suggested actions").font(.title3.bold())
-            if actions.isEmpty {
-                Text("Minutes found no grounded commitments to turn into tasks.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            } else {
-                ForEach(actions.prefix(4), id: \.id) { action in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(action.title).font(.body.weight(.medium))
-                        Text(action.assignee?.name ?? "Unassigned").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        default:
-            let decisions = meeting?.summary?.keyDecisions ?? []
-            Text(decisions.isEmpty ? "No decisions found" : "Decisions").font(.title3.bold())
-            if decisions.isEmpty {
-                Text("No explicit decision was found in this meeting.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            } else {
-                ForEach(Array(decisions.prefix(4).enumerated()), id: \.offset) { _, decision in
-                    Text(decision).font(.body).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private func detectedVoices(in meeting: Meeting) -> [Speaker] {
-        meeting.participants.filter { $0.recordingVoiceLabel != nil }
-    }
-
-    private func saveTranscriptCorrection() {
-        let text = transcriptDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let segment = editingSegment, !text.isEmpty, text != segment.text,
-              !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) else { return }
-        let previous = (segment.text, segment.isEdited)
-        segment.text = text
-        segment.isEdited = true
-        do { try modelContext.save() }
-        catch {
-            (segment.text, segment.isEdited) = previous
-            processingError = error.localizedDescription
-        }
-    }
-
-    private var stageRows: [(title: String, index: Int)] {
-        let rows: [(title: String, index: Int)] = [
-            ("Transcribing", 1),
-            ("Identifying speakers", 2),
-            ("Writing minutes", 3),
-            ("Saving", 4)
-        ]
-        return preparingSpeakers ? Array(rows.prefix(2)) : rows
-    }
-
-    private func stageDetail(_ index: Int, running: Bool) -> (text: String, done: Bool, working: Bool) {
-        if index < activeStep { return ("Done", true, false) }
-        if index == activeStep && running { return ("Working", false, true) }
-        return ("Waiting", false, false)
-    }
-
-    private var progressCard: some View {
-        let running = busy || OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
-        let backgroundStatus = OfflineAnalysisBackgroundScheduler.status(for: meetingId)
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Progress").font(.headline)
-            if let backgroundStatus, !busy {
-                Label(backgroundStatus, systemImage: "clock")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text("Recording saved").font(.subheadline)
-                    Spacer()
-                }
-                .padding(.vertical, 12)
-                ForEach(stageRows, id: \.index) { row in
-                    Divider()
-                    let detail = stageDetail(row.index, running: running)
-                    HStack(spacing: 12) {
-                        Image(systemName: detail.done ? "checkmark.circle.fill" : (detail.working ? "circle.dotted" : "circle"))
-                            .foregroundStyle(detail.done ? Color.green : (detail.working ? Theme.Colors.manentAccent : Color.secondary))
-                        Text(row.title).font(.subheadline)
-                        Spacer()
-                        Text(detail.text)
-                            .font(.subheadline)
-                            .foregroundStyle(detail.working ? Theme.Colors.manentAccent : Color.secondary)
-                    }
-                    .padding(.vertical, 12)
-                    .accessibilityElement(children: .combine)
-                }
-            }
-            .padding(.horizontal, 16)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        }
-    }
-
-    private var processingSteps: [String] {
-        let preparation = ["Prepare on-device models", "Create transcript", "Identify speakers"]
-        return preparingSpeakers ? preparation : preparation + ["Generate minutes", "Save results"]
     }
 
     private var activeStep: Int {
@@ -544,43 +614,6 @@ public struct MeetingProcessingView: View {
         catch {
             meeting.title = previousTitle
             processingError = error.localizedDescription
-        }
-    }
-
-    private var processingTitle: String {
-        if viewModel.jobSnapshot?.state == .verifying { return "Verifying on-device models" }
-        if downloading { return "Downloading on-device models" }
-        switch viewModel.currentStep {
-        case .initial: return "Preparing on-device models"
-        case .audio: return "Creating transcript"
-        case .diarization:
-            // Windows transcribed while recording are reused, so the transcript
-            // can already be complete when speaker identification begins.
-            if let reuse = TranscriptReuseRegistry.shared.summary(for: meetingId) {
-                if reuse.fullyReused { return "Transcript ready from recording \u{2014} identifying speakers" }
-                if reuse.partiallyReused { return "Transcript ready \u{2014} identifying speakers" }
-            }
-            return "Identifying speakers"
-        case .summarization: return "Creating minutes"
-        case .actions, .completed: return "Saving results"
-        }
-    }
-
-
-
-    private func toggleSavedAudio(_ url: URL) {
-        do {
-            if audioPlayer == nil { audioPlayer = try AVAudioPlayer(contentsOf: url) }
-            guard let audioPlayer else { return }
-            if audioPlayer.isPlaying {
-                audioPlayer.pause()
-                audioPlaying = false
-            } else {
-                audioPlaying = audioPlayer.play()
-            }
-        } catch {
-            processingError = error.localizedDescription
-            showsTranscript = false
         }
     }
 
@@ -776,42 +809,6 @@ struct OfflinePipelineSmokeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { operation?.cancel() }
         }
-    }
-}
-
-@MainActor
-private struct ProcessingPeopleRow: View {
-    let meeting: Meeting
-    let openVoices: () -> Void
-
-    private var voiceRows: [MeetingVoiceRow] {
-        MeetingPeopleEditor.voices(in: meeting, record: MeetingRecordStore.shared.record(for: meeting.id))
-    }
-    private var voices: [Speaker] { meeting.participants.filter { $0.isUnnamedVoice } }
-    private var attendees: [Speaker] { meeting.namedAttendees }
-
-    var body: some View {
-        Button(action: openVoices) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("People").foregroundStyle(.primary)
-                    Text("\(attendees.count) attendees · \(voiceRows.count) detected voices")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-                Spacer()
-                HStack(spacing: -6) {
-                    ForEach(Array((attendees + voices).prefix(4)), id: \.id) { voice in
-                        Text(voice.initials).font(.caption2.bold()).foregroundStyle(.white)
-                            .frame(width: 28, height: 28).background(Color(hex: voice.avatarColorHex), in: Circle())
-                            .overlay(Circle().strokeBorder(.background, lineWidth: 1))
-                    }
-                }
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-            }
-            .padding(16).background(.background, in: RoundedRectangle(cornerRadius: 24))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("People and detected voices")
     }
 }
 

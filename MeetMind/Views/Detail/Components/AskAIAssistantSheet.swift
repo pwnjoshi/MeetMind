@@ -3,35 +3,6 @@ import SwiftData
 import UIKit
 import OfflineEngineKit
 
-/// "Thinking..." placeholder with a light sweep. Static when Reduce Motion is on.
-private struct VidurThinkingShimmer: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sweep: CGFloat = -0.6
-
-    var body: some View {
-        Text("Thinking\u{2026}")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .overlay {
-                if !reduceMotion {
-                    GeometryReader { proxy in
-                        LinearGradient(colors: [Color.clear, Color.white.opacity(0.85), Color.clear],
-                                       startPoint: .leading, endPoint: .trailing)
-                            .frame(width: proxy.size.width * 0.5)
-                            .offset(x: sweep * proxy.size.width)
-                    }
-                    .mask { Text("Thinking\u{2026}").font(.subheadline) }
-                    .allowsHitTesting(false)
-                }
-            }
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.linear(duration: 1.3).repeatForever(autoreverses: false)) { sweep = 1.1 }
-            }
-            .accessibilityLabel("Vidur is thinking")
-    }
-}
-
 /// One question and its answer as shown in the Vidur conversation.
 private struct VidurConversationItem: Identifiable {
     enum Phase { case searching, refining, done }
@@ -43,6 +14,9 @@ private struct VidurConversationItem: Identifiable {
     var kind: VidurAnswerKind?
     var notice: String?
     var tier: VidurAnswerTier = .none
+    var people: [String] = []
+    var relatedTasks: [VidurQuickTask] = []
+    var suggestions: [String] = []
     var phase: Phase = .done
 
     init(prompt: String, answerText: String, citations: [VidurCitation], kind: VidurAnswerKind?,
@@ -77,7 +51,7 @@ public struct AskAIAssistantSheet: View {
     @State private var localItems: [VidurConversationItem] = []
     @State private var isLocalBusy = false
     @State private var answerTask: Task<Void, Never>?
-    @State private var expandedSources: Set<UUID> = []
+    @Environment(SettingsViewModel.self) private var settings: SettingsViewModel?
 
     public init(
         history: [(prompt: String, response: AIAnswerResponse)],
@@ -130,7 +104,7 @@ public struct AskAIAssistantSheet: View {
                 LazyVStack(alignment: .leading, spacing: Spacing.md) {
                     if items.isEmpty { emptyStateView }
                     ForEach(items) { item in
-                        conversationView(item)
+                        conversationRow(item)
                     }
                     if isBusy {
                         HStack(spacing: Spacing.sm) {
@@ -212,19 +186,38 @@ public struct AskAIAssistantSheet: View {
 
     // MARK: Empty state
 
-    private var suggestions: [(question: String, detail: String)] {
-        var list: [(question: String, detail: String)] = [
-            ("What did we decide?", "Decisions and supporting audio"),
-            ("Which actions did we agree on?", "Owners and due dates"),
-            ("What is still unresolved?", "Open questions")
+    private var suggestions: [String] {
+        var list = [
+            "What did we decide?",
+            "Which actions did we agree on?",
+            "What is still unresolved?"
         ]
         if let meeting, scope != .thisMeeting, meeting.seriesID != nil {
-            let name = meeting.seriesName ?? "this"
-            list[2] = ("What changed since the last meeting?", "Across the \(name) series")
+            list[2] = "What changed since the last meeting?"
         }
         return list
     }
 
+    @MainActor
+    private var recentQuestions: [VidurSuggestionList.Recent] {
+        var entries = VidurPreferences.shared.history
+        if let meeting, scope == .thisMeeting {
+            entries = entries.filter { $0.meetingID == meeting.id }
+        }
+        var seen = Set<String>()
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        var result: [VidurSuggestionList.Recent] = []
+        for entry in entries where seen.insert(entry.question).inserted {
+            result.append(VidurSuggestionList.Recent(
+                question: entry.question,
+                when: formatter.localizedString(for: entry.askedAt, relativeTo: Date())))
+            if result.count == 3 { break }
+        }
+        return result
+    }
+
+    @MainActor
     private var emptyStateView: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) {
@@ -253,36 +246,10 @@ public struct AskAIAssistantSheet: View {
                 in: RoundedRectangle(cornerRadius: 22, style: .continuous)
             )
             .accessibilityElement(children: .combine)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("SUGGESTED")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 12)
-                VStack(spacing: 0) {
-                    ForEach(Array(suggestions.enumerated()), id: \.offset) { offset, suggestion in
-                        Button { send(suggestion.question) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "sparkle")
-                                    .foregroundStyle(Theme.Colors.manentAccent)
-                                    .frame(width: 24)
-                                    .accessibilityHidden(true)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(suggestion.question).foregroundStyle(.primary)
-                                    Text(suggestion.detail).font(.footnote).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                            }
-                            .padding(16)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(busy)
-                        if offset < suggestions.count - 1 { Divider().padding(.leading, 52) }
-                    }
-                }
-                .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            VidurSuggestionList(suggestions: suggestions, recent: recentQuestions) { question in
+                send(question)
             }
+            .disabled(busy)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -298,100 +265,26 @@ public struct AskAIAssistantSheet: View {
     // MARK: Conversation
 
     @MainActor
-    private func conversationView(_ item: VidurConversationItem) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(item.prompt)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(16)
-                .background(Theme.Colors.manentAccent, in: RoundedRectangle(cornerRadius: 22))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.caption)
-                        .foregroundStyle(.white)
-                        .frame(width: 26, height: 26)
-                        .background(Theme.Colors.manentAccent, in: Circle())
-                        .accessibilityHidden(true)
-                    Text("Vidur").font(.subheadline.weight(.semibold))
-                    Spacer()
-                    if let origin = sourceCountText(item.citations) {
-                        Text(origin).font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                if item.answerText.isEmpty {
-                    VidurThinkingShimmer()
-                } else {
-                    Text(item.answerText).textSelection(.enabled)
-                }
-                if item.phase == .done, item.tier == .structured || item.tier == .quote {
-                    Label("Quick answer", systemImage: "bolt")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if let notice = item.notice, item.phase == .done {
-                    Label(notice, systemImage: "info.circle")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if item.phase == .refining, !item.answerText.isEmpty {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini)
-                        Text("Checking the minutes and transcript\u{2026}")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
+    private func conversationRow(_ item: VidurConversationItem) -> some View {
+        let model = VidurAnswerCardModel(
+            text: item.answerText,
+            citations: item.citations,
+            people: item.people,
+            tasks: item.relatedTasks,
+            suggestions: item.phase == .done ? item.suggestions : [],
+            notice: item.notice,
+            isQuick: item.tier == .structured || item.tier == .quote,
+            isRefining: item.phase == .refining,
+            currentMeetingID: meeting?.id)
+        return VidurConversationRow(
+            prompt: item.prompt,
+            model: model,
+            showsSources: VidurPreferences.shared.showsSources,
+            now: Date(),
+            onOpenSource: { openSource($0) },
+            onOpenTask: { openTask($0) },
+            onAsk: { send($0) })
             .animation(.easeOut(duration: 0.2), value: item.phase)
-            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background, in: RoundedRectangle(cornerRadius: 22))
-            if VidurPreferences.shared.showsSources, !item.citations.isEmpty {
-                sourceChips(item.citations)
-                ForEach(item.citations.filter { expandedSources.contains($0.id) }) { citation in
-                    citationRow(citation)
-                }
-            }
-        }
-    }
-
-    private func sourceCountText(_ citations: [VidurCitation]) -> String? {
-        let titles = Set(citations.map { $0.meetingTitle })
-        guard !titles.isEmpty else { return nil }
-        return titles.count == 1 ? "From 1 meeting" : "From \(titles.count) meetings"
-    }
-
-    private func chipTitle(_ citation: VidurCitation) -> String {
-        var parts: [String] = []
-        if !isCurrentMeeting(citation) { parts.append(String(citation.meetingTitle.prefix(18))) }
-        if let label = citation.sourceLabel {
-            parts.append(label)
-        } else if let speaker = citation.speaker, !speaker.isEmpty {
-            parts.append(speaker.split(separator: " ").first.map(String.init) ?? speaker)
-        }
-        if citation.hasTimestamp { parts.append(citation.timecode) }
-        return parts.isEmpty ? "Source" : parts.joined(separator: " \u{00B7} ")
-    }
-
-    private func sourceChips(_ citations: [VidurCitation]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(citations) { citation in
-                    let isExpanded = expandedSources.contains(citation.id)
-                    Button {
-                        if isExpanded { expandedSources.remove(citation.id) } else { expandedSources.insert(citation.id) }
-                    } label: {
-                        Label(chipTitle(citation), systemImage: citation.sourceLabel == nil ? "waveform" : "doc.text")
-                            .font(.caption.weight(.medium))
-                            .lineLimit(1)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(isExpanded ? Theme.Colors.manentAccent.opacity(0.18) : Theme.Colors.manentAccent.opacity(0.08),
-                                        in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(isExpanded ? "Hide this source" : "Show this source")
-                }
-            }
-        }
     }
 
     private func isCurrentMeeting(_ citation: VidurCitation) -> Bool {
@@ -402,34 +295,23 @@ public struct AskAIAssistantSheet: View {
         citation.hasTimestamp && isCurrentMeeting(citation) && (meeting?.hasAudio ?? true)
     }
 
-    @ViewBuilder
-    private func citationRow(_ citation: VidurCitation) -> some View {
-        let stamp = citation.hasTimestamp ? " \u{00B7} \(citation.timecode)" : ""
-        let kind = citation.sourceLabel.map { "Minutes \u{00B7} \($0)" } ?? "Source"
-        let heading = isCurrentMeeting(citation)
-            ? "\(kind)\(stamp)"
-            : "\(citation.meetingTitle) \u{00B7} \(citation.sourceLabel ?? "Source")\(stamp)"
-        let detail = citation.quote.isEmpty ? "Play the supporting passage" : citation.quote
+    /// Plays the recording at the cited moment, or opens the meeting the source came from.
+    @MainActor
+    private func openSource(_ citation: VidurCitation) {
         if canPlay(citation) {
-            Button {
-                onSeekToCitation(AICitation(timestamp: citation.timestamp, segmentText: citation.quote))
-            } label: {
-                citationLabel(heading: heading, detail: detail, showsPlay: true)
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Play the recording at this passage")
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                citationLabel(heading: heading, detail: detail, showsPlay: false)
-                if let meetingID = citation.meetingID,
-                   meetingID != meeting?.id,
-                   meetingExists(meetingID) {
-                    Button("Open \(citation.meetingTitle)") { onOpenMeeting(meetingID) }
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 16)
-                        .accessibilityHint("Opens the cited meeting")
-                }
-            }
+            onSeekToCitation(AICitation(timestamp: citation.timestamp, segmentText: citation.quote))
+        } else if let meetingID = citation.meetingID, meetingID != meeting?.id, meetingExists(meetingID) {
+            onOpenMeeting(meetingID)
+        }
+    }
+
+    /// Opens the meeting a task belongs to. Tasks of the current meeting close Vidur instead.
+    @MainActor
+    private func openTask(_ task: VidurQuickTask) {
+        if task.meetingID == meeting?.id {
+            onDismiss()
+        } else if meetingExists(task.meetingID) {
+            onOpenMeeting(task.meetingID)
         }
     }
 
@@ -438,23 +320,6 @@ public struct AskAIAssistantSheet: View {
         let context = meeting?.modelContext ?? modelContext
         return ((try? context.fetch(FetchDescriptor<Meeting>())) ?? []).contains { $0.id == id }
     }
-
-    private func citationLabel(heading: String, detail: String, showsPlay: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(heading)
-                Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
-            }
-            Spacer()
-            if showsPlay {
-                Image(systemName: "play.circle").font(.title3).foregroundStyle(Theme.Colors.manentAccent)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background, in: RoundedRectangle(cornerRadius: 20))
-    }
-
     // MARK: Input
 
     private var inputPlaceholder: String {
@@ -512,7 +377,8 @@ public struct AskAIAssistantSheet: View {
             question: question, sources: sources, facts: facts, length: VidurPreferences.shared.answerLength,
             allowRefinement: meeting.status != .processing, additionalFacts: extraFacts,
             history: conversationHistory(),
-            userDisabledRefinement: !VidurDeepAnswerSetting.isEnabled)
+            userDisabledRefinement: !VidurDeepAnswerSetting.isEnabled,
+            selfNames: [settings?.userProfile?.name ?? UserProfile.defaultLocalName])
         let item = VidurConversationItem(prompt: question, answerText: "", citations: [], kind: nil, notice: nil,
                                          phase: .searching)
         let itemID = item.id
@@ -540,6 +406,9 @@ public struct AskAIAssistantSheet: View {
             localItems[index].citations = answer.citations
             localItems[index].kind = answer.kind
             localItems[index].notice = answer.notice
+            localItems[index].people = answer.people
+            localItems[index].relatedTasks = answer.relatedTasks
+            localItems[index].suggestions = answer.suggestions
         }
         localItems[index].tier = update.tier
         switch update.stage {

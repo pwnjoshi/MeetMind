@@ -39,11 +39,13 @@ public struct VidurTieredRequest: Sendable {
     public let history: [VidurChatTurn]
     /// True when the user turned off deep answers in Settings.
     public let userDisabledRefinement: Bool
+    /// Names the user goes by, so "my tasks" and "what do I owe" find their own tasks.
+    public let selfNames: [String]
 
     public init(question: String, sources: [VidurSourceMeeting], facts: VidurMeetingFacts?,
                 length: VidurAnswerLength, allowRefinement: Bool = true,
                 additionalFacts: [VidurMeetingFacts] = [], history: [VidurChatTurn] = [],
-                userDisabledRefinement: Bool = false) {
+                userDisabledRefinement: Bool = false, selfNames: [String] = [UserProfile.defaultLocalName]) {
         self.question = question
         self.sources = sources
         self.facts = facts
@@ -52,6 +54,7 @@ public struct VidurTieredRequest: Sendable {
         self.additionalFacts = additionalFacts
         self.history = history
         self.userDisabledRefinement = userDisabledRefinement
+        self.selfNames = selfNames
     }
 }
 
@@ -137,90 +140,58 @@ public enum VidurTieredAnswerService {
             return
         }
 
-        // Tier 0: saved minutes, tasks, decisions, people.
-        var structuredAnswer: VidurAnswer?
-        var structuredComplete = false
-        if let facts = request.facts,
-           let structured = VidurStructuredAnswerer.answer(
-               question: question, facts: facts,
-               extraNames: request.sources.flatMap { $0.turns.compactMap(\.speaker) }) {
-            structuredAnswer = VidurAnswer(text: structured.answer.text, citations: structured.answer.citations,
-                                           kind: .extractive, notice: "From the minutes saved for this meeting.")
-            structuredComplete = structured.isComplete
-        }
+        // Tiers 0 and 1: saved minutes, tasks, people and transcripts of every meeting in scope.
+        // Pure in-memory search, so this takes milliseconds.
+        let records = VidurRecordAdapter.records(facts: allFacts, sources: request.sources)
+        let quick = VidurQuickAnswerer.answer(question: question, records: records, history: request.history,
+                                              selfNames: request.selfNames)
+        let quickAnswer = VidurAnswer(quick: quick)
+        let found = quick.confidence != .notFound
+        let quickTier: VidurAnswerTier = !found ? .none : (quick.intent == .topic ? .quote : .structured)
         guard !Task.isCancelled else { return }
 
-        // Tier 1: exact quotes ranked by BM25. Not needed when the minutes answer the question fully.
-        var quote: VidurAnswer?
-        if !structuredComplete {
-            let speakers = VidurFastAnswerer.speakerFilter(question: question, sources: request.sources)
-            quote = VidurFastAnswerer.answer(question: question, sources: request.sources, speakerFilter: speakers)
+        // A model only helps when the saved data found nothing, or the question asks "why" or "how".
+        let needsDeepAnswer = quick.confidence == .notFound || (quick.confidence == .partial && quick.wantsReasoning)
+        guard needsDeepAnswer else {
+            emit(.init(stage: .final, tier: quickTier, answer: quickAnswer))
+            return
         }
-        let best: VidurAnswer?
-        let bestTier: VidurAnswerTier
-        if structuredComplete { best = structuredAnswer; bestTier = .structured }
-        else if let quote { best = quote; bestTier = .quote }
-        else if let structuredAnswer { best = structuredAnswer; bestTier = .structured }
-        else { best = nil; bestTier = .none }
-
         guard request.allowRefinement, await hooks.refinementAvailable() else {
-            if let best {
-                emit(.init(stage: .final, tier: bestTier, answer: best))
-            } else if request.userDisabledRefinement {
-                emit(.init(stage: .final, tier: .none, answer: VidurAnswer(
-                    text: "Nothing matched in the quick search. Turn on Deep answers in Settings, Vidur, for a full search.",
-                    kind: .notFound)))
+            let notice: String?
+            if request.userDisabledRefinement {
+                notice = "Turn on Deep answers in Settings, Vidur, for a full search."
             } else if !request.allowRefinement {
-                emit(.init(stage: .final, tier: .none, answer: VidurAnswer(
-                    text: "Minutes are still being generated, so Vidur can only use quick matches right now. Nothing matched.",
-                    kind: .unavailable)))
+                notice = "Minutes are still being generated, so Vidur could only use quick matches."
+            } else if found {
+                notice = nil
             } else {
-                emit(.init(stage: .final, tier: .none, answer: VidurAnswer(
-                    text: "Vidur could not answer this question.", kind: .unavailable,
-                    notice: "Vidur's local model is not downloaded. " + VidurAnswerService.unavailableHint)))
+                notice = "Vidur's local model is not downloaded. " + VidurAnswerService.unavailableHint
             }
+            emit(.init(stage: .final, tier: quickTier, answer: quickAnswer.withNotice(notice)))
             return
         }
         guard !Task.isCancelled else { return }
 
-        // Tier 2: always runs. Minutes data the user can rely on is shown while it thinks.
-        emit(.init(stage: .refining, tier: structuredComplete ? .structured : .none,
-                   answer: structuredComplete ? structuredAnswer : nil))
+        // Tier 2: the model reads the best minutes and transcript lines. The quick answer stays on screen.
+        emit(.init(stage: .refining, tier: quickTier, answer: found ? quickAnswer : nil))
         let input = VidurRefineInput(question: question, sources: request.sources, facts: allFacts,
                                      history: request.history, length: request.length)
         do {
             let refined = try await VidurDeadline.run(seconds: hooks.refineTimeout) { try await hooks.refine(input) }
             guard !Task.isCancelled else { return }
             if refined.kind == .notFound {
-                if structuredComplete, let current = best {
-                    emit(.init(stage: .final, tier: .structured, answer: current))
-                } else if let current = best, bestTier == .quote {
-                    let combined = VidurAnswer(
-                        text: current.text, citations: current.citations, kind: current.kind,
-                        notice: "Vidur's model found no direct answer. These are the closest saved lines.")
-                    emit(.init(stage: .final, tier: .quote, answer: combined))
-                } else if let structuredAnswer {
-                    let combined = VidurAnswer(text: structuredAnswer.text + "\n\n" + refined.text,
-                                               citations: structuredAnswer.citations, kind: .notFound)
-                    emit(.init(stage: .final, tier: .structured, answer: combined))
-                } else {
-                    emit(.init(stage: .final, tier: .none, answer: refined))
-                }
+                let notice = found ? "Vidur\u{2019}s model found nothing more in your meetings."
+                : "Searched the saved minutes and transcripts with the on-device model."
+                emit(.init(stage: .final, tier: quickTier, answer: quickAnswer.withNotice(notice)))
             } else {
-                emit(.init(stage: .final, tier: refined.kind == .generated ? .generated : bestTier, answer: refined))
+                emit(.init(stage: .final, tier: refined.kind == .generated ? .generated : quickTier, answer: refined))
             }
         } catch is CancellationError {
             return
         } catch {
             guard !Task.isCancelled else { return }
-            if let current = best {
-                let kept = VidurAnswer(text: current.text, citations: current.citations, kind: current.kind,
-                                       notice: "Quick answer shown. Deep answer unavailable: \(error.localizedDescription)")
-                emit(.init(stage: .final, tier: bestTier, answer: kept))
-            } else {
-                emit(.init(stage: .final, tier: .none, answer: VidurAnswer(
-                    text: "Vidur could not answer this question.", kind: .failed, notice: error.localizedDescription)))
-            }
+            let kept = quickAnswer.withNotice("Quick answer shown. Deep answer unavailable: \(error.localizedDescription)")
+            emit(.init(stage: .final, tier: quickTier, answer: kept))
         }
     }
 

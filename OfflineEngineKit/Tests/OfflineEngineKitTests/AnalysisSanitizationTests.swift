@@ -26,6 +26,31 @@ final class AnalysisSanitizationTests: XCTestCase {
         XCTAssertNoThrow(try clean.validate(against: turns))
     }
 
+    func testCopiedExampleTextWithARealQuoteIsDropped() {
+        // The quote is genuine, but the wording comes from the prompt, not the meeting.
+        let leaked = SupportedPoint(text: "The Pune vendor is engaged (lower price).",
+                                    evidence: [SourceEvidence(turnID: "t2", quote: "We have not decided")])
+        let placeholder = SuggestedTask(title: "Prepare the [document]", category: "Create/Update", owner: "[Name]",
+                                        deadlineText: nil, priority: nil,
+                                        evidence: [SourceEvidence(turnID: "t1", quote: "send the estimate")])
+        let real = SupportedPoint(text: "The design stays unchanged for now.",
+                                  evidence: [SourceEvidence(turnID: "t2", quote: "We have not decided")])
+        let clean = LocalAnalysisResult(discussion: [real], decisions: [leaked], tasks: [placeholder])
+            .sanitized(against: turns)
+
+        XCTAssertTrue(clean.decisions.isEmpty)
+        XCTAssertTrue(clean.tasks.isEmpty)
+        XCTAssertEqual(clean.discussion.map(\.text), ["The design stays unchanged for now."])
+    }
+
+    func testPuneIsKeptWhenTheMeetingMentionsIt() {
+        let spoken = [AnalysisTurn(id: "t1", text: "Okay, let's go with the Pune vendor.", start: 0, end: 2, speaker: nil)]
+        let decision = SupportedPoint(text: "The Pune vendor is approved.",
+                                      evidence: [SourceEvidence(turnID: "t1", quote: "let's go with the Pune vendor")])
+        let clean = LocalAnalysisResult(discussion: [], decisions: [decision], tasks: []).sanitized(against: spoken)
+        XCTAssertEqual(clean.decisions.count, 1)
+    }
+
     func testSpeakerLabelOwnerIsNotAPersonAndMergesWithNamedTask() {
         let turn = AnalysisTurn(id: "t1", text: "Rahul will send the estimate tomorrow.", start: 0, end: 2, speaker: "S1")
         let labelled = SuggestedTask(title: "Send the estimate", category: "Follow-up", owner: "S1",

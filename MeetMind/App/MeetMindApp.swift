@@ -173,6 +173,11 @@ struct MeetMindApp: App {
                 if let container {
                     // Repeating meetings: create the next scheduled occurrence once it is due.
                     _ = try? MeetingOccurrenceScheduler.generateDueOccurrences(context: container.mainContext)
+                    // Clears minutes topics that earlier versions copied into later series meetings.
+                    PlannedAgenda.repairCopiedAgendas(context: container.mainContext)
+                    if AnalysisCoordinator.needsPromptExampleRepair {
+                        AnalysisCoordinator(context: container.mainContext).repairPromptExampleLeaks()
+                    }
                 }
             case .background:
                 if container != nil, appState.hasCompletedOnboarding {

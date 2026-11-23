@@ -102,7 +102,7 @@ public struct MeetingDetailView: View {
             if let meeting = viewModel.meeting { MinutesReviewChecklistView(meeting: meeting) }
         }
         .navigationDestination(isPresented: $showsTranscriptPage) {
-            MeetingTranscriptAudioPage(viewModel: viewModel, searchText: $transcriptSearch) { showSpeakerReassign = $0 }
+            if let id = viewModel.meeting?.id { MeetingTranscriptScreen(meetingId: id) }
         }
         .navigationDestination(isPresented: $showsMediaPage) {
             MeetingNotesMediaTabView(notes: viewModel.notes,
@@ -144,7 +144,10 @@ public struct MeetingDetailView: View {
                     .labelStyle(.iconOnly)
             }
             if hasMinutes {
-                ToolbarItem(placement: .topBarTrailing) { shareMenu }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Share", systemImage: "square.and.arrow.up") { requestShare() }
+                        .labelStyle(.iconOnly)
+                }
             }
             ToolbarItem(placement: .topBarTrailing) { optionsMenu }
         }
@@ -276,16 +279,18 @@ public struct MeetingDetailView: View {
                 Button("Schedule Follow-Up", systemImage: "calendar.badge.plus") { beginFollowUp(for: meeting) }
             }
             if hasMinutes {
-                Divider()
-                Button("Actions List", systemImage: "checklist") { recordSection = "Actions" }
-                Button("Decisions List", systemImage: "checkmark.seal") { recordSection = "Decisions" }
-                Button("Submit for Approval", systemImage: "checkmark.seal") { showsApproval = true }
-                if viewModel.meeting?.seriesID != nil {
-                    Button("Compare Series", systemImage: "chart.line.uptrend.xyaxis") { showsSeriesComparison = true }
-                }
-                Button("Export Minutes", systemImage: "square.and.arrow.up") { showExportSheet = true }
-                if let meeting = viewModel.meeting, !recordStore.record(for: meeting.id).shares.isEmpty {
-                    Button("Shared Minutes", systemImage: "paperplane") { showsSharedMinutes = true }
+                Menu("More", systemImage: "ellipsis.circle") {
+                    Button("Preview PDF", systemImage: "doc.richtext") { showsPDFPreview = true }
+                    Button("Export Minutes", systemImage: "square.and.arrow.up.on.square") { showExportSheet = true }
+                    Button("Actions List", systemImage: "checklist") { recordSection = "Actions" }
+                    Button("Decisions List", systemImage: "checkmark.seal") { recordSection = "Decisions" }
+                    Button("Submit for Approval", systemImage: "person.badge.shield.checkmark") { showsApproval = true }
+                    if viewModel.meeting?.seriesID != nil {
+                        Button("Compare Series", systemImage: "chart.line.uptrend.xyaxis") { showsSeriesComparison = true }
+                    }
+                    if let meeting = viewModel.meeting, !recordStore.record(for: meeting.id).shares.isEmpty {
+                        Button("Shared Minutes", systemImage: "paperplane") { showsSharedMinutes = true }
+                    }
                 }
             }
             Divider()

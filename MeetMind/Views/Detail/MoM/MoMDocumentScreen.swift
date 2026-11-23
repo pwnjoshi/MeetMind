@@ -23,6 +23,40 @@ struct MoMDocumentScreen: View {
     @State private var showSignature = false
     @State private var showSignHint = false
     @State private var selectedPerson: Speaker?
+    @State private var showNameSpeakers = false
+
+    private var unnamedVoiceCount: Int {
+        MeetingPeopleEditor.voices(in: meeting, record: records.record(for: meeting.id))
+            .filter { $0.assignedPersonID == nil }.count
+    }
+
+    /// B5 entry: offered while detected voices are still unnamed.
+    @ViewBuilder
+    private var nameVoicesCard: some View {
+        let count = unnamedVoiceCount
+        if count > 0 {
+            Button { showNameSpeakers = true } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "person.2.fill").font(.title3)
+                        .foregroundStyle(Theme.Colors.manentAccent).frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(count == 1 ? "Name the voice" : "Name the \(count) voices")
+                            .font(.body).foregroundStyle(Theme.Colors.manentAccent)
+                        Text("So minutes show who decided what")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+        }
+    }
 
     private var sidecar: MoMSidecar { sidecars.sidecar(for: meeting.id) }
 
@@ -47,6 +81,7 @@ struct MoMDocumentScreen: View {
                 VStack(alignment: .leading, spacing: 14) {
                     header(doc)
                     detailCard(doc)
+                    nameVoicesCard
                     chips(proxy)
                     attendance(doc).id("attendance")
                     previous(doc)
@@ -60,6 +95,10 @@ struct MoMDocumentScreen: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
+        }
+        .sheet(isPresented: $showNameSpeakers) {
+            NameSpeakersView(meeting: meeting)
+                .presentationDragIndicator(.visible)
         }
         .navigationDestination(item: $selectedPerson) { person in
             MoMPersonPage(person: person, meeting: meeting, onPlay: play)
@@ -308,6 +347,11 @@ struct MoMDocumentScreen: View {
             ForEach(Array(doc.topics.enumerated()), id: \.element.id) { index, topic in
                 MoMTopicCard(number: "3.\(index + 1)", topic: topic, canPlay: canPlay, onPlay: play)
                     .id(topic.id)
+            }
+            if !doc.topics.contains(where: { $0.outcomeKind == .resolved && $0.hasOutcome }) {
+                Text("No decisions were recorded.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
             }
         }
     }

@@ -326,7 +326,7 @@ public actor MeetingAnalysisPipeline {
             guard resourceGate(), !discardedPreparationMeetingIDs.contains(meetingID) else { break }
             let result = try session.analyze(turns: chunk, meetingDate: meetingDate, timezone: timezone, question: nil)
             try result.validate(against: chunk)
-            store.entries.append(PreAnalysisEntry(key: RecordingReuse.chunkKey(chunk), result: result))
+            store.entries.append(PreAnalysisEntry(key: RecordingReuse.chunkKey(chunk), result: result.sanitized(against: chunk)))
             if discardedPreparationMeetingIDs.contains(meetingID) { throw CancellationError() }
             analyzed += 1
             if analyzed >= pending.count { store.checkedChunkCount = roughCount }
@@ -633,7 +633,7 @@ public actor MeetingAnalysisPipeline {
                 if let cached = preAnalyzed[RecordingReuse.chunkKey(chunks[index])],
                    (try? cached.validate(against: chunks[index])) != nil {
                     // Identical turn IDs and texts were analyzed during recording.
-                    result = cached
+                    result = cached.sanitized(against: chunks[index])
                     lastAnalysisReuse.reused += 1
                 } else {
                     do {

@@ -1,7 +1,7 @@
 import Foundation
 
 public enum OfflineAnalysisContract {
-    public static let promptVersion = "meeting-analysis-v8"
+    public static let promptVersion = "meeting-analysis-v9"
 }
 
 public struct AnalysisTurn: Codable, Sendable, Identifiable {
@@ -76,16 +76,33 @@ public struct LocalAnalysisResult: Codable, Sendable {
                 !item.quote.isEmpty && (sources[item.turnID]?.contains(item.quote) == true)
             }
         }
+        let spoken = turns.map(\.text).joined(separator: " ")
         func keep(_ point: SupportedPoint) -> Bool {
             !point.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && grounded(point.evidence)
+                && !Self.copiesPromptExample(point.text, spoken: spoken)
         }
         let validTasks = tasks.filter { task in
             let titled = !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let priorityOK = task.priority.map { priorities.contains($0) } ?? true
-            return titled && categories.contains(task.category) && priorityOK && grounded(task.evidence)
+            let copied = [task.title, task.owner ?? "", task.deadlineText ?? ""]
+                .contains { Self.copiesPromptExample($0, spoken: spoken) }
+            return titled && categories.contains(task.category) && priorityOK && grounded(task.evidence) && !copied
         }
         return LocalAnalysisResult(discussion: discussion.filter(keep), decisions: decisions.filter(keep),
                                    tasks: validTasks, openIssues: openIssues.filter(keep))
+    }
+
+    /// Text a small model copied from the prompt's examples instead of the meeting:
+    /// a bracketed placeholder such as "[Name]", or the example decision from earlier
+    /// prompt versions ("Pune vendor") when nobody in this transcript mentions Pune.
+    static func copiesPromptExample(_ text: String, spoken: String) -> Bool {
+        if text.contains("[") || text.contains("]") { return true }
+        let lower = text.lowercased()
+        if lower.contains("pune vendor") || lower.contains("pune venue") {
+            let source = spoken.lowercased()
+            return !(source.contains("pune") || source.contains("\u{092A}\u{0941}\u{0923}\u{0947}"))
+        }
+        return false
     }
 
     public func validate(against turns: [AnalysisTurn]) throws {

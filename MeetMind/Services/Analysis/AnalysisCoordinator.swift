@@ -300,6 +300,51 @@ public final class AnalysisCoordinator {
         try context.save()
     }
 
+    /// True when the one-time prompt-example repair has not run yet.
+    public static var needsPromptExampleRepair: Bool {
+        !UserDefaults.standard.bool(forKey: promptExampleRepairKey)
+    }
+    private static let promptExampleRepairKey = "MeetMind.promptExampleRepair.v1"
+
+    /// Earlier prompt versions let the model copy an example decision ("The Pune vendor is
+    /// engaged") into real minutes. Re-sanitizes each saved chunk result against its own
+    /// transcript and rebuilds the minutes only of meetings where something was removed.
+    public func repairPromptExampleLeaks() {
+        guard Self.needsPromptExampleRepair,
+              let meetings = try? context.fetch(FetchDescriptor<Meeting>()) else { return }
+        func itemCount(_ result: LocalAnalysisResult) -> Int {
+            result.discussion.count + result.decisions.count + result.tasks.count + result.openIssues.count
+        }
+        for meeting in meetings {
+            guard let data = meeting.offlineAnalysisData,
+                  var checkpoint = try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data),
+                  checkpoint.stage == .completed else { continue }
+            let byID = Dictionary(checkpoint.turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            var changed = false
+            for index in checkpoint.analysis.indices {
+                var chunk = checkpoint.turns
+                if let plan = checkpoint.chunkTurnIDs, index < plan.count {
+                    let planned = plan[index].compactMap { byID[$0] }
+                    if !planned.isEmpty { chunk = planned }
+                }
+                let clean = checkpoint.analysis[index].sanitized(against: chunk)
+                if itemCount(clean) != itemCount(checkpoint.analysis[index]) {
+                    checkpoint.analysis[index] = clean
+                    changed = true
+                }
+            }
+            guard changed else { continue }
+            checkpoint.minutes = nil
+            do {
+                try commitMinutes(checkpoint, to: meeting)
+            } catch {
+                continue
+            }
+        }
+        do { try context.save() } catch { return }
+        UserDefaults.standard.set(true, forKey: Self.promptExampleRepairKey)
+    }
+
     private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
         // Names the user gave attendees let the reducer attach an owner to requests
         // ("Pawan, can you ...") and to first-person promises. Generic labels never count.
@@ -332,8 +377,12 @@ public final class AnalysisCoordinator {
         // An empty or placeholder agenda is filled with the topics heard in the meeting; the user can edit it later.
         let currentAgenda = (meeting.agendaText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let topicAgenda = minutes.topics.isEmpty ? reduced.agendaTopics.joined(separator: "\n") : minutes.agendaText
-        if !topicAgenda.isEmpty, currentAgenda.isEmpty || isPlaceholderAgenda(currentAgenda) {
+        let seriesMeetings = meeting.seriesID == nil ? [] : ((try? context.fetch(FetchDescriptor<Meeting>())) ?? [])
+        let copiedAgenda = PlannedAgenda.isCopiedFromSeries(meeting, among: seriesMeetings)
+        if !topicAgenda.isEmpty, currentAgenda.isEmpty || isPlaceholderAgenda(currentAgenda) || copiedAgenda {
             meeting.agendaText = topicAgenda
+        } else if copiedAgenda {
+            meeting.agendaText = nil
         }
         meeting.status = .completed
         meeting.analysisState = "completed"

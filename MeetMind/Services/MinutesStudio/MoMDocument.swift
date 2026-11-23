@@ -247,7 +247,7 @@ enum MoMDocumentBuilder {
         }
 
         // Previous minutes
-        var previous = MoMDocumentModel.PreviousMinutes(text: "Not applicable. This is the first recorded meeting.",
+        var previous = MoMDocumentModel.PreviousMinutes(text: "No previous minutes are linked to this meeting.",
                                                          meetingID: nil, linkTitle: nil)
         if let previousMeeting, previousMeeting.summary != nil {
             let when = previousMeeting.scheduledStartTime ?? previousMeeting.createdAt

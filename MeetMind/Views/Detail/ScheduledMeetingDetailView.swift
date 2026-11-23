@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// Preparation record for a scheduled meeting before capture begins (Figma "Meeting details").
+/// Full-screen "Prepare meeting" page for a scheduled meeting before capture begins (Figma D1).
+/// Title, date, repeat, agenda and people edit a draft; Save writes it, Start Recording saves and begins capture.
 public struct ScheduledMeetingDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -15,6 +16,9 @@ public struct ScheduledMeetingDetailView: View {
     @State private var showsDiscard = false
     @State private var showsSaveFailed = false
     @State private var showsCustomRepeat = false
+    @State private var showsVidur = false
+    /// Action items toggled on this page. They stay listed (checked) until the page closes.
+    @State private var toggledActionIDs: Set<UUID> = []
 
     public init(meeting: Meeting) {
         self.meeting = meeting
@@ -29,52 +33,41 @@ public struct ScheduledMeetingDetailView: View {
             }
         }
         .background(PrepStyle.background.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
+        .navigationBarBackButtonHidden(true)
         .onAppear { loadDraftIfNeeded() }
     }
 
     @ViewBuilder
     private func content(_ vm: MeetingSetupViewModel) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                Button { showsTitleSheet = true } label: {
-                    Text(vm.title.isEmpty ? meeting.title : vm.title)
-                        .font(.system(size: 34, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            header(vm)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    titleBlock(vm)
+                    agendaSection(vm)
+                    openFromLastTimeSection
+                    peopleSection(vm)
                 }
-                .buttonStyle(.plain)
-                detailsCard(vm)
-                peopleSection(vm)
-                earlierMeetings
-                minutesSection(vm)
-                Color.clear.frame(height: 90)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                PrepCloseButton(systemName: "chevron.left") {
-                    if vm.hasUnsavedChanges { showsDiscard = true } else { dismiss() }
-                }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                PrepConfirmButton(isEnabled: vm.isFormValid) { save(vm) }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
         }
         .safeAreaInset(edge: .bottom) {
             Button { startRecording(vm) } label: {
-                Text("Start recording").frame(maxWidth: .infinity)
+                Text("Start Recording")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Theme.Colors.manentAccent, in: Capsule())
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .controlSize(.large)
-            .tint(Theme.Colors.manentAccent)
+            .buttonStyle(.plain)
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
         }
         .sheet(isPresented: $showsTitleSheet) {
             PrepTextEntrySheet(
@@ -100,6 +93,11 @@ public struct ScheduledMeetingDetailView: View {
             CustomRepeatSheet(recurrence: Binding(get: { vm.recurrence }, set: { vm.recurrence = $0 }))
                 .presentationDetents([.medium])
         }
+        .sheet(isPresented: $showsVidur) {
+            NavigationStack {
+                RootAskAISheet(meetingId: meeting.id, modelContext: context) { showsVidur = false }
+            }
+        }
         .confirmationDialog("Discard Changes?", isPresented: $showsDiscard, titleVisibility: .visible) {
             Button("Discard Changes", role: .destructive) { dismiss() }
             Button("Keep Editing", role: .cancel) {}
@@ -113,170 +111,290 @@ public struct ScheduledMeetingDetailView: View {
         }
     }
 
-    // MARK: Sections
+    // MARK: Header
 
-    private func detailsCard(_ vm: MeetingSetupViewModel) -> some View {
-        PrepCard {
-            Button { showsDatePopover = true } label: {
-                row("Date & Time", value: dateText(vm.startDate), chevron: "chevron.right")
+    private func header(_ vm: MeetingSetupViewModel) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                if vm.hasUnsavedChanges { showsDiscard = true } else { dismiss() }
+            } label: {
+                PrepareGlassIcon(systemName: "chevron.left")
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+
+            Spacer(minLength: 0)
+
+            Button { showsVidur = true } label: {
+                PrepareGlassIcon(systemName: "sparkles", tint: Theme.Colors.manentAccent)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Ask Vidur")
+
+            moreMenu(vm)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
+    }
+
+    private func moreMenu(_ vm: MeetingSetupViewModel) -> some View {
+        Menu {
+            Button { showsTitleSheet = true } label: { Label("Edit Title", systemImage: "pencil") }
+            Button { showsDatePopover = true } label: { Label("Date & Time", systemImage: "calendar") }
+            Button { showsPeople = true } label: { Label("Add People", systemImage: "person.badge.plus") }
+            Menu {
+                Button { vm.coordinatorID = nil } label: {
+                    checkLabel(UserProfile.defaultLocalName, vm.coordinatorID == nil)
+                }
+                ForEach(vm.participants, id: \.id) { person in
+                    Button { vm.coordinatorID = person.id } label: {
+                        checkLabel(person.name, vm.coordinatorID == person.id)
+                    }
+                }
+            } label: {
+                Label("Minutes Coordinator", systemImage: "person.text.rectangle")
+            }
+            Divider()
+            Button { save(vm) } label: { Label("Save Changes", systemImage: "checkmark") }
+                .disabled(!vm.hasUnsavedChanges || !vm.isFormValid)
+        } label: {
+            PrepareGlassIcon(systemName: "ellipsis")
+        }
+        .accessibilityLabel("More")
+    }
+
+    // MARK: Title, date, repeat
+
+    private func titleBlock(_ vm: MeetingSetupViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { showsTitleSheet = true } label: {
+                Text(vm.title.isEmpty ? meeting.title : vm.title)
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Edits the title")
+
+            Button { showsDatePopover = true } label: {
+                Text(PrepareMeetingFormat.subtitle(start: vm.startDate, end: vm.endDate))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.manentAccent)
+                    .multilineTextAlignment(.leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Changes the date and time")
             .popover(isPresented: $showsDatePopover) {
                 MeetingDateTimePopover(date: Binding(get: { vm.startDate }, set: { vm.setStart($0) }))
                     .presentationCompactAdaptation(.popover)
             }
-            Divider().padding(.leading, 16)
-            Menu {
-                Button { vm.recurrence = nil } label: { checkLabel("Never", vm.recurrence == nil) }
-                ForEach(MeetingRecurrence.presets, id: \.self) { option in
-                    Button { vm.recurrence = option } label: { checkLabel(option.title, vm.recurrence == option) }
-                }
-                Divider()
-                Button("Custom\u{2026}") { showsCustomRepeat = true }
-            } label: {
-                row("Repeat", value: MeetingRecurrence.title(for: vm.recurrence), chevron: "chevron.up.chevron.down")
-            }
-            .buttonStyle(.plain)
-            Divider().padding(.leading, 16)
-            Button { showsAgendaSheet = true } label: {
-                row("Agenda", value: agendaPreview(vm.agendaText), chevron: "chevron.right")
-            }
-            .buttonStyle(.plain)
+
+            repeatPill(vm)
         }
     }
 
-    private func peopleSection(_ vm: MeetingSetupViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                PrepSectionLabel(text: "People")
-                Spacer()
-                Button("Edit") { showsPeople = true }
+    private func repeatPill(_ vm: MeetingSetupViewModel) -> some View {
+        Menu {
+            Button { vm.recurrence = nil } label: { checkLabel("Never", vm.recurrence == nil) }
+            ForEach(MeetingRecurrence.presets, id: \.self) { option in
+                Button { vm.recurrence = option } label: { checkLabel(option.title, vm.recurrence == option) }
+            }
+            Divider()
+            Button("Custom\u{2026}") { showsCustomRepeat = true }
+        } label: {
+            HStack(spacing: 6) {
+                Text(vm.recurrence?.summaryText ?? "Does not repeat")
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.bold))
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Theme.Colors.manentAccent)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Theme.Colors.manentAccent.opacity(0.14), in: Capsule())
+        }
+        .accessibilityLabel("Repeat")
+        .accessibilityValue(vm.recurrence?.summaryText ?? "Does not repeat")
+    }
+
+    // MARK: Agenda
+
+    private func agendaSection(_ vm: MeetingSetupViewModel) -> some View {
+        let items = PrepareMeetingFormat.agendaItems(from: vm.agendaText)
+        return VStack(alignment: .leading, spacing: 10) {
+            PrepareSectionHeader("Agenda") {
+                Button("Edit") { showsAgendaSheet = true }
                     .foregroundStyle(Theme.Colors.manentAccent)
-                    .padding(.horizontal, 12)
             }
             PrepCard {
-                HStack(spacing: 12) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .resizable()
-                        .frame(width: 32, height: 32)
-                        .foregroundStyle(Color(uiColor: .systemGray3))
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(UserProfile.defaultLocalName)
+                if items.isEmpty {
+                    Button { showsAgendaSheet = true } label: {
+                        Text("Add agenda")
+                            .foregroundStyle(Theme.Colors.manentAccent)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .contentShape(Rectangle())
                     }
-                    Spacer()
-                    Text("Organizer").foregroundStyle(PrepStyle.secondaryText)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 9)
-                .accessibilityElement(children: .combine)
-                ForEach(vm.participants, id: \.id) { person in
-                    PrepPersonRow(speaker: person)
-                        .contextMenu {
-                            Button("Remove", systemImage: "person.badge.minus", role: .destructive) {
-                                vm.removeParticipant(person)
-                            }
+                    .buttonStyle(.plain)
+                } else {
+                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                        HStack(alignment: .firstTextBaseline, spacing: 16) {
+                            Text("\(index + 1)")
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(Theme.Colors.manentAccent)
+                                .frame(minWidth: 20, alignment: .leading)
+                            Text(item)
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .accessibilityElement(children: .combine)
+                        if index < items.count - 1 {
+                            Divider().padding(.leading, 52)
+                        }
+                    }
                 }
-                Button("Add People") { showsPeople = true }
-                    .foregroundStyle(Theme.Colors.manentAccent)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
             }
         }
     }
 
-    private var earlier: [Meeting] {
-        guard let seriesID = meeting.seriesID else { return [] }
-        return meetings
-            .filter { $0.seriesID == seriesID && $0.id != meeting.id && $0.status != .scheduled }
-            .sorted { $0.createdAt > $1.createdAt }
+    // MARK: Open from last time
+
+    /// The most recent earlier meeting of the same series that has already been held.
+    private var previousMeeting: Meeting? {
+        let series = MoMDocumentBuilder.seriesMeetings(of: meeting, in: meetings)
+        guard let index = series.firstIndex(where: { $0.id == meeting.id }) else { return nil }
+        return series[..<index].last(where: { $0.status != .scheduled })
+    }
+
+    private func openActions(of previous: Meeting) -> [ActionItem] {
+        previous.actionItems
+            .filter { !$0.isCompleted || toggledActionIDs.contains($0.id) }
+            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
     }
 
     @ViewBuilder
-    private var earlierMeetings: some View {
-        if !earlier.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                PrepSectionLabel(text: "Earlier meetings")
-                PrepCard {
-                    ForEach(earlier, id: \.id) { prior in
-                        NavigationLink {
-                            MeetingDetailContainerView(meetingId: prior.id)
-                        } label: {
-                            HStack(spacing: 12) {
-                                VStack(spacing: 0) {
-                                    Text(prior.createdAt.formatted(.dateTime.month(.abbreviated)).uppercased())
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(Theme.Colors.coralRed)
-                                    Text(prior.createdAt.formatted(.dateTime.day()))
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(.primary)
-                                }
-                                .frame(width: 40, height: 40)
-                                .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(prior.title).foregroundStyle(.primary)
-                                    Text(prior.figmaBadgeText).font(.subheadline).foregroundStyle(PrepStyle.secondaryText)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
+    private var openFromLastTimeSection: some View {
+        if let previous = previousMeeting {
+            let items = openActions(of: previous)
+            if !items.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    PrepareSectionHeader("Open From Last Time")
+                    PrepCard {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            openActionRow(item, previous: previous)
+                            if index < items.count - 1 {
+                                Divider().padding(.leading, 56)
                             }
-                            .padding(16)
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
         }
     }
 
-    private func minutesSection(_ vm: MeetingSetupViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PrepSectionLabel(text: "Minutes")
+    private func openActionRow(_ item: ActionItem, previous: Meeting) -> some View {
+        let due = PrepareMeetingFormat.due(item.dueDate)
+        let owner = item.assignee?.name ?? "You"
+        return HStack(spacing: 12) {
+            Button { toggle(item) } label: {
+                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24))
+                    .foregroundStyle(item.isCompleted ? Theme.Colors.manentAccent : Color(uiColor: .systemGray3))
+                    .frame(width: 32, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.isCompleted ? "Mark \(item.title) as not done" : "Mark \(item.title) as done")
+
+            NavigationLink {
+                MeetingDetailContainerView(meetingId: previous.id)
+            } label: {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                            .foregroundStyle(.primary)
+                            .strikethrough(item.isCompleted)
+                            .multilineTextAlignment(.leading)
+                        HStack(spacing: 0) {
+                            Text(owner + (due == nil ? "" : " \u{00B7} "))
+                                .foregroundStyle(PrepStyle.secondaryText)
+                            if let due {
+                                Text(due.text)
+                                    .foregroundStyle(due.isUrgent ? Color.orange : PrepStyle.secondaryText)
+                            }
+                        }
+                        .font(.subheadline)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private func toggle(_ item: ActionItem) {
+        let previousCompleted = item.isCompleted
+        let previousCompletedAt = item.completedAt
+        item.isCompleted.toggle()
+        item.completedAt = item.isCompleted ? Date() : nil
+        toggledActionIDs.insert(item.id)
+        do {
+            try context.save()
+        } catch {
+            item.isCompleted = previousCompleted
+            item.completedAt = previousCompletedAt
+            showsSaveFailed = true
+        }
+    }
+
+    // MARK: People
+
+    private func peopleSection(_ vm: MeetingSetupViewModel) -> some View {
+        let people = vm.participants
+        return VStack(alignment: .leading, spacing: 10) {
+            PrepareSectionHeader("People") {
+                if !people.isEmpty {
+                    Text("\(people.count)")
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                        .accessibilityLabel("\(people.count) people")
+                }
+            }
             PrepCard {
-                Menu {
-                    Button { vm.coordinatorID = nil } label: {
-                        if vm.coordinatorID == nil {
-                            Label { Text(UserProfile.defaultLocalName); Text("You") } icon: { Image(systemName: "checkmark") }
-                        } else {
-                            Text(UserProfile.defaultLocalName); Text("You")
+                Button { showsPeople = true } label: {
+                    HStack(spacing: 12) {
+                        if !people.isEmpty {
+                            PrepareAvatarStack(people: people)
                         }
+                        Text(PrepareMeetingFormat.peopleSummary(people.map(\.name)))
+                            .foregroundStyle(people.isEmpty ? Theme.Colors.manentAccent : PrepStyle.secondaryText)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
-                    ForEach(vm.participants, id: \.id) { person in
-                        Button { vm.coordinatorID = person.id } label: {
-                            checkLabel(person.name, vm.coordinatorID == person.id)
-                        }
-                    }
-                } label: {
-                    row("Coordinator", value: coordinatorName(vm), chevron: "chevron.up.chevron.down")
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                Divider().padding(.leading, 16)
-                row("Minutes Format", value: meeting.templateName ?? "Project review", chevron: nil)
+                .accessibilityHint("Edits the people in this meeting")
             }
         }
     }
 
     // MARK: Helpers
-
-    private func row(_ title: String, value: String, chevron: String?) -> some View {
-        HStack(spacing: 8) {
-            Text(title).foregroundStyle(.primary)
-            Spacer(minLength: 12)
-            Text(value).foregroundStyle(PrepStyle.secondaryText).lineLimit(1)
-            if let chevron {
-                Image(systemName: chevron)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 52)
-        .contentShape(Rectangle())
-    }
 
     private func checkLabel(_ title: String, _ selected: Bool) -> some View {
         Group {
@@ -286,22 +404,6 @@ public struct ScheduledMeetingDetailView: View {
                 Text(title)
             }
         }
-    }
-
-    private func dateText(_ date: Date) -> String {
-        date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + ", " + date.formatted(date: .omitted, time: .shortened)
-    }
-
-    private func agendaPreview(_ text: String) -> String {
-        let first = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        return first.isEmpty ? "Add agenda" : first
-    }
-
-    private func coordinatorName(_ vm: MeetingSetupViewModel) -> String {
-        guard let id = vm.coordinatorID, let person = vm.participants.first(where: { $0.id == id }) else {
-            return UserProfile.defaultLocalName
-        }
-        return person.name
     }
 
     private func loadDraftIfNeeded() {

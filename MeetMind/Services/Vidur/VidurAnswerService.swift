@@ -111,12 +111,38 @@ public struct VidurAnswer: Sendable, Equatable {
     public let kind: VidurAnswerKind
     /// Truthful status line shown with the answer (for example the model route hint).
     public let notice: String?
+    /// People the answer is about, shown as avatars under the sources.
+    public let people: [String]
+    /// Tasks behind the answer, shown as "Related actions".
+    public let relatedTasks: [VidurQuickTask]
+    /// Questions worth asking next. Filled when nothing was found.
+    public let suggestions: [String]
 
-    public init(text: String, citations: [VidurCitation] = [], kind: VidurAnswerKind, notice: String? = nil) {
+    public init(text: String, citations: [VidurCitation] = [], kind: VidurAnswerKind, notice: String? = nil,
+                people: [String] = [], relatedTasks: [VidurQuickTask] = [], suggestions: [String] = []) {
         self.text = text
         self.citations = citations
         self.kind = kind
         self.notice = notice
+        self.people = people
+        self.relatedTasks = relatedTasks
+        self.suggestions = suggestions
+    }
+
+    /// The same answer with a different status line.
+    public func withNotice(_ notice: String?) -> VidurAnswer {
+        VidurAnswer(text: text, citations: citations, kind: kind, notice: notice, people: people,
+                    relatedTasks: relatedTasks, suggestions: suggestions)
+    }
+
+    /// An answer written by Vidur's instant tiers (saved minutes, tasks and transcripts).
+    public init(quick: VidurQuickAnswer) {
+        let citations = quick.sources.map {
+            VidurCitation(meetingID: $0.meetingID, meetingTitle: $0.meetingTitle, timestamp: $0.timestamp ?? 0,
+                          quote: $0.quote, speaker: $0.speaker, sourceLabel: $0.label, hasTimestamp: $0.timestamp != nil)
+        }
+        self.init(text: quick.text, citations: citations, kind: quick.confidence == .notFound ? .notFound : .extractive,
+                  notice: nil, people: quick.people, relatedTasks: quick.tasks, suggestions: quick.suggestions)
     }
 
     /// Whether this answer is worth saving to Vidur history.
