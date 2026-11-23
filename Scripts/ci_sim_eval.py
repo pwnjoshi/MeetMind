@@ -100,8 +100,19 @@ def simctl(*args, timeout=120, check=True):
 def launch(udid, log_path, arguments):
     """Start the app with stdout/stderr redirected into log_path. Returns the process id."""
     simctl("terminate", udid, BUNDLE, check=False)
+    log_path = os.path.abspath(log_path)  # simctl resolves --stdout relative to the simulator, not this script
     open(log_path, "w").close()
-    result = simctl("launch", f"--stdout={log_path}", f"--stderr={log_path}", udid, BUNDLE, *arguments)
+    result = None
+    for attempt in range(3):
+        result = simctl("launch", "--terminate-running-process", f"--stdout={log_path}", f"--stderr={log_path}",
+                        udid, BUNDLE, *arguments, check=False)
+        if result.returncode == 0:
+            break
+        print(f"simctl launch failed (attempt {attempt + 1}): {result.stderr.strip() or result.stdout.strip()}",
+              flush=True)
+        time.sleep(3)
+    if result is None or result.returncode != 0:
+        raise RuntimeError("simctl launch failed: " + (result.stderr.strip() if result else ""))
     match = re.search(r":\s*(\d+)\s*$", result.stdout.strip())
     if not match:
         raise RuntimeError("could not read the app process id from: " + result.stdout.strip())

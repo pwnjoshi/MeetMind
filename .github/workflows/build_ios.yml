@@ -18,7 +18,7 @@ jobs:
   build:
     name: Build MeetMind iOS IPA
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Repository
@@ -131,7 +131,7 @@ jobs:
           ls -lh MeetMind.ipa
 
       - name: Run Swift XCTest suite
-        timeout-minutes: 12
+        timeout-minutes: 22
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
           echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
