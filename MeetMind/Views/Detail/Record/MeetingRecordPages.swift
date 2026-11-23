@@ -1,6 +1,7 @@
 import SwiftUI
+import OfflineEngineKit
 
-/// "Decisions" segment: one row per decision with the person who decided it, plus add and delete.
+/// "Decisions" segment: one row per decision with the resolution, a status chip and who decided it and when.
 /// Rows read `MeetingMinutesContent`, so they match the Minutes tab and the exports.
 @MainActor
 struct MeetingDecisionsList: View {
@@ -8,47 +9,43 @@ struct MeetingDecisionsList: View {
     @Environment(\.modelContext) private var context
     @State private var store = MeetingRecordStore.shared
     @State private var composing = false
-    @State private var errorMessage: String?
 
     var body: some View {
         let content = viewModel.minutesContent
         let decisions = content?.decisions ?? []
         let hasMinutes = viewModel.summary != nil
-        List {
-            Section {
-                Button {
-                    composing = true
-                } label: {
-                    Label("Add Decision", systemImage: "plus.circle.fill")
-                        .frame(minHeight: 44, alignment: .leading)
+        let analysis = viewModel.meeting?.offlineAnalysis
+        VStack(alignment: .leading, spacing: 12) {
+            if decisions.isEmpty {
+                Text("No decisions were recorded.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .recordCard()
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(decisions) { decision in
+                        row(decision, analysis: analysis)
+                        Divider().padding(.leading, 16)
+                    }
+                    addButton(enabled: hasMinutes)
                 }
-                .disabled(!hasMinutes)
-            } footer: {
-                if !hasMinutes { Text("Decisions can be added once the minutes are ready.") }
+                .background(Color(uiColor: .secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             }
-            Section("Decisions") {
-                if decisions.isEmpty {
-                    Text("No decisions recorded.").font(.subheadline).foregroundStyle(.secondary)
-                }
-                ForEach(decisions) { decision in
-                    NavigationLink {
-                        MeetingDecisionDetail(viewModel: viewModel, index: decision.index)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(decision.text).font(.subheadline)
-                            if let name = decision.decidedBy {
-                                Text("Decided by \(name)").font(.footnote).foregroundStyle(.secondary)
-                            }
-                        }
-                        .frame(minHeight: 44, alignment: .leading)
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button("Delete", systemImage: "trash", role: .destructive) { delete(decision.index) }
-                    }
-                }
+            if decisions.isEmpty {
+                addButton(enabled: hasMinutes)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            }
+            if !hasMinutes {
+                Text("Decisions can be added once the minutes are ready.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
             }
         }
-        .listStyle(.insetGrouped)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
         .sheet(isPresented: $composing) {
             if let meeting = viewModel.meeting {
                 MeetingDecisionEditSheet(
@@ -66,16 +63,64 @@ struct MeetingDecisionsList: View {
                 .presentationDragIndicator(.visible)
             }
         }
-        .recordErrorAlert("Could Not Update Decisions", message: $errorMessage)
     }
 
-    private func delete(_ index: Int) {
-        guard let meeting = viewModel.meeting else { return }
-        do {
-            try MeetingRecordEditor.deleteDecision(at: index, meeting: meeting, context: context, store: store)
-        } catch {
-            errorMessage = error.localizedDescription
+    private func addButton(enabled: Bool) -> some View {
+        Button {
+            composing = true
+        } label: {
+            Label("Add Decision", systemImage: "plus.circle.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(enabled ? Theme.Colors.manentAccent : Color.secondary)
+                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .padding(.horizontal, 16)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+
+    private func decidedLine(_ decision: MeetingMinutesContent.Decision, time: TimeInterval?) -> String? {
+        if let name = decision.decidedBy, let time {
+            return "Decided by \(name) \u{00B7} \(MeetingEvidence.clock(time))"
+        }
+        if let name = decision.decidedBy { return "Decided by \(name)" }
+        if let time { return "At \(MeetingEvidence.clock(time)) in the recording" }
+        return nil
+    }
+
+    private func row(_ decision: MeetingMinutesContent.Decision, analysis: MeetingAnalysisCheckpoint?) -> some View {
+        let status = MeetingEvidence.status(of: decision.text, in: analysis)
+        let time = MeetingEvidence.firstTime(of: MeetingEvidence.decision(decision.text, in: analysis), in: analysis)
+        let line = decidedLine(decision, time: time)
+        return NavigationLink {
+            MeetingDecisionDetail(viewModel: viewModel, index: decision.index)
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(decision.text)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    RecordChip(title: status.title, tint: status.tint)
+                    if let line {
+                        Text(line).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 6)
+                    .accessibilityHidden(true)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the decision")
     }
 }
 /// "Transcript and audio" page: sticky audio player, transcript grouped by speaker turn, the playing line

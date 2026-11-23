@@ -27,8 +27,11 @@ struct MinutesShareFlowModifier: ViewModifier {
     @Binding var externalRequest: MinutesShareRequest?
     let onBackToMeetings: () -> Void
     let onError: (String) -> Void
-    /// Text handed to Mail and the share sheet. Defaults to the plain-text export.
+    /// Text handed to Mail and the share sheet for the "Minutes" format. Defaults to the plain-text export.
     var shareText: (() -> String)? = nil
+    /// Text and PDF for the "Formal MoM" format. When either is nil the Format row is hidden.
+    var formalText: (() -> String)? = nil
+    var formalPDF: (() throws -> URL)? = nil
 
     @State private var showRecipients = false
     @State private var proceedToConfirm = false
@@ -43,6 +46,8 @@ struct MinutesShareFlowModifier: ViewModifier {
     @State private var activityFile: URL?
     @State private var sentState: MinutesSentState?
     @State private var sentEntry: SharedMinutesEntry?
+    @State private var format: MinutesShareFormat = .minutes
+    @State private var attachment: MinutesShareAttachment?
 
     private var candidates: [Speaker] {
         var seen = Set<String>()
@@ -57,6 +62,10 @@ struct MinutesShareFlowModifier: ViewModifier {
     private var chosen: [Speaker] { candidates.filter { selectedIDs.contains($0.id) } }
 
     private var countLabel: String { chosen.count == 1 ? "1 Person" : "\(chosen.count) People" }
+
+    private var formats: [MinutesShareFormat] {
+        formalText != nil && formalPDF != nil ? MinutesShareFormat.allCases : [.minutes]
+    }
 
     func body(content: Content) -> some View {
         content
@@ -77,14 +86,15 @@ struct MinutesShareFlowModifier: ViewModifier {
                     showConfirm = true
                 }
             }) {
-                MinutesRecipientsSheet(people: candidates, selectedIDs: $selectedIDs) {
+                MinutesRecipientsSheet(people: candidates, selectedIDs: $selectedIDs, format: $format,
+                                       formats: formats, meeting: meeting) {
                     proceedToConfirm = true
                     showRecipients = false
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
-            .confirmationDialog("Send Minutes to \(countLabel)?", isPresented: $showConfirm, titleVisibility: .visible) {
+            .alert("Send Minutes to \(countLabel)?", isPresented: $showConfirm) {
                 Button("Send to \(countLabel)") { deliver() }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -92,7 +102,8 @@ struct MinutesShareFlowModifier: ViewModifier {
                      + " get the minutes and their action items.")
             }
             .sheet(isPresented: $showMail, onDismiss: presentSentIfPending) {
-                RecordMailComposer(recipients: chosen.compactMap(\.email), subject: subject, bodyText: bodyText) { result, error in
+                RecordMailComposer(recipients: chosen.compactMap(\.email), subject: subject, bodyText: bodyText,
+                                   attachment: attachment) { result, error in
                     showMail = false
                     handle(MinutesShareOutcome.fromMail(result, error: error))
                 }
@@ -121,6 +132,8 @@ struct MinutesShareFlowModifier: ViewModifier {
         subject = viewModel.headerTitle
         bodyText = shareText?() ?? viewModel.exportPlainText()
         activityFile = nil
+        attachment = nil
+        format = .minutes
         if candidates.isEmpty {
             selectedIDs = []
             showActivity = true
@@ -134,11 +147,39 @@ struct MinutesShareFlowModifier: ViewModifier {
         subject = viewModel.headerTitle
         bodyText = request.text
         activityFile = request.fileURL
+        attachment = nil
         selectedIDs = []
         showActivity = true
     }
 
+    /// Builds the text and PDF for the chosen format. A format that cannot be produced stops the send with a message.
+    private func prepareFormat() throws {
+        let fileName = MinutesShareAttachment.safeName(subject)
+        switch format {
+        case .minutes:
+            bodyText = shareText?() ?? viewModel.exportPlainText()
+            let data = try viewModel.exportPDF()
+            guard data.starts(with: Data("%PDF-".utf8)) else { throw MinutesShareFormatError.notAPDF }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("Manent-Minutes-\(UUID().uuidString).pdf")
+            try data.write(to: url, options: .atomic)
+            attachment = MinutesShareAttachment(data: data, fileName: "\(fileName) - Minutes.pdf")
+            activityFile = url
+        case .formal:
+            guard let formalText, let formalPDF else { throw MinutesShareFormatError.unavailable }
+            bodyText = formalText()
+            let url = try formalPDF()
+            attachment = MinutesShareAttachment(data: try Data(contentsOf: url), fileName: "\(fileName) - Formal MoM.pdf")
+            activityFile = url
+        }
+    }
+
     private func deliver() {
+        do {
+            try prepareFormat()
+        } catch {
+            onError(error.localizedDescription)
+            return
+        }
         let useMail = MFMailComposeViewController.canSendMail()
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
@@ -185,15 +226,70 @@ struct MinutesShareFlowModifier: ViewModifier {
     }
 }
 
-/// "Send Minutes To": attendees with an email address and a check on the right. The top-right check continues.
+/// What the minutes are sent as. Both formats go out as a PDF with the matching text in the message.
+enum MinutesShareFormat: String, CaseIterable, Identifiable {
+    case minutes
+    case formal
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .minutes: return "Minutes \u{00B7} PDF"
+        case .formal: return "Formal MoM \u{00B7} PDF"
+        }
+    }
+}
+
+/// A PDF attached to the Mail message.
+struct MinutesShareAttachment: Equatable {
+    let data: Data
+    let fileName: String
+
+    /// A file-name-safe version of the meeting title.
+    static func safeName(_ title: String) -> String {
+        let blocked = CharacterSet(charactersIn: "/\\:*?\"<>|")
+        let cleaned = title.components(separatedBy: blocked).joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Meeting" : cleaned
+    }
+}
+
+enum MinutesShareFormatError: LocalizedError {
+    case notAPDF
+    case unavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .notAPDF: return "The generated file is not a PDF document."
+        case .unavailable: return "The formal minutes are not available for this meeting."
+        }
+    }
+}
+
+/// "Send Minutes To": a Format row, the attendees with an email address and a check on the right, and Add Someone.
+/// The top-right check continues.
 struct MinutesRecipientsSheet: View {
     let people: [Speaker]
     @Binding var selectedIDs: Set<UUID>
+    @Binding var format: MinutesShareFormat
+    let formats: [MinutesShareFormat]
+    let meeting: Meeting?
     let onConfirm: () -> Void
+    @State private var showAddPerson = false
 
     var body: some View {
         NavigationStack {
             List {
+                if formats.count > 1 {
+                    Section {
+                        Picker("Format", selection: $format) {
+                            ForEach(formats) { option in Text(option.title).tag(option) }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(minHeight: 44)
+                    }
+                }
                 Section("Attendees") {
                     ForEach(people, id: \.id) { person in
                         Button {
@@ -210,18 +306,29 @@ struct MinutesRecipientsSheet: View {
                                         .font(.footnote).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                if selectedIDs.contains(person.id) {
-                                    Image(systemName: "checkmark").foregroundStyle(Theme.Colors.manentAccent)
-                                }
+                                Image(systemName: selectedIDs.contains(person.id) ? "checkmark.circle.fill" : "circle")
+                                    .font(.title3)
+                                    .foregroundStyle(selectedIDs.contains(person.id) ? Theme.Colors.manentAccent : Color.secondary)
                             }
+                            .frame(minHeight: 44)
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
                         .accessibilityValue(selectedIDs.contains(person.id) ? "Selected" : "Not selected")
                     }
+                    if meeting != nil {
+                        Button {
+                            showAddPerson = true
+                        } label: {
+                            Label("Add someone", systemImage: "plus.circle.fill")
+                                .foregroundStyle(Theme.Colors.manentAccent)
+                                .frame(minHeight: 44, alignment: .leading)
+                        }
+                        .accessibilityHint("Add a person with an email address to this meeting")
+                    }
                 }
             }
-            .listStyle(.plain)
+            .listStyle(.insetGrouped)
             .navigationTitle("Send Minutes To")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -233,14 +340,24 @@ struct MinutesRecipientsSheet: View {
                         .disabled(selectedIDs.isEmpty)
                 }
             }
+            .onChange(of: people.map { $0.id }) { old, new in
+                // Someone added from this sheet is selected right away.
+                selectedIDs.formUnion(Set(new).subtracting(old))
+            }
+            .sheet(isPresented: $showAddPerson) {
+                if let meeting {
+                    MeetingAddPersonSheet(meeting: meeting)
+                        .presentationDragIndicator(.visible)
+                }
+            }
         }
     }
 }
-
 struct RecordMailComposer: UIViewControllerRepresentable {
     let recipients: [String]
     let subject: String
     let bodyText: String
+    var attachment: MinutesShareAttachment? = nil
     let finished: (MFMailComposeResult, Error?) -> Void
 
     final class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
@@ -260,6 +377,9 @@ struct RecordMailComposer: UIViewControllerRepresentable {
         controller.setToRecipients(recipients)
         controller.setSubject(subject)
         controller.setMessageBody(bodyText, isHTML: false)
+        if let attachment {
+            controller.addAttachmentData(attachment.data, mimeType: "application/pdf", fileName: attachment.fileName)
+        }
         return controller
     }
 

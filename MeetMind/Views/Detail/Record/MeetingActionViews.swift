@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import OfflineEngineKit
 
 /// Identifies the action being edited, or a new one when `item` is nil.
 struct ActionEditTarget: Identifiable {
@@ -7,8 +8,20 @@ struct ActionEditTarget: Identifiable {
     let item: ActionItem?
 }
 
-/// "Actions" segment: accepted actions with add, edit, delete, complete and owner/due editing,
-/// followed by suggested tasks that still need review. All changes go through `MeetingRecordEditor`.
+/// Context line for an action or suggestion ("For the launch checklist"), taken from the saved minutes.
+enum MeetingActionContext {
+    static func line(for title: String, in result: MeetingAnalysisCheckpoint?) -> String? {
+        let key = MeetingEvidence.normalized(title)
+        guard let action = result?.minutes?.actions.first(where: { MeetingEvidence.normalized($0.title) == key }) else {
+            return nil
+        }
+        let topic = action.topic?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return topic.isEmpty ? nil : "For \(topic)"
+    }
+}
+
+/// "Actions" segment: suggested actions that need review, then the accepted actions with a checkbox,
+/// context line, owner and due date, and Add Action. All changes go through `MeetingRecordEditor`.
 @MainActor
 struct MeetingActionsList: View {
     let viewModel: MeetingDetailViewModel
@@ -19,83 +32,145 @@ struct MeetingActionsList: View {
 
     var body: some View {
         if let meeting = viewModel.meeting, let content = viewModel.minutesContent {
-            list(meeting: meeting, content: content)
+            page(meeting: meeting, content: content)
         }
     }
 
-    private func list(meeting: Meeting, content: MeetingMinutesContent) -> some View {
-        List {
-            Section {
-                Button {
-                    target = ActionEditTarget(item: nil)
-                } label: {
-                    Label("Add Action", systemImage: "plus.circle.fill")
-                        .frame(minHeight: 44, alignment: .leading)
+    private func page(meeting: Meeting, content: MeetingMinutesContent) -> some View {
+        let analysis = meeting.offlineAnalysis
+        return VStack(alignment: .leading, spacing: 20) {
+            if !content.suggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Suggested from the meeting")
+                        .font(.headline)
+                        .padding(.horizontal, 4)
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(content.suggestions) { suggestion in
+                        SuggestedActionCard(
+                            meeting: meeting,
+                            suggestion: suggestion,
+                            contextLine: MeetingActionContext.line(for: suggestion.title, in: analysis)
+                        )
+                    }
                 }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                if !content.suggestions.isEmpty || !content.actions.isEmpty {
+                    Text("Actions")
+                        .font(.headline)
+                        .padding(.horizontal, 4)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    if content.actions.isEmpty && content.suggestions.isEmpty {
+                        Text("No actions were found in this meeting.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .padding(16)
+                    }
+                    ForEach(content.actions) { action in
+                        actionRow(action, meeting: meeting, analysis: analysis)
+                        Divider().padding(.leading, 56)
+                    }
+                    Button {
+                        target = ActionEditTarget(item: nil)
+                    } label: {
+                        Label("Add Action", systemImage: "plus.circle.fill")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.manentAccent)
+                            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: .secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            }
+            if !content.actions.isEmpty {
                 Button(action: onSyncReminders) {
                     Label("Sync to Apple Reminders", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.subheadline)
                         .frame(minHeight: 44, alignment: .leading)
                 }
-            }
-            Section("Action Items") {
-                if content.actions.isEmpty {
-                    Text("No action items yet.").font(.subheadline).foregroundStyle(.secondary)
-                }
-                ForEach(content.actions) { action in
-                    actionRow(action, meeting: meeting)
-                }
-            }
-            if !content.suggestions.isEmpty {
-                Section {
-                    ForEach(content.suggestions) { suggestion in
-                        SuggestedTaskRow(meeting: meeting, suggestion: suggestion)
-                    }
-                } header: {
-                    Text("Suggested \u{2014} needs review")
-                } footer: {
-                    Text("Accepted tasks move into Action Items and the minutes. Discarded tasks are removed.")
-                }
+                .padding(.horizontal, 4)
             }
         }
-        .listStyle(.insetGrouped)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
         .sheet(item: $target) { current in
             MeetingActionEditSheet(meeting: meeting, item: current.item)
         }
         .recordErrorAlert("Could Not Update Action", message: $errorMessage)
     }
 
-    private func actionRow(_ action: MeetingMinutesContent.ActionLine, meeting: Meeting) -> some View {
+    private func isDueSoon(_ action: MeetingMinutesContent.ActionLine) -> Bool {
+        guard !action.isCompleted, let due = action.due else { return false }
+        let calendar = Calendar.current
+        return calendar.isDateInToday(due) || due < calendar.startOfDay(for: Date())
+    }
+
+    private func dueText(_ action: MeetingMinutesContent.ActionLine) -> String? {
+        guard let text = action.dueText else { return nil }
+        if !action.isCompleted, let due = action.due, due < Calendar.current.startOfDay(for: Date()) {
+            return "Overdue \(text)"
+        }
+        return "Due \(text)"
+    }
+
+    private func actionRow(_ action: MeetingMinutesContent.ActionLine, meeting: Meeting,
+                           analysis: MeetingAnalysisCheckpoint?) -> some View {
         let item = meeting.actionItems.first(where: { $0.id == action.id })
-        return HStack(alignment: .center, spacing: 4) {
+        let contextLine = MeetingActionContext.line(for: action.title, in: analysis)
+        let due = dueText(action)
+        return HStack(alignment: .top, spacing: 0) {
             Button { toggle(item) } label: {
                 Image(systemName: action.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(.title2)
                     .foregroundStyle(action.isCompleted ? Theme.Colors.manentAccent : Color.secondary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 52, height: 52)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .accessibilityLabel(action.isCompleted ? "Mark \(action.title) not done" : "Mark \(action.title) done")
             Button {
                 if let item { target = ActionEditTarget(item: item) }
             } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(action.title)
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(action.title)
+                            .font(.body)
+                            .strikethrough(action.isCompleted)
+                            .foregroundStyle(action.isCompleted ? Color.secondary : Color.primary)
+                            .multilineTextAlignment(.leading)
+                        if let contextLine {
+                            Text(contextLine).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 4) {
+                            Text(action.ownerName)
+                                .foregroundStyle(.secondary)
+                            if let due {
+                                Text("\u{00B7}").foregroundStyle(.secondary)
+                                Text(due).foregroundStyle(isDueSoon(action) ? Color.orange : Color.secondary)
+                            }
+                        }
                         .font(.subheadline)
-                        .strikethrough(action.isCompleted)
-                        .foregroundStyle(action.isCompleted ? Color.secondary : Color.primary)
-                    Text(MeetingActionText.detail(action))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 6)
+                        .accessibilityHidden(true)
                 }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.vertical, 12)
+                .padding(.trailing, 16)
+                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .accessibilityHint("Edit this action")
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button("Delete", systemImage: "trash", role: .destructive) { delete(item, from: meeting) }
         }
     }
 
@@ -104,14 +179,103 @@ struct MeetingActionsList: View {
         do { try MeetingRecordEditor.setCompleted(item, !item.isCompleted, context: context) }
         catch { errorMessage = error.localizedDescription }
     }
+}
 
-    private func delete(_ item: ActionItem?, from meeting: Meeting) {
-        guard let item else { return }
-        do { try MeetingRecordEditor.deleteAction(item, from: meeting, context: context) }
+/// A suggested action with Accept, Dismiss and Edit. Accepting turns it into an action item and so into the minutes;
+/// dismissing removes it for good.
+@MainActor
+struct SuggestedActionCard: View {
+    let meeting: Meeting
+    let suggestion: MeetingMinutesContent.Suggestion
+    let contextLine: String?
+    @Environment(\.modelContext) private var modelContext
+    @State private var editing: MeetingTaskSuggestion?
+    @State private var errorMessage: String?
+
+    private var ownerColor: String {
+        guard let owner = suggestion.owner else { return "#8E8E93" }
+        return meeting.participants.first(where: { $0.name.caseInsensitiveCompare(owner) == .orderedSame })?.avatarColorHex
+            ?? "#8E8E93"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(suggestion.title).font(.body.weight(.semibold))
+            Text(contextLine ?? suggestion.category)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                if let owner = suggestion.owner {
+                    RecordAvatar(initials: RecordAvatar.initials(from: owner), colorHex: ownerColor, size: 24)
+                    Text(owner).font(.subheadline)
+                } else {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("No owner").font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                if let due = suggestion.deadlineText, !due.isEmpty {
+                    RecordChip(title: due, tint: Color.orange)
+                }
+            }
+            HStack(spacing: 8) {
+                Button { accept() } label: {
+                    Text("Accept")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(Theme.Colors.manentAccent, in: Capsule())
+                }
+                .accessibilityLabel("Accept suggested action \(suggestion.title)")
+                Button { discard() } label: {
+                    Text("Dismiss")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(Theme.Colors.manentAccent.opacity(0.1), in: Capsule())
+                }
+                .accessibilityLabel("Dismiss suggested action \(suggestion.title)")
+                Button { editing = pending() } label: {
+                    Text("Edit")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("Edit suggested action \(suggestion.title)")
+            }
+            .buttonStyle(.plain)
+        }
+        .recordCard()
+        .sheet(item: $editing) { target in
+            NavigationStack {
+                SuggestedTaskEditor(meeting: meeting, suggestion: target)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel", systemImage: "xmark") { editing = nil }.labelStyle(.iconOnly)
+                        }
+                    }
+            }
+        }
+        .recordErrorAlert("Could Not Update Action", message: $errorMessage)
+    }
+
+    private func pending() -> MeetingTaskSuggestion? {
+        meeting.pendingTaskSuggestions.first(where: { $0.id == suggestion.id })
+    }
+
+    private func accept() {
+        guard let target = pending() else { return }
+        do { try MeetingRecordEditor.acceptSuggestion(target, meeting: meeting, context: modelContext) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    private func discard() {
+        guard let target = pending() else { return }
+        do { try MeetingRecordEditor.discardSuggestion(target, meeting: meeting, context: modelContext) }
         catch { errorMessage = error.localizedDescription }
     }
 }
-
 /// Add or edit one action: title, owner (from the meeting's people), due date and priority.
 @MainActor
 struct MeetingActionEditSheet: View {

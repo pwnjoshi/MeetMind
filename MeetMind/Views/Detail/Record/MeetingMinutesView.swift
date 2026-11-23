@@ -16,131 +16,86 @@ extension View {
     }
 }
 
-/// "Minutes" segment: the categorized record. Every section is derived from `MeetingMinutesContent`,
-/// so edits made in the Actions tab, the Decisions tab, the People sheet or Edit Minutes appear here at once.
+/// "Minutes" segment: one white card with Summary, Agenda, Present / Absent, Discussion, Decisions,
+/// Open issues and Next meeting. Empty sections are left out. Every section is derived from `MeetingMinutesContent`,
+/// so edits made in the other tabs, the People sheet or Edit Minutes appear here at once.
+/// A dotted underline marks a point that has a quote in the recording; tapping it shows the quote and can play it.
 @MainActor
 struct MeetingMinutesView: View {
     let meeting: Meeting
+    var viewModel: MeetingDetailViewModel? = nil
     var onOpenPeople: () -> Void = {}
-    @Environment(\.modelContext) private var context
     @State private var store = MeetingRecordStore.shared
-    @State private var errorMessage: String?
+    @State private var expanded: Set<String> = []
+    @State private var playingTurnID: String?
+
+    private enum Marker { case bullet, check, orange }
+
+    private var canPlay: Bool { viewModel != nil && meeting.resolvedAudioFileURL != nil }
 
     var body: some View {
-        let content = MeetingMinutesContent.make(from: meeting, record: store.record(for: meeting.id))
-        VStack(alignment: .leading, spacing: 12) {
-            summaryCard(content)
-            agendaCard(content)
-            attendeesCard(content)
-            discussionCard(content)
-            decisionsCard(content)
-            actionsCard(content)
-            openIssuesCard(content)
-        }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
-        .recordErrorAlert("Could Not Update Minutes", message: $errorMessage)
-    }
-
-    // MARK: Cards
-
-    private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityAddTraits(.isHeader)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 24))
-    }
-
-    private func emptyText(_ text: String) -> some View {
-        Text(text).font(.subheadline).foregroundStyle(.secondary)
-    }
-
-    private func summaryCard(_ content: MeetingMinutesContent) -> some View {
-        card("Summary") {
-            if content.summary.isEmpty {
-                emptyText("No summary yet.")
-            } else {
-                Text(content.summary).font(.subheadline).textSelection(.enabled)
-            }
-        }
-    }
-
-    private func agendaCard(_ content: MeetingMinutesContent) -> some View {
-        card("Agenda") {
-            if content.agenda.isEmpty {
-                emptyText("No agenda.")
-            } else {
-                ForEach(Array(content.agenda.enumerated()), id: \.offset) { entry in
-                    Text(entry.element).font(.subheadline).textSelection(.enabled)
-                }
-            }
-        }
-    }
-
-    private func attendeesCard(_ content: MeetingMinutesContent) -> some View {
-        card("Attendees") {
-            if content.present.isEmpty && content.absent.isEmpty {
-                emptyText("No attendees yet.")
+        let record = store.record(for: meeting.id)
+        let content = MeetingMinutesContent.make(from: meeting, record: record)
+        let analysis = meeting.offlineAnalysis
+        let names = MeetingSpeakerNames(meeting: meeting, record: record)
+        let isEmpty = content.summary.isEmpty && content.agenda.isEmpty && content.present.isEmpty
+            && content.absent.isEmpty && content.discussion.isEmpty && content.decisions.isEmpty
+            && content.openIssues.isEmpty
+        VStack(alignment: .leading, spacing: 22) {
+            if isEmpty {
+                Text("No minutes were found in this recording.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
                 Button("Add People", systemImage: "person.badge.plus", action: onOpenPeople)
                     .font(.subheadline)
                     .frame(minHeight: 44)
             } else {
-                if !content.present.isEmpty {
-                    Text("Present").font(.footnote).foregroundStyle(.secondary)
-                    ForEach(content.present) { person in personRow(person) }
-                }
-                if !content.absent.isEmpty {
-                    Text("Absent").font(.footnote).foregroundStyle(.secondary).padding(.top, 4)
-                    ForEach(content.absent) { person in personRow(person) }
-                }
+                summarySection(content)
+                agendaSection(content)
+                peopleSection(content)
+                discussionSection(content, analysis: analysis, names: names)
+                decisionsSection(content, analysis: analysis, names: names)
+                openIssuesSection(content, analysis: analysis, names: names)
+                nextMeetingSection(analysis)
+            }
+        }
+        .recordCard(padding: 20)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+    }
+
+    // MARK: Sections
+
+    private func section<Inner: View>(_ title: String, @ViewBuilder content: () -> Inner) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func summarySection(_ content: MeetingMinutesContent) -> some View {
+        if !content.summary.isEmpty {
+            section("Summary") {
+                Text(content.summary).font(.body).textSelection(.enabled)
             }
         }
     }
 
-    private func personRow(_ person: MeetingMinutesContent.Person) -> some View {
-        HStack(spacing: 10) {
-            Circle().fill(Color(hex: person.colorHex)).frame(width: 10, height: 10)
-            Text(person.label).font(.subheadline)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private func discussionCard(_ content: MeetingMinutesContent) -> some View {
-        card("Discussion") {
-            if content.discussion.isEmpty {
-                emptyText("No discussion points yet.")
-            } else {
-                ForEach(Array(content.discussion.enumerated()), id: \.offset) { entry in
-                    bulletRow(entry.element)
-                }
-            }
-        }
-    }
-
-    private func bulletRow(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\u{2022}").foregroundStyle(.secondary)
-            Text(text).font(.subheadline).textSelection(.enabled)
-        }
-    }
-
-    private func decisionsCard(_ content: MeetingMinutesContent) -> some View {
-        card("Decisions") {
-            if content.decisions.isEmpty {
-                emptyText("No decisions recorded.")
-            } else {
-                ForEach(content.decisions) { decision in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(decision.text).font(.subheadline).textSelection(.enabled)
-                        if let name = decision.decidedBy {
-                            Text("Decided by \(name)").font(.footnote).foregroundStyle(.secondary)
-                        }
+    @ViewBuilder
+    private func agendaSection(_ content: MeetingMinutesContent) -> some View {
+        if !content.agenda.isEmpty {
+            section("Agenda") {
+                ForEach(Array(content.agenda.enumerated()), id: \.offset) { entry in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text("\(entry.offset + 1)")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 18, alignment: .leading)
+                        Text(entry.element).font(.body).textSelection(.enabled)
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -148,70 +103,158 @@ struct MeetingMinutesView: View {
         }
     }
 
-    private func actionsCard(_ content: MeetingMinutesContent) -> some View {
-        card("Action Items") {
-            if content.actions.isEmpty {
-                emptyText("No action items yet.")
-            } else {
-                ForEach(content.actions) { action in actionRow(action) }
+    @ViewBuilder
+    private func peopleSection(_ content: MeetingMinutesContent) -> some View {
+        if !content.present.isEmpty || !content.absent.isEmpty {
+            section("Present") {
+                if content.present.isEmpty {
+                    Text("No one is marked present.").font(.subheadline).foregroundStyle(.secondary)
+                }
+                ForEach(content.present) { person in personRow(person) }
             }
-            if !content.suggestions.isEmpty {
-                Text("Suggested \u{2014} needs review")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.Colors.manentAccent)
-                    .padding(.top, 8)
-                    .accessibilityAddTraits(.isHeader)
-                ForEach(content.suggestions) { suggestion in
-                    SuggestedTaskRow(meeting: meeting, suggestion: suggestion)
+            if !content.absent.isEmpty {
+                section("Absent") {
+                    ForEach(content.absent) { person in personRow(person) }
                 }
             }
         }
     }
 
-    private func actionRow(_ action: MeetingMinutesContent.ActionLine) -> some View {
-        HStack(alignment: .top, spacing: 4) {
-            Button { toggle(action) } label: {
-                Image(systemName: action.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(action.isCompleted ? Theme.Colors.manentAccent : Color.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+    private func personRow(_ person: MeetingMinutesContent.Person) -> some View {
+        HStack(spacing: 12) {
+            Circle().fill(Color(hex: person.colorHex)).frame(width: 12, height: 12)
+            Text(person.label).font(.body)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func discussionSection(_ content: MeetingMinutesContent, analysis: MeetingAnalysisCheckpoint?,
+                                   names: MeetingSpeakerNames) -> some View {
+        if !content.discussion.isEmpty {
+            section("Discussion") {
+                ForEach(Array(content.discussion.enumerated()), id: \.offset) { entry in
+                    let evidence = MeetingEvidence.discussion(entry.element, in: analysis)
+                    pointRow(key: "d|\(entry.element)", text: entry.element, marker: .bullet,
+                             moments: quotes(evidence, analysis, names))
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(action.isCompleted ? "Mark \(action.title) not done" : "Mark \(action.title) done")
-            VStack(alignment: .leading, spacing: 2) {
-                Text(action.title)
-                    .font(.subheadline)
-                    .strikethrough(action.isCompleted)
-                    .foregroundStyle(action.isCompleted ? Color.secondary : Color.primary)
-                Text(MeetingActionText.detail(action))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 12)
-            Spacer(minLength: 0)
         }
     }
 
-    private func openIssuesCard(_ content: MeetingMinutesContent) -> some View {
-        card("Open Issues") {
-            if content.openIssues.isEmpty {
-                emptyText("No open issues.")
-            } else {
+    @ViewBuilder
+    private func decisionsSection(_ content: MeetingMinutesContent, analysis: MeetingAnalysisCheckpoint?,
+                                  names: MeetingSpeakerNames) -> some View {
+        if !content.decisions.isEmpty {
+            section("Decisions") {
+                ForEach(content.decisions) { decision in
+                    let evidence = MeetingEvidence.decision(decision.text, in: analysis)
+                    pointRow(key: "x|\(decision.text)", text: decision.text, marker: .check,
+                             moments: quotes(evidence, analysis, names))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func openIssuesSection(_ content: MeetingMinutesContent, analysis: MeetingAnalysisCheckpoint?,
+                                   names: MeetingSpeakerNames) -> some View {
+        if !content.openIssues.isEmpty {
+            section("Open issues") {
                 ForEach(Array(content.openIssues.enumerated()), id: \.offset) { entry in
-                    bulletRow(entry.element)
+                    let evidence = MeetingEvidence.openIssue(entry.element, in: analysis)
+                    pointRow(key: "o|\(entry.element)", text: entry.element, marker: .orange,
+                             moments: quotes(evidence, analysis, names))
                 }
             }
         }
     }
 
-    private func toggle(_ action: MeetingMinutesContent.ActionLine) {
-        guard let item = meeting.actionItems.first(where: { $0.id == action.id }) else { return }
-        do {
-            try MeetingRecordEditor.setCompleted(item, !item.isCompleted, context: context)
-        } catch {
-            errorMessage = error.localizedDescription
+    private func nextMeetingSection(_ analysis: MeetingAnalysisCheckpoint?) -> some View {
+        section("Next meeting") {
+            let text = nextMeetingText(analysis)
+            Text(text)
+                .font(.body)
+                .foregroundStyle(text == "Not set" ? Color.secondary : Color.primary)
         }
+    }
+
+    private func nextMeetingText(_ analysis: MeetingAnalysisCheckpoint?) -> String {
+        guard let next = analysis?.minutes?.nextMeeting else { return "Not set" }
+        let when = [next.dateText, next.timeText]
+            .compactMap { value in value?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !when.isEmpty { return when.joined(separator: ", ") }
+        let text = next.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "Not set" : text
+    }
+
+    // MARK: Points with evidence
+
+    private func quotes(_ evidence: [SourceEvidence], _ analysis: MeetingAnalysisCheckpoint?,
+                        _ names: MeetingSpeakerNames) -> [EvidenceMoment] {
+        guard let analysis, !evidence.isEmpty else { return [] }
+        return MeetingEvidence.moments(from: evidence, result: analysis, meeting: meeting, names: names)
+    }
+
+    @ViewBuilder
+    private func markerView(_ marker: Marker) -> some View {
+        switch marker {
+        case .bullet:
+            Circle().fill(Color.secondary).frame(width: 6, height: 6)
+        case .check:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(Color(red: 0.13, green: 0.55, blue: 0.24))
+        case .orange:
+            Circle().fill(Color.orange).frame(width: 8, height: 8)
+        }
+    }
+
+    private func pointRow(key: String, text: String, marker: Marker, moments: [EvidenceMoment]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                markerView(marker).accessibilityHidden(true)
+                if moments.isEmpty {
+                    Text(text)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Button {
+                        if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
+                    } label: {
+                        Text(text)
+                            .underline(true, pattern: .dot, color: Theme.Colors.manentAccent)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(expanded.contains(key) ? "Hides the quote" : "Shows the quote from the recording")
+                }
+            }
+            if expanded.contains(key), !moments.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(moments.enumerated()), id: \.offset) { entry in
+                        EvidenceQuoteRow(
+                            moment: entry.element,
+                            canPlay: canPlay,
+                            isPlaying: playingTurnID == entry.element.turnID && (viewModel?.isPlaying ?? false),
+                            onTogglePlay: { togglePlay(entry.element) }
+                        )
+                    }
+                }
+                .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+    }
+
+    private func togglePlay(_ moment: EvidenceMoment) {
+        guard let viewModel else { return }
+        RecordPlayback.toggle(moment, playing: &playingTurnID, viewModel: viewModel)
     }
 }
 

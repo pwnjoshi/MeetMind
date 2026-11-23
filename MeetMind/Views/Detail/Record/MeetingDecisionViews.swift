@@ -2,7 +2,8 @@ import SwiftUI
 import SwiftData
 import OfflineEngineKit
 
-/// "Decision detail": the decision, how it was decided, who decided it and where it came from.
+/// "Decision detail": the decision, its status and reason, how it was decided (quotes you can play), who decided it
+/// and where it came from.
 @MainActor
 struct MeetingDecisionDetail: View {
     let viewModel: MeetingDetailViewModel
@@ -19,19 +20,33 @@ struct MeetingDecisionDetail: View {
         return summary.keyDecisions[index]
     }
 
+    private func dayText(_ meeting: Meeting) -> String {
+        (meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.day().month(.abbreviated))
+    }
+
     var body: some View {
         ScrollView {
             if let meeting = viewModel.meeting, let decision {
+                let result = meeting.offlineAnalysis
+                let evidence = MeetingEvidence.decision(decision, in: result)
+                let status = MeetingEvidence.status(of: decision, in: result)
+                let why = MeetingEvidence.why(for: evidence, text: decision, in: result)
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("\(meeting.title) · \((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.day().month(.abbreviated))) · Decision")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Text(decision).font(.title3.bold())
-                    Text("Agreed")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.13, green: 0.55, blue: 0.24))
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(Color(red: 0.2, green: 0.78, blue: 0.35).opacity(0.2), in: Capsule())
-                    evidenceSection(meeting: meeting, decision: decision)
+                    Text("\(meeting.title) \u{00B7} \(dayText(meeting)) \u{00B7} Decision")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text(decision)
+                        .font(.title.bold())
+                        .accessibilityAddTraits(.isHeader)
+                    RecordChip(title: status.title, tint: status.tint)
+                    if let why {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Why").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                            Text(why).font(.body)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                    evidenceSection(meeting: meeting, evidence: evidence, result: result)
                     deciderSection(meeting: meeting)
                     historySection(meeting: meeting)
                 }
@@ -82,51 +97,39 @@ struct MeetingDecisionDetail: View {
     }
 
     @ViewBuilder
-    private func evidenceSection(meeting: Meeting, decision: String) -> some View {
+    private func evidenceSection(meeting: Meeting, evidence: [SourceEvidence],
+                                 result: MeetingAnalysisCheckpoint?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("How It Was Decided").font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
+            Text("How It Was Decided")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .accessibilityAddTraits(.isHeader)
             let names = MeetingSpeakerNames(meeting: meeting, record: store.record(for: meeting.id))
-            let moments = Self.moments(for: decision, in: meeting, names: names)
+            let moments: [EvidenceMoment] = result.map {
+                MeetingEvidence.moments(from: evidence, result: $0, meeting: meeting, names: names)
+            } ?? []
             if moments.isEmpty {
                 Text("No supporting quotes were captured for this decision.")
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                    .recordCard()
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(moments.enumerated()), id: \.offset) { entry in
-                        momentRow(entry.element, meeting: meeting)
+                        EvidenceQuoteRow(
+                            moment: entry.element,
+                            canPlay: meeting.resolvedAudioFileURL != nil,
+                            isPlaying: playingTurnID == entry.element.turnID && viewModel.isPlaying,
+                            onTogglePlay: { RecordPlayback.toggle(entry.element, playing: &playingTurnID, viewModel: viewModel) }
+                        )
                         if entry.offset < moments.count - 1 { Divider().padding(.leading, 16) }
                     }
                 }
-                .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                .padding(.vertical, 4)
+                .background(Color(uiColor: .secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             }
         }
-    }
-
-    private func momentRow(_ moment: DecisionMoment, meeting: Meeting) -> some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(Color(hex: moment.colorHex)).frame(width: 4)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(moment.speaker) · \(moment.timeText)")
-                    .font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
-                Text("“\(moment.quote)”").textSelection(.enabled)
-            }
-            Spacer(minLength: 0)
-            if meeting.resolvedAudioFileURL != nil {
-                let isPlaying = playingTurnID == moment.turnID && viewModel.isPlaying
-                Button { togglePlay(moment) } label: {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .foregroundStyle(Theme.Colors.manentAccent)
-                        .frame(width: 36, height: 36)
-                        .background(Theme.Colors.manentAccent.opacity(0.1), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isPlaying ? "Pause supporting audio" : "Play supporting audio")
-            }
-        }
-        .padding(.vertical, 12).padding(.horizontal, 16)
     }
 
     private func deciderSection(meeting: Meeting) -> some View {
@@ -135,7 +138,11 @@ struct MeetingDecisionDetail: View {
         let people = meeting.namedAttendees
         let current = people.first(where: { $0.id == currentID })
         return VStack(alignment: .leading, spacing: 8) {
-            Text("Decided By").font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
+            Text("Decided By")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .accessibilityAddTraits(.isHeader)
             Menu {
                 ForEach(people, id: \.id) { person in
                     Button {
@@ -154,28 +161,33 @@ struct MeetingDecisionDetail: View {
                 }
             } label: {
                 HStack {
-                    Text(current?.name ?? "Not set").foregroundStyle(current == nil ? .secondary : .primary)
+                    Text(current?.name ?? "Not set").foregroundStyle(current == nil ? Color.secondary : Color.primary)
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(.secondary)
                 }
-                .padding(16)
-                .background(.background, in: RoundedRectangle(cornerRadius: 24))
+                .frame(minHeight: 28)
+                .recordCard()
             }
             .disabled(people.isEmpty)
+            .accessibilityLabel("Decided by")
+            .accessibilityValue(current?.name ?? "Not set")
         }
     }
 
     private func historySection(meeting: Meeting) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("History").font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
+            Text("History")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Recorded in the meeting")
-                Text("\((meeting.scheduledStartTime ?? meeting.createdAt).formatted(.dateTime.day().month(.abbreviated))) · from the transcript")
+                Text("\(dayText(meeting)) \u{00B7} from the transcript")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(.background, in: RoundedRectangle(cornerRadius: 24))
+            .recordCard()
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -183,41 +195,7 @@ struct MeetingDecisionDetail: View {
         do { try MeetingRecordEditor.setDecider(id, at: index, meeting: meeting, store: store) }
         catch { saveError = error.localizedDescription }
     }
-
-    private func togglePlay(_ moment: DecisionMoment) {
-        if playingTurnID == moment.turnID && viewModel.isPlaying {
-            viewModel.stopPlayback()
-            playingTurnID = nil
-        } else {
-            viewModel.seek(to: moment.start)
-            if !viewModel.isPlaying { viewModel.togglePlayPause() }
-            playingTurnID = moment.turnID
-        }
-    }
-
-    struct DecisionMoment {
-        let turnID: String
-        let speaker: String
-        let start: TimeInterval
-        let quote: String
-        let colorHex: String
-        var timeText: String { String(format: "%02d:%02d", Int(start) / 60, Int(start) % 60) }
-    }
-
-    static func moments(for decision: String, in meeting: Meeting, names: MeetingSpeakerNames) -> [DecisionMoment] {
-        guard let result = meeting.offlineAnalysis,
-              let point = result.analysis.lazy.flatMap(\.decisions).first(where: { $0.text == decision }) else { return [] }
-        var moments: [DecisionMoment] = []
-        for source in point.evidence {
-            guard let turn = result.turns.first(where: { $0.id == source.turnID }) else { continue }
-            let name = names.name(forLabel: turn.speaker)
-            let color = meeting.participants.first(where: { $0.name == name })?.avatarColorHex ?? "#4F46E5"
-            moments.append(DecisionMoment(turnID: turn.id, speaker: name, start: turn.start, quote: source.quote, colorHex: color))
-        }
-        return moments
-    }
 }
-
 /// New or edit decision sheet: text, decided-by picker and (when editing) Delete Decision.
 /// Save and delete errors are shown in the sheet; the sheet closes only when the change was saved.
 struct MeetingDecisionEditSheet: View {

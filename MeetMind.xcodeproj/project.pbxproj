@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C09F2CEE000100000001 /* MeetingDetailsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A02CEE000100000001 /* MeetingDetailsSheet.swift */; };
+		1A00C0A12CEE000100000001 /* MeetingRecordComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A22CEE000100000001 /* MeetingRecordComponents.swift */; };
 		1A00C0902CEE000100000001 /* PlannedAgenda.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0912CEE000100000001 /* PlannedAgenda.swift */; };
 		1A00C0922CEE000100000001 /* VidurRecordAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0932CEE000100000001 /* VidurRecordAdapter.swift */; };
 		1A00C0942CEE000100000001 /* PrepareMeetingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0952CEE000100000001 /* PrepareMeetingSupport.swift */; };
@@ -374,6 +376,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0A02CEE000100000001 /* MeetingDetailsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingDetailsSheet.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0A22CEE000100000001 /* MeetingRecordComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingRecordComponents.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0912CEE000100000001 /* PlannedAgenda.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/PlannedAgenda.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0932CEE000100000001 /* VidurRecordAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurRecordAdapter.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0952CEE000100000001 /* PrepareMeetingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Prepare/PrepareMeetingSupport.swift"; sourceTree = SOURCE_ROOT; };
@@ -764,6 +768,8 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0A02CEE000100000001 /* MeetingDetailsSheet.swift */,
+				1B00C0A22CEE000100000001 /* MeetingRecordComponents.swift */,
 				1B00C0912CEE000100000001 /* PlannedAgenda.swift */,
 				1B00C0932CEE000100000001 /* VidurRecordAdapter.swift */,
 				1B00C0952CEE000100000001 /* PrepareMeetingSupport.swift */,
@@ -1412,6 +1418,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C09F2CEE000100000001 /* MeetingDetailsSheet.swift in Sources */,
+				1A00C0A12CEE000100000001 /* MeetingRecordComponents.swift in Sources */,
 				1A00C0902CEE000100000001 /* PlannedAgenda.swift in Sources */,
 				1A00C0922CEE000100000001 /* VidurRecordAdapter.swift in Sources */,
 				1A00C0942CEE000100000001 /* PrepareMeetingSupport.swift in Sources */,
