@@ -2,31 +2,72 @@ import Foundation
 import Speech
 import AVFoundation
 
+/// Live captions and file transcription, always on-device.
+///
+/// Live path (`startLiveTranscription`):
+/// - iOS 26+: `SpeechAnalyzer` with `SpeechTranscriber`, or `DictationTranscriber` for locales
+///   the first does not cover, fed with volatile and final results.
+/// - iOS 17-25, or when iOS 26 has no model for the locale: `SFSpeechRecognizer` with
+///   `requiresOnDeviceRecognition`, restarted seamlessly before its request time limit.
+/// - If neither can run on-device, the stream shows a truthful notice instead of using a server.
+///
+/// The language comes from the saved recording language (`MeetMind_SavedRecordingLanguage`):
+/// Hindi and Hinglish use `hi-IN`, English uses `en-IN` then `en-US`.
 public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtocol, @unchecked Sendable {
     private let speechRecognizer: SFSpeechRecognizer?
-    private let liveFallbackRecognizer: SFSpeechRecognizer?
+    private let preferredLocaleIdentifier: String
+    private let userDefaults: UserDefaults
     private let onDeviceOnly = true
     private var activeRecognitionTask: SFSpeechRecognitionTask?
-    private var activeRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var activeSession: LiveCaptionSession?
+    private var activeSessionTask: Task<Void, Never>?
+    private var storedContextualStrings: [String] = []
     private let lock = NSLock()
-    
+
+    /// Names and terms that help recognizers (participants, agenda words). Set before
+    /// `startLiveTranscription`; build the list with `LiveCaptionContext.contextualStrings`.
+    public var contextualStrings: [String] {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedContextualStrings
+        }
+        set {
+            lock.lock()
+            storedContextualStrings = newValue
+            lock.unlock()
+        }
+    }
+
     public var isAvailable: Bool {
-        speechRecognizer?.isAvailable ?? false
+        if speechRecognizer?.isAvailable == true { return true }
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) { return SpeechTranscriber.isAvailable }
+        #endif
+        return false
     }
-    
+
     public var supportsOnDeviceRecognition: Bool {
-        speechRecognizer?.supportsOnDeviceRecognition ?? false
+        if speechRecognizer?.supportsOnDeviceRecognition == true { return true }
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) { return SpeechTranscriber.isAvailable }
+        #endif
+        return false
     }
-    
-    public init(locale: Locale = Locale(identifier: "en-US")) {
-        self.speechRecognizer = SFSpeechRecognizer(locale: locale)
-        self.liveFallbackRecognizer = locale.identifier == "en-US" ? nil : SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+
+    public init(locale: Locale = Locale(identifier: "en-US"), userDefaults: UserDefaults = .standard) {
+        self.preferredLocaleIdentifier = locale.identifier
+        self.userDefaults = userDefaults
+        let plan = LiveCaptionLocalePlanner.plan(language: LiveCaptionLanguage.stored(in: userDefaults),
+                                                 preferredLocaleIdentifier: locale.identifier)
+        let primary = plan.candidates.first.map { Locale(identifier: $0) } ?? locale
+        self.speechRecognizer = SFSpeechRecognizer(locale: primary) ?? SFSpeechRecognizer(locale: locale)
     }
-    
+
     deinit {
         stopLiveTranscription()
     }
-    
+
     public func requestAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
         await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
@@ -34,97 +75,69 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
             }
         }
     }
-    
+
+    /// Downloads the on-device live caption model for the current language if it is missing.
+    /// Call this while the user is not recording (for example when changing the language).
+    /// Returns true when live captions can run on-device afterwards.
+    public func prepareLiveCaptionModels() async -> Bool {
+        let plan = LiveCaptionLocalePlanner.plan(language: LiveCaptionLanguage.stored(in: userDefaults),
+                                                 preferredLocaleIdentifier: preferredLocaleIdentifier)
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), let choice = await ModernCaptionResolver.resolve(plan: plan) {
+            if choice.isInstalled { return true }
+            if await SpeechAnalyzerCaptionEngine.installAssets(for: choice) { return true }
+        }
+        #endif
+        return LiveCaptionSession.makeOnDeviceRecognizer(candidates: plan.candidates) != nil
+    }
+
     public func startLiveTranscription(audioBufferStream: AsyncStream<AVAudioPCMBuffer>) -> AsyncThrowingStream<LiveTranscriptChunk, Error> {
-        AsyncThrowingStream { continuation in
-            let candidates = [speechRecognizer, liveFallbackRecognizer].compactMap { $0 }
-            guard let recognizer = candidates.first(where: {
-                $0.supportsOnDeviceRecognition && $0.isAvailable
-            }) else {
-                continuation.finish(throwing: SpeechTranscriptionError.onDeviceRecognitionUnavailable)
-                return
-            }
-            
-            let request = SFSpeechAudioBufferRecognitionRequest()
-            request.shouldReportPartialResults = true
-            request.taskHint = .dictation
-            
-            if onDeviceOnly && !recognizer.supportsOnDeviceRecognition {
-                continuation.finish(throwing: SpeechTranscriptionError.onDeviceRecognitionUnavailable)
-                return
-            }
-            if onDeviceOnly {
-                request.requiresOnDeviceRecognition = true
-            }
-            
-            lock.lock()
-            self.activeRequest = request
-            lock.unlock()
-            
-            // Background task feeding buffers into recognition request
-            Task {
-                for await buffer in audioBufferStream {
-                    self.lock.lock()
-                    let req = self.activeRequest
-                    self.lock.unlock()
-                    if let req = req {
-                        req.append(buffer)
-                    } else {
-                        break
-                    }
+        let configuration = LiveCaptionSession.Configuration(
+            language: LiveCaptionLanguage.stored(in: userDefaults),
+            preferredLocaleIdentifier: preferredLocaleIdentifier,
+            contextualStrings: contextualStrings
+        )
+        let source = CaptionAudioSource(stream: audioBufferStream)
+
+        return AsyncThrowingStream { continuation in
+            let session = LiveCaptionSession(configuration: configuration)
+            let task = Task(priority: .userInitiated) {
+                await session.run(source: source) { chunk in
+                    _ = continuation.yield(chunk)
                 }
-                request.endAudio()
+                continuation.finish()
             }
-            
-            let task = recognizer.recognitionTask(with: request) { result, error in
-                if let error = error {
-                    continuation.finish(throwing: SpeechTranscriptionError.recognitionRequestFailed(error.localizedDescription))
-                    return
-                }
-                guard let result = result else { return }
-                
-                let segments = result.bestTranscription.segments.map { seg in
-                    LiveTranscriptSegment(
-                        text: seg.substring,
-                        startTime: seg.timestamp,
-                        duration: seg.duration,
-                        confidence: seg.confidence
-                    )
-                }
-                
-                let chunk = LiveTranscriptChunk(
-                    text: result.bestTranscription.formattedString,
-                    isFinal: result.isFinal,
-                    segments: segments
-                )
-                continuation.yield(chunk)
-                
-                if result.isFinal {
-                    continuation.finish()
-                }
-            }
-            
-            lock.lock()
-            self.activeRecognitionTask = task
-            lock.unlock()
-            
-            continuation.onTermination = { [weak self] _ in
-                self?.stopLiveTranscription()
+
+            self.lock.lock()
+            let previousSession = self.activeSession
+            let previousTask = self.activeSessionTask
+            self.activeSession = session
+            self.activeSessionTask = task
+            self.lock.unlock()
+            previousSession?.stop()
+            previousTask?.cancel()
+
+            continuation.onTermination = { @Sendable _ in
+                session.stop()
+                task.cancel()
             }
         }
     }
-    
+
     public func stopLiveTranscription() {
         lock.lock()
-        let request = activeRequest
-        let task = activeRecognitionTask
-        activeRequest = nil
+        let session = activeSession
+        let task = activeSessionTask
+        let fileTask = activeRecognitionTask
+        activeSession = nil
+        activeSessionTask = nil
         activeRecognitionTask = nil
         lock.unlock()
-        request?.endAudio()
+        session?.stop()
         task?.cancel()
+        fileTask?.cancel()
     }
-    
+
     public func transcribeAudioFile(at url: URL) async throws -> [LiveTranscriptSegment] {
         guard await requestAuthorization() == .authorized else {
             throw SpeechTranscriptionError.authorizationDenied
@@ -135,7 +148,7 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw SpeechTranscriptionError.audioFileReadFailed("File not found at \(url.path)")
         }
-        
+
         let request = SFSpeechURLRecognitionRequest(url: url)
         if onDeviceOnly {
             guard recognizer.supportsOnDeviceRecognition else {
@@ -145,11 +158,12 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
         }
         request.shouldReportPartialResults = false
         request.taskHint = .dictation
-        
+        request.addsPunctuation = true
+
         return try await withCheckedThrowingContinuation { continuation in
             let continuationLock = NSLock()
             var hasResumed = false
-            
+
             @Sendable func resumeOnce(with result: Result<[LiveTranscriptSegment], Error>) {
                 continuationLock.lock()
                 defer { continuationLock.unlock() }
@@ -157,14 +171,14 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
                 hasResumed = true
                 continuation.resume(with: result)
             }
-            
+
             let task = recognizer.recognitionTask(with: request) { result, error in
                 if let error = error {
                     resumeOnce(with: .failure(SpeechTranscriptionError.recognitionRequestFailed(error.localizedDescription)))
                     return
                 }
                 guard let result = result, result.isFinal else { return }
-                
+
                 let segments = result.bestTranscription.segments.map { seg in
                     LiveTranscriptSegment(
                         text: seg.substring,
@@ -179,5 +193,179 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
             activeRecognitionTask = task
             lock.unlock()
         }
+    }
+}
+
+// MARK: - Live caption session
+
+/// One live caption run: picks the engine for the language, feeds it the recorder's audio,
+/// and reports captions through the assembler.
+final class LiveCaptionSession: @unchecked Sendable {
+    struct Configuration: Sendable {
+        let language: LiveCaptionLanguage
+        let preferredLocaleIdentifier: String
+        let contextualStrings: [String]
+    }
+
+    private let configuration: Configuration
+    private let router = CaptionAudioRouter()
+    private let lock = NSLock()
+    private var pumpTask: Task<Void, Never>?
+    private var isStopped = false
+
+    init(configuration: Configuration) {
+        self.configuration = configuration
+    }
+
+    func stop() {
+        lock.lock()
+        isStopped = true
+        let pump = pumpTask
+        lock.unlock()
+        pump?.cancel()
+        router.finish()
+    }
+
+    /// Stores the pump task. Returns true when the session was already stopped.
+    private func registerPump(_ pump: Task<Void, Never>) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        pumpTask = pump
+        return isStopped
+    }
+
+    /// Returns when the audio ends (recording stopped), the session is stopped, or no
+    /// on-device engine is available. Failures become a notice; they never use a server.
+    func run(source: CaptionAudioSource, emit: @escaping @Sendable (LiveTranscriptChunk) -> Void) async {
+        let plan = LiveCaptionLocalePlanner.plan(language: configuration.language,
+                                                 preferredLocaleIdentifier: configuration.preferredLocaleIdentifier)
+        let assembler = CaptionAssembler(sink: emit)
+        let router = self.router
+
+        let pump = Task(priority: .userInitiated) {
+            for await buffer in source.stream {
+                if Task.isCancelled { break }
+                router.send(buffer)
+            }
+            router.finish()
+        }
+        if registerPump(pump) {
+            pump.cancel()
+            router.finish()
+        }
+        defer {
+            pump.cancel()
+            router.finish()
+        }
+
+        let recognizer = Self.makeOnDeviceRecognizer(candidates: plan.candidates)
+
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            if await runModern(plan: plan, recognizer: recognizer, assembler: assembler) { return }
+        }
+        #endif
+
+        await runSFSpeech(plan: plan, recognizer: recognizer, assembler: assembler)
+    }
+
+    // MARK: Engines
+
+    private func runSFSpeech(plan: LiveCaptionLocalePlan, recognizer: SFSpeechRecognizer?, assembler: CaptionAssembler) async {
+        guard let recognizer else {
+            assembler.notice(LiveCaptionNotice.unavailable(languageName: plan.languageName))
+            return
+        }
+        let (audio, offset) = router.attach()
+        let engine = SFSpeechCaptionEngine(recognizer: recognizer,
+                                           contextualStrings: configuration.contextualStrings,
+                                           assembler: assembler)
+        do {
+            try await engine.run(audio: audio, startOffset: offset)
+        } catch {
+            guard !Task.isCancelled else { return }
+            assembler.notice(LiveCaptionNotice.unavailable(languageName: plan.languageName))
+        }
+    }
+
+    #if compiler(>=6.2)
+    /// Returns true when the iOS 26 engine handled the session (including a notice), false
+    /// when the caller should use `SFSpeechRecognizer`.
+    @available(iOS 26.0, *)
+    private func runModern(plan: LiveCaptionLocalePlan, recognizer: SFSpeechRecognizer?, assembler: CaptionAssembler) async -> Bool {
+        guard let choice = await ModernCaptionResolver.resolve(plan: plan) else { return false }
+        let engine = SpeechAnalyzerCaptionEngine(choice: choice,
+                                                 contextualStrings: configuration.contextualStrings,
+                                                 assembler: assembler)
+
+        if choice.isInstalled {
+            let (audio, offset) = router.attach()
+            do {
+                try await engine.run(audio: audio, startOffset: offset)
+                return true
+            } catch {
+                // Cancelled sessions are done. Any other failure falls back to SFSpeechRecognizer.
+                return Task.isCancelled
+            }
+        }
+
+        // The model must be downloaded. Recording and captions must not wait for it: use the
+        // older on-device recognizer meanwhile and switch when the model is ready.
+        assembler.notice(LiveCaptionNotice.downloading(languageName: plan.languageName))
+        var stopgap: Task<Void, Never>?
+        if let recognizer {
+            let (audio, offset) = router.attach()
+            let stopgapEngine = SFSpeechCaptionEngine(recognizer: recognizer,
+                                                      contextualStrings: configuration.contextualStrings,
+                                                      assembler: assembler)
+            stopgap = Task(priority: .userInitiated) {
+                try? await stopgapEngine.run(audio: audio, startOffset: offset)
+            }
+        } else {
+            router.detach()
+        }
+
+        let installed = await SpeechAnalyzerCaptionEngine.installAssets(for: choice)
+        if Task.isCancelled {
+            stopgap?.cancel()
+            return true
+        }
+        guard installed else {
+            if let stopgap {
+                await stopgap.value
+            } else {
+                assembler.notice(LiveCaptionNotice.unavailable(languageName: plan.languageName))
+            }
+            return true
+        }
+
+        // Attaching finishes the stopgap's stream; the new stream queues audio until it is done.
+        let (audio, offset) = router.attach()
+        await stopgap?.value
+        do {
+            try await engine.run(audio: audio, startOffset: offset)
+        } catch {
+            guard !Task.isCancelled else { return true }
+            assembler.notice(LiveCaptionNotice.unavailable(languageName: plan.languageName))
+        }
+        return true
+    }
+    #endif
+
+    /// First candidate locale whose recognizer can run fully on-device. Never returns a
+    /// recognizer that would use Apple's servers.
+    static func makeOnDeviceRecognizer(candidates: [String]) -> SFSpeechRecognizer? {
+        for identifier in candidates {
+            guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: identifier)),
+                  recognizer.isAvailable,
+                  recognizer.supportsOnDeviceRecognition else { continue }
+            // Keep result callbacks off the main thread so captions never block the UI.
+            let queue = OperationQueue()
+            queue.maxConcurrentOperationCount = 1
+            queue.qualityOfService = .userInitiated
+            recognizer.queue = queue
+            return recognizer
+        }
+        return nil
     }
 }

@@ -7,6 +7,25 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0A32CEE000100000001 /* ImportantGlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A42CEE000100000001 /* ImportantGlow.swift */; };
+		1A00C0A52CEE000100000001 /* ToolbarButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A62CEE000100000001 /* ToolbarButtonStyles.swift */; };
+		1A00C0A72CEE000100000001 /* MeetingFollowUpLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A82CEE000100000001 /* MeetingFollowUpLink.swift */; };
+		1A00C0A92CEE000100000001 /* MeetingRepeatEditing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0AA2CEE000100000001 /* MeetingRepeatEditing.swift */; };
+		1A00C0AB2CEE000100000001 /* LiveCaptionEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0AC2CEE000100000001 /* LiveCaptionEngines.swift */; };
+		1A00C0AD2CEE000100000001 /* LiveCaptionPlanning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0AE2CEE000100000001 /* LiveCaptionPlanning.swift */; };
+		1A00C0AF2CEE000100000001 /* LiveCaptionStitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B02CEE000100000001 /* LiveCaptionStitcher.swift */; };
+		1A00C0B12CEE000100000001 /* VidurActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B22CEE000100000001 /* VidurActions.swift */; };
+		1A00C0B32CEE000100000001 /* VidurVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B42CEE000100000001 /* VidurVoice.swift */; };
+		1A00C0B52CEE000100000001 /* VidurWakeWordListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B62CEE000100000001 /* VidurWakeWordListener.swift */; };
+		1A00C0B72CEE000100000001 /* LiveCapturesPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B82CEE000100000001 /* LiveCapturesPanel.swift */; };
+		1A00C0B92CEE000100000001 /* LiveRecordingBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0BA2CEE000100000001 /* LiveRecordingBackdrop.swift */; };
+		1A00C0BB2CEE000100000001 /* PrepAgendaEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0BC2CEE000100000001 /* PrepAgendaEditor.swift */; };
+		1A00C0BD2CEE000100000001 /* PrepSchedulingComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0BE2CEE000100000001 /* PrepSchedulingComponents.swift */; };
+		1A00C0BF2CEE000100000001 /* VidurActionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0C02CEE000100000001 /* VidurActionViews.swift */; };
+		1A00C0C12CEE000100000001 /* AgendaPointsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0C22CEE000100000001 /* AgendaPointsTests.swift */; };
+		1A00C0C32CEE000100000001 /* MeetingFollowUpLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0C42CEE000100000001 /* MeetingFollowUpLinkTests.swift */; };
+		1A00C0C52CEE000100000001 /* LiveCaptionStitcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0C62CEE000100000001 /* LiveCaptionStitcherTests.swift */; };
+		1A00C0C72CEE000100000001 /* VidurActionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0C82CEE000100000001 /* VidurActionsTests.swift */; };
 		1A00C0A22CEE000100000001 /* PromptExampleRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A32CEE000100000001 /* PromptExampleRepairTests.swift */; };
 		1A00C09F2CEE000100000001 /* MeetingDetailsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A02CEE000100000001 /* MeetingDetailsSheet.swift */; };
 		1A00C0A12CEE000100000001 /* MeetingRecordComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A22CEE000100000001 /* MeetingRecordComponents.swift */; };
@@ -377,6 +396,25 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0A42CEE000100000001 /* ImportantGlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/ImportantGlow.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0A62CEE000100000001 /* ToolbarButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/ToolbarButtonStyles.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0A82CEE000100000001 /* MeetingFollowUpLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/MeetingFollowUpLink.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0AA2CEE000100000001 /* MeetingRepeatEditing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/MeetingRepeatEditing.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0AC2CEE000100000001 /* LiveCaptionEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionEngines.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0AE2CEE000100000001 /* LiveCaptionPlanning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionPlanning.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0B02CEE000100000001 /* LiveCaptionStitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionStitcher.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0B22CEE000100000001 /* VidurActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurActions.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0B42CEE000100000001 /* VidurVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurVoice.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0B62CEE000100000001 /* VidurWakeWordListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurWakeWordListener.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0B82CEE000100000001 /* LiveCapturesPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveCapturesPanel.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0BA2CEE000100000001 /* LiveRecordingBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveRecordingBackdrop.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0BC2CEE000100000001 /* PrepAgendaEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/PrepAgendaEditor.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0BE2CEE000100000001 /* PrepSchedulingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/PrepSchedulingComponents.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0C02CEE000100000001 /* VidurActionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Vidur/VidurActionViews.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0C22CEE000100000001 /* AgendaPointsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Setup/AgendaPointsTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0C42CEE000100000001 /* MeetingFollowUpLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Setup/MeetingFollowUpLinkTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0C62CEE000100000001 /* LiveCaptionStitcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Transcription/LiveCaptionStitcherTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0C82CEE000100000001 /* VidurActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Vidur/VidurActionsTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A32CEE000100000001 /* PromptExampleRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Analysis/PromptExampleRepairTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A02CEE000100000001 /* MeetingDetailsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingDetailsSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A22CEE000100000001 /* MeetingRecordComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingRecordComponents.swift"; sourceTree = SOURCE_ROOT; };
@@ -770,6 +808,21 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0A42CEE000100000001 /* ImportantGlow.swift */,
+				1B00C0A62CEE000100000001 /* ToolbarButtonStyles.swift */,
+				1B00C0A82CEE000100000001 /* MeetingFollowUpLink.swift */,
+				1B00C0AA2CEE000100000001 /* MeetingRepeatEditing.swift */,
+				1B00C0AC2CEE000100000001 /* LiveCaptionEngines.swift */,
+				1B00C0AE2CEE000100000001 /* LiveCaptionPlanning.swift */,
+				1B00C0B02CEE000100000001 /* LiveCaptionStitcher.swift */,
+				1B00C0B22CEE000100000001 /* VidurActions.swift */,
+				1B00C0B42CEE000100000001 /* VidurVoice.swift */,
+				1B00C0B62CEE000100000001 /* VidurWakeWordListener.swift */,
+				1B00C0B82CEE000100000001 /* LiveCapturesPanel.swift */,
+				1B00C0BA2CEE000100000001 /* LiveRecordingBackdrop.swift */,
+				1B00C0BC2CEE000100000001 /* PrepAgendaEditor.swift */,
+				1B00C0BE2CEE000100000001 /* PrepSchedulingComponents.swift */,
+				1B00C0C02CEE000100000001 /* VidurActionViews.swift */,
 				1B00C0A02CEE000100000001 /* MeetingDetailsSheet.swift */,
 				1B00C0A22CEE000100000001 /* MeetingRecordComponents.swift */,
 				1B00C0912CEE000100000001 /* PlannedAgenda.swift */,
@@ -1043,6 +1096,10 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0C22CEE000100000001 /* AgendaPointsTests.swift */,
+				1B00C0C42CEE000100000001 /* MeetingFollowUpLinkTests.swift */,
+				1B00C0C62CEE000100000001 /* LiveCaptionStitcherTests.swift */,
+				1B00C0C82CEE000100000001 /* VidurActionsTests.swift */,
 				1B00C0A32CEE000100000001 /* PromptExampleRepairTests.swift */,
 				1B00C08F2CEE000100000001 /* ContinuedAnalysisRunTests.swift */,
 				1B00C09C2CEE000100000001 /* NameSpeakerSuggestionTests.swift */,
@@ -1421,6 +1478,21 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0A32CEE000100000001 /* ImportantGlow.swift in Sources */,
+				1A00C0A52CEE000100000001 /* ToolbarButtonStyles.swift in Sources */,
+				1A00C0A72CEE000100000001 /* MeetingFollowUpLink.swift in Sources */,
+				1A00C0A92CEE000100000001 /* MeetingRepeatEditing.swift in Sources */,
+				1A00C0AB2CEE000100000001 /* LiveCaptionEngines.swift in Sources */,
+				1A00C0AD2CEE000100000001 /* LiveCaptionPlanning.swift in Sources */,
+				1A00C0AF2CEE000100000001 /* LiveCaptionStitcher.swift in Sources */,
+				1A00C0B12CEE000100000001 /* VidurActions.swift in Sources */,
+				1A00C0B32CEE000100000001 /* VidurVoice.swift in Sources */,
+				1A00C0B52CEE000100000001 /* VidurWakeWordListener.swift in Sources */,
+				1A00C0B72CEE000100000001 /* LiveCapturesPanel.swift in Sources */,
+				1A00C0B92CEE000100000001 /* LiveRecordingBackdrop.swift in Sources */,
+				1A00C0BB2CEE000100000001 /* PrepAgendaEditor.swift in Sources */,
+				1A00C0BD2CEE000100000001 /* PrepSchedulingComponents.swift in Sources */,
+				1A00C0BF2CEE000100000001 /* VidurActionViews.swift in Sources */,
 				1A00C09F2CEE000100000001 /* MeetingDetailsSheet.swift in Sources */,
 				1A00C0A12CEE000100000001 /* MeetingRecordComponents.swift in Sources */,
 				1A00C0902CEE000100000001 /* PlannedAgenda.swift in Sources */,
@@ -1719,6 +1791,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0C12CEE000100000001 /* AgendaPointsTests.swift in Sources */,
+				1A00C0C32CEE000100000001 /* MeetingFollowUpLinkTests.swift in Sources */,
+				1A00C0C52CEE000100000001 /* LiveCaptionStitcherTests.swift in Sources */,
+				1A00C0C72CEE000100000001 /* VidurActionsTests.swift in Sources */,
 				1A00C0A22CEE000100000001 /* PromptExampleRepairTests.swift in Sources */,
 				1A00C08E2CEE000100000001 /* ContinuedAnalysisRunTests.swift in Sources */,
 				1A00C09B2CEE000100000001 /* NameSpeakerSuggestionTests.swift in Sources */,

@@ -48,9 +48,7 @@ public struct MeetingCard: View {
                     StatusBadge(statusText: data.status)
                     Spacer()
                     if data.isFavorite {
-                        Image(systemName: "star.fill")
-                            .foregroundStyle(Theme.Colors.warmAmber)
-                            .font(.system(size: 14))
+                        ImportantBadge()
                     }
                     Text(data.dateString)
                         .font(Typography.footnote)
@@ -97,6 +95,7 @@ public struct MeetingCard: View {
                     .stroke(Theme.Colors.cardBorder, lineWidth: 1)
             )
             .applyShadow(Spacing.Elevation.card)
+            .importantGlowBorder(data.isFavorite, cornerRadius: Spacing.Radius.lg)
         }
         .buttonStyle(.plain)
     }

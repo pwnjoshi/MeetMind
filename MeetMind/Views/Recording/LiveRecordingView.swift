@@ -16,6 +16,7 @@ public struct LiveRecordingView: View {
     @State private var isNotesOnlyPresented = false
     @State private var showsLiveTranscript = true
     @State private var showsMicrophonePrimer = false
+    @State private var cardTab: LiveCardTab = .transcript
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize = 60
     public let meetingId: UUID
     private let automaticallyStartsSession: Bool
@@ -65,7 +66,7 @@ public struct LiveRecordingView: View {
                 .frame(height: 86)
                 .padding(.top, 8)
 
-                liveTranscriptCard(height: min(218, max(158, proxy.size.height * 0.27)))
+                liveTranscriptCard(height: min(268, max(196, proxy.size.height * 0.31)))
                     .padding(.top, 8)
 
                 Spacer(minLength: 20)
@@ -91,7 +92,7 @@ public struct LiveRecordingView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background { LiveRecordingBackdrop() }
         .preferredColorScheme(.dark)
         .overlay {
             if showsMicrophonePrimer {
@@ -107,7 +108,10 @@ public struct LiveRecordingView: View {
                 )
             }
         }
-        .onChange(of: viewModel.recordingState) { _, state in updateLiveActivity(state) }
+        .onChange(of: viewModel.recordingState) { _, state in
+            updateLiveActivity(state)
+            updateIdleTimer(for: state)
+        }
         .toolbar(.hidden, for: .tabBar)
         .navigationBarHidden(true)
         .sensoryFeedback(.success, trigger: viewModel.bookmarks.count)
@@ -147,6 +151,7 @@ public struct LiveRecordingView: View {
                 onTakeNotes: { isNotesOnlyPresented = true },
                 onImportRecording: importRecording
             )
+            .preferredColorScheme(.dark)
             .fullScreenCover(isPresented: $isNotesOnlyPresented) {
                 NotesOnlyView(
                     existingMeeting: fetchMeeting(),
@@ -171,6 +176,10 @@ public struct LiveRecordingView: View {
         )) {
             Button("OK") { viewModel.errorMessage = nil }
         } message: { Text(viewModel.errorMessage ?? "") }
+        .onAppear {
+            // Keep the screen awake while this page is up and recording.
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
         .task {
             do {
                 try viewModel.prepareSession(context: modelContext, settings: settings)
@@ -184,6 +193,7 @@ public struct LiveRecordingView: View {
             } catch { viewModel.errorMessage = error.localizedDescription }
         }
         .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
             if automaticallyStartsSession { viewModel.leaveSession() }
         }
     }
@@ -266,81 +276,106 @@ public struct LiveRecordingView: View {
     }
 
     private func liveTranscriptCard(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Live view", selection: $cardTab) {
+                Text("Transcript").tag(LiveCardTab.transcript)
+                Text(capturesTabTitle).tag(LiveCardTab.captures)
+            }
+            .pickerStyle(.segmented)
+
+            Group {
+                switch cardTab {
+                case .transcript:
+                    transcriptContent
+                case .captures:
+                    LiveCapturesPanel(
+                        items: viewModel.liveCaptureFeed,
+                        onEdit: { id, text in viewModel.updateCapture(id: id, text: text) },
+                        onDelete: { id in viewModel.deleteCapture(id: id) }
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(18)
+        .frame(height: height, alignment: .top)
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 0.75))
+    }
+
+    private var capturesTabTitle: String {
+        let count = viewModel.sessionCaptures.count
+        return count > 0 ? "Notes & photos \(count)" : "Notes & photos"
+    }
+
+    private var transcriptContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Live transcript")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.75))
                 Spacer()
                 Toggle("Live transcript", isOn: $showsLiveTranscript)
                     .labelsHidden()
                     .tint(.green)
                     .accessibilityLabel("Live transcript")
             }
-
-            Group {
-                if showsLiveTranscript {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 14) {
-                            ForEach(viewModel.finalTranscriptSegments) { segment in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("\(segment.speakerName) · \(transcriptTimestamp(segment.startTime))")
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.65))
-                                    Text(segment.text)
-                                        .font(.body)
-                                        .foregroundStyle(.white.opacity(0.92))
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            ForEach(Array(viewModel.bookmarks.enumerated()), id: \.element.id) { index, mark in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("Bookmark \u{00B7} \(transcriptTimestamp(mark.timestamp))")
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.Colors.warmAmber)
-                                    Text("Bookmark \(index + 1)")
-                                        .font(.body)
-                                        .foregroundStyle(Theme.Colors.warmAmber)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            if !viewModel.interimTranscriptText.isEmpty {
-                                Text(viewModel.interimTranscriptText)
+            if showsLiveTranscript {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(viewModel.finalTranscriptSegments) { segment in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("\(segment.speakerName) \u{00B7} \(transcriptTimestamp(segment.startTime))")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.65))
+                                Text(segment.text)
                                     .font(.body)
-                                    .foregroundStyle(.white.opacity(0.67))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .foregroundStyle(.white.opacity(0.92))
                             }
-                            if viewModel.finalTranscriptSegments.isEmpty && viewModel.interimTranscriptText.isEmpty {
-                                Text("Listening for the conversation…")
-                                    .font(.body)
-                                    .foregroundStyle(.white.opacity(0.58))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .padding(.vertical, 2)
+                        ForEach(Array(viewModel.bookmarks.enumerated()), id: \.element.id) { index, mark in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Bookmark \u{00B7} \(transcriptTimestamp(mark.timestamp))")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Colors.warmAmber)
+                                Text("Bookmark \(index + 1)")
+                                    .font(.body)
+                                    .foregroundStyle(Theme.Colors.warmAmber)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if !viewModel.interimTranscriptText.isEmpty {
+                            Text(viewModel.interimTranscriptText)
+                                .font(.body)
+                                .foregroundStyle(.white.opacity(0.67))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if viewModel.finalTranscriptSegments.isEmpty && viewModel.interimTranscriptText.isEmpty {
+                            Text("Listening for the conversation\u{2026}")
+                                .font(.body)
+                                .foregroundStyle(.white.opacity(0.58))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Image(systemName: "text.bubble")
-                            .font(.title3)
-                            .foregroundStyle(.white.opacity(0.58))
-                        Text("Live transcript is off")
-                            .font(.body)
-                            .foregroundStyle(.white.opacity(0.76))
-                        Text("Recording continues and the transcript can be created after you stop.")
-                            .font(.footnote)
-                            .foregroundStyle(.white.opacity(0.55))
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .padding(.vertical, 2)
                 }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Image(systemName: "text.bubble")
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.58))
+                    Text("Live transcript is off")
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.76))
+                    Text("Recording continues and the transcript can be created after you stop.")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(20)
-        .frame(height: height, alignment: .top)
-        .background(Color(hex: "#1E1E20"), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
-
     private var recordingControls: some View {
         HStack(spacing: 36) {
             Button { viewModel.addBookmark() } label: {
@@ -438,6 +473,16 @@ public struct LiveRecordingView: View {
         }
     }
 
+    /// The screen may sleep again as soon as the recording is no longer running.
+    private func updateIdleTimer(for state: RecordingState) {
+        switch state {
+        case .preparing, .recording, .paused, .interrupted:
+            UIApplication.shared.isIdleTimerDisabled = true
+        case .idle, .stopping, .stopped, .stoppedUnsaved, .saveFailed, .saved:
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+    }
+
     private func handleStop() {
         if viewModel.isDurationUnderThreshold(seconds: 3.0) {
             viewModel.requestStop()
@@ -453,6 +498,7 @@ public struct LiveRecordingView: View {
         do {
             _ = try viewModel.retrySave()
             viewModel.errorMessage = nil
+            ProcessingAutoStart.shared.request(meetingID: meetingId)
             showMeetingDetail()
         } catch {
             viewModel.errorMessage = error.localizedDescription
@@ -466,6 +512,8 @@ public struct LiveRecordingView: View {
             defer { isFinishing = false }
             do {
                 _ = try await viewModel.finishSession()
+                // Finishing is the person's action; the processing screen starts the run itself.
+                ProcessingAutoStart.shared.request(meetingID: meetingId)
                 showMeetingDetail()
             } catch { viewModel.errorMessage = error.localizedDescription }
         }
@@ -532,4 +580,10 @@ public struct LiveRecordingView: View {
     private func transcriptTimestamp(_ seconds: TimeInterval) -> String {
         Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond))
     }
+}
+
+/// Which list the live card shows: the spoken transcript or the notes and photos captured so far.
+private enum LiveCardTab: Hashable {
+    case transcript
+    case captures
 }

@@ -155,8 +155,7 @@ struct SharedMinutesView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { dismiss() }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
+                    .toolbarProminentTextButtonStyle()
             }
         }
         .toolbar(.hidden, for: .tabBar)

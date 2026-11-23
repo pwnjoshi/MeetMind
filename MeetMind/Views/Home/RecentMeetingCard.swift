@@ -41,6 +41,7 @@ public struct RecentMeetingCard: View {
             .clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.lg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Spacing.Radius.lg, style: .continuous).stroke(Theme.Colors.cardBorder.opacity(0.6), lineWidth: 1))
             .applyShadow(Spacing.Elevation.card)
+            .importantGlowBorder(meeting.isFavorite, cornerRadius: Spacing.Radius.lg)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -51,6 +52,7 @@ public struct RecentMeetingCard: View {
         HStack(alignment: .center) {
             MeetingStatusBadgeView(status: meeting.status)
             Spacer()
+            if meeting.isFavorite { ImportantBadge() }
             Text(meeting.formattedDate)
                 .font(Typography.caption2)
                 .foregroundStyle(Theme.Colors.textTertiary)
@@ -61,7 +63,7 @@ public struct RecentMeetingCard: View {
                         .foregroundStyle(meeting.isFavorite ? Theme.Colors.warmAmber : Theme.Colors.textTertiary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(meeting.isFavorite ? "Unstar meeting" : "Star meeting")
+                .accessibilityLabel(meeting.isFavorite ? "Remove Important mark" : "Mark as Important")
             }
         }
     }

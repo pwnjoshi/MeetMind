@@ -83,6 +83,25 @@ public struct PhotoAttachmentItem: Identifiable, Sendable, Equatable {
     }
 }
 
+/// One note or photo captured during the current recording, shown in the live
+/// "Notes & photos" list. `id` matches the persisted `Note.id`.
+public struct LiveCaptureItem: Identifiable, Sendable, Equatable {
+    public enum Kind: Sendable, Equatable { case note, photo }
+    public let id: UUID
+    public let kind: Kind
+    public var text: String
+    public let timestamp: TimeInterval
+    public let photoURL: URL?
+
+    public init(id: UUID, kind: Kind, text: String, timestamp: TimeInterval, photoURL: URL? = nil) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.timestamp = timestamp
+        self.photoURL = photoURL
+    }
+}
+
 /// System audio interruption type
 public enum InterruptionType: Sendable, Equatable {
     case began
@@ -197,6 +216,11 @@ public final class LiveRecordingViewModel {
         set { capturedPhotos = newValue }
     }
     public var photosCount: Int { capturedPhotos.count }
+
+    /// Notes and photos captured in this recording only, in capture order.
+    public private(set) var sessionCaptures: [LiveCaptureItem] = []
+    /// Newest first, for the live "Notes & photos" list.
+    public var liveCaptureFeed: [LiveCaptureItem] { Array(sessionCaptures.reversed()) }
     
     public var isShowingDiscardAlert: Bool = false
     public var showDiscardConfirmationAlert: Bool {
@@ -591,11 +615,13 @@ public final class LiveRecordingViewModel {
             return
         }
         isNoteSheetPresented = false
-        let noteItem = NoteItem(text: text, timestamp: noteCaptureTimestamp, isFlagged: false)
+        let noteID = UUID()
+        let noteItem = NoteItem(id: noteID, text: text, timestamp: noteCaptureTimestamp, isFlagged: false)
         capturedNotes.append(noteItem)
+        sessionCaptures.append(LiveCaptureItem(id: noteID, kind: .note, text: trimmed, timestamp: noteCaptureTimestamp))
         
         if let meeting = meeting {
-            let note = Note(content: text, timestamp: noteCaptureTimestamp, meeting: meeting)
+            let note = Note(id: noteID, content: text, timestamp: noteCaptureTimestamp, meeting: meeting)
             meeting.addNote(note)
             try? modelContext?.save()
         }
@@ -670,13 +696,16 @@ public final class LiveRecordingViewModel {
     
     public func attachPhoto(url: URL, originalSizeBytes: Int? = nil, caption: String = "") {
         let isCompressed = (originalSizeBytes ?? 0) > 10 * 1024 * 1024
-        let item = PhotoAttachmentItem(url: url, timestamp: elapsedDuration, isCompressed: isCompressed)
+        let photoID = UUID()
+        let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        let item = PhotoAttachmentItem(id: photoID, url: url, timestamp: elapsedDuration, isCompressed: isCompressed)
         capturedPhotos.append(item)
         whiteboardPhotos.append(url)
+        sessionCaptures.append(LiveCaptureItem(id: photoID, kind: .photo, text: trimmedCaption,
+                                               timestamp: elapsedDuration, photoURL: url))
         if let meeting = meeting {
-            let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
             let content = trimmedCaption.isEmpty ? "Whiteboard photo: \(url.lastPathComponent)" : trimmedCaption
-            let note = Note(content: content, timestamp: elapsedDuration, imageAttachmentPath: url.path, meeting: meeting)
+            let note = Note(id: photoID, content: content, timestamp: elapsedDuration, imageAttachmentPath: url.path, meeting: meeting)
             meeting.addNote(note)
             try? modelContext?.save()
         }
@@ -694,6 +723,44 @@ public final class LiveRecordingViewModel {
         } catch { errorMessage = error.localizedDescription }
     }
     
+    /// Edits the text of a note, or the caption of a photo, captured in this recording.
+    public func updateCapture(id: UUID, text: String) {
+        guard let index = sessionCaptures.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let item = sessionCaptures[index]
+        if item.kind == .note && trimmed.isEmpty { return }
+        sessionCaptures[index].text = trimmed
+        if let noteIndex = capturedNotes.firstIndex(where: { $0.id == id }) {
+            let old = capturedNotes[noteIndex]
+            capturedNotes[noteIndex] = NoteItem(id: old.id, text: trimmed, timestamp: old.timestamp, isFlagged: old.isFlagged)
+        }
+        if let note = meeting?.notes.first(where: { $0.id == id }) {
+            if item.kind == .photo && trimmed.isEmpty, let url = item.photoURL {
+                note.content = "Whiteboard photo: \(url.lastPathComponent)"
+            } else {
+                note.content = trimmed
+            }
+            try? modelContext?.save()
+        }
+    }
+
+    /// Removes a note or photo captured in this recording, including the photo file.
+    public func deleteCapture(id: UUID) {
+        guard let item = sessionCaptures.first(where: { $0.id == id }) else { return }
+        sessionCaptures.removeAll { $0.id == id }
+        capturedNotes.removeAll { $0.id == id }
+        if let url = item.photoURL {
+            capturedPhotos.removeAll { $0.id == id }
+            whiteboardPhotos.removeAll { $0 == url }
+            try? FileManager.default.removeItem(at: url)
+        }
+        if let meeting, let note = meeting.notes.first(where: { $0.id == id }) {
+            meeting.notes.removeAll { $0.id == id }
+            modelContext?.delete(note)
+            try? modelContext?.save()
+        }
+    }
+
     public func snapWhiteboardPhoto(url: URL) {
         attachPhoto(url: url)
     }
@@ -946,6 +1013,7 @@ public final class LiveRecordingViewModel {
         elapsedDuration = 0
         finalTranscriptSegments.removeAll()
         capturedNotes.removeAll()
+        sessionCaptures.removeAll()
         bookmarks.removeAll()
         capturedPhotos.removeAll()
         didCompleteDismissal = true

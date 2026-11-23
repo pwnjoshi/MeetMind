@@ -149,8 +149,7 @@ struct MoMEditMinutesSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", systemImage: "checkmark") { save() }
                         .labelStyle(.iconOnly)
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.circle)
+                        .toolbarConfirmButtonStyle()
                 }
             }
             .alert("Could Not Save Minutes", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {

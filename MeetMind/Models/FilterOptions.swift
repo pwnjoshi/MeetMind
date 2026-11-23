@@ -14,7 +14,7 @@ public enum MeetingFilter: String, Codable, CaseIterable, Sendable {
         case .today: return "Today"
         case .thisWeek: return "This Week"
         case .hasActionItems: return "Action Items"
-        case .starred: return "Starred"
+        case .starred: return "Important"
         }
     }
     

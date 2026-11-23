@@ -182,6 +182,11 @@ public final class MeetingSetupViewModel {
     public var importedSeriesName: String?
     public var scheduledSeriesID: UUID?
     public var scheduledSeriesName: String?
+    /// The earlier recorded meeting this one follows up on. Not stored on its own: saving writes the
+    /// shared series (`scheduledSeriesID` / `scheduledSeriesName`) onto both meetings.
+    public var followsUpOn: Meeting?
+    /// "Important" in the UI. Saved in `Meeting.isFavorite`.
+    public var isImportant: Bool = false
     // MARK: Preparation (Figma section 03)
     public var variant: MeetingPrepVariant = .newMeeting
     /// Repeat choice; nil means Never.
@@ -354,6 +359,10 @@ public final class MeetingSetupViewModel {
         recurrence = nil
         coordinatorID = nil
         followUpSource = nil
+        followsUpOn = nil
+        scheduledSeriesID = nil
+        scheduledSeriesName = nil
+        isImportant = false
         variant = .newMeeting
         participants.removeAll()
         selectedTemplate = .general
@@ -384,17 +393,21 @@ public final class MeetingSetupViewModel {
     }
     
     // MARK: - Templates
+    /// Picks a built-in template. It names the meeting but never fills in an agenda:
+    /// agenda points are always written by the person scheduling the meeting.
     public func selectTemplate(_ templateType: MeetingTemplateType) {
         selectedTemplate = templateType
         title = templateType.name
-        agendaText = templateType.defaultAgenda
     }
     
+    /// Picks a template from the list. Built-in templates only set the title; a template the user
+    /// created themselves also brings its own sections.
     public func selectTemplate(_ template: MeetingTemplate) {
         title = template.name
-        agendaText = template.defaultAgenda
         if let match = MeetingTemplateType.allCases.first(where: { $0.name == template.name }) {
             selectedTemplate = match
+        } else {
+            agendaText = template.defaultAgenda
         }
     }
     
@@ -402,8 +415,11 @@ public final class MeetingSetupViewModel {
         selectTemplate(templateType)
     }
     
+    /// Asks first when switching would replace a title the user typed themselves.
     public func attemptTemplateSwitch(to templateType: MeetingTemplateType) {
-        if !agendaText.isEmpty && agendaText != selectedTemplate?.defaultAgenda {
+        let typedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isTemplateTitle = MeetingTemplateType.allCases.contains { $0.name == typedTitle }
+        if !typedTitle.isEmpty && !isTemplateTitle {
             pendingTemplateSwitch = templateType
             isShowingTemplateOverwriteConfirmation = true
         } else {
@@ -464,7 +480,6 @@ public final class MeetingSetupViewModel {
     
     public func resetTemplateSelection() {
         selectedTemplate = .general
-        agendaText = MeetingTemplateType.general.defaultAgenda
     }
     
     // MARK: - Participants
@@ -587,6 +602,8 @@ public final class MeetingSetupViewModel {
             String(Int(endDate.timeIntervalSince1970)),
             scheduledSeriesID?.uuidString ?? "",
             scheduledSeriesName ?? "",
+            followsUpOn?.id.uuidString ?? "",
+            isImportant ? "important" : "normal",
             recurrence.map { "\($0.unit.rawValue)/\($0.interval)" } ?? "never",
             coordinatorID?.uuidString ?? "",
             carryOverOpenActions ? "carry" : "nocarry",
@@ -605,14 +622,36 @@ public final class MeetingSetupViewModel {
         baselineSignature = draftSignature
     }
 
-    /// Clears the template agenda that the initialiser pre-fills, then records the baseline.
+    /// Clears any legacy template agenda, links a follow-up draft to its source meeting, then records the baseline.
     public func prepareForEditing() {
         if baselineSignature == nil {
             if agendaText == MeetingTemplateType.general.defaultAgenda {
                 agendaText = ""
             }
+            if followsUpOn == nil, let source = followUpSource {
+                if scheduledSeriesID == nil {
+                    setFollowsUp(source)
+                } else {
+                    followsUpOn = source
+                }
+            }
             captureDraftBaseline()
         }
+    }
+
+    /// Chooses the earlier meeting this one follows up on (nil for "None").
+    /// Joins that meeting's series, or starts a new one named after it. The earlier meeting is only
+    /// changed when this meeting is saved.
+    public func setFollowsUp(_ previous: Meeting?) {
+        followsUpOn = previous
+        guard let previous else {
+            scheduledSeriesID = nil
+            scheduledSeriesName = nil
+            return
+        }
+        let series = MeetingFollowUpLink.series(joining: previous)
+        scheduledSeriesID = series.id
+        scheduledSeriesName = series.name
     }
 
     /// Moves the start while keeping the meeting length.
@@ -634,7 +673,7 @@ public final class MeetingSetupViewModel {
         guard !open.isEmpty else { return "There are no unfinished actions to carry over." }
         let noun = open.count == 1 ? "action" : "actions"
         let detail = open.prefix(2).map(Self.describeAction).joined(separator: "; ")
-        return "Puts \(open.count) unfinished \(noun) on this agenda: \(detail)."
+        return "\(open.count) unfinished \(noun) will show under Open From Last Time: \(detail)."
     }
 
     private static func describeAction(_ item: ActionItem) -> String {
@@ -644,15 +683,10 @@ public final class MeetingSetupViewModel {
         return extras.isEmpty ? item.title : "\(item.title) (\(extras.joined(separator: ", ")))"
     }
 
+    /// The agenda exactly as the person wrote it. Open actions of a followed-up meeting are shown
+    /// separately ("Open From Last Time") and are never written into the agenda text.
     func effectiveAgendaForSave() -> String {
-        var agenda = agendaText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if variant == .followUp && carryOverOpenActions {
-            let lines = openActionsToCarry.map { "\u{2022} Open action: " + Self.describeAction($0) }
-            if !lines.isEmpty {
-                agenda = ([agenda].filter { !$0.isEmpty } + lines).joined(separator: "\n")
-            }
-        }
-        return agenda
+        agendaText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Persists recurrence/coordinator, generates the next occurrence and writes calendar events.
@@ -709,11 +743,11 @@ public final class MeetingSetupViewModel {
             duration: duration,
             status: .scheduled,
             audioQuality: defaultAudioQuality,
+            isFavorite: isImportant,
             templateName: selectedTemplate?.name,
             folder: selectedFolder
         )
-        meeting.seriesID = scheduledSeriesID
-        meeting.seriesName = scheduledSeriesID == nil ? nil : scheduledSeriesName
+        MeetingFollowUpLink.apply(seriesID: scheduledSeriesID, seriesName: scheduledSeriesName, previous: followsUpOn, to: meeting)
         meeting.tags = selectedTags
         meeting.participants = participants
         meeting.agendaText = effectiveAgendaForSave()

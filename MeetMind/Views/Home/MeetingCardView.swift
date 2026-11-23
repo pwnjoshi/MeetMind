@@ -27,6 +27,8 @@ public struct MeetingCardView: View {
                     
                     Spacer()
                     
+                    if meeting.isFavorite { ImportantBadge() }
+
                     if let onToggleStar = onToggleStar {
                         Button {
                             onToggleStar()
@@ -69,6 +71,7 @@ public struct MeetingCardView: View {
                     .stroke(Theme.Colors.cardBorder.opacity(0.6), lineWidth: 1)
             )
             .applyShadow(Spacing.Elevation.card)
+            .importantGlowBorder(meeting.isFavorite, cornerRadius: Spacing.Radius.lg)
         }
         .buttonStyle(.plain)
     }

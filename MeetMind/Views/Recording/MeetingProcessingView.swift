@@ -17,6 +17,26 @@ private struct ProcessingStageRow: Identifiable {
     var id: Int { first }
 }
 
+/// Remembers which meetings were just finished from the live recording page, so the
+/// processing screen starts the run by itself instead of asking for "Process Now".
+/// A request is single-use and expires, so reopening a meeting later never auto-starts.
+@MainActor
+final class ProcessingAutoStart {
+    static let shared = ProcessingAutoStart()
+    private var requests: [UUID: Date] = [:]
+    private init() {}
+
+    func request(meetingID: UUID) {
+        requests[meetingID] = Date()
+    }
+
+    /// Returns true once for a recent request, then forgets it.
+    func consume(meetingID: UUID) -> Bool {
+        guard let requestedAt = requests.removeValue(forKey: meetingID) else { return false }
+        return Date().timeIntervalSince(requestedAt) < 300
+    }
+}
+
 /// Post-recording screen (Figma B4 "Writing minutes"). It shows honest progress while the on-device
 /// minutes are written and offers the next steps. When the minutes exist it opens the B6 document.
 public struct MeetingProcessingView: View {
@@ -41,6 +61,8 @@ public struct MeetingProcessingView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloading = false
     @State private var checkingModels = false
+    /// True from arrival after a finished recording until the automatic start has been decided.
+    @State private var autoStartInFlight = false
     public let meetingId: UUID
 
     public init(meetingId: UUID, viewModel: ProcessingPipelineViewModel? = nil) {
@@ -81,26 +103,11 @@ public struct MeetingProcessingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
-            if let meeting {
+            if meeting != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Vidur", systemImage: "sparkles") {
                         showsVidur = true
                     }.labelStyle(.iconOnly)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Rename Meeting", systemImage: "pencil") {
-                            meetingTitleDraft = meeting.title
-                            showsRename = true
-                        }
-                        Button("People", systemImage: "person.2") { showsPeople = true }
-                        Button("Show Transcript", systemImage: "doc.text") {
-                            showsTranscript = true
-                        }
-                        .disabled(busy)
-                    } label: {
-                        Label("Meeting options", systemImage: "ellipsis").labelStyle(.iconOnly)
-                    }
                 }
             }
         }
@@ -147,14 +154,22 @@ public struct MeetingProcessingView: View {
             // Opening this screen verifies local readiness but never starts a
             // model download or meeting analysis without an explicit tap. A run that
             // is already processing this meeting owns its job record; leave it alone.
+            // Arriving from a finished recording starts processing once, below. The request
+            // is consumed here so a later reopen of this screen never starts a run.
+            let wantsAutoStart = ProcessingAutoStart.shared.consume(meetingID: meetingId)
             guard !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) else { return }
             checkingModels = true
+            autoStartInFlight = wantsAutoStart
             Task { @MainActor in
-                defer { checkingModels = false }
+                defer {
+                    checkingModels = false
+                    autoStartInFlight = false
+                }
                 do {
                     try viewModel.prepareForProduction(context: modelContext, settings: settings)
                     _ = try await viewModel.refreshAnalysisState()
                     processingError = viewModel.jobSnapshot?.failure?.message
+                    if wantsAutoStart { startAutomaticallyIfEligible() }
                 } catch {
                     processingError = (error as? AnalysisCoordinatorError)?.errorDescription
                         ?? (error as? AnalysisJobStoreError)?.errorDescription
@@ -186,10 +201,27 @@ public struct MeetingProcessingView: View {
                 Text(subtitle(for: meeting))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                MeetingSeriesMenu(meeting: meeting) { processingError = $0 }
-                    .padding(.top, 2)
+                HStack(spacing: 8) {
+                    MeetingSeriesMenu(meeting: meeting) { processingError = $0 }
+                    peoplePill
+                }
+                .padding(.top, 2)
             }
         }
+    }
+
+    /// Opens the people editor. People is edited here, so it is not repeated in a menu.
+    private var peoplePill: some View {
+        Button { showsPeople = true } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "person.2").font(.caption)
+                Text("People")
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+        }
+        .accessibilityHint("Edit who was in this meeting")
     }
 
     private func subtitle(for meeting: Meeting) -> String {
@@ -283,11 +315,9 @@ public struct MeetingProcessingView: View {
             }
         } else if viewModel.jobSnapshot?.state == .queued {
             panel {
-                Text("Queued").font(.title3.bold())
+                Text(autoStartInFlight ? "Starting\u{2026}" : "Queued").font(.title3.bold())
                 Text("Your recording is saved and ready for on-device processing.")
                     .foregroundStyle(.secondary)
-                Button("Process Now") { start() }
-                    .buttonStyle(.borderedProminent)
             }
         } else if modelsRequired {
             panel {
@@ -520,14 +550,14 @@ public struct MeetingProcessingView: View {
             let backgroundRunning = OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId)
             let queued = OfflineAnalysisBackgroundScheduler.status(for: meetingId) != nil
                 || viewModel.jobSnapshot?.state == .queued
-            if !busy && !backgroundRunning {
+            if !busy && !backgroundRunning && !autoStartInFlight {
                 Button {
                     if isReadyForReview { showsMinutes = true }
                     else { start(download: modelsRequired) }
                 } label: {
                     Text(isReadyForReview ? "Open Minutes" :
                          (modelsRequired ? "Download & Continue" :
-                          (queued ? "Process Now" : "Generate Minutes")))
+                          (queued ? "Resume Processing" : "Generate Minutes")))
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
@@ -628,6 +658,19 @@ public struct MeetingProcessingView: View {
             }
             dismiss()
         }
+    }
+
+    /// Starts the run once after a finished recording. It never downloads models: when
+    /// models are missing the "Models Required" card keeps the explicit download button.
+    private func startAutomaticallyIfEligible() {
+        guard !busy, !isRunning, !isReadyForReview, !modelsRequired,
+              !ContinuedAnalysisRun.shared.hasActiveRun else { return }
+        let job = viewModel.jobSnapshot?.state
+        guard viewModel.jobSnapshot?.failure == nil,
+              job == nil || job == .queued || job == .verifying else { return }
+        let state = meeting?.analysisState
+        guard state == nil || state == "ready" else { return }
+        start()
     }
 
     private func start(download: Bool = false, speakersOnly: Bool = false) {

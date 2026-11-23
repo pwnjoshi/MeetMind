@@ -6,6 +6,7 @@ public struct MeetingsHomeRowView: View {
     public let subtitle: String
     public let categoryBadgeText: String
     public let badgeColorHex: String
+    public let isImportant: Bool
     public let onSelect: () -> Void
     
     public init(
@@ -13,12 +14,14 @@ public struct MeetingsHomeRowView: View {
         subtitle: String,
         categoryBadgeText: String,
         badgeColorHex: String = "#5F636B",
+        isImportant: Bool = false,
         onSelect: @escaping () -> Void
     ) {
         self.title = title
         self.subtitle = subtitle
         self.categoryBadgeText = categoryBadgeText
         self.badgeColorHex = badgeColorHex
+        self.isImportant = isImportant
         self.onSelect = onSelect
     }
     
@@ -38,6 +41,7 @@ public struct MeetingsHomeRowView: View {
                         .padding(.top, 1)
                 }
                 Spacer()
+                if isImportant { ImportantBadge(iconOnly: true) }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color(uiColor: .tertiaryLabel))
@@ -46,6 +50,7 @@ public struct MeetingsHomeRowView: View {
             .padding(.vertical, 12)
             .frame(minHeight: 88)
             .contentShape(Rectangle())
+            .importantGlowBorder(isImportant, cornerRadius: 14, lineWidth: 1.5, glowRadius: 0, inset: 4)
         }
         .buttonStyle(.plain)
     }

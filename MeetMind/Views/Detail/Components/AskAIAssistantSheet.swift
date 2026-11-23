@@ -3,7 +3,7 @@ import SwiftData
 import UIKit
 import OfflineEngineKit
 
-/// One question and its answer as shown in the Vidur conversation.
+/// One thing the user said and Vidur's reply: an answer, a short chat reply, or a confirmation card.
 private struct VidurConversationItem: Identifiable {
     enum Phase { case searching, refining, done }
 
@@ -18,6 +18,13 @@ private struct VidurConversationItem: Identifiable {
     var relatedTasks: [VidurQuickTask] = []
     var suggestions: [String] = []
     var phase: Phase = .done
+    /// A short chat reply (hello, thanks, a refusal). It never counts as an answer about a meeting.
+    var isNote = false
+    /// A change Vidur wants to make, shown as a confirmation card.
+    var pending: VidurPendingAction?
+    var pendingIntro = ""
+    var pendingState: VidurPendingState = .awaiting
+    var result: VidurActionResult?
 
     init(prompt: String, answerText: String, citations: [VidurCitation], kind: VidurAnswerKind?,
          notice: String?, phase: Phase = .done) {
@@ -30,10 +37,11 @@ private struct VidurConversationItem: Identifiable {
     }
 }
 
-/// Vidur: the local, on-device assistant that answers from saved transcripts.
+/// Vidur: the on-device meeting assistant. It chats, answers from saved meetings, runs commands
+/// (schedule, add or finish an action, open a meeting, start a recording, star a meeting) after
+/// asking for confirmation, and can listen and talk. Everything runs on this iPhone.
 ///
 /// Without `meeting` the sheet behaves as before and forwards questions to `onAsk`.
-/// With `meeting` it answers itself for the chosen scope (this meeting, its series, all meetings).
 public struct AskAIAssistantSheet: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
@@ -48,10 +56,20 @@ public struct AskAIAssistantSheet: View {
 
     @State private var queryText: String = ""
     @State private var scope: VidurSearchScope = .thisMeeting
+    @State private var persistScope = true
     @State private var localItems: [VidurConversationItem] = []
     @State private var isLocalBusy = false
     @State private var answerTask: Task<Void, Never>?
+    @State private var assistant = VidurAssistantContext()
+    @State private var dictation = VidurDictation()
+    @State private var voiceMode = false
+    @State private var askedByVoice = false
+    @State private var isSpeaking = false
+    @State private var showsSettings = false
+    @AppStorage(VidurVoiceSettings.voiceRepliesKey) private var voiceReplies = false
     @Environment(SettingsViewModel.self) private var settings: SettingsViewModel?
+    @Environment(AppState.self) private var appState: AppState?
+    @Environment(NavigationRouter.self) private var router: NavigationRouter?
 
     public init(
         history: [(prompt: String, response: AIAnswerResponse)],
@@ -74,6 +92,10 @@ public struct AskAIAssistantSheet: View {
     }
 
     private var busy: Bool { isBusy || isLocalBusy }
+
+    @MainActor private var isRecordingActive: Bool { appState?.isRecordingActive ?? false }
+    @MainActor private var dataContext: ModelContext { meeting?.modelContext ?? modelContext }
+    @MainActor private var selfNames: [String] { [settings?.userProfile?.name ?? UserProfile.defaultLocalName] }
 
     private var items: [VidurConversationItem] {
         let legacy = history.map { pair in
@@ -98,38 +120,49 @@ public struct AskAIAssistantSheet: View {
         }
     }
 
+    // MARK: Body
+
     public var body: some View {
         VStack(spacing: Spacing.sm) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Spacing.md) {
-                    if items.isEmpty { emptyStateView }
-                    ForEach(items) { item in
-                        conversationRow(item)
-                    }
-                    if isBusy {
-                        HStack(spacing: Spacing.sm) {
-                            ProgressView()
-                            Text("Working on this iPhone\u{2026}")
-                                .font(.footnote).foregroundStyle(.secondary)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Spacing.md) {
+                        if items.isEmpty { emptyStateView }
+                        ForEach(items) { item in
+                            conversationRow(item)
                         }
-                        .padding(.horizontal, Spacing.lg)
+                        if isBusy {
+                            HStack(spacing: Spacing.sm) {
+                                ProgressView()
+                                Text("Working on this iPhone\u{2026}")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, Spacing.lg)
+                        }
                     }
-                    if !items.isEmpty {
-                        Button("Open Meeting", action: onDismiss)
-                            .frame(maxWidth: .infinity).padding(.vertical, 16)
-                    }
+                    .padding(Spacing.lg)
                 }
-                .padding(Spacing.lg)
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: localItems.last?.id) { _, newID in
+                    guard let newID else { return }
+                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(newID, anchor: .bottom) }
+                }
             }
+            voiceStatus
             inputBar
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .tint(Theme.Colors.manentAccent)
         .navigationTitle("Vidur")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                PrepCloseButton(action: onDismiss)
+            // One way out, one menu. iOS 26 draws the glass behind these itself.
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: closeSheet) {
+                    Image(systemName: "chevron.left")
+                }
+                .accessibilityLabel("Back")
             }
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
@@ -137,34 +170,88 @@ public struct AskAIAssistantSheet: View {
                     Text(subtitle).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if meeting != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Picker("Search", selection: $scope) {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if meeting != nil {
+                        Picker("Search in", selection: scopeBinding) {
                             ForEach(VidurSearchScope.allCases) { option in
                                 Text(option.title).tag(option)
                             }
                         }
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
                     }
-                    .accessibilityLabel("Search scope")
+                    Toggle(isOn: $voiceReplies) {
+                        Label("Voice replies", systemImage: "speaker.wave.2")
+                    }
+                    Button(role: .destructive) { clearConversation() } label: {
+                        Label("Clear conversation", systemImage: "trash")
+                    }
+                    Button { showsSettings = true } label: {
+                        Label("Vidur settings", systemImage: "gearshape")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
                 }
+                .accessibilityLabel("More")
+            }
+        }
+        .sheet(isPresented: $showsSettings) {
+            NavigationStack {
+                VidurSettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showsSettings = false }
+                        }
+                    }
             }
         }
         .onAppear {
+            VidurVoiceCoordinator.shared.isSheetOpen = true
             scope = VidurPreferences.shared.searchScope
             loadPersistedHistory()
+            refreshAssistant()
             startPrewarm()
+            if let wake = VidurVoiceCoordinator.shared.consumeWake() { handleWake(wake) }
         }
-
-        .onChange(of: scope) { _, newScope in VidurPreferences.shared.searchScope = newScope }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { onDismiss() } }
+        .onChange(of: scope) { _, newScope in
+            if persistScope { VidurPreferences.shared.searchScope = newScope }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .background else { return }
+            stopVoice()
+            onDismiss()
+        }
+        .onChange(of: appState?.isRecordingActive) { _, recording in
+            if recording == true { stopVoice() }
+        }
         .onChange(of: busy) { _, isBusyNow in UIApplication.shared.isIdleTimerDisabled = isBusyNow }
         .onDisappear {
             answerTask?.cancel()
+            stopVoice()
+            VidurVoiceCoordinator.shared.isSheetOpen = false
             UIApplication.shared.isIdleTimerDisabled = false
         }
+    }
+
+    private var scopeBinding: Binding<VidurSearchScope> {
+        Binding(get: { scope }, set: { newValue in
+            persistScope = true
+            scope = newValue
+        })
+    }
+
+    @MainActor
+    private func closeSheet() {
+        stopVoice()
+        onDismiss()
+    }
+
+    @MainActor
+    private func clearConversation() {
+        answerTask?.cancel()
+        stopVoice()
+        localItems.removeAll()
+        isLocalBusy = false
+        if let meeting { try? VidurPreferences.shared.remove(meetingID: meeting.id) }
     }
 
     /// Loads the on-device model while the user is typing, so the first refined answer is warm.
@@ -184,19 +271,14 @@ public struct AskAIAssistantSheet: View {
         }
     }
 
-    // MARK: Empty state
-
-    private var suggestions: [String] {
-        var list = [
-            "What did we decide?",
-            "Which actions did we agree on?",
-            "What is still unresolved?"
-        ]
-        if let meeting, scope != .thisMeeting, meeting.seriesID != nil {
-            list[2] = "What changed since the last meeting?"
-        }
-        return list
+    @MainActor
+    private func refreshAssistant() {
+        assistant = VidurActions.assistantContext(
+            modelContext: dataContext, userName: settings?.userProfile?.name, selfNames: selfNames,
+            isRecording: isRecordingActive)
     }
+
+    // MARK: Empty state
 
     @MainActor
     private var recentQuestions: [VidurSuggestionList.Recent] {
@@ -217,22 +299,29 @@ public struct AskAIAssistantSheet: View {
         return result
     }
 
+    private var greetingText: String {
+        VidurSmallTalk.reply(to: "hi", context: assistant, seed: 0)?.text
+            ?? "Ask about your meetings, or tell me what to do."
+    }
+
     @MainActor
     private var emptyStateView: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "sparkles")
                     .font(.body)
                     .foregroundStyle(.white)
                     .frame(width: 40, height: 40)
                     .background(Theme.Colors.manentAccent, in: Circle())
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(scope == .allMeetings && meeting != nil ? "Ask about your meetings" : "Ask About \(meetingTitle)")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(greetingText)
                         .font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(scopeExplanation)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
@@ -246,26 +335,54 @@ public struct AskAIAssistantSheet: View {
                 in: RoundedRectangle(cornerRadius: 22, style: .continuous)
             )
             .accessibilityElement(children: .combine)
-            VidurSuggestionList(suggestions: suggestions, recent: recentQuestions) { question in
-                send(question)
+            VidurSuggestionList(
+                suggestions: VidurProactive.suggestions(for: assistant, limit: 4), recent: recentQuestions) { question in
+                submit(question)
             }
             .disabled(busy)
+            Text("Vidur runs on this iPhone and uses a small on-device model. It relies on your saved minutes and transcripts, and tells you when it can\u{2019}t find something. Audio never leaves your phone.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
     private var scopeExplanation: String {
         guard meeting != nil else { return "Answers come from this meeting\u{2019}s minutes, transcript and notes." }
         switch scope {
-        case .thisMeeting: return "Answers come from this meeting\u{2019}s minutes, transcript and notes."
-        case .thisMeetingAndSeries: return "Answers come from the minutes, transcripts and notes of this meeting and its series."
-        case .allMeetings: return "Answers come from the minutes, transcripts and notes of every meeting saved on this iPhone."
+        case .thisMeeting: return "Answering from \(meetingTitle). Use the menu to search a series or all meetings."
+        case .thisMeetingAndSeries: return "Answering from the minutes, transcripts and notes of this meeting and its series."
+        case .allMeetings: return "Answering from every meeting saved on this iPhone."
         }
     }
 
     // MARK: Conversation
 
-    @MainActor
+    @MainActor @ViewBuilder
     private func conversationRow(_ item: VidurConversationItem) -> some View {
+        if item.pending != nil {
+            VStack(alignment: .leading, spacing: 16) {
+                VidurPromptBubble(text: item.prompt)
+                VidurActionCard(
+                    intro: item.pendingIntro,
+                    action: pendingBinding(item.id),
+                    state: item.pendingState,
+                    result: item.result,
+                    onConfirm: { confirmPending(item.id) },
+                    onCancel: { cancelPending(item.id) },
+                    onOpenMeeting: { id in
+                        stopVoice()
+                        onOpenMeeting(id)
+                    })
+            }
+        } else {
+            answerRow(item)
+        }
+    }
+
+    @MainActor
+    private func answerRow(_ item: VidurConversationItem) -> some View {
         let model = VidurAnswerCardModel(
             text: item.answerText,
             citations: item.citations,
@@ -283,7 +400,7 @@ public struct AskAIAssistantSheet: View {
             now: Date(),
             onOpenSource: { openSource($0) },
             onOpenTask: { openTask($0) },
-            onAsk: { send($0) })
+            onAsk: { submit($0) })
             .animation(.easeOut(duration: 0.2), value: item.phase)
     }
 
@@ -317,32 +434,58 @@ public struct AskAIAssistantSheet: View {
 
     @MainActor
     private func meetingExists(_ id: UUID) -> Bool {
-        let context = meeting?.modelContext ?? modelContext
-        return ((try? context.fetch(FetchDescriptor<Meeting>())) ?? []).contains { $0.id == id }
+        ((try? dataContext.fetch(FetchDescriptor<Meeting>())) ?? []).contains { $0.id == id }
     }
+
     // MARK: Input
 
     private var inputPlaceholder: String {
-        if !items.isEmpty { return "Ask a follow-up" }
+        if dictation.isListening { return "Listening\u{2026}" }
+        if !items.isEmpty { return "Ask a follow-up, or tell me what to do" }
         switch scope {
         case .allMeetings where meeting != nil: return "Ask about your meetings"
-        default: return "Ask about this meeting"
+        default: return "Ask or tell Vidur what to do"
         }
     }
 
+    @MainActor @ViewBuilder
+    private var voiceStatus: some View {
+        if isRecordingActive {
+            Label(VidurVoiceSettings.recordingPausedMessage, systemImage: "mic.slash")
+                .font(.footnote).foregroundStyle(.secondary)
+                .padding(.horizontal, Spacing.lg)
+        } else if let message = dictation.errorMessage {
+            Label(message, systemImage: "exclamationmark.circle")
+                .font(.footnote).foregroundStyle(.secondary)
+                .padding(.horizontal, Spacing.lg)
+        }
+    }
+
+    @MainActor
     private var inputBar: some View {
-        HStack(spacing: Spacing.sm) {
+        let text: Binding<String> = dictation.isListening ? Binding.constant(dictation.partialText) : $queryText
+        return HStack(spacing: Spacing.sm) {
             Image(systemName: "sparkle")
                 .foregroundStyle(Theme.Colors.manentAccent)
                 .accessibilityHidden(true)
-            TextField(inputPlaceholder, text: $queryText)
+            TextField(inputPlaceholder, text: text)
                 .textFieldStyle(.plain)
                 .submitLabel(.send)
                 .onSubmit { sendTyped() }
+                .disabled(dictation.isListening)
+            if isSpeaking {
+                Button { stopSpeaking() } label: {
+                    Image(systemName: "speaker.slash.fill").font(.system(size: 18))
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Stop speaking")
+            }
+            VidurMicButton(isListening: dictation.isListening, isDisabled: isRecordingActive) { toggleVoice() }
             Button { sendTyped() } label: {
                 Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.Colors.manentAccent)
             }
-            .disabled(isBusy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isBusy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || dictation.isListening)
             .accessibilityLabel("Ask Vidur")
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -355,7 +498,217 @@ public struct AskAIAssistantSheet: View {
         let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isBusy else { return }
         queryText = ""
-        send(trimmed)
+        submit(trimmed)
+    }
+
+    // MARK: Voice
+
+    @MainActor
+    private func toggleVoice() {
+        if isRecordingActive { return }
+        if dictation.isListening {
+            voiceMode = false
+            dictation.cancel()
+            return
+        }
+        stopSpeaking()
+        voiceMode = true
+        startListening()
+    }
+
+    @MainActor
+    private func startListening() {
+        guard !isRecordingActive, !dictation.isListening else { return }
+        Task { @MainActor in
+            await dictation.start { heard in
+                if heard.isEmpty {
+                    voiceMode = false
+                } else {
+                    submit(heard, byVoice: true)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func stopSpeaking() {
+        VidurSpeaker.shared.stop()
+        isSpeaking = false
+    }
+
+    @MainActor
+    private func stopVoice() {
+        voiceMode = false
+        dictation.cancel()
+        stopSpeaking()
+    }
+
+    @MainActor
+    private func handleWake(_ wake: VidurWakeRequest) {
+        persistScope = false
+        scope = .allMeetings
+        voiceMode = true
+        if wake.text.isEmpty {
+            startListening()
+        } else {
+            submit(wake.text, byVoice: true)
+        }
+    }
+
+    /// Speaks a reply when the user asked by voice or turned on Voice replies. Never while recording.
+    @MainActor
+    private func speakReply(_ text: String) {
+        guard !isRecordingActive, voiceReplies || askedByVoice else { return }
+        let spoken = VidurSpokenText.make(from: text)
+        guard !spoken.isEmpty else { return }
+        isSpeaking = true
+        VidurSpeaker.shared.speak(spoken) {
+            isSpeaking = false
+            if voiceMode { startListening() }
+        }
+    }
+
+    // MARK: Routing
+
+    /// Everything the user says or taps goes through here: chat, commands, then questions.
+    @MainActor
+    private func submit(_ text: String, byVoice: Bool = false) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        stopSpeaking()
+        if dictation.isListening { dictation.cancel() }
+        guard meeting != nil else { send(trimmed); return }
+        askedByVoice = byVoice
+
+        if let index = localItems.lastIndex(where: { $0.pending != nil && $0.pendingState == .awaiting }),
+           index == localItems.count - 1, let decision = VidurConfirmation.answer(to: trimmed) {
+            let id = localItems[index].id
+            if decision { confirmPending(id) } else { cancelPending(id) }
+            return
+        }
+
+        let seed = Int.random(in: 0..<10_000)
+        switch VidurConversationRouter.route(trimmed, context: assistant, seed: seed) {
+        case .smallTalk(let reply):
+            appendNote(prompt: trimmed, text: reply.text, suggestions: reply.suggestions)
+        case .reply(let reply):
+            appendNote(prompt: trimmed, text: reply, suggestions: VidurProactive.suggestions(for: assistant, limit: 3))
+        case .command(let command):
+            run(command, prompt: trimmed)
+        case .question(let question):
+            send(question)
+        }
+    }
+
+    @MainActor
+    private func appendNote(prompt: String, text: String, suggestions: [String]) {
+        var item = VidurConversationItem(prompt: prompt, answerText: text, citations: [], kind: nil, notice: nil)
+        item.isNote = true
+        item.tier = .structured
+        item.suggestions = suggestions
+        localItems.append(item)
+        speakReply(text)
+    }
+
+    // MARK: Commands
+
+    @MainActor
+    private func run(_ command: VidurCommand, prompt: String) {
+        let prepared = VidurActions.prepare(command, current: meeting, modelContext: dataContext,
+                                            isRecording: isRecordingActive)
+        switch prepared {
+        case .confirm(let action, let intro):
+            var item = VidurConversationItem(prompt: prompt, answerText: "", citations: [], kind: nil, notice: nil)
+            item.isNote = true
+            item.pending = action
+            item.pendingIntro = intro
+            localItems.append(item)
+            speakReply(spokenPrompt(for: action, intro: intro))
+        case .openMeeting(let id, let title):
+            appendNote(prompt: prompt, text: "Opening \(title).", suggestions: [])
+            stopVoice()
+            onOpenMeeting(id)
+        case .openScreen(let screen):
+            appendNote(prompt: prompt, text: "Opening \(screen.title).", suggestions: [])
+            open(screen)
+        case .message(let text):
+            appendNote(prompt: prompt, text: text, suggestions: VidurProactive.suggestions(for: assistant, limit: 3))
+        }
+    }
+
+    private func spokenPrompt(for action: VidurPendingAction, intro: String) -> String {
+        switch action.kind {
+        case .schedule(let draft):
+            var sentence = "Schedule \(draft.title) for \(VidurActions.describe(draft.start))"
+            if !draft.people.isEmpty { sentence += " with " + draft.people.joined(separator: " and ") }
+            return sentence + "? Say yes to confirm, or tap Edit."
+        case .addAction(let draft, _, let meetingTitle):
+            return "Add \(draft.title) to \(meetingTitle)? Say yes to confirm."
+        case .completeAction(_, let title, _):
+            return "Mark \(title) as done? Say yes to confirm."
+        case .setImportant(_, let title, let important):
+            return (important ? "Star " : "Remove the star from ") + title + "? Say yes to confirm."
+        case .startRecording:
+            return "Start a quick recording now? Say yes to confirm."
+        }
+    }
+
+    private func pendingBinding(_ id: UUID) -> Binding<VidurPendingAction> {
+        Binding(
+            get: { localItems.first(where: { $0.id == id })?.pending ?? VidurPendingAction(kind: .startRecording) },
+            set: { newValue in
+                if let index = localItems.firstIndex(where: { $0.id == id }) { localItems[index].pending = newValue }
+            })
+    }
+
+    @MainActor
+    private func confirmPending(_ id: UUID) {
+        guard let index = localItems.firstIndex(where: { $0.id == id }),
+              let pending = localItems[index].pending, localItems[index].pendingState == .awaiting else { return }
+        stopSpeaking()
+        if case .startRecording = pending.kind, isRecordingActive {
+            localItems[index].result = VidurActionResult(
+                message: "A recording is already running, so I didn\u{2019}t start another one.", succeeded: false)
+            localItems[index].pendingState = .done
+            return
+        }
+        let result = VidurActions.perform(pending, modelContext: dataContext)
+        localItems[index].result = result
+        localItems[index].pendingState = .done
+        refreshAssistant()
+        speakReply(result.message)
+        if let recordingID = result.recordingMeetingID { openRecorder(recordingID) }
+    }
+
+    @MainActor
+    private func cancelPending(_ id: UUID) {
+        guard let index = localItems.firstIndex(where: { $0.id == id }),
+              localItems[index].pendingState == .awaiting else { return }
+        stopSpeaking()
+        localItems[index].pendingState = .cancelled
+        speakReply("Okay, I\u{2019}ve cancelled that.")
+    }
+
+    @MainActor
+    private func openRecorder(_ meetingID: UUID) {
+        stopVoice()
+        appState?.activeTab = .home
+        onDismiss()
+        router?.navigate(to: .liveRecording(id: meetingID), in: .home)
+    }
+
+    @MainActor
+    private func open(_ screen: VidurScreen) {
+        stopVoice()
+        switch screen {
+        case .home: appState?.activeTab = .home
+        case .actions: appState?.activeTab = .actionItems
+        case .search: appState?.activeTab = .search
+        case .settings:
+            appState?.activeTab = .home
+            router?.navigate(to: .settings, in: .home)
+        }
+        onDismiss()
     }
 
     // MARK: Asking
@@ -378,7 +731,7 @@ public struct AskAIAssistantSheet: View {
             allowRefinement: meeting.status != .processing, additionalFacts: extraFacts,
             history: conversationHistory(),
             userDisabledRefinement: !VidurDeepAnswerSetting.isEnabled,
-            selfNames: [settings?.userProfile?.name ?? UserProfile.defaultLocalName])
+            selfNames: selfNames)
         let item = VidurConversationItem(prompt: question, answerText: "", citations: [], kind: nil, notice: nil,
                                          phase: .searching)
         let itemID = item.id
@@ -416,8 +769,17 @@ public struct AskAIAssistantSheet: View {
             localItems[index].phase = .refining
         case .final:
             localItems[index].phase = .done
-            if let answer = update.answer, answer.isRecordable {
-                VidurPreferences.shared.record(VidurHistoryEntry(meetingID: meetingID, question: question, answer: answer.text))
+            if let answer = update.answer {
+                if localItems[index].suggestions.isEmpty, answer.kind != .failed {
+                    let intent: VidurQuickIntent? = answer.relatedTasks.isEmpty ? nil : .tasks
+                    localItems[index].suggestions = VidurProactive.followUps(after: intent, asked: question, context: assistant)
+                }
+                if answer.isRecordable {
+                    VidurPreferences.shared.record(VidurHistoryEntry(meetingID: meetingID, question: question, answer: answer.text))
+                }
+                speakReply(answer.text)
+            } else if voiceMode {
+                startListening()
             }
             isLocalBusy = false
         }
@@ -433,11 +795,12 @@ public struct AskAIAssistantSheet: View {
         }
         isLocalBusy = false
     }
+
     /// The last two finished question and answer pairs, so "aur Neha ne?" follows the previous question.
     @MainActor
     private func conversationHistory() -> [VidurChatTurn] {
         let usable = localItems.filter { item in
-            guard item.phase == .done, !item.answerText.isEmpty else { return false }
+            guard item.phase == .done, !item.isNote, item.pending == nil, !item.answerText.isEmpty else { return false }
             return item.kind != .failed && item.kind != .unavailable
         }
         return usable.suffix(2).map { VidurChatTurn(question: $0.prompt, answer: $0.answerText) }

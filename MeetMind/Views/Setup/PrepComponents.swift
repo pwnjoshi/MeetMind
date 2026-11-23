@@ -32,38 +32,60 @@ struct PrepSectionLabel: View {
     }
 }
 
-/// Round accent check button used to confirm a sheet or form.
+/// Round accent check button used to confirm a sheet or form. On iOS 26 the toolbar
+/// already draws the glass; only the prominent tint is added, never a second circle.
 struct PrepConfirmButton: View {
     var isEnabled: Bool = true
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        styled(Button(action: action) {
             Image(systemName: "checkmark")
                 .font(.system(size: 17, weight: .semibold))
-        }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.circle)
-        .tint(Theme.Colors.manentAccent)
+        })
         .disabled(!isEnabled)
         .accessibilityLabel("Done")
     }
+
+    @ViewBuilder
+    private func styled<Label: View>(_ button: Button<Label>) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            button.buttonStyle(.glassProminent).tint(Theme.Colors.manentAccent)
+        } else {
+            button.buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(Theme.Colors.manentAccent)
+        }
+        #else
+        button.buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(Theme.Colors.manentAccent)
+        #endif
+    }
 }
 
-/// Round neutral close/back button.
+/// Round neutral close/back button. On iOS 26 the toolbar supplies the glass circle, so
+/// the button itself is plain; drawing a bordered circle inside it showed two circles.
 struct PrepCloseButton: View {
     var systemName: String = "xmark"
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        styled(Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 17, weight: .semibold))
-        }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.circle)
-        .tint(.primary)
+        })
         .accessibilityLabel(systemName == "xmark" ? "Close" : "Back")
+    }
+
+    @ViewBuilder
+    private func styled<Label: View>(_ button: Button<Label>) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            button.tint(.primary)
+        } else {
+            button.buttonStyle(.bordered).buttonBorderShape(.circle).tint(.primary)
+        }
+        #else
+        button.buttonStyle(.bordered).buttonBorderShape(.circle).tint(.primary)
+        #endif
     }
 }
 
@@ -264,11 +286,17 @@ struct PrepTextEntrySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     PrepCard {
-                        TextField(placeholder, text: $draft, axis: multiline ? .vertical : .horizontal)
-                            .lineLimit(multiline ? 3...10 : 1...1)
+                        TextField(placeholder, text: $draft, axis: .vertical)
+                            .lineLimit(multiline ? 3...10 : 1...6)
                             .focused($focused)
                             .submitLabel(multiline ? .return : .done)
                             .padding(16)
+                            .onChange(of: draft) { _, newValue in
+                                if !multiline, newValue.contains(where: \.isNewline) {
+                                    draft = newValue.filter { !$0.isNewline }
+                                    focused = false
+                                }
+                            }
                     }
                     if !suggestions.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {

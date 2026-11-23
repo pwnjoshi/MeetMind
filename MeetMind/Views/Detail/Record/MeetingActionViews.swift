@@ -369,8 +369,7 @@ struct MeetingActionEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", systemImage: "checkmark") { save() }
                         .labelStyle(.iconOnly)
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.circle)
+                        .toolbarConfirmButtonStyle()
                         .disabled(!canSave)
                 }
             }

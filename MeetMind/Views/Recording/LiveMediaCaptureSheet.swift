@@ -3,9 +3,9 @@ import SwiftUI
 import AVFoundation
 import UIKit
 
-/// "Attach Photo" sheet (Figma node 161:1234). Opens the system camera when one
-/// is available and falls back to the photo library. The photo is pinned to the
-/// recording timecode and can carry a caption.
+/// "Attach Photo" sheet (Figma node 161:1234). The person chooses Take Photo (only
+/// when a camera exists) or Choose from Library; nothing opens on its own. The
+/// photo is pinned to the recording timecode and can carry a caption.
 public struct LiveMediaCaptureSheet: View {
     @Environment(\.dismiss) private var dismiss
     public let timestamp: TimeInterval
@@ -16,7 +16,6 @@ public struct LiveMediaCaptureSheet: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isCameraPresented = false
     @State private var captureError: String?
-    @State private var didAutoLaunchCamera = false
 
     public init(timestamp: TimeInterval, onAttach: @escaping (Data, String) -> Void) {
         self.timestamp = timestamp
@@ -36,6 +35,11 @@ public struct LiveMediaCaptureSheet: View {
         NavigationStack {
             Form {
                 Section {
+                    if previewImage == nil && !isCameraAvailable {
+                        Text("No camera is available on this device. Choose a photo from your library.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     if let previewImage {
                         HStack(spacing: 12) {
                             Image(uiImage: previewImage)
@@ -67,6 +71,8 @@ public struct LiveMediaCaptureSheet: View {
                     TextField("Caption", text: $caption)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color(hex: "#0B1426"))
             .navigationTitle("Attach Photo")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -103,14 +109,11 @@ public struct LiveMediaCaptureSheet: View {
                     }
                 }
             }
-            .task {
-                guard !didAutoLaunchCamera, photoData == nil else { return }
-                didAutoLaunchCamera = true
-                await launchCamera()
-            }
         }
+        .preferredColorScheme(.dark)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .presentationBackground(Color(hex: "#0B1426"))
         .fullScreenCover(isPresented: $isCameraPresented) {
             MeetingCameraPicker(onCapture: { data in
                 isCameraPresented = false

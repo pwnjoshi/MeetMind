@@ -146,7 +146,8 @@ struct ProfileToolbarButton: View {
                 .frame(width: 28, height: 28)
                 .clipShape(Circle())
         } else {
-            Image(systemName: "person.crop.circle.fill")
+            // iOS 26 draws the glass circle around the toolbar item, so no circle glyph inside it.
+            Image(systemName: ToolbarGlass.isSystemProvided ? "person.fill" : "person.crop.circle.fill")
         }
     }
 }

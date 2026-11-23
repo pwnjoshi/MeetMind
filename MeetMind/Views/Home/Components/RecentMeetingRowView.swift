@@ -28,7 +28,7 @@ public struct RecentMeetingRowView: View {
                     MeetingStatusBadgeView(status: meeting.status)
                     Spacer()
                     if meeting.isFavorite {
-                        Image(systemName: "star.fill").foregroundStyle(Theme.Colors.warmAmber).font(.system(size: 14))
+                        ImportantBadge()
                     }
                     Text(meeting.formattedDate).font(Typography.footnote).foregroundStyle(Theme.Colors.textSecondary)
                 }
@@ -53,11 +53,12 @@ public struct RecentMeetingRowView: View {
             .clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.lg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Spacing.Radius.lg, style: .continuous).stroke(Theme.Colors.cardBorder, lineWidth: 1))
             .applyShadow(Spacing.Elevation.card)
+            .importantGlowBorder(meeting.isFavorite, cornerRadius: Spacing.Radius.lg)
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button(action: onToggleFavorite) {
-                Label(meeting.isFavorite ? "Unstar" : "Star", systemImage: meeting.isFavorite ? "star.slash.fill" : "star.fill")
+                Label(meeting.isFavorite ? "Not Important" : "Important", systemImage: meeting.isFavorite ? "star.slash.fill" : "star.fill")
             }
             .tint(Theme.Colors.warmAmber)
         }

@@ -86,7 +86,7 @@ public struct AnalysisFailure: Codable, Sendable, Equatable {
         case .leaseConflict:
             return Self(code: code, message: "This meeting is already being processed. Wait for it to finish or pause it before retrying.", recoveryAction: .processNow, retryable: true)
         case .schedulingFailed:
-            return Self(code: code, message: "Background processing could not be scheduled. Open this meeting and tap Process Now.", recoveryAction: .processNow, retryable: true)
+            return Self(code: code, message: "Background processing could not be scheduled. Open this meeting and tap Resume Processing.", recoveryAction: .processNow, retryable: true)
         }
     }
 }

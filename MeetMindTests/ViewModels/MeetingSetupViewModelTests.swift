@@ -170,44 +170,42 @@ final class MeetingSetupViewModelTests: XCTestCase {
     
     // MARK: - Tier 1: Feature 24 (Meeting Templates Selector)
     
-    /// Tier 1: Feature 24 - Validates Standup template pre-fills default agenda items.
-    func test_tier1_feature24_templateSelectionStandupPreFillsAgenda() throws {
+    /// Tier 1: Feature 24 - A new meeting starts with no agenda points.
+    func test_newMeetingStartsWithEmptyAgenda() throws {
+        XCTAssertEqual(sut.agendaText, "")
+    }
+
+    /// Tier 1: Feature 24 - Standup template names the meeting but never injects an agenda.
+    func test_tier1_feature24_templateSelectionStandupDoesNotFillAgenda() throws {
         sut.selectTemplate(.standup)
         
         XCTAssertEqual(sut.selectedTemplate, .standup)
-        XCTAssertTrue(sut.agendaText.contains("Yesterday:"))
-        XCTAssertTrue(sut.agendaText.contains("Today:"))
-        XCTAssertTrue(sut.agendaText.contains("Blockers:"))
+        XCTAssertEqual(sut.title, "Team Standup")
+        XCTAssertEqual(sut.agendaText, "")
     }
     
-    /// Tier 1: Feature 24 - Validates 1-on-1 template pre-fills personalized discussion sections.
-    func test_tier1_feature24_templateSelectionOneOnOnePreFillsAgenda() throws {
+    /// Tier 1: Feature 24 - 1-on-1 template does not inject discussion sections.
+    func test_tier1_feature24_templateSelectionOneOnOneDoesNotFillAgenda() throws {
         sut.selectTemplate(.oneOnOne)
         
         XCTAssertEqual(sut.selectedTemplate, .oneOnOne)
-        XCTAssertTrue(sut.agendaText.contains("Wins & Progress"))
-        XCTAssertTrue(sut.agendaText.contains("Challenges & Support"))
-        XCTAssertTrue(sut.agendaText.contains("Career & Growth"))
+        XCTAssertEqual(sut.agendaText, "")
     }
     
-    /// Tier 1: Feature 24 - Validates Client Sales template pre-fills discovery and demo points.
-    func test_tier1_feature24_templateSelectionClientSalesPreFillsAgenda() throws {
+    /// Tier 1: Feature 24 - Client Sales template does not inject discovery and demo points.
+    func test_tier1_feature24_templateSelectionClientSalesDoesNotFillAgenda() throws {
         sut.selectTemplate(.clientSales)
         
         XCTAssertEqual(sut.selectedTemplate, .clientSales)
-        XCTAssertTrue(sut.agendaText.contains("Client Pain Points"))
-        XCTAssertTrue(sut.agendaText.contains("Product Demo"))
-        XCTAssertTrue(sut.agendaText.contains("Pricing & Next Steps"))
+        XCTAssertEqual(sut.agendaText, "")
     }
     
-    /// Tier 1: Feature 24 - Validates Brainstorm template pre-fills ideation framework.
-    func test_tier1_feature24_templateSelectionBrainstormPreFillsAgenda() throws {
+    /// Tier 1: Feature 24 - Brainstorm template does not inject an ideation framework.
+    func test_tier1_feature24_templateSelectionBrainstormDoesNotFillAgenda() throws {
         sut.selectTemplate(.brainstorm)
         
         XCTAssertEqual(sut.selectedTemplate, .brainstorm)
-        XCTAssertTrue(sut.agendaText.contains("Problem Statement"))
-        XCTAssertTrue(sut.agendaText.contains("Divergent Ideas"))
-        XCTAssertTrue(sut.agendaText.contains("Action Plan"))
+        XCTAssertEqual(sut.agendaText, "")
     }
     
     /// Tier 1: Feature 24 - Validates General template defaults to standard meeting format.
@@ -215,8 +213,7 @@ final class MeetingSetupViewModelTests: XCTestCase {
         sut.selectTemplate(.general)
         
         XCTAssertEqual(sut.selectedTemplate, .general)
-        XCTAssertTrue(sut.agendaText.contains("Discussion Topics"))
-        XCTAssertTrue(sut.agendaText.contains("Action Items"))
+        XCTAssertEqual(sut.agendaText, "")
     }
     
     // MARK: - Tier 1: Feature 25 (Participant Manager)
@@ -454,10 +451,10 @@ final class MeetingSetupViewModelTests: XCTestCase {
     
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 24: Template Switching & Edge Cases)
     
-    /// Tier 2: Feature 24 - Validates switching templates prompts before overwriting custom edits.
+    /// Tier 2: Feature 24 - Validates switching templates prompts before overwriting a title the user typed.
     func test_tier2_feature24_switchingTemplatesPreservesCustomUserEditsWarning() throws {
         sut.selectTemplate(.standup)
-        sut.agendaText = "Custom user customized agenda text."
+        sut.title = "Custom user customized title."
         
         sut.attemptTemplateSwitch(to: .oneOnOne)
         XCTAssertTrue(sut.isShowingTemplateOverwriteConfirmation)
@@ -634,21 +631,24 @@ final class MeetingSetupViewModelTests: XCTestCase {
         XCTAssertEqual(sut.participants.count, 50, "Participant count cannot exceed 50")
     }
     
-    /// Validates template switch agenda overwrite confirmation.
+    /// Validates the template switch confirmation protects a typed title and never touches the agenda.
     func test_remediation_templateSwitchCustomAgendaProtection() throws {
         sut.selectTemplate(.standup)
-        sut.agendaText = "Custom crafted agenda not default"
+        sut.title = "Custom crafted title"
+        sut.agendaText = "Custom crafted agenda"
         
         sut.attemptTemplateSwitch(to: .brainstorm)
         XCTAssertTrue(sut.isShowingTemplateOverwriteConfirmation)
         XCTAssertEqual(sut.pendingTemplateSwitch, .brainstorm)
-        XCTAssertEqual(sut.agendaText, "Custom crafted agenda not default")
+        XCTAssertEqual(sut.title, "Custom crafted title")
+        XCTAssertEqual(sut.agendaText, "Custom crafted agenda")
         
         sut.confirmTemplateSwitch()
         XCTAssertFalse(sut.isShowingTemplateOverwriteConfirmation)
         XCTAssertNil(sut.pendingTemplateSwitch)
         XCTAssertEqual(sut.selectedTemplate, .brainstorm)
-        XCTAssertEqual(sut.agendaText, MeetingTemplateType.brainstorm.defaultAgenda)
+        XCTAssertEqual(sut.title, "Brainstorm")
+        XCTAssertEqual(sut.agendaText, "Custom crafted agenda")
     }
     
     /// Validates audio import rejects invalid or zero duration with AudioImportError.invalidDuration.
@@ -669,6 +669,7 @@ final class MeetingSetupViewModelTests: XCTestCase {
     /// Validates template switch cancellation leaves custom agenda intact.
     func test_remediation_templateSwitchCancellation() throws {
         sut.selectTemplate(.standup)
+        sut.title = "My custom title"
         sut.agendaText = "My custom notes"
         sut.attemptTemplateSwitch(to: .brainstorm)
         XCTAssertTrue(sut.isShowingTemplateOverwriteConfirmation)

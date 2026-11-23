@@ -64,8 +64,7 @@ struct MoMSignatureSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Sign", systemImage: "checkmark") { save() }
                         .labelStyle(.iconOnly)
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.circle)
+                        .toolbarConfirmButtonStyle()
                 }
             }
             .alert("Signature", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {

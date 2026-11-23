@@ -31,10 +31,14 @@ struct UpNextMeetingCard: View {
     var body: some View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 12) {
-                Text(eyebrow)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.84))
-                    .textCase(.uppercase)
+                HStack(alignment: .center, spacing: 8) {
+                    Text(eyebrow)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.84))
+                        .textCase(.uppercase)
+                    Spacer(minLength: 4)
+                    if meeting.isFavorite { ImportantBadge(style: .onDark) }
+                }
                 Text(meeting.title)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
@@ -65,6 +69,7 @@ struct UpNextMeetingCard: View {
             .background { UpNextBackground() }
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: Color(hex: 0x4F46E5).opacity(0.18), radius: 20, y: 10)
+            .importantGlowBorder(meeting.isFavorite, cornerRadius: 26, lineWidth: 3, glowRadius: 14, glowOpacity: 0.5)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -113,9 +118,13 @@ struct WeekMeetingCard: View {
     var body: some View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(dateLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.red)
+                HStack(spacing: 4) {
+                    Text(dateLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                    Spacer(minLength: 0)
+                    if meeting.isFavorite { ImportantBadge(iconOnly: true) }
+                }
                 Text(meeting.title)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -136,6 +145,7 @@ struct WeekMeetingCard: View {
             .padding(16)
             .frame(width: 154, height: 138, alignment: .leading)
             .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .importantGlowBorder(meeting.isFavorite, cornerRadius: 22, lineWidth: 2.5, glowRadius: 10)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -181,6 +191,7 @@ struct RecentMeetingsCard: View {
                             }
                         }
                         Spacer(minLength: 4)
+                        if meeting.isFavorite { ImportantBadge(iconOnly: true) }
                         Image(systemName: "chevron.right")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.tertiary)
@@ -190,6 +201,7 @@ struct RecentMeetingsCard: View {
                     .padding(.vertical, 10)
                     .frame(minHeight: 64)
                     .contentShape(Rectangle())
+                    .importantGlowBorder(meeting.isFavorite, cornerRadius: 16, lineWidth: 1.5, glowRadius: 0, inset: 4)
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens meeting")
@@ -270,6 +282,8 @@ struct HomeMeetingCollectionView: View {
                             Text(detail).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
+                    Spacer(minLength: 8)
+                    if meeting.isFavorite { ImportantBadge(iconOnly: true) }
                 }
                 .frame(minHeight: 52)
             }
@@ -467,6 +481,7 @@ struct AllMeetingsView: View {
                     }
                 }
                 Spacer(minLength: 8)
+                if meeting.isFavorite { ImportantBadge(iconOnly: true) }
                 if isUpcoming {
                     Text(date.formatted(date: .omitted, time: .shortened))
                         .foregroundStyle(.secondary)

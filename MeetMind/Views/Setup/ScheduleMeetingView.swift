@@ -6,22 +6,17 @@ public struct ScheduleMeetingView: View {
     @Bindable var viewModel: MeetingSetupViewModel
     public var onMeetingScheduled: ((Meeting) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
 
-    @State private var showsTitleSheet = false
-    @State private var showsAgendaSheet = false
-    @State private var showsDatePopover = false
+    @State private var dateExpanded = false
     @State private var showsPeople = false
     @State private var showsDiscard = false
     @State private var showsSaveFailed = false
-    @State private var showsCustomRepeat = false
-    @State private var showsNewSeries = false
-    @State private var showsRenameSeries = false
-    @State private var showsSeries = false
-    @State private var seriesNameDraft = ""
+    @State private var showsRepeatPicker = false
+    @State private var showsFollowUpPicker = false
     @State private var savedMeeting: Meeting?
     @State private var calendarNotice: String?
+    @FocusState private var titleFocused: Bool
 
     public init(viewModel: MeetingSetupViewModel = MeetingSetupViewModel(), onMeetingScheduled: ((Meeting) -> Void)? = nil) {
         self.viewModel = viewModel
@@ -34,11 +29,7 @@ public struct ScheduleMeetingView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if isFollowUp {
-                        followUpBody
-                    } else {
-                        detailsBody
-                    }
+                    detailsBody
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
@@ -57,36 +48,21 @@ public struct ScheduleMeetingView: View {
                     PrepConfirmButton(isEnabled: viewModel.isFormValid) { save() }
                 }
             }
-            .navigationDestination(isPresented: $showsSeries) {
-                if let id = viewModel.scheduledSeriesID {
-                    SeriesComparisonView(seriesID: id, seriesName: viewModel.scheduledSeriesName ?? "Series")
-                }
-            }
-            .sheet(isPresented: $showsTitleSheet) {
-                PrepTextEntrySheet(
-                    title: "Title",
-                    placeholder: "Title",
-                    suggestionsTitle: "Suggestions",
-                    suggestions: ["Weekly team sync", "Finance review", "Launch readiness"],
-                    text: $viewModel.title
-                )
-            }
-            .sheet(isPresented: $showsAgendaSheet) {
-                PrepTextEntrySheet(
-                    title: "Agenda",
-                    placeholder: "Agenda",
-                    suggestionsTitle: "Suggested Topics",
-                    suggestions: ["Progress, blockers and next steps"],
-                    multiline: true,
-                    text: $viewModel.agendaText
-                )
-            }
             .sheet(isPresented: $showsPeople) {
                 AddPeopleSheet(viewModel: viewModel)
             }
-            .sheet(isPresented: $showsCustomRepeat) {
-                CustomRepeatSheet(recurrence: $viewModel.recurrence)
+            .sheet(isPresented: $showsRepeatPicker) {
+                RepeatPickerSheet(recurrence: $viewModel.recurrence)
                     .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showsFollowUpPicker) {
+                FollowUpPickerSheet(
+                    candidates: MeetingFollowUpLink.candidates(forTitle: viewModel.title, in: meetings, limit: 200),
+                    currentID: viewModel.followsUpOn?.id
+                ) { chosen in
+                    if chosen == nil && viewModel.followsUpOn == nil { return }
+                    viewModel.setFollowsUp(chosen)
+                }
             }
             .confirmationDialog(
                 "Discard this meeting?",
@@ -108,17 +84,7 @@ public struct ScheduleMeetingView: View {
             } message: {
                 Text(calendarNotice ?? "")
             }
-            .alert("New Series", isPresented: $showsNewSeries) {
-                TextField("Series name", text: $seriesNameDraft)
-                Button("Cancel", role: .cancel) {}
-                Button("Create") { createSeries() }
-            }
-            .alert("Rename Series", isPresented: $showsRenameSeries) {
-                TextField("Series name", text: $seriesNameDraft)
-                Button("Cancel", role: .cancel) {}
-                Button("Save") { renameSeries() }
-            }
-            .onAppear { viewModel.prepareForEditing() }
+            .onAppear { prepare() }
         }
         .interactiveDismissDisabled(viewModel.hasUnsavedChanges)
     }
@@ -130,32 +96,49 @@ public struct ScheduleMeetingView: View {
             PrepSectionLabel(text: "MEETING")
                 .font(.footnote)
             PrepCard {
-                TextField("Title", text: $viewModel.title)
+                TextField("Title", text: $viewModel.title, axis: .vertical)
                     .font(.body)
+                    .lineLimit(1...5)
+                    .focused($titleFocused)
                     .submitLabel(.done)
+                    .onSubmit { titleFocused = false }
+                    .onChange(of: viewModel.title) { _, newValue in
+                        if newValue.contains(where: \.isNewline) {
+                            viewModel.title = newValue.filter { !$0.isNewline }
+                            titleFocused = false
+                        }
+                    }
                     .padding(.horizontal, 16)
-                    .frame(minHeight: 52)
+                    .padding(.vertical, 14)
+                    .frame(minHeight: 52, alignment: .leading)
                     .accessibilityLabel("Meeting title")
+            }
+            if let previous = viewModel.followsUpOn {
+                Button {
+                    dismissKeyboard()
+                    showsFollowUpPicker = true
+                } label: {
+                    PrepPill(text: MeetingFollowUpLink.pillText(for: previous), systemImage: "arrow.turn.up.left")
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 4)
+                .accessibilityHint("Changes the meeting this one follows up on")
             }
         }
     }
+
     @ViewBuilder
     private var detailsBody: some View {
         titleField
         PrepCard {
-            dateRow
+            dateSection
             Divider().padding(.leading, 16)
             repeatRow
             Divider().padding(.leading, 16)
-            agendaRow
-            if showsSeriesRow {
-                Divider().padding(.leading, 16)
-                seriesRow
-            }
+            followUpRow
         }
-        if let error = viewModel.dateValidationError {
-            Text(error).font(.footnote).foregroundStyle(Theme.Colors.coralRed).padding(.horizontal, 16)
-        }
+        agendaSection
+        openFromLastTimeSection
         peopleSection
         optionsSection
     }
@@ -164,51 +147,157 @@ public struct ScheduleMeetingView: View {
         Binding(get: { viewModel.startDate }, set: { viewModel.setStart($0) })
     }
 
-    private var dateRow: some View {
-        Button { showsDatePopover = true } label: {
-            rowLabel("Date & Time", icon: ("calendar", Color.red), value: viewModel.startDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + ", " + viewModel.startDate.formatted(date: .omitted, time: .shortened), chevron: "chevron.right")
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $showsDatePopover) {
-            MeetingDateTimePopover(date: startBinding)
-                .presentationCompactAdaptation(.popover)
+    // MARK: Date and time
+
+    private var dateSection: some View {
+        VStack(spacing: 0) {
+            Button {
+                dismissKeyboard()
+                withAnimation(.snappy) { dateExpanded.toggle() }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar")
+                        .font(.body)
+                        .foregroundStyle(Color.red)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+                    Text("Date & Time")
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 12)
+                    PrepDateTimeValue(start: viewModel.startDate, end: viewModel.endDate)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(dateExpanded ? 90 : 0))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 52)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(dateExpanded ? "Hides the date and time picker" : "Shows the date and time picker")
+
+            if dateExpanded {
+                Divider().padding(.leading, 16)
+                MeetingDateTimeEditor(
+                    start: $viewModel.startDate,
+                    end: $viewModel.endDate,
+                    error: viewModel.dateValidationError,
+                    onStartChange: { viewModel.setStart($0) }
+                )
+            }
         }
     }
+
+    // MARK: Repeat and follow-up
 
     private var repeatRow: some View {
-        Menu {
-            Button { viewModel.recurrence = nil } label: { checkLabel("Never", viewModel.recurrence == nil) }
-            ForEach(MeetingRecurrence.presets, id: \.self) { option in
-                Button { viewModel.recurrence = option } label: { checkLabel(option.title, viewModel.recurrence == option) }
-            }
-            Divider()
-            Button("Custom\u{2026}") { showsCustomRepeat = true }
+        Button {
+            dismissKeyboard()
+            showsRepeatPicker = true
         } label: {
-            rowLabel("Repeat", icon: ("repeat", Theme.Colors.manentAccent), value: MeetingRecurrence.title(for: viewModel.recurrence), chevron: "chevron.up.chevron.down")
+            rowLabel("Repeat", icon: ("repeat", Theme.Colors.manentAccent), value: MeetingRecurrence.title(for: viewModel.recurrence), chevron: "chevron.right")
         }
         .buttonStyle(.plain)
     }
 
-    private var agendaRow: some View {
-        Button { showsAgendaSheet = true } label: {
-            rowLabel("Agenda", icon: ("list.bullet", Color.orange), value: agendaPreview, chevron: "chevron.right")
+    private var followUpRow: some View {
+        Button {
+            dismissKeyboard()
+            showsFollowUpPicker = true
+        } label: {
+            rowLabel(
+                "Follows up on",
+                icon: ("arrow.turn.up.left", Color.purple),
+                value: viewModel.followsUpOn?.title ?? "None",
+                chevron: "chevron.right",
+                valueLineLimit: 3
+            )
         }
         .buttonStyle(.plain)
     }
 
-    private var agendaPreview: String {
-        let firstLine = viewModel.agendaText
-            .split(whereSeparator: \.isNewline)
-            .first
-            .map(String.init) ?? ""
-        return firstLine.isEmpty ? "Add agenda" : firstLine
+    // MARK: Agenda
+
+    private var agendaSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PrepSectionLabel(text: "AGENDA")
+                .font(.footnote)
+            PrepCard {
+                PrepAgendaEditor(text: $viewModel.agendaText)
+            }
+        }
     }
+
+    // MARK: Open from last time
+
+    @ViewBuilder
+    private var openFromLastTimeSection: some View {
+        if let previous = viewModel.followsUpOn {
+            let open = previous.actionItems
+                .filter { !$0.isCompleted }
+                .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
+            if !open.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    PrepSectionLabel(text: "OPEN FROM LAST TIME")
+                        .font(.footnote)
+                    PrepCard {
+                        ForEach(Array(open.enumerated()), id: \.element.id) { index, item in
+                            openActionRow(item)
+                            if index < open.count - 1 {
+                                Divider().padding(.leading, 16)
+                            }
+                        }
+                    }
+                    Text("These stay on the meeting page. They are not added to the agenda.")
+                        .font(.footnote)
+                        .foregroundStyle(PrepStyle.secondaryText)
+                        .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    private func openActionRow(_ item: ActionItem) -> some View {
+        let due = PrepareMeetingFormat.due(item.dueDate)
+        let owner = item.assignee?.name ?? "You"
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(item.title)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+            Text(owner + (due.map { " \u{00B7} " + $0.text } ?? ""))
+                .font(.subheadline)
+                .foregroundStyle(PrepStyle.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Options
 
     private var optionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             PrepSectionLabel(text: "OPTIONS")
                 .font(.footnote)
             PrepCard {
+                Toggle(isOn: $viewModel.isImportant) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "star.fill")
+                            .font(.body)
+                            .foregroundStyle(Color.orange)
+                            .frame(width: 24)
+                            .accessibilityHidden(true)
+                        Text("Important")
+                    }
+                }
+                .tint(Theme.Colors.manentAccent)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 52)
+                Divider().padding(.leading, 16)
                 NavigationLink {
                     AppleCalendarAccessView()
                 } label: {
@@ -223,7 +312,8 @@ public struct ScheduleMeetingView: View {
             }
         }
     }
-    private func rowLabel(_ title: String, icon: (String, Color)? = nil, value: String, chevron: String) -> some View {
+
+    private func rowLabel(_ title: String, icon: (String, Color)? = nil, value: String, chevron: String, valueLineLimit: Int? = 1) -> some View {
         HStack(spacing: 12) {
             if let icon {
                 Image(systemName: icon.0)
@@ -232,28 +322,22 @@ public struct ScheduleMeetingView: View {
                     .frame(width: 24)
                     .accessibilityHidden(true)
             }
-            Text(title).foregroundStyle(.primary)
+            Text(title)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 12)
             Text(value)
                 .foregroundStyle(PrepStyle.secondaryText)
-                .lineLimit(1)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(valueLineLimit)
             Image(systemName: chevron)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .frame(minHeight: 52)
         .contentShape(Rectangle())
-    }
-
-    private func checkLabel(_ title: String, _ selected: Bool) -> some View {
-        Group {
-            if selected {
-                Label(title, systemImage: "checkmark")
-            } else {
-                Text(title)
-            }
-        }
     }
 
     private var peopleSection: some View {
@@ -261,9 +345,12 @@ public struct ScheduleMeetingView: View {
             HStack {
                 PrepSectionLabel(text: "PEOPLE")
                 Spacer()
-                Button("Edit") { showsPeople = true }
-                    .foregroundStyle(Theme.Colors.manentAccent)
-                    .padding(.horizontal, 12)
+                Button("Edit") {
+                    dismissKeyboard()
+                    showsPeople = true
+                }
+                .foregroundStyle(Theme.Colors.manentAccent)
+                .padding(.horizontal, 12)
             }
             PrepCard {
                 ForEach(viewModel.participants, id: \.id) { person in
@@ -274,7 +361,10 @@ public struct ScheduleMeetingView: View {
                             }
                         }
                 }
-                Button { showsPeople = true } label: {
+                Button {
+                    dismissKeyboard()
+                    showsPeople = true
+                } label: {
                     Label("Add People", systemImage: "plus")
                         .foregroundStyle(Theme.Colors.manentAccent)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -284,147 +374,23 @@ public struct ScheduleMeetingView: View {
         }
     }
 
-    // MARK: Series
-
-    private struct SeriesOption: Identifiable {
-        let id: UUID
-        let name: String
-    }
-
-    private var seriesOptions: [SeriesOption] {
-        var seen = Set<UUID>()
-        var result: [SeriesOption] = []
-        for meeting in meetings {
-            guard let id = meeting.seriesID, let name = meeting.seriesName, !name.isEmpty else { continue }
-            if seen.insert(id).inserted { result.append(SeriesOption(id: id, name: name)) }
-        }
-        if let id = viewModel.scheduledSeriesID, !seen.contains(id) {
-            result.append(SeriesOption(id: id, name: viewModel.scheduledSeriesName ?? "Series"))
-        }
-        return result
-    }
-
-    private var showsSeriesRow: Bool {
-        !seriesOptions.isEmpty || viewModel.scheduledSeriesID != nil
-    }
-
-    private var seriesRow: some View {
-        Menu {
-            Button { selectSeries(nil, nil) } label: { checkLabel("None", viewModel.scheduledSeriesID == nil) }
-            ForEach(seriesOptions) { option in
-                Button { selectSeries(option.id, option.name) } label: {
-                    checkLabel(option.name, viewModel.scheduledSeriesID == option.id)
-                }
-            }
-            Divider()
-            Button("New Series\u{2026}") {
-                seriesNameDraft = ""
-                showsNewSeries = true
-            }
-            if viewModel.scheduledSeriesID != nil {
-                Button("Rename Series\u{2026}") {
-                    seriesNameDraft = viewModel.scheduledSeriesName ?? ""
-                    showsRenameSeries = true
-                }
-                Button("View Series") { showsSeries = true }
-            }
-        } label: {
-            rowLabel("Series", value: viewModel.scheduledSeriesName ?? "None", chevron: "chevron.up.chevron.down")
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func selectSeries(_ id: UUID?, _ name: String?) {
-        viewModel.scheduledSeriesID = id
-        viewModel.scheduledSeriesName = name
-    }
-
-    private func createSeries() {
-        let name = seriesNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        selectSeries(UUID(), name)
-    }
-
-    private func renameSeries() {
-        let name = seriesNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, let id = viewModel.scheduledSeriesID else { return }
-        viewModel.scheduledSeriesName = name
-        for meeting in meetings where meeting.seriesID == id {
-            meeting.seriesName = name
-        }
-        try? modelContext.save()
-    }
-
-    // MARK: Follow-up
-
-    @ViewBuilder
-    private var followUpBody: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PrepSectionLabel(text: "Title")
-            PrepCard {
-                TextField("Title", text: $viewModel.title)
-                    .fontWeight(.medium)
-                    .padding(16)
-            }
-        }
-        VStack(alignment: .leading, spacing: 8) {
-            PrepSectionLabel(text: "Agenda")
-            PrepCard {
-                TextField("Add Point", text: $viewModel.agendaText, axis: .vertical)
-                    .lineLimit(3...10)
-                    .padding(16)
-            }
-        }
-        PrepCard {
-            HStack {
-                Text("Starts")
-                Spacer()
-                PrepDatePill(kind: .date, date: startBinding)
-                PrepDatePill(kind: .time, date: startBinding)
-            }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 52)
-            Divider().padding(.leading, 16)
-            HStack {
-                Text("Ends")
-                Spacer()
-                PrepDatePill(kind: .date, date: $viewModel.endDate)
-                PrepDatePill(kind: .time, date: $viewModel.endDate)
-            }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 52)
-        }
-        if let error = viewModel.dateValidationError {
-            Text(error).font(.footnote).foregroundStyle(Theme.Colors.coralRed).padding(.horizontal, 16)
-        }
-        PrepCard {
-            Button { showsPeople = true } label: {
-                rowLabel("Participants", value: peopleCountText, chevron: "chevron.right")
-            }
-            .buttonStyle(.plain)
-        }
-        VStack(alignment: .leading, spacing: 8) {
-            PrepCard {
-                Toggle("Carry Over Open Actions", isOn: $viewModel.carryOverOpenActions)
-                    .tint(.green)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 52)
-            }
-            Text(viewModel.carryOverFootnote)
-                .font(.footnote)
-                .foregroundStyle(PrepStyle.secondaryText)
-                .padding(.horizontal, 16)
-        }
-    }
-
-    private var peopleCountText: String {
-        let count = viewModel.participants.count
-        return count == 1 ? "1 Person" : "\(count) People"
-    }
-
     // MARK: Actions
 
+    private func dismissKeyboard() {
+        titleFocused = false
+        PrepKeyboard.dismiss()
+    }
+
+    /// Links a draft planned from a series to the latest recorded meeting of it, then records the baseline.
+    private func prepare() {
+        if viewModel.followsUpOn == nil, viewModel.followUpSource == nil, let seriesID = viewModel.scheduledSeriesID {
+            viewModel.followsUpOn = MeetingFollowUpLink.previousRecorded(inSeries: seriesID, before: viewModel.startDate, in: meetings)
+        }
+        viewModel.prepareForEditing()
+    }
+
     private func requestClose() {
+        dismissKeyboard()
         if viewModel.hasUnsavedChanges {
             showsDiscard = true
         } else {
@@ -433,6 +399,7 @@ public struct ScheduleMeetingView: View {
     }
 
     private func save() {
+        dismissKeyboard()
         do {
             let meeting = try viewModel.saveScheduledMeeting()
             savedMeeting = meeting
@@ -456,47 +423,11 @@ public struct ScheduleMeetingView: View {
     }
 }
 
-/// Calendar plus numeric time entry shown from the Date & Time row.
-struct MeetingDateTimePopover: View {
-    @Binding var date: Date
-    @State private var editingTime = false
-
-    var body: some View {
-        VStack(spacing: 8) {
-            DatePicker("Date", selection: $date, displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-                .tint(Theme.Colors.manentAccent)
-            Divider()
-            if editingTime {
-                PrepTimeEntryView(date: $date) { editingTime = false }
-            } else {
-                HStack {
-                    Text("Time")
-                    Spacer()
-                    Button {
-                        editingTime = true
-                    } label: {
-                        Text(date.formatted(date: .omitted, time: .shortened))
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
-            }
-        }
-        .padding(12)
-        .frame(width: 340)
-    }
-}
-
-/// Custom repeat interval ("Custom\u{2026}" in the Repeat menu).
+/// Custom repeat interval ("Custom\u{2026}" in the Repeat list).
 struct CustomRepeatSheet: View {
     @Binding var recurrence: MeetingRecurrence?
+    /// Called after the interval was applied, so a parent picker can close too.
+    var onApplied: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var interval = 1
     @State private var unit: MeetingRecurrence.Unit = .week
@@ -522,6 +453,7 @@ struct CustomRepeatSheet: View {
                     PrepConfirmButton {
                         recurrence = MeetingRecurrence(unit: unit, interval: interval)
                         dismiss()
+                        onApplied?()
                     }
                 }
             }
@@ -531,6 +463,68 @@ struct CustomRepeatSheet: View {
                     unit = current.unit
                 }
             }
+        }
+    }
+}
+
+/// Repeat choices in a sheet: Never, the presets, the current custom interval and Custom.
+struct RepeatPickerSheet: View {
+    @Binding var recurrence: MeetingRecurrence?
+    @Environment(\.dismiss) private var dismiss
+    @State private var showsCustom = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    optionRow("Never", nil)
+                    ForEach(MeetingRecurrence.presets, id: \.self) { preset in
+                        optionRow(preset.title, preset)
+                    }
+                    if let current = recurrence, !current.isPreset {
+                        optionRow(current.title, current)
+                    }
+                    Button {
+                        showsCustom = true
+                    } label: {
+                        HStack {
+                            Text("Custom\u{2026}").foregroundStyle(.primary)
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                }
+            }
+            .navigationTitle("Repeat")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { PrepCloseButton { dismiss() } }
+            }
+            .sheet(isPresented: $showsCustom) {
+                CustomRepeatSheet(recurrence: $recurrence, onApplied: { dismiss() })
+                    .presentationDetents([.medium])
+            }
+        }
+    }
+
+    private func optionRow(_ title: String, _ value: MeetingRecurrence?) -> some View {
+        Button {
+            recurrence = value
+            dismiss()
+        } label: {
+            HStack {
+                Text(title).foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                if recurrence == value {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.manentAccent)
+                }
+            }
+            .contentShape(Rectangle())
         }
     }
 }

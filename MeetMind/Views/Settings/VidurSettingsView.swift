@@ -9,7 +9,10 @@ public struct VidurSettingsView: View {
     @State private var localViewModel = SettingsViewModel()
     @AppStorage(VidurModel.preferenceKey) private var vidurModel: VidurModel = .fast
     @AppStorage(VidurDeepAnswerSetting.key) private var deepAnswers = true
+    @AppStorage(VidurVoiceSettings.voiceRepliesKey) private var voiceReplies = false
+    @AppStorage(VidurVoiceSettings.heyVidurKey) private var heyVidur = false
     @State private var showingClearAlert = false
+    @State private var permissionMessage: String?
 
     private let preferences = VidurPreferences.shared
 
@@ -17,6 +20,22 @@ public struct VidurSettingsView: View {
 
     private var viewModel: SettingsViewModel {
         environmentViewModel ?? localViewModel
+    }
+
+    /// Turning Hey Vidur on asks for microphone and speech access first. It stays off if either is refused.
+    private var heyVidurBinding: Binding<Bool> {
+        Binding(
+            get: { heyVidur },
+            set: { newValue in
+                guard newValue else { heyVidur = false; return }
+                Task { @MainActor in
+                    let granted = await VidurPermissions.requestAll()
+                    heyVidur = granted
+                    if !granted {
+                        permissionMessage = "Allow Microphone and Speech Recognition for Manent in Settings, then turn Hey Vidur on again."
+                    }
+                }
+            })
     }
 
     public var body: some View {
@@ -64,6 +83,15 @@ public struct VidurSettingsView: View {
             }
 
             Section {
+                Toggle("Voice Replies", isOn: $voiceReplies)
+                Toggle("Hey Vidur", isOn: heyVidurBinding)
+            } header: {
+                Text("Voice")
+            } footer: {
+                Text("Voice Replies lets Vidur read answers aloud. Hey Vidur is off by default. When on, Vidur listens for the phrase \u{201C}Hey Vidur\u{201D} while Manent is open on screen, then opens and listens for your request. It uses on-device speech recognition only, so nothing is recorded, stored or sent, and only the words after the phrase are used. It stops when the app goes to the background, when a recording starts, or when another app is playing audio. It needs microphone and speech access and uses some battery while listening. Vidur is never active during a recording.")
+            }
+
+            Section {
                 Picker("Search Across", selection: Binding(
                     get: { preferences.searchScope },
                     set: { preferences.searchScope = $0 }
@@ -90,6 +118,14 @@ public struct VidurSettingsView: View {
         .navigationTitle("Vidur")
         .navigationBarTitleDisplayMode(.large)
         .tint(Theme.Colors.manentAccent)
+        .alert("Hey Vidur needs access", isPresented: Binding(
+            get: { permissionMessage != nil },
+            set: { if !$0 { permissionMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(permissionMessage ?? "")
+        }
         .alert("Clear Vidur History?", isPresented: $showingClearAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Clear History", role: .destructive) { preferences.clearHistory() }

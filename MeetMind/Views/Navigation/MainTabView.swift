@@ -37,6 +37,7 @@ public struct MainTabView: View {
             }
         }
         .tint(Theme.Colors.manentAccent)
+        .vidurWakeWord() // Vidur: opt-in "Hey Vidur" listener (VidurWakeWordListener.swift)
     }
 
     private var meetingsStack: some View {

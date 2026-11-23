@@ -20,6 +20,7 @@ public struct UpcomingMeetingCardView: View {
             HStack {
                 MeetingStatusBadgeView(status: meeting.status)
                 Spacer()
+                if meeting.isFavorite { ImportantBadge(iconOnly: true) }
                 Text(meeting.formattedDate)
                     .font(Typography.caption2)
                     .foregroundStyle(Theme.Colors.textSecondary)
@@ -85,6 +86,7 @@ public struct UpcomingMeetingCardView: View {
                 .stroke(Theme.Colors.cardBorder, lineWidth: 1)
         )
         .applyShadow(Spacing.Elevation.card)
+        .importantGlowBorder(meeting.isFavorite, cornerRadius: Spacing.Radius.lg)
         .onTapGesture {
             onSelect?()
         }

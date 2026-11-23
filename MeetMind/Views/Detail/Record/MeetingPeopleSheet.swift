@@ -46,8 +46,7 @@ struct MeetingPeopleSheet: View {
                         dismiss()
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.circle)
+                    .toolbarConfirmButtonStyle()
                 }
             }
             .sheet(isPresented: $showAddPerson) {

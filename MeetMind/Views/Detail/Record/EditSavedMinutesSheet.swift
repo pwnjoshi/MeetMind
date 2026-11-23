@@ -99,8 +99,7 @@ struct EditSavedMinutesSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save Minutes", systemImage: "checkmark") { save() }
                         .labelStyle(.iconOnly)
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.circle)
+                        .toolbarConfirmButtonStyle()
                 }
             }
             .sheet(isPresented: $showAddPerson) {

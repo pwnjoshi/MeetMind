@@ -335,8 +335,7 @@ struct MinutesRecipientsSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Continue", systemImage: "checkmark", action: onConfirm)
                         .labelStyle(.iconOnly)
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.circle)
+                        .toolbarConfirmButtonStyle()
                         .disabled(selectedIDs.isEmpty)
                 }
             }

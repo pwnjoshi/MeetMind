@@ -30,6 +30,7 @@ public struct HomeUpcomingSectionView: View {
                             subtitle: meeting.figmaFormattedSubtitle,
                             categoryBadgeText: meeting.figmaBadgeText,
                             badgeColorHex: meeting.figmaBadgeColorHex,
+                            isImportant: meeting.isFavorite,
                             onSelect: { onSelect(meeting) }
                         )
                         if index < meetings.count - 1 {

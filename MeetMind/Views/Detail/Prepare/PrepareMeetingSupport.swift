@@ -22,6 +22,17 @@ enum PrepareMeetingFormat {
         return day + separator + start.formatted(date: .omitted, time: .shortened)
     }
 
+    /// "Thu, 12 Nov".
+    static func dayText(_ date: Date) -> String {
+        date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    }
+
+    /// "9:00 \u{2013} 9:45 AM". Shows only the start when the end is not after it.
+    static func timeRange(start: Date, end: Date) -> String {
+        guard end > start else { return start.formatted(date: .omitted, time: .shortened) }
+        return (start..<end).formatted(.interval.hour().minute())
+    }
+
     /// Agenda lines without list markers ("- ", "\u{2022} ", "1. ").
     static func agendaItems(from text: String) -> [String] {
         text.split(whereSeparator: \.isNewline).compactMap { line -> String? in

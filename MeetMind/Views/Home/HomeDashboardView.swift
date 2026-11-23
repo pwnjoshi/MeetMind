@@ -247,6 +247,12 @@ public struct HomeDashboardView: View {
     private var profileAvatar: some View {
         if let data = settings.userProfile?.avatarImageData, let image = UIImage(data: data) {
             Image(uiImage: image).resizable().scaledToFill().frame(width: 36, height: 36).clipShape(Circle())
+        } else if ToolbarGlass.isSystemProvided {
+            // iOS 26 draws the glass circle around the toolbar item, so no circle glyph inside it.
+            Image(systemName: "person.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 36, height: 36)
         } else {
             Image(systemName: "person.crop.circle.fill")
                 .resizable()
