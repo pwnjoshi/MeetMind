@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0A42CEE000100000001 /* LiveCaptionLanguageArbiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A52CEE000100000001 /* LiveCaptionLanguageArbiter.swift */; };
+		1A00C0A62CEE000100000001 /* LiveCaptionLanguageHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A72CEE000100000001 /* LiveCaptionLanguageHub.swift */; };
+		1A00C0A82CEE000100000001 /* LiveCaptionLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A92CEE000100000001 /* LiveCaptionLexicon.swift */; };
+		1A00C0AA2CEE000100000001 /* LiveCardTabSwitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0AB2CEE000100000001 /* LiveCardTabSwitcher.swift */; };
+		1A00C0AC2CEE000100000001 /* LiveTranscriptFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0AD2CEE000100000001 /* LiveTranscriptFeedView.swift */; };
+		1A00C0AE2CEE000100000001 /* LiveCaptionLanguageArbiterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0AF2CEE000100000001 /* LiveCaptionLanguageArbiterTests.swift */; };
 		1A00C0A32CEE000100000001 /* ImportantGlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A42CEE000100000001 /* ImportantGlow.swift */; };
 		1A00C0A52CEE000100000001 /* ToolbarButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A62CEE000100000001 /* ToolbarButtonStyles.swift */; };
 		1A00C0A72CEE000100000001 /* MeetingFollowUpLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A82CEE000100000001 /* MeetingFollowUpLink.swift */; };
@@ -396,6 +402,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0A52CEE000100000001 /* LiveCaptionLanguageArbiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionLanguageArbiter.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0A72CEE000100000001 /* LiveCaptionLanguageHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionLanguageHub.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0A92CEE000100000001 /* LiveCaptionLexicon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionLexicon.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0AB2CEE000100000001 /* LiveCardTabSwitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveCardTabSwitcher.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0AD2CEE000100000001 /* LiveTranscriptFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveTranscriptFeedView.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0AF2CEE000100000001 /* LiveCaptionLanguageArbiterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Transcription/LiveCaptionLanguageArbiterTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A42CEE000100000001 /* ImportantGlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/ImportantGlow.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A62CEE000100000001 /* ToolbarButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/ToolbarButtonStyles.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A82CEE000100000001 /* MeetingFollowUpLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/MeetingFollowUpLink.swift"; sourceTree = SOURCE_ROOT; };
@@ -808,6 +820,11 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0A52CEE000100000001 /* LiveCaptionLanguageArbiter.swift */,
+				1B00C0A72CEE000100000001 /* LiveCaptionLanguageHub.swift */,
+				1B00C0A92CEE000100000001 /* LiveCaptionLexicon.swift */,
+				1B00C0AB2CEE000100000001 /* LiveCardTabSwitcher.swift */,
+				1B00C0AD2CEE000100000001 /* LiveTranscriptFeedView.swift */,
 				1B00C0A42CEE000100000001 /* ImportantGlow.swift */,
 				1B00C0A62CEE000100000001 /* ToolbarButtonStyles.swift */,
 				1B00C0A82CEE000100000001 /* MeetingFollowUpLink.swift */,
@@ -1096,6 +1113,7 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0AF2CEE000100000001 /* LiveCaptionLanguageArbiterTests.swift */,
 				1B00C0C22CEE000100000001 /* AgendaPointsTests.swift */,
 				1B00C0C42CEE000100000001 /* MeetingFollowUpLinkTests.swift */,
 				1B00C0C62CEE000100000001 /* LiveCaptionStitcherTests.swift */,
@@ -1478,6 +1496,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0A42CEE000100000001 /* LiveCaptionLanguageArbiter.swift in Sources */,
+				1A00C0A62CEE000100000001 /* LiveCaptionLanguageHub.swift in Sources */,
+				1A00C0A82CEE000100000001 /* LiveCaptionLexicon.swift in Sources */,
+				1A00C0AA2CEE000100000001 /* LiveCardTabSwitcher.swift in Sources */,
+				1A00C0AC2CEE000100000001 /* LiveTranscriptFeedView.swift in Sources */,
 				1A00C0A32CEE000100000001 /* ImportantGlow.swift in Sources */,
 				1A00C0A52CEE000100000001 /* ToolbarButtonStyles.swift in Sources */,
 				1A00C0A72CEE000100000001 /* MeetingFollowUpLink.swift in Sources */,
@@ -1791,6 +1814,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0AE2CEE000100000001 /* LiveCaptionLanguageArbiterTests.swift in Sources */,
 				1A00C0C12CEE000100000001 /* AgendaPointsTests.swift in Sources */,
 				1A00C0C32CEE000100000001 /* MeetingFollowUpLinkTests.swift in Sources */,
 				1A00C0C52CEE000100000001 /* LiveCaptionStitcherTests.swift in Sources */,

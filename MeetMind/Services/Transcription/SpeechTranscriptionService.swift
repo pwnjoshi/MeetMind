@@ -12,7 +12,10 @@ import AVFoundation
 /// - If neither can run on-device, the stream shows a truthful notice instead of using a server.
 ///
 /// The language comes from the saved recording language (`MeetMind_SavedRecordingLanguage`):
-/// Hindi and Hinglish use `hi-IN`, English uses `en-IN` then `en-US`.
+/// English uses `en-IN` then `en-US`, Hindi uses `hi-IN`. Hinglish and Automatic run an English
+/// and a Hindi recognizer together and show each phrase in the language that was spoken
+/// (`LiveCaptionLanguageArbiter`, `CaptionLanguageHub`); if only one is available on the device,
+/// that one runs alone.
 public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtocol, @unchecked Sendable {
     private let speechRecognizer: SFSpeechRecognizer?
     private let preferredLocaleIdentifier: String
@@ -80,8 +83,20 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
     /// Call this while the user is not recording (for example when changing the language).
     /// Returns true when live captions can run on-device afterwards.
     public func prepareLiveCaptionModels() async -> Bool {
-        let plan = LiveCaptionLocalePlanner.plan(language: LiveCaptionLanguage.stored(in: userDefaults),
+        let language = LiveCaptionLanguage.stored(in: userDefaults)
+        if let dual = LiveCaptionLocalePlanner.dualPlan(language: language,
+                                                        preferredLocaleIdentifier: preferredLocaleIdentifier) {
+            // Code-switching needs both models; captions still work when only one is available.
+            let hindiReady = await prepareModels(for: dual.hindi)
+            let englishReady = await prepareModels(for: dual.english)
+            return hindiReady || englishReady
+        }
+        let plan = LiveCaptionLocalePlanner.plan(language: language,
                                                  preferredLocaleIdentifier: preferredLocaleIdentifier)
+        return await prepareModels(for: plan)
+    }
+
+    private func prepareModels(for plan: LiveCaptionLocalePlan) async -> Bool {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *), let choice = await ModernCaptionResolver.resolve(plan: plan) {
             if choice.isInstalled { return true }
@@ -237,7 +252,7 @@ final class LiveCaptionSession: @unchecked Sendable {
     /// Returns when the audio ends (recording stopped), the session is stopped, or no
     /// on-device engine is available. Failures become a notice; they never use a server.
     func run(source: CaptionAudioSource, emit: @escaping @Sendable (LiveTranscriptChunk) -> Void) async {
-        let plan = LiveCaptionLocalePlanner.plan(language: configuration.language,
+        var plan = LiveCaptionLocalePlanner.plan(language: configuration.language,
                                                  preferredLocaleIdentifier: configuration.preferredLocaleIdentifier)
         let assembler = CaptionAssembler(sink: emit)
         let router = self.router
@@ -258,6 +273,19 @@ final class LiveCaptionSession: @unchecked Sendable {
             router.finish()
         }
 
+        // Hinglish and Automatic: an English and a Hindi recognizer hear the same audio and the
+        // arbiter picks the language of each phrase. If only one language can run, it runs alone.
+        if let dual = LiveCaptionLocalePlanner.dualPlan(language: configuration.language,
+                                                        preferredLocaleIdentifier: configuration.preferredLocaleIdentifier) {
+            switch await prepareDual(dual) {
+            case .dual(let english, let hindi, let hindiAudio):
+                await runDual(plan: dual, english: english, hindi: hindi, hindiAudio: hindiAudio, assembler: assembler)
+                return
+            case .single(let chosen):
+                plan = chosen
+            }
+        }
+
         let recognizer = Self.makeOnDeviceRecognizer(candidates: plan.candidates)
 
         #if compiler(>=6.2)
@@ -267,6 +295,153 @@ final class LiveCaptionSession: @unchecked Sendable {
         #endif
 
         await runSFSpeech(plan: plan, recognizer: recognizer, assembler: assembler)
+    }
+
+    // MARK: Code-switching (English + Hindi)
+
+    /// What one language needs to run: an on-device recognizer and/or an installed iOS 26 model.
+    struct CaptionChannelSetup: @unchecked Sendable {
+        let recognizer: SFSpeechRecognizer?
+        /// A `ModernCaptionChoice` (iOS 26). Stored type-erased because the type is iOS 26 only.
+        let modernChoice: (any Sendable)?
+        let modernInstalled: Bool
+        let modernNeedsDownload: Bool
+
+        var isReady: Bool { modernInstalled || recognizer != nil }
+    }
+
+    struct CaptionChannelInput: @unchecked Sendable {
+        let setup: CaptionChannelSetup
+        let sink: CaptionChannelSink
+        let slot: Int
+        let audio: AsyncStream<AVAudioPCMBuffer>
+        let startOffset: TimeInterval
+    }
+
+    enum DualPreparation {
+        case dual(english: CaptionChannelSetup, hindi: CaptionChannelSetup, hindiAudio: CaptionAudioStreamHandle)
+        case single(LiveCaptionLocalePlan)
+    }
+
+    /// Hindi's audio stream, attached before the models are resolved so no audio is lost.
+    struct CaptionAudioStreamHandle: @unchecked Sendable {
+        let stream: AsyncStream<AVAudioPCMBuffer>
+        let startOffset: TimeInterval
+    }
+
+    private func prepareDual(_ dual: LiveCaptionDualPlan) async -> DualPreparation {
+        let hindiSlot = router.attach(slot: 1)
+        let english = await Self.makeSetup(plan: dual.english)
+        let hindi = await Self.makeSetup(plan: dual.hindi)
+
+        if english.isReady && hindi.isReady {
+            Self.installInBackground(english)
+            Self.installInBackground(hindi)
+            return .dual(english: english, hindi: hindi,
+                         hindiAudio: CaptionAudioStreamHandle(stream: hindiSlot.stream, startOffset: hindiSlot.startOffset))
+        }
+
+        // One language only. Hindi is the app default, so it also carries the "downloading" and
+        // "unavailable" notices of the single-engine path when neither language is ready.
+        router.release(slot: 1)
+        if english.isReady && !hindi.isReady {
+            Self.installInBackground(hindi)
+            return .single(dual.english)
+        }
+        if hindi.isReady {
+            Self.installInBackground(english)
+        }
+        return .single(dual.hindi)
+    }
+
+    private static func makeSetup(plan: LiveCaptionLocalePlan) async -> CaptionChannelSetup {
+        let recognizer = makeOnDeviceRecognizer(candidates: plan.candidates)
+        var choice: (any Sendable)?
+        var installed = false
+        var needsDownload = false
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), let resolved = await ModernCaptionResolver.resolve(plan: plan) {
+            choice = resolved
+            installed = resolved.isInstalled
+            needsDownload = !resolved.isInstalled
+        }
+        #endif
+        return CaptionChannelSetup(recognizer: recognizer, modernChoice: choice,
+                                   modernInstalled: installed, modernNeedsDownload: needsDownload)
+    }
+
+    /// Starts a model download for the next recording. Never blocks or affects this session.
+    private static func installInBackground(_ setup: CaptionChannelSetup) {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), setup.modernNeedsDownload,
+           let choice = setup.modernChoice as? ModernCaptionChoice {
+            Task.detached(priority: .utility) {
+                _ = await SpeechAnalyzerCaptionEngine.installAssets(for: choice)
+            }
+        }
+        #endif
+    }
+
+    private func runDual(plan: LiveCaptionDualPlan, english: CaptionChannelSetup, hindi: CaptionChannelSetup,
+                         hindiAudio: CaptionAudioStreamHandle, assembler: CaptionAssembler) async {
+        let hub = CaptionLanguageHub(downstream: assembler)
+        let englishAudio = router.attach(slot: 0)
+        let englishInput = CaptionChannelInput(setup: english, sink: hub.sink(for: .english), slot: 0,
+                                               audio: englishAudio.stream, startOffset: englishAudio.startOffset)
+        let hindiInput = CaptionChannelInput(setup: hindi, sink: hub.sink(for: .hindi), slot: 1,
+                                             audio: hindiAudio.stream, startOffset: hindiAudio.startOffset)
+
+        let outcomes: [Bool] = await withTaskGroup(of: Bool.self, returning: [Bool].self) { group in
+            group.addTask { await self.runChannel(englishInput) }
+            group.addTask { await self.runChannel(hindiInput) }
+            var results: [Bool] = []
+            for await outcome in group { results.append(outcome) }
+            return results
+        }
+        hub.finish()
+        if !Task.isCancelled, !outcomes.contains(true) {
+            assembler.notice(LiveCaptionNotice.unavailable(languageName: "Hindi and English"))
+        }
+    }
+
+    /// Runs one language to the end of the audio. Returns false when its recognizer failed, in
+    /// which case the hub carries on with the other language alone.
+    private func runChannel(_ input: CaptionChannelInput) async -> Bool {
+        defer { input.sink.end() }
+        var audio = input.audio
+        var startOffset = input.startOffset
+
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), input.setup.modernInstalled,
+           let choice = input.setup.modernChoice as? ModernCaptionChoice {
+            let engine = SpeechAnalyzerCaptionEngine(choice: choice,
+                                                     contextualStrings: configuration.contextualStrings,
+                                                     assembler: input.sink,
+                                                     unknownConfidence: 0)
+            do {
+                try await engine.run(audio: audio, startOffset: startOffset)
+                return true
+            } catch {
+                if Task.isCancelled { return true }
+                guard input.setup.recognizer != nil else { return false }
+                // Continue this language on the older recognizer from the current audio position.
+                let next = router.attach(slot: input.slot)
+                audio = next.stream
+                startOffset = next.startOffset
+            }
+        }
+        #endif
+
+        guard let recognizer = input.setup.recognizer else { return false }
+        let engine = SFSpeechCaptionEngine(recognizer: recognizer,
+                                           contextualStrings: configuration.contextualStrings,
+                                           assembler: input.sink)
+        do {
+            try await engine.run(audio: audio, startOffset: startOffset)
+            return true
+        } catch {
+            return Task.isCancelled
+        }
     }
 
     // MARK: Engines

@@ -139,7 +139,10 @@ enum LocalSpeech {
         }
         do {
             _ = try? await engine.loadTokenizerIfNeeded()
-            var language: String? = languageCode ?? memory?.code
+            // Each window detects its own language so an English stretch is written in English
+            // and a Hindi stretch in Hindi. The memory is not used to force later windows into
+            // Hindi; that turned every sentence after the first Hindi one into Devanagari.
+            var language: String? = languageCode
             let prompt = promptTokens(engine: engine, vocabulary: vocabulary, languageCode: language)
             var pass = try await decode(engine: engine, audio: audio, language: language, prompt: prompt)
             if languageCode == nil, language == nil {

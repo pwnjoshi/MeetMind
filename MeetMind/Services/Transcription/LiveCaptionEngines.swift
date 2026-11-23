@@ -11,12 +11,13 @@ struct CaptionAudioSource: @unchecked Sendable {
     let stream: AsyncStream<AVAudioPCMBuffer>
 }
 
-/// Fans the single recorder stream out to whichever caption engine is active, and
-/// counts delivered audio so every engine reports times relative to recording start.
-/// A stream is attached at creation so no audio is lost while an engine is chosen.
+/// Fans the recorder stream out to the active caption engines, and counts delivered audio so
+/// every engine reports times relative to recording start. Each consumer uses its own slot
+/// (slot 0 for single-engine sessions; English and Hindi use slots 0 and 1 together).
+/// Slot 0 has a stream attached at creation so no audio is lost while an engine is chosen.
 final class CaptionAudioRouter: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    private var continuations: [Int: AsyncStream<AVAudioPCMBuffer>.Continuation] = [:]
     private var initialStream: AsyncStream<AVAudioPCMBuffer>?
     private var delivered: TimeInterval = 0
     private var isFinished = false
@@ -24,7 +25,7 @@ final class CaptionAudioRouter: @unchecked Sendable {
     init() {
         let pair = AsyncStream<AVAudioPCMBuffer>.makeStream(of: AVAudioPCMBuffer.self,
                                                             bufferingPolicy: .bufferingNewest(2000))
-        continuation = pair.continuation
+        continuations[0] = pair.continuation
         initialStream = pair.stream
     }
 
@@ -34,38 +35,48 @@ final class CaptionAudioRouter: @unchecked Sendable {
         return delivered
     }
 
-    /// Returns a stream of audio from now on (the first call returns everything since the start)
-    /// and the recording time at which it begins. Any previous stream is finished.
-    func attach() -> (stream: AsyncStream<AVAudioPCMBuffer>, startOffset: TimeInterval) {
+    /// Returns a stream of audio from now on (the first call for slot 0 returns everything since
+    /// the start) and the recording time at which it begins. A previous stream of the same slot
+    /// is finished; other slots keep receiving audio.
+    func attach(slot: Int = 0) -> (stream: AsyncStream<AVAudioPCMBuffer>, startOffset: TimeInterval) {
         lock.lock()
-        if let initial = initialStream {
+        if slot == 0, let initial = initialStream {
             initialStream = nil
             lock.unlock()
             return (initial, 0)
         }
         let pair = AsyncStream<AVAudioPCMBuffer>.makeStream(of: AVAudioPCMBuffer.self,
                                                             bufferingPolicy: .bufferingNewest(2000))
-        let previous = continuation
+        let previous = continuations[slot]
         let offset = delivered
         if isFinished {
             pair.continuation.finish()
-            continuation = nil
+            continuations[slot] = nil
         } else {
-            continuation = pair.continuation
+            continuations[slot] = pair.continuation
         }
         lock.unlock()
         previous?.finish()
         return (pair.stream, offset)
     }
 
+    /// Ends one consumer's stream so audio no longer queues for it.
+    func release(slot: Int) {
+        lock.lock()
+        let previous = continuations.removeValue(forKey: slot)
+        if slot == 0 { initialStream = nil }
+        lock.unlock()
+        previous?.finish()
+    }
+
     /// Stops delivering audio to engines but keeps counting time.
     func detach() {
         lock.lock()
-        let previous = continuation
-        continuation = nil
+        let previous = Array(continuations.values)
+        continuations.removeAll()
         initialStream = nil
         lock.unlock()
-        previous?.finish()
+        for continuation in previous { continuation.finish() }
     }
 
     func send(_ buffer: AVAudioPCMBuffer) {
@@ -73,19 +84,28 @@ final class CaptionAudioRouter: @unchecked Sendable {
         let duration = rate > 0 ? Double(buffer.frameLength) / rate : 0
         lock.lock()
         delivered += duration
-        let target = continuation
+        let targets = Array(continuations.values)
         lock.unlock()
-        target?.yield(buffer)
+        for target in targets { target.yield(buffer) }
     }
 
     func finish() {
         lock.lock()
         isFinished = true
-        let previous = continuation
-        continuation = nil
+        let previous = Array(continuations.values)
+        continuations.removeAll()
         lock.unlock()
-        previous?.finish()
+        for continuation in previous { continuation.finish() }
     }
+}
+
+/// Where an engine reports its captions. `CaptionAssembler` is the normal sink; in
+/// code-switching sessions each language gets its own sink that feeds `CaptionLanguageHub`.
+protocol CaptionResultSink: AnyObject, Sendable {
+    func setAutoCommit(_ policy: LiveCaptionStitcher.AutoCommitPolicy?)
+    func updateOpen(_ words: [CaptionWord])
+    func commit(_ words: [CaptionWord])
+    func notice(_ message: String)
 }
 
 /// Thread-safe front for `LiveCaptionStitcher`. Every caption leaves through here so
@@ -131,6 +151,8 @@ final class CaptionAssembler: @unchecked Sendable {
         sink(LiveTranscriptChunk(text: message, isFinal: false, segments: []))
     }
 }
+
+extension CaptionAssembler: CaptionResultSink {}
 
 /// Converts recorder buffers to the format a speech module asks for.
 final class CaptionAudioConverter {
@@ -211,7 +233,7 @@ final class SFSpeechCaptionEngine: @unchecked Sendable {
 
     private let recognizer: SFSpeechRecognizer
     private let contextualStrings: [String]
-    private let assembler: CaptionAssembler
+    private let assembler: any CaptionResultSink
     private let rotateAfter: TimeInterval
     private let replaySeconds: TimeInterval
     private let handoverMargin: TimeInterval
@@ -227,7 +249,7 @@ final class SFSpeechCaptionEngine: @unchecked Sendable {
     private var consecutiveFailures = 0
     private var fatalMessage: String?
 
-    init(recognizer: SFSpeechRecognizer, contextualStrings: [String], assembler: CaptionAssembler,
+    init(recognizer: SFSpeechRecognizer, contextualStrings: [String], assembler: any CaptionResultSink,
          rotateAfter: TimeInterval = 50, replaySeconds: TimeInterval = 2, handoverMargin: TimeInterval = 1) {
         self.recognizer = recognizer
         self.contextualStrings = contextualStrings
@@ -532,12 +554,17 @@ enum ModernCaptionResolver {
 final class SpeechAnalyzerCaptionEngine: @unchecked Sendable {
     private let choice: ModernCaptionChoice
     private let contextualStrings: [String]
-    private let assembler: CaptionAssembler
+    private let assembler: any CaptionResultSink
+    /// Confidence given to results that carry none: 1 for single-engine captions, 0 ("unknown")
+    /// when two languages are being compared.
+    private let unknownConfidence: Float
 
-    init(choice: ModernCaptionChoice, contextualStrings: [String], assembler: CaptionAssembler) {
+    init(choice: ModernCaptionChoice, contextualStrings: [String], assembler: any CaptionResultSink,
+         unknownConfidence: Float = 1.0) {
         self.choice = choice
         self.contextualStrings = contextualStrings
         self.assembler = assembler
+        self.unknownConfidence = unknownConfidence
     }
 
     /// Downloads the on-device model if needed. Returns true when it is installed afterwards.
@@ -568,6 +595,7 @@ final class SpeechAnalyzerCaptionEngine: @unchecked Sendable {
     func run(audio: AsyncStream<AVAudioPCMBuffer>, startOffset: TimeInterval) async throws {
         assembler.setAutoCommit(nil)
         let assembler = self.assembler
+        let unknownConfidence = self.unknownConfidence
 
         let module: any SpeechModule
         let resultsTask: Task<Void, Error>
@@ -576,12 +604,12 @@ final class SpeechAnalyzerCaptionEngine: @unchecked Sendable {
             let transcriber = SpeechTranscriber(locale: choice.locale,
                                                 transcriptionOptions: [],
                                                 reportingOptions: [.volatileResults],
-                                                attributeOptions: [])
+                                                attributeOptions: [.transcriptionConfidence])
             module = transcriber
             resultsTask = Task {
                 for try await result in transcriber.results {
                     Self.deliver(text: result.text, range: result.range, isFinal: result.isFinal,
-                                 offset: startOffset, assembler: assembler)
+                                 offset: startOffset, unknownConfidence: unknownConfidence, assembler: assembler)
                 }
             }
         case .dictation:
@@ -589,12 +617,12 @@ final class SpeechAnalyzerCaptionEngine: @unchecked Sendable {
                                                    contentHints: [],
                                                    transcriptionOptions: [.punctuation],
                                                    reportingOptions: [.volatileResults, .frequentFinalization],
-                                                   attributeOptions: [])
+                                                   attributeOptions: [.transcriptionConfidence])
             module = transcriber
             resultsTask = Task {
                 for try await result in transcriber.results {
                     Self.deliver(text: result.text, range: result.range, isFinal: result.isFinal,
-                                 offset: startOffset, assembler: assembler)
+                                 offset: startOffset, unknownConfidence: unknownConfidence, assembler: assembler)
                 }
             }
         }
@@ -644,19 +672,34 @@ final class SpeechAnalyzerCaptionEngine: @unchecked Sendable {
     }
 
     private static func deliver(text: AttributedString, range: CMTimeRange, isFinal: Bool,
-                                offset: TimeInterval, assembler: CaptionAssembler) {
+                                offset: TimeInterval, unknownConfidence: Float, assembler: any CaptionResultSink) {
         let plain = String(text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !plain.isEmpty else { return }
         let rawStart = range.start.seconds
         let rawEnd = range.end.seconds
         let start = (rawStart.isFinite ? rawStart : 0) + offset
         let end = (rawEnd.isFinite ? rawEnd : rawStart.isFinite ? rawStart : 0) + offset
-        let words = CaptionWord.words(from: plain, start: start, end: max(start, end))
+        let confidence = Self.confidence(of: text) ?? unknownConfidence
+        let words = CaptionWord.words(from: plain, start: start, end: max(start, end), confidence: confidence)
         if isFinal {
             assembler.commit(words)
         } else {
             assembler.updateOpen(words)
         }
+    }
+
+    /// Character-weighted mean of the per-run transcription confidence, nil when none is attached.
+    private static func confidence(of text: AttributedString) -> Float? {
+        var weighted = 0.0
+        var weight = 0.0
+        for run in text.runs {
+            guard let value = run[AttributeScopes.SpeechAttributes.ConfidenceAttribute.self] else { continue }
+            let length = Double(max(1, text[run.range].characters.count))
+            weighted += Double(value) * length
+            weight += length
+        }
+        guard weight > 0 else { return nil }
+        return Float(min(1, max(0, weighted / weight)))
     }
 }
 

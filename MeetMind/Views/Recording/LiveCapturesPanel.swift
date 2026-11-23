@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 import ImageIO
 
-/// Live "Notes & photos" list for the recording page. It shows every note and photo
-/// captured in this recording (newest first) with its recording timecode. Notes and
-/// captions can be edited, items can be deleted, and a photo opens full screen.
+/// Live "Notes & photos" list for the recording page. Photos appear in a grid with a
+/// timecode overlay and notes in a list below it (newest first). Notes and captions
+/// can be edited, items can be deleted, and a photo opens full screen.
 struct LiveCapturesPanel: View {
     let items: [LiveCaptureItem]
     let onEdit: (UUID, String) -> Void
@@ -14,27 +14,37 @@ struct LiveCapturesPanel: View {
     @State private var editText = ""
     @State private var viewingPhoto: LiveCaptureItem?
 
+    private let gridColumns = [GridItem(.adaptive(minimum: 88), spacing: 8)]
+
+    private var photos: [LiveCaptureItem] { items.filter { $0.kind == .photo && $0.photoURL != nil } }
+    private var notes: [LiveCaptureItem] { items.filter { $0.kind == .note } }
+
     var body: some View {
         Group {
             if items.isEmpty {
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
                     Image(systemName: "note.text")
                         .font(.title3)
-                        .foregroundStyle(.white.opacity(0.58))
-                    Text("No notes or photos yet")
+                        .foregroundStyle(.white.opacity(0.6))
+                    Text("Notes and photos you add appear here")
                         .font(.body)
-                        .foregroundStyle(.white.opacity(0.76))
-                    Text("Notes and photos you add while recording appear here.")
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .accessibilityElement(children: .combine)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(items) { item in
-                            row(for: item)
+                    VStack(alignment: .leading, spacing: 14) {
+                        if !photos.isEmpty {
+                            LazyVGrid(columns: gridColumns, spacing: 8) {
+                                ForEach(photos) { item in
+                                    photoTile(for: item)
+                                }
+                            }
+                        }
+                        ForEach(notes) { item in
+                            noteRow(for: item)
                         }
                     }
                     .padding(.vertical, 2)
@@ -64,62 +74,77 @@ struct LiveCapturesPanel: View {
         return "Edit Note"
     }
 
-    private func row(for item: LiveCaptureItem) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Button {
-                if item.kind == .photo { viewingPhoto = item } else { beginEditing(item) }
-            } label: {
-                HStack(alignment: .top, spacing: 12) {
-                    leading(for: item)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("\(item.kind == .photo ? "Photo" : "Note") \u{00B7} \(LiveCaptureTime.format(item.timestamp))")
-                            .font(.caption)
-                            .foregroundStyle(Color(hex: "#8CC8FF").opacity(0.85))
-                        Text(displayText(for: item))
-                            .font(.body)
-                            .foregroundStyle(.white.opacity(0.92))
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+    private func photoTile(for item: LiveCaptureItem) -> some View {
+        Button {
+            viewingPhoto = item
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                if let url = item.photoURL {
+                    LiveCaptureThumbnail(url: url)
                 }
+                Text(LiveCaptureTime.format(item.timestamp))
+                    .font(.caption2.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.55), in: Capsule())
+                    .padding(6)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 0.75))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Edit Caption", systemImage: "pencil") { beginEditing(item) }
+            Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.id) }
+        }
+        .accessibilityLabel(item.text.isEmpty
+            ? "Photo at \(LiveCaptureTime.format(item.timestamp))"
+            : "Photo at \(LiveCaptureTime.format(item.timestamp)), \(item.text)")
+        .accessibilityHint("Opens the photo full screen")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Edit caption") { beginEditing(item) }
+        .accessibilityAction(named: "Delete") { onDelete(item.id) }
+    }
+
+    private func noteRow(for item: LiveCaptureItem) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Button {
+                beginEditing(item)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Note \u{00B7} \(LiveCaptureTime.format(item.timestamp))")
+                        .font(.caption)
+                        .foregroundStyle(Color(hex: "#8CC8FF").opacity(0.85))
+                    Text(item.text)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.92))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.vertical, 2)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
-            .accessibilityHint(item.kind == .photo ? "Opens the photo full screen" : "Edits the note")
+            .accessibilityHint("Edits the note")
 
             Menu {
-                Button(item.kind == .photo ? "Edit Caption" : "Edit Note", systemImage: "pencil") {
-                    beginEditing(item)
-                }
+                Button("Edit Note", systemImage: "pencil") { beginEditing(item) }
                 Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.id) }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 32, height: 32)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel(item.kind == .photo ? "Photo options" : "Note options")
+            .accessibilityLabel("Note options")
         }
-    }
-
-    @ViewBuilder
-    private func leading(for item: LiveCaptureItem) -> some View {
-        if item.kind == .photo, let url = item.photoURL {
-            LiveCaptureThumbnail(url: url)
-        } else {
-            Image(systemName: "text.bubble")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color(hex: "#8CC8FF"))
-                .frame(width: 44, height: 44)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-    }
-
-    private func displayText(for item: LiveCaptureItem) -> String {
-        if item.kind == .photo && item.text.isEmpty { return "Tap to view" }
-        return item.text
+        .padding(.leading, 12)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 0.75))
     }
 
     private func beginEditing(_ item: LiveCaptureItem) {
@@ -127,7 +152,6 @@ struct LiveCapturesPanel: View {
         editingID = item.id
     }
 }
-
 private enum LiveCaptureTime {
     static func format(_ time: TimeInterval) -> String {
         let total = max(0, Int(time.isFinite ? time : 0))
@@ -156,21 +180,21 @@ private struct LiveCaptureThumbnail: View {
     @State private var image: UIImage?
 
     var body: some View {
-        Group {
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Color.white.opacity(0.08)
-                    .overlay(Image(systemName: "photo").foregroundStyle(.white.opacity(0.5)))
+        Color.white.opacity(0.08)
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "photo").foregroundStyle(.white.opacity(0.5))
+                }
             }
-        }
-        .frame(width: 56, height: 56)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityHidden(true)
         .task(id: url) {
-            image = LiveCaptureImageLoader.load(url, maxPixel: 200)
+            image = LiveCaptureImageLoader.load(url, maxPixel: 320)
         }
     }
 }

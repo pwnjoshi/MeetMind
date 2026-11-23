@@ -72,10 +72,6 @@ public struct LiveRecordingView: View {
                 Spacer(minLength: 20)
                 recordingControls
                     .padding(.bottom, 6)
-                Text("Saved on this iPhone as you record")
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .padding(.bottom, 4)
             }
             .padding(.horizontal, 28)
             .padding(.top, 12)
@@ -277,11 +273,7 @@ public struct LiveRecordingView: View {
 
     private func liveTranscriptCard(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Live view", selection: $cardTab) {
-                Text("Transcript").tag(LiveCardTab.transcript)
-                Text(capturesTabTitle).tag(LiveCardTab.captures)
-            }
-            .pickerStyle(.segmented)
+            LiveCardTabSwitcher(selection: $cardTab, captureCount: viewModel.sessionCaptures.count)
 
             Group {
                 switch cardTab {
@@ -299,13 +291,8 @@ public struct LiveRecordingView: View {
         }
         .padding(18)
         .frame(height: height, alignment: .top)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 0.75))
-    }
-
-    private var capturesTabTitle: String {
-        let count = viewModel.sessionCaptures.count
-        return count > 0 ? "Notes & photos \(count)" : "Notes & photos"
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 0.75))
     }
 
     private var transcriptContent: some View {
@@ -313,7 +300,7 @@ public struct LiveRecordingView: View {
             HStack {
                 Text("Live transcript")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(.white.opacity(0.6))
                 Spacer()
                 Toggle("Live transcript", isOn: $showsLiveTranscript)
                     .labelsHidden()
@@ -321,45 +308,11 @@ public struct LiveRecordingView: View {
                     .accessibilityLabel("Live transcript")
             }
             if showsLiveTranscript {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(viewModel.finalTranscriptSegments) { segment in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("\(segment.speakerName) \u{00B7} \(transcriptTimestamp(segment.startTime))")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.65))
-                                Text(segment.text)
-                                    .font(.body)
-                                    .foregroundStyle(.white.opacity(0.92))
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        ForEach(Array(viewModel.bookmarks.enumerated()), id: \.element.id) { index, mark in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Bookmark \u{00B7} \(transcriptTimestamp(mark.timestamp))")
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.Colors.warmAmber)
-                                Text("Bookmark \(index + 1)")
-                                    .font(.body)
-                                    .foregroundStyle(Theme.Colors.warmAmber)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if !viewModel.interimTranscriptText.isEmpty {
-                            Text(viewModel.interimTranscriptText)
-                                .font(.body)
-                                .foregroundStyle(.white.opacity(0.67))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if viewModel.finalTranscriptSegments.isEmpty && viewModel.interimTranscriptText.isEmpty {
-                            Text("Listening for the conversation\u{2026}")
-                                .font(.body)
-                                .foregroundStyle(.white.opacity(0.58))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
+                LiveTranscriptFeedView(
+                    segments: viewModel.finalTranscriptSegments,
+                    bookmarks: viewModel.bookmarks,
+                    interimText: viewModel.interimTranscriptText
+                )
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Image(systemName: "text.bubble")
@@ -580,10 +533,4 @@ public struct LiveRecordingView: View {
     private func transcriptTimestamp(_ seconds: TimeInterval) -> String {
         Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond))
     }
-}
-
-/// Which list the live card shows: the spoken transcript or the notes and photos captured so far.
-private enum LiveCardTab: Hashable {
-    case transcript
-    case captures
 }

@@ -36,6 +36,17 @@ public struct LiveCaptionLocalePlan: Equatable, Sendable {
     }
 }
 
+/// Locales for a code-switching session: one plan per language, run side by side.
+public struct LiveCaptionDualPlan: Equatable, Sendable {
+    public let english: LiveCaptionLocalePlan
+    public let hindi: LiveCaptionLocalePlan
+
+    public init(english: LiveCaptionLocalePlan, hindi: LiveCaptionLocalePlan) {
+        self.english = english
+        self.hindi = hindi
+    }
+}
+
 /// Pure locale selection for live captions.
 public enum LiveCaptionLocalePlanner {
     public static let hindi = "hi-IN"
@@ -57,8 +68,9 @@ public enum LiveCaptionLocalePlanner {
         let preferred = normalized(preferredLocaleIdentifier)
         switch language {
         case .hindi, .hinglish:
-            // Hindi recognizers keep English words, so one recognizer covers code-switching.
-            // There is deliberately no English fallback: it would turn Hindi speech into nonsense.
+            // Single-recognizer fallback. Hinglish normally runs `dualPlan` (English + Hindi) instead;
+            // this plan is used when only Hindi is available. There is deliberately no English
+            // fallback here: it would turn Hindi speech into nonsense.
             return LiveCaptionLocalePlan(candidates: [hindi], languageName: "Hindi")
         case .english:
             var list = [indianEnglish, usEnglish]
@@ -70,6 +82,20 @@ public enum LiveCaptionLocalePlanner {
             // Apple recognizers cannot detect a language, so follow the Settings preview locale.
             let chosen = preferred ?? hindi
             return LiveCaptionLocalePlan(candidates: [chosen], languageName: displayName(forIdentifier: chosen))
+        }
+    }
+
+    /// Locales for code-switching captions: an English and a Hindi recognizer run together and
+    /// `LiveCaptionLanguageArbiter` picks the language of each phrase. Only Hinglish and
+    /// Automatic switch; English and Hindi stay single-language (use `plan`). Returns nil for those.
+    public static func dualPlan(language: LiveCaptionLanguage, preferredLocaleIdentifier: String?) -> LiveCaptionDualPlan? {
+        switch language {
+        case .hindi, .english:
+            return nil
+        case .hinglish, .automatic:
+            let english = plan(language: .english, preferredLocaleIdentifier: preferredLocaleIdentifier)
+            let hindiPlan = LiveCaptionLocalePlan(candidates: [hindi], languageName: "Hindi")
+            return LiveCaptionDualPlan(english: english, hindi: hindiPlan)
         }
     }
 
