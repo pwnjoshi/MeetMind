@@ -425,15 +425,6 @@ public final class ActionItemsViewModel {
         try await syncToAppleReminders()
     }
     
-    public func addItem(_ item: ActionItem) {
-        if !allActionItems.contains(where: { $0.id == item.id }) {
-            allActionItems.append(item)
-            if let context = modelContext {
-                context.insert(item)
-                try? context.save()
-            }
-        }
-    }
     
     public func deleteActionItem(_ item: ActionItem) {
         deleteActionItem(id: item.id)

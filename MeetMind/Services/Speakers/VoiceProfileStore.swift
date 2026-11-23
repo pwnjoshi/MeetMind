@@ -100,15 +100,6 @@ public final class VoiceProfileStore: @unchecked Sendable {
         }
     }
 
-    public func removeProfile(personID: UUID) throws {
-        try locked {
-            guard snapshot.profiles[personID.uuidString] != nil else { return }
-            let previous = snapshot
-            snapshot.profiles[personID.uuidString] = nil
-            do { try persist() } catch { snapshot = previous; throw error }
-        }
-    }
-
     // MARK: Meetings
 
     public func record(for meetingID: UUID) -> MeetingVoiceRecord? {

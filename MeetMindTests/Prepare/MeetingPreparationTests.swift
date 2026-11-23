@@ -188,24 +188,6 @@ final class MeetingPreparationTests: XCTestCase {
         XCTAssertTrue(vm.areDatesValid)
     }
 
-    // MARK: Time entry
-
-    func testTimeParser() {
-        XCTAssertEqual(PrepTimeParser.parse("530")?.hour, 5)
-        XCTAssertEqual(PrepTimeParser.parse("5:30")?.minute, 30)
-        XCTAssertEqual(PrepTimeParser.parse("1130")?.hour, 11)
-        XCTAssertEqual(PrepTimeParser.parse("9")?.minute, 0)
-        XCTAssertNil(PrepTimeParser.parse("1330"))
-        XCTAssertNil(PrepTimeParser.parse("575"))
-        XCTAssertNil(PrepTimeParser.parse(""))
-        let pm = PrepTimeParser.apply(hour12: 5, minute: 30, isPM: true, to: date(2026, 11, 18, 8, 0), calendar: calendar)
-        XCTAssertEqual(pm, date(2026, 11, 18, 17, 30))
-        let noon = PrepTimeParser.apply(hour12: 12, minute: 0, isPM: false, to: date(2026, 11, 18, 8, 0), calendar: calendar)
-        XCTAssertEqual(noon, date(2026, 11, 18, 0, 0))
-        XCTAssertEqual(PrepTimeParser.fields(for: date(2026, 11, 18, 17, 30), calendar: calendar).digits, "530")
-        XCTAssertTrue(PrepTimeParser.fields(for: date(2026, 11, 18, 17, 30), calendar: calendar).isPM)
-    }
-
     // MARK: Calendar
 
     func testConnectedCalendarReceivesSavedMeetingAndEventIDIsStored() throws {

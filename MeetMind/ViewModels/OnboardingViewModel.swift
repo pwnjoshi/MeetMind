@@ -62,18 +62,8 @@ public final class OnboardingViewModel {
     public var verificationDigits: [String] = Array(repeating: "", count: 6)
     public var isResendCodeConfirmationShown: Bool = false
     
-    public func continueWithEmail() {
-        email = enteredEmail
-        currentStage = .verifyEmail
-    }
     
-    public func continueWithSocialAuth(provider: String) {
-        continueLocally()
-    }
     
-    public func verifyCodeAndContinue() {
-        continueLocally()
-    }
 
     public func continueLocally() {
         name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
@@ -83,9 +73,6 @@ public final class OnboardingViewModel {
         currentStage = .permissionsPrimer
     }
     
-    public func backToSignIn() {
-        currentStage = .carousel
-    }
     
     // MARK: - Permissions Primer State
     public var shouldShowSettingsAlert: Bool = false

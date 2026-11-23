@@ -2,8 +2,6 @@ import Foundation
 import SwiftData
 import Observation
 
-public typealias QuickFilter = MeetingFilter
-
 /// Status badge configuration model
 public struct MeetingBadgeConfig: Sendable, Equatable {
     public let title: String
@@ -288,14 +286,6 @@ public final class HomeViewModel {
         }
     }
     
-    public func confirmDeleteMeeting(_ meeting: Meeting) {
-        pendingMeetingToDelete = nil
-        isShowingDeleteConfirmationAlert = false
-        Task { @MainActor in
-            do { try await deleteMeeting(meeting) }
-            catch { deletionErrorMessage = error.localizedDescription }
-        }
-    }
     
     public func deleteMeeting(id: UUID) async throws {
         if let meeting = meetings.first(where: { $0.id == id }) {
@@ -367,44 +357,8 @@ public final class HomeViewModel {
         }
     }
     
-    public func deleteFolder(_ folder: Folder) {
-        for m in meetings where m.folder?.id == folder.id {
-            m.folder = nil
-        }
-        folder.meetings.removeAll()
-        if let context = modelContext {
-            context.delete(folder)
-            try? context.save()
-        }
-        fetchMeetings()
-    }
     
-    public func filterMeetings(dateRange: MeetingFilter, hasActionItems: Bool) -> [Meeting] {
-        meetings.filter { meeting in
-            let matchesDate = dateRange.matches(meeting: meeting)
-            let matchesActionItems = hasActionItems ? !meeting.actionItems.isEmpty : true
-            return matchesDate && matchesActionItems
-        }
-    }
     
-    public func countdownText(for meeting: Meeting, referenceDate: Date = Date()) -> String {
-        guard let startTime = meeting.scheduledStartTime else { return "" }
-        let diff = startTime.timeIntervalSince(referenceDate)
-        if diff <= 0 {
-            return "Happening now"
-        }
-        let minutes = Int(round(diff / 60.0))
-        if minutes < 60 {
-            return "Starts in \(minutes) mins"
-        }
-        let hours = minutes / 60
-        let remainingMins = minutes % 60
-        if remainingMins == 0 {
-            return hours == 1 ? "Starts in 1 hour" : "Starts in \(hours) hours"
-        } else {
-            return "Starts in \(hours)h \(remainingMins)m"
-        }
-    }
     
     public func transitionStatus(for meeting: Meeting, to nextStatus: MeetingStatus) {
         meeting.status = nextStatus

@@ -424,91 +424,7 @@ public final class ProcessingPipelineViewModel {
     }
 
     #if DEBUG
-    public func executePipeline(for targetMeeting: Meeting) async throws {
-        self.meeting = targetMeeting
-        self.meetingId = targetMeeting.id
-        currentStep = .initial
-        overallProgress = 0.0
-        pipelineStatus = .processing
-        
-        for i in 0..<stages.count {
-            stages[i].state = .pending
-            stages[i].errorMessage = nil
-        }
-        
-        // Stage 0
-        stages[0].state = .inProgress
-        currentStep = .audio
-        try? await Task.sleep(nanoseconds: 10_000_000)
-        stages[0].state = .completed
-        overallProgress = 0.25
-        
-        // Stage 1
-        stages[1].state = .inProgress
-        currentStep = .diarization
-        try? await Task.sleep(nanoseconds: 10_000_000)
-        stages[1].state = .completed
-        overallProgress = 0.50
-        
-        // Stage 2
-        stages[2].state = .inProgress
-        currentStep = .summarization
-        if let summarizationService = summarizationService {
-            do {
-                let transcript = targetMeeting.fullTranscriptText.isEmpty ? "Sample discussion" : targetMeeting.fullTranscriptText
-                let response = try await summarizationService.generateSummary(from: transcript)
-                targetMeeting.summary = Summary(
-                    executiveSummary: response.executiveSummary,
-                    keyPoints: response.keyDiscussionPoints,
-                    keyDecisions: response.keyDecisions,
-                    meeting: targetMeeting
-                )
-                stages[2].state = .completed
-                overallProgress = 0.75
-                
-                // Stage 3
-                stages[3].state = .inProgress
-                currentStep = .actions
-                for item in response.actionItems {
-                    let action = ActionItem(
-                        title: item.title,
-                        taskDescription: item.taskDescription,
-                        priority: ActionPriority(rawValue: item.priority) ?? .medium,
-                        dueDate: item.dueDate,
-                        meeting: targetMeeting
-                    )
-                    targetMeeting.addActionItem(action)
-                }
-                stages[3].state = .completed
-                overallProgress = 1.0
-                currentStep = .completed
-                pipelineStatus = .completed
-                targetMeeting.status = .completed
-                try? modelContext?.save()
-                onNavigateToDetail?(targetMeeting.id)
-            } catch {
-                stages[2].state = .failed
-                stages[2].errorMessage = error.localizedDescription
-                self.errorMessage = error.localizedDescription
-                pipelineStatus = .failed
-                throw error
-            }
-        } else {
-            stages[2].state = .completed
-            overallProgress = 0.75
-            stages[3].state = .completed
-            overallProgress = 1.0
-            currentStep = .completed
-            pipelineStatus = .completed
-            targetMeeting.status = .completed
-            try? modelContext?.save()
-            onNavigateToDetail?(targetMeeting.id)
-        }
-    }
     
-    public func retryPipeline(for targetMeeting: Meeting) async throws {
-        try await executePipeline(for: targetMeeting)
-    }
     
     public func simulateStageCompletion(stageIndex: Int) {
         guard stageIndex >= 0 && stageIndex < stages.count else { return }
@@ -594,15 +510,6 @@ public final class ProcessingPipelineViewModel {
         isAppInBackground = isBackground
     }
     
-    public func retryStage(at index: Int) async throws {
-        guard index >= 0 && index < stages.count else { return }
-        currentStageIndex = index
-        stages[index].state = .inProgress
-        stages[index].errorMessage = nil
-        errorMessage = nil
-        pipelineStatus = .processing
-        simulateStageCompletion(stageIndex: index)
-    }
     
     public func retryCurrentStage() {
         retryCount += 1

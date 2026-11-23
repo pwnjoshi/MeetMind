@@ -60,16 +60,6 @@ public struct ColorPalette: Sendable, Equatable {
     }
 }
 
-/// Brand color hex constants matching Figma Node 8:2
-public enum ThemeColorTokens {
-    public static let slatePrimary = "#1E2E28"
-    public static let amberAccent = "#F59E0B"
-    public static let blueLive = "#3B82F6"
-    public static let purpleAI = "#8B5CF6"
-    public static let greenSuccess = "#10B981"
-    public static let redRecording = "#EF4444"
-}
-
 /// Typography scale point sizes matching Apple HIG
 public struct TypographyTokens: Sendable {
     public let largeTitleSize: Double = 34.0
@@ -438,18 +428,12 @@ public final class SettingsViewModel {
         return formattedCacheSize
     }
     
-    public func simulateTemporaryCache(byteCount: Int64) {
-        setSimulatedCacheSize(bytes: byteCount)
-    }
     
     public var persistentRecordingsBytes: Int64 {
         get { _persistentRecordingsBytes }
         set { _persistentRecordingsBytes = newValue }
     }
     
-    public func simulatePersistentRecordings(byteCount: Int64) {
-        self.persistentRecordingsBytes = byteCount
-    }
     
     public var resolvedColorScheme: ColorSchemePreference? {
         preferredColorScheme
@@ -489,10 +473,4 @@ public final class SettingsViewModel {
         }
     }
     
-    public func updateUserProfile(name: String, role: String, email: String, voiceURL: URL?, avatarImageData: Data? = nil) {
-        let current = userProfile ?? .defaultProfile
-        saveUserProfile(UserProfile(name: name, email: email, role: role,
-            avatarColorHex: current.avatarColorHex, avatarImageData: avatarImageData ?? current.avatarImageData,
-            voiceProfileURL: voiceURL))
-    }
 }

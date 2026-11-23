@@ -474,23 +474,12 @@ public final class LiveRecordingViewModel {
         try? modelContext?.save()
     }
     
-    public func startSessionSync(for targetMeeting: Meeting) {
-        self.meeting = targetMeeting
-        self.meetingId = targetMeeting.id
-        self.meetingTitle = targetMeeting.title
-        startSession()
-        targetMeeting.status = .recording
-        try? modelContext?.save()
-    }
     
     public func simulateTimerTick(seconds: Double) {
         guard recordingState == .recording else { return }
         elapsedDuration += seconds
     }
     
-    public func simulateTimeAdvance(seconds: Double) {
-        simulateTimerTick(seconds: seconds)
-    }
     
     public func simulateAudioPowerUpdate(power: Float) {
         guard recordingState == .recording else { return }
@@ -504,9 +493,6 @@ public final class LiveRecordingViewModel {
         waveformLevels.insert(clamped, at: 0)
     }
     
-    public func simulateAudioPower(level: Float) {
-        simulateAudioPowerUpdate(power: level)
-    }
     
     public func updateWaveformLevels(with level: Float) {
         simulateAudioPowerUpdate(power: level)
@@ -632,10 +618,6 @@ public final class LiveRecordingViewModel {
         saveNote(text: text)
     }
     
-    public func addTextNote(content: String) {
-        noteCaptureTimestamp = elapsedDuration
-        saveNote(text: content)
-    }
     
     public func addBookmark() {
         if bookmarks.count >= 100 {
@@ -658,9 +640,6 @@ public final class LiveRecordingViewModel {
         }
     }
     
-    public func addBookmarkNote() {
-        addBookmark()
-    }
     
     public func resetBookmarkHighlight() {
         isBookmarkButtonHighlighted = false
@@ -761,9 +740,6 @@ public final class LiveRecordingViewModel {
         }
     }
 
-    public func snapWhiteboardPhoto(url: URL) {
-        attachPhoto(url: url)
-    }
     
     public func handleCameraPermissionDenied() {
         isShowingCameraPermissionAlert = true
@@ -828,9 +804,6 @@ public final class LiveRecordingViewModel {
         ))
     }
     
-    public func handleSystemInterruption(type: InterruptionType) {
-        handleAudioSessionInterruption(began: type == .began)
-    }
     
     public func simulateNetworkDrop() {
         isUsingOnDeviceSpeechFallback = true
@@ -981,9 +954,6 @@ public final class LiveRecordingViewModel {
         recordingMetrics = metricsCollector.snapshot
     }
     
-    public func finishRecording() async throws -> URL {
-        try await finishSession()
-    }
     
     public func requestDiscard() {
         isShowingDiscardAlert = true
@@ -1032,11 +1002,5 @@ public final class LiveRecordingViewModel {
         }
     }
     
-    public func discardSession() {
-        confirmDiscard()
-    }
     
-    public func discardRecording() {
-        discardSession()
-    }
 }

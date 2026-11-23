@@ -147,3 +147,15 @@ It runs the same transcription, speaker separation and minutes code as the app's
 | `Scripts/test_eval_score.py` | Scorer tests (run in CI) |
 | `MeetMind/Services/Evaluation/` | On-device runner and hidden launch view |
 | `OfflineEngineKit/.../Evaluation/MeetingEvaluation.swift` | Pipeline run, memory sampler, result format |
+
+## Automatic evaluation on every build (simulator, synthetic meetings)
+
+`.github/workflows/eval.yml` builds the app for the iOS Simulator, installs the three analysis models, speaks eight synthetic meetings with macOS `say`, runs `--offline-evaluation` in the simulator, scores the results and writes the report to the job summary and the `offline-evaluation-report` artifact. It runs on manual dispatch and on pushes to `codex/complete-offline-meeting-flow`. It is a separate workflow, so a failure never blocks the IPA build.
+
+| File | Purpose |
+|---|---|
+| `Scripts/synth_meetings.py` | Generates `audio.wav` + `labels.json` for eight meetings (English, Hindi, Hinglish, 1 to 4 speakers) |
+| `Scripts/ci_install_models.py` | Downloads and verifies whisper-large, diarization and qwen-1.7b, installs them into the simulator app container |
+| `Scripts/ci_sim_eval.py` | `preflight` (models and memory visible to the app), `run` (push, launch, follow, collect, score), `summary` |
+
+Simulator timings use the CPU only. Compare them between builds, never with an iPhone. Synthetic speech is cleaner than real rooms, so accuracy here is an upper bound. Run `python3 Scripts/synth_meetings.py --out golden-synth` on a Mac to get the same meetings for a USB run.

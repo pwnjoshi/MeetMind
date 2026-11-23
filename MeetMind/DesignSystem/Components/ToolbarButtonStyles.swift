@@ -27,29 +27,6 @@ struct ToolbarConfirmButtonStyle: ViewModifier {
     }
 }
 
-/// Neutral round toolbar button (close, back, filter). On iOS 26 it is left plain so the
-/// system toolbar glass is the only circle. Before iOS 26 it draws one bordered circle.
-struct ToolbarNeutralButtonStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            content.tint(.primary)
-        } else {
-            legacy(content)
-        }
-        #else
-        legacy(content)
-        #endif
-    }
-
-    private func legacy(_ content: Content) -> some View {
-        content
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.circle)
-            .tint(.primary)
-    }
-}
-
 /// Prominent text button (for example "Done") inside a toolbar. On iOS 26 the toolbar draws
 /// the glass capsule, so the button only gets the tint. Before iOS 26 it draws one capsule.
 struct ToolbarProminentTextButtonStyle: ViewModifier {
@@ -93,10 +70,5 @@ extension View {
     /// Prominent round confirm button inside a toolbar, with a single circle on every OS.
     func toolbarConfirmButtonStyle() -> some View {
         modifier(ToolbarConfirmButtonStyle())
-    }
-
-    /// Neutral round button inside a toolbar, with a single circle on every OS.
-    func toolbarNeutralButtonStyle() -> some View {
-        modifier(ToolbarNeutralButtonStyle())
     }
 }

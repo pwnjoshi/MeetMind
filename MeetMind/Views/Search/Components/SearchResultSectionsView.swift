@@ -20,23 +20,6 @@ public struct SearchPresentedScopeBar: View {
     }
 }
 
-/// Small month/day tile used by meeting search rows.
-struct SearchDateTile: View {
-    let date: Date
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Text(date.formatted(.dateTime.month(.abbreviated)).uppercased())
-                .font(.system(size: 10, weight: .bold)).foregroundStyle(.red)
-            Text(date.formatted(.dateTime.day()))
-                .font(.system(size: 20, weight: .semibold)).foregroundStyle(.primary)
-        }
-        .frame(width: 40, height: 40)
-        .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .accessibilityHidden(true)
-    }
-}
-
 /// Grouped search results: Meetings, Transcripts and Actions cards (Figma "Search · Results").
 public struct SearchResultSectionsView: View {
     public let viewModel: SearchViewModel

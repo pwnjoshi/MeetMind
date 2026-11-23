@@ -83,11 +83,6 @@ public final class AppleCalendarService: CalendarServicing {
         return result
     }
 
-    /// Turns the connection off inside Manent (system permission stays as is).
-    public func disconnect() {
-        defaults.set(false, forKey: Self.connectedKey)
-    }
-
     public func upsertEvent(for meeting: Meeting, existingIdentifier: String?) throws -> String {
         guard access.isGranted else { throw CalendarServiceError.notAuthorized }
         let event: EKEvent

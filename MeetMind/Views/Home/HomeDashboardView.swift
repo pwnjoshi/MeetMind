@@ -324,22 +324,6 @@ public struct HomeDashboardView: View {
         [26, 14, 38, 28, 16, 30, 40, 20, 34]
     ]
 
-    @ViewBuilder
-    private func meetingSection(_ title: String, meetings: [Meeting], upcoming: Bool) -> some View {
-        if !meetings.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(title).font(.title3.weight(.semibold)).padding(.horizontal, 16)
-                VStack(spacing: 0) {
-                    ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
-                        meetingRow(meeting, upcoming: upcoming)
-                        if index < meetings.count - 1 { Divider().padding(.horizontal, 16) }
-                    }
-                }
-                .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            }
-        }
-    }
-
     private func meetingRow(_ meeting: Meeting, upcoming: Bool) -> some View {
         NavigationLink(value: NavigationDestination.meetingDetail(id: meeting.id)) {
             HStack(spacing: 12) {

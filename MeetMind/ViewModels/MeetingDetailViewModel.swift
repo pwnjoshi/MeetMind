@@ -78,8 +78,6 @@ public struct AIAnswerResponse: Sendable, Equatable {
     }
 }
 
-public typealias AIResponse = AIAnswerResponse
-
 /// Email draft output for executive distribution
 public struct EmailDraft: Sendable, Equatable {
     public let subject: String
@@ -565,12 +563,6 @@ public final class MeetingDetailViewModel {
         }
     }
     
-    public func saveInlineTranscriptEdit(segmentId: UUID, newText: String) {
-        if let segment = transcriptSegments.first(where: { $0.id == segmentId }) {
-            segment.updateText(newText)
-            try? modelContext?.save()
-        }
-    }
     
     public func openSpeakerReassignment(forSpeakerName: String) {
         speakerToReassign = forSpeakerName
@@ -624,17 +616,6 @@ public final class MeetingDetailViewModel {
         try? modelContext?.save()
     }
     
-    public func toggleActionItemCompletion(_ item: ActionItem) {
-        guard let modelContext else {
-            item.toggleCompleted()
-            return
-        }
-        do {
-            try MeetingRecordEditor.setCompleted(item, !item.isCompleted, context: modelContext)
-        } catch {
-            mutationError = error.localizedDescription
-        }
-    }
     
     public func exportPDF() throws -> Data {
         guard let meeting = meeting else { throw ExportError.emptyMeetingData }

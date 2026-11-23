@@ -20,26 +20,30 @@
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     
     <!-- Privacy Descriptions -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>Manent requires microphone access to record audio during meetings and live conversations.</string>
+    <string>Manent records meeting audio with the microphone, including while the screen is locked, and uses it for Hey Vidur if you turn that on. Audio is saved and processed only on this iPhone.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Manent requires speech recognition access to transcribe spoken dialogue into real-time text.</string>
+    <string>Manent uses Apple speech recognition on this iPhone to show live captions while you record and to listen for Hey Vidur if you turn that on. Speech is not sent to a server.</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>Manent accesses your calendar to import scheduled meetings and save meeting reminders.</string>
+    <string>Manent reads your calendar to show upcoming meetings you can record, and adds events to it only when you ask it to schedule a follow-up.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Manent accesses your calendar to import scheduled meetings and save meeting reminders.</string>
+    <string>Manent reads your calendar to show upcoming meetings you can record, and adds events to it only when you ask it to schedule a follow-up.</string>
     <key>NSRemindersUsageDescription</key>
-    <string>Manent accesses reminders to export extracted meeting action items into Apple Reminders.</string>
+    <string>Manent creates and updates reminders in Apple Reminders for action items you choose to export, and reads them to keep their completed status in sync.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>Manent accesses reminders to export extracted meeting action items into Apple Reminders.</string>
+    <string>Manent creates and updates reminders in Apple Reminders for action items you choose to export, and reads them to keep their completed status in sync.</string>
     <key>NSCameraUsageDescription</key>
-    <string>Manent requires camera access to capture photos of whiteboards and presentations during meetings.</string>
+    <string>Manent uses the camera only when you tap to photograph a whiteboard or slide and attach it to a meeting. Photos stay on this iPhone.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Manent allows attaching photos from your photo library to meeting notes.</string>
+    <string>Manent attaches photos you pick from your library to meeting notes and to your minutes letterhead. It does not read other photos.</string>
     
     <!-- Background Audio Mode -->
     <key>UIBackgroundModes</key>

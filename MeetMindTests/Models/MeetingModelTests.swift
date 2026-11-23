@@ -32,18 +32,15 @@ final class MeetingModelTests: XCTestCase {
         let actions = ActionItemsViewModel()
         let home = HomeViewModel()
         let setup = MeetingSetupViewModel()
-        let folders = FolderTagViewModel()
-        let audioImport = AudioImportViewModel()
         await Task.yield()
         actions.fetchActionItems()
         home.fetchMeetings()
-        folders.fetchFoldersAndTags()
         let meeting = Meeting(title: "Owned store remains usable")
         home.addMeeting(meeting)
         home.fetchMeetings()
         XCTAssertTrue(home.meetings.contains { $0.id == meeting.id })
         XCTAssertTrue(actions.allActionItems.isEmpty)
-        withExtendedLifetime((setup, audioImport)) {}
+        withExtendedLifetime(setup) {}
     }
     @MainActor
     func testProductionSchemaPersistsAcrossContainerReopen() throws {

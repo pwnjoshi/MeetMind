@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0012CEE000100000001 /* Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0022CEE000100000001 /* Cards.swift */; };
+		1A00C0032CEE000100000001 /* AboutAndLicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0042CEE000100000001 /* AboutAndLicensesView.swift */; };
 		1A00C0B62CEE000100000001 /* SpeakerVoiceNaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B72CEE000100000001 /* SpeakerVoiceNaming.swift */; };
 		1A00C0B82CEE000100000001 /* VoiceProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B92CEE000100000001 /* VoiceProfileStore.swift */; };
 		1A00C0BA2CEE000100000001 /* SpeakerVoiceNamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0BB2CEE000100000001 /* SpeakerVoiceNamingTests.swift */; };
@@ -124,15 +126,7 @@
 		1A00C01B2CEE000100000001 /* MinutesReviewChecklistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C01C2CEE000100000001 /* MinutesReviewChecklistView.swift */; };
 		1A00C01D2CEE000100000001 /* MeetingLifecycleReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C01E2CEE000100000001 /* MeetingLifecycleReviewTests.swift */; };
 		1A00C0152CEE000100000001 /* DataLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0162CEE000100000001 /* DataLifecycleTests.swift */; };
-		1A00C0012CEE000100000001 /* HomeRecentSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */; };
-		1A00C0032CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */; };
-		1A00C0052CEE000100000001 /* MeetingsHomeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */; };
-		1A00C0072CEE000100000001 /* MeetingsSearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0082CEE000100000001 /* MeetingsSearchBarView.swift */; };
-		1A00C0092CEE000100000001 /* VerifyEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00A2CEE000100000001 /* VerifyEmailView.swift */; };
 		1A00C00B2CEE000100000001 /* WelcomeAndSignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */; };
-		1A00C00D2CEE000100000001 /* OtpDigitsRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */; };
-		1A00C00F2CEE000100000001 /* SignInPanelSubviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */; };
-		1A00C0132CEE000100000001 /* MicWaveformCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0142CEE000100000001 /* MicWaveformCardView.swift */; };
 		1A00C0002CEE000100000001 /* AnalysisCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */; };
 		1A00C0022CEE000100000001 /* AnalysisJobStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0032CEE000100000001 /* AnalysisJobStore.swift */; };
 		1A00C0042CEE000100000001 /* AppleCalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0052CEE000100000001 /* AppleCalendarService.swift */; };
@@ -180,7 +174,6 @@
 		1A00C0582CEE000100000001 /* NotesOnlyMinutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0592CEE000100000001 /* NotesOnlyMinutes.swift */; };
 		1A00C05A2CEE000100000001 /* NotesOnlyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05B2CEE000100000001 /* NotesOnlyView.swift */; };
 		1A00C05C2CEE000100000001 /* SearchResultSectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05D2CEE000100000001 /* SearchResultSectionsView.swift */; };
-		1A00C05E2CEE000100000001 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05F2CEE000100000001 /* AccountView.swift */; };
 		1A00C0602CEE000100000001 /* LocalRecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0612CEE000100000001 /* LocalRecordingsView.swift */; };
 		1A00C0622CEE000100000001 /* NotificationsInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0632CEE000100000001 /* NotificationsInboxView.swift */; };
 		1A00C0642CEE000100000001 /* RecordingPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0652CEE000100000001 /* RecordingPlayerView.swift */; };
@@ -205,7 +198,6 @@
 		1A0000022CEE000100000001 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000022CEE000100000001 /* Typography.swift */; };
 		1A0000032CEE000100000001 /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000032CEE000100000001 /* Spacing.swift */; };
 		1A0000042CEE000100000001 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000042CEE000100000001 /* Buttons.swift */; };
-		1A0000052CEE000100000001 /* Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000052CEE000100000001 /* Cards.swift */; };
 		1A0000062CEE000100000001 /* Badges.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000062CEE000100000001 /* Badges.swift */; };
 		1A0000072CEE000100000001 /* Inputs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000072CEE000100000001 /* Inputs.swift */; };
 		1A0000082CEE000100000001 /* AudioWaveformBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000082CEE000100000001 /* AudioWaveformBar.swift */; };
@@ -287,82 +279,30 @@
 		1A00006E2CEE000100000001 /* OnboardingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00006E2CEE000100000001 /* OnboardingViewModel.swift */; };
 		1A00006F2CEE000100000001 /* OnboardingViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00006F2CEE000100000001 /* OnboardingViewModelTests.swift */; };
 		1A0000702CEE000100000001 /* NavigationRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000702CEE000100000001 /* NavigationRouterTests.swift */; };
-		1A0000712CEE000100000001 /* AudioImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000712CEE000100000001 /* AudioImportViewModel.swift */; };
-		1A0000722CEE000100000001 /* FolderTagViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000722CEE000100000001 /* FolderTagViewModel.swift */; };
 		1A0000732CEE000100000001 /* HomeDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000732CEE000100000001 /* HomeDashboardView.swift */; };
-		1A0000742CEE000100000001 /* MeetingCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000742CEE000100000001 /* MeetingCardView.swift */; };
-		1A0000752CEE000100000001 /* GreetingHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000752CEE000100000001 /* GreetingHeaderView.swift */; };
-		1A0000762CEE000100000001 /* UpcomingMeetingsCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000762CEE000100000001 /* UpcomingMeetingsCarouselView.swift */; };
-		1A0000772CEE000100000001 /* UpcomingMeetingCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000772CEE000100000001 /* UpcomingMeetingCardView.swift */; };
-		1A0000782CEE000100000001 /* QuickFilterChipsBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000782CEE000100000001 /* QuickFilterChipsBar.swift */; };
-		1A0000792CEE000100000001 /* RecentMeetingsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000792CEE000100000001 /* RecentMeetingsFeedView.swift */; };
-		1A00007A2CEE000100000001 /* RecentMeetingRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00007A2CEE000100000001 /* RecentMeetingRowView.swift */; };
-		1A00007B2CEE000100000001 /* MeetingStatusBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00007B2CEE000100000001 /* MeetingStatusBadgeView.swift */; };
-		1A00007C2CEE000100000001 /* FolderTagPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00007C2CEE000100000001 /* FolderTagPickerSheet.swift */; };
 		1A00007D2CEE000100000001 /* NewMeetingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00007D2CEE000100000001 /* NewMeetingSheet.swift */; };
 		1A00007E2CEE000100000001 /* ScheduleMeetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00007E2CEE000100000001 /* ScheduleMeetingView.swift */; };
 		1A00007F2CEE000100000001 /* MeetingTemplatePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00007F2CEE000100000001 /* MeetingTemplatePicker.swift */; };
-		1A0000802CEE000100000001 /* ParticipantManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000802CEE000100000001 /* ParticipantManagerView.swift */; };
 		1A0000812CEE000100000001 /* AudioImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000812CEE000100000001 /* AudioImportView.swift */; };
-		1A0000822CEE000100000001 /* FolderManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000822CEE000100000001 /* FolderManagerView.swift */; };
-		1A0000832CEE000100000001 /* AudioImportViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000832CEE000100000001 /* AudioImportViewModelTests.swift */; };
-		1A0000842CEE000100000001 /* FolderTagViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000842CEE000100000001 /* FolderTagViewModelTests.swift */; };
-		1A0000852CEE000100000001 /* UpcomingMeetingCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000852CEE000100000001 /* UpcomingMeetingCard.swift */; };
-		1A0000862CEE000100000001 /* RecentMeetingCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000862CEE000100000001 /* RecentMeetingCard.swift */; };
-		1A0000872CEE000100000001 /* FilterChipBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000872CEE000100000001 /* FilterChipBar.swift */; };
-		1A0000882CEE000100000001 /* RecordFABButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000882CEE000100000001 /* RecordFABButton.swift */; };
-		1A0000892CEE000100000001 /* HomeHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000892CEE000100000001 /* HomeHeaderView.swift */; };
 		1A00008A2CEE000100000001 /* NewMeetingOptionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008A2CEE000100000001 /* NewMeetingOptionCard.swift */; };
-		1A00008C2CEE000100000001 /* ParticipantTokenChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008C2CEE000100000001 /* ParticipantTokenChip.swift */; };
-		1A00008D2CEE000100000001 /* FolderPickerModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008D2CEE000100000001 /* FolderPickerModal.swift */; };
-		1A00008E2CEE000100000001 /* FolderCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008E2CEE000100000001 /* FolderCreationSheet.swift */; };
-		1A00008F2CEE000100000001 /* TagAssignmentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00008F2CEE000100000001 /* TagAssignmentSheet.swift */; };
 		1A0000902CEE000100000001 /* HomeDashboardViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000902CEE000100000001 /* HomeDashboardViewTests.swift */; };
 		1A0000912CEE000100000001 /* MeetingSetupViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000912CEE000100000001 /* MeetingSetupViewTests.swift */; };
-		1A0000922CEE000100000001 /* AudioDropZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000922CEE000100000001 /* AudioDropZoneView.swift */; };
-		1A0000932CEE000100000001 /* MeetingCardAttendeesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000932CEE000100000001 /* MeetingCardAttendeesView.swift */; };
-		1A0000942CEE000100000001 /* MeetingCardFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000942CEE000100000001 /* MeetingCardFooterView.swift */; };
-		1A0000952CEE000100000001 /* AudioImportHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000952CEE000100000001 /* AudioImportHeaderView.swift */; };
-		1A0000962CEE000100000001 /* AudioImportProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000962CEE000100000001 /* AudioImportProgressView.swift */; };
 		1A0000972CEE000100000001 /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000972CEE000100000001 /* LiveRecordingView.swift */; };
-		1A0000982CEE000100000001 /* LiveRecordingHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000982CEE000100000001 /* LiveRecordingHeaderView.swift */; };
-		1A0000992CEE000100000001 /* LiveRecordingTimerBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000992CEE000100000001 /* LiveRecordingTimerBadgeView.swift */; };
 		1A00009A2CEE000100000001 /* WaveformVisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00009A2CEE000100000001 /* WaveformVisualizerView.swift */; };
 		1A00009B2CEE000100000001 /* WaveformBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00009B2CEE000100000001 /* WaveformBarView.swift */; };
-		1A00009C2CEE000100000001 /* LiveTranscriptScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00009C2CEE000100000001 /* LiveTranscriptScrollView.swift */; };
-		1A00009D2CEE000100000001 /* LiveTranscriptBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00009D2CEE000100000001 /* LiveTranscriptBubbleView.swift */; };
-		1A00009E2CEE000100000001 /* LiveInterimTranscriptBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00009E2CEE000100000001 /* LiveInterimTranscriptBubbleView.swift */; };
-		1A00009F2CEE000100000001 /* LiveSpeakerSwitcherBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00009F2CEE000100000001 /* LiveSpeakerSwitcherBar.swift */; };
-		1A0000A02CEE000100000001 /* LiveActionToolDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A02CEE000100000001 /* LiveActionToolDock.swift */; };
-		1A0000A12CEE000100000001 /* LiveBookmarkButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A12CEE000100000001 /* LiveBookmarkButton.swift */; };
 		1A0000A22CEE000100000001 /* LiveNoteTakingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A22CEE000100000001 /* LiveNoteTakingSheet.swift */; };
 		1A0000A32CEE000100000001 /* LiveMediaCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A32CEE000100000001 /* LiveMediaCaptureSheet.swift */; };
-		1A0000A42CEE000100000001 /* RecordingControlBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A42CEE000100000001 /* RecordingControlBarView.swift */; };
 		1A0000A52CEE000100000001 /* MeetingProcessingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A52CEE000100000001 /* MeetingProcessingView.swift */; };
-		1A0000A62CEE000100000001 /* ProcessingProgressRingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A62CEE000100000001 /* ProcessingProgressRingView.swift */; };
-		1A0000A72CEE000100000001 /* ProcessingStageRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A72CEE000100000001 /* ProcessingStageRowView.swift */; };
 		1A0000F02CEE000100000001 /* OfflineAnalysisBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000F02CEE000100000001 /* OfflineAnalysisBackgroundScheduler.swift */; };
 		1A0000F12CEE000100000001 /* ScheduledMeetingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000F12CEE000100000001 /* ScheduledMeetingDetailView.swift */; };
 		1A0000F22CEE000100000001 /* RollingAudioChunkWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000F22CEE000100000001 /* RollingAudioChunkWriter.swift */; };
 		1A0000A82CEE000100000001 /* ActionItemsConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A82CEE000100000001 /* ActionItemsConsoleView.swift */; };
-		1A0000A92CEE000100000001 /* ActionItemFilterHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000A92CEE000100000001 /* ActionItemFilterHeaderView.swift */; };
-		1A0000AA2CEE000100000001 /* ActionItemGroupListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000AA2CEE000100000001 /* ActionItemGroupListView.swift */; };
-		1A0000AB2CEE000100000001 /* ActionItemRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000AB2CEE000100000001 /* ActionItemRowView.swift */; };
-		1A0000AC2CEE000100000001 /* CreateActionItemSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000AC2CEE000100000001 /* CreateActionItemSheet.swift */; };
 		1A0000AD2CEE000100000001 /* MeetingDetailContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000AD2CEE000100000001 /* MeetingDetailContainerView.swift */; };
 		1A0000AE2CEE000100000001 /* MeetingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000AE2CEE000100000001 /* MeetingDetailView.swift */; };
 		1A0000AF2CEE000100000001 /* ActionItemEditModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000AF2CEE000100000001 /* ActionItemEditModal.swift */; };
 		1A0000B02CEE000100000001 /* AskAIAssistantSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B02CEE000100000001 /* AskAIAssistantSheet.swift */; };
-		1A0000B12CEE000100000001 /* MeetingActionItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B12CEE000100000001 /* MeetingActionItemRow.swift */; };
-		1A0000B22CEE000100000001 /* MeetingActionItemsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B22CEE000100000001 /* MeetingActionItemsTabView.swift */; };
-		1A0000B32CEE000100000001 /* MeetingDetailHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B32CEE000100000001 /* MeetingDetailHeaderView.swift */; };
 		1A0000B42CEE000100000001 /* MeetingDetailSheetsModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B42CEE000100000001 /* MeetingDetailSheetsModifier.swift */; };
-		1A0000B52CEE000100000001 /* MeetingDetailTabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B52CEE000100000001 /* MeetingDetailTabBarView.swift */; };
-		1A0000B62CEE000100000001 /* MeetingDetailTabContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B62CEE000100000001 /* MeetingDetailTabContentView.swift */; };
 		1A0000B72CEE000100000001 /* MeetingExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B72CEE000100000001 /* MeetingExportSheet.swift */; };
-		1A0000B82CEE000100000001 /* MeetingNotesMediaTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B82CEE000100000001 /* MeetingNotesMediaTabView.swift */; };
-		1A0000B92CEE000100000001 /* MeetingSummaryPointsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000B92CEE000100000001 /* MeetingSummaryPointsCard.swift */; };
-		1A0000BA2CEE000100000001 /* MeetingSummaryTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000BA2CEE000100000001 /* MeetingSummaryTabView.swift */; };
 		1A0000BB2CEE000100000001 /* MeetingTranscriptTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000BB2CEE000100000001 /* MeetingTranscriptTabView.swift */; };
 		1A0000BC2CEE000100000001 /* SpeakerReassignSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000BC2CEE000100000001 /* SpeakerReassignSheet.swift */; };
 		1A0000BD2CEE000100000001 /* StickyAudioPlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000BD2CEE000100000001 /* StickyAudioPlayerBar.swift */; };
@@ -370,11 +310,7 @@
 		1A0000BF2CEE000100000001 /* TranscriptSegmentRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000BF2CEE000100000001 /* TranscriptSegmentRowView.swift */; };
 		1A0000C02CEE000100000001 /* WhiteboardDetailModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C02CEE000100000001 /* WhiteboardDetailModal.swift */; };
 		1A0000C12CEE000100000001 /* RootAlertModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C12CEE000100000001 /* RootAlertModifier.swift */; };
-		1A0000C22CEE000100000001 /* TabPlaceholders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C22CEE000100000001 /* TabPlaceholders.swift */; };
 		1A0000C32CEE000100000001 /* SearchConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C32CEE000100000001 /* SearchConsoleView.swift */; };
-		1A0000C42CEE000100000001 /* RecentSearchesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C42CEE000100000001 /* RecentSearchesView.swift */; };
-		1A0000C52CEE000100000001 /* SearchResultRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C52CEE000100000001 /* SearchResultRowView.swift */; };
-		1A0000C62CEE000100000001 /* SearchScopeFilterBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C62CEE000100000001 /* SearchScopeFilterBar.swift */; };
 		1A0000C72CEE000100000001 /* ActionItemsConsoleViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C72CEE000100000001 /* ActionItemsConsoleViewTests.swift */; };
 		1A0000C82CEE000100000001 /* LiveRecordingViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C82CEE000100000001 /* LiveRecordingViewTests.swift */; };
 		1A0000C92CEE000100000001 /* MeetingDetailViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000C92CEE000100000001 /* MeetingDetailViewTests.swift */; };
@@ -386,12 +322,12 @@
 		1A0000CF2CEE000100000001 /* ColorPresetChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000CF2CEE000100000001 /* ColorPresetChip.swift */; };
 		1A0000D02CEE000100000001 /* PermissionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D02CEE000100000001 /* PermissionRowView.swift */; };
 		1A0000D12CEE000100000001 /* PrivacyGuaranteeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D12CEE000100000001 /* PrivacyGuaranteeCard.swift */; };
-		1A0000D22CEE000100000001 /* VoiceBaselineCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D22CEE000100000001 /* VoiceBaselineCardView.swift */; };
 		1A0000D32CEE000100000001 /* SettingsAboutAndDiagnosticsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D32CEE000100000001 /* SettingsAboutAndDiagnosticsSection.swift */; };
 		1A0000D42CEE000100000001 /* SettingsAudioQualitySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D42CEE000100000001 /* SettingsAudioQualitySection.swift */; };
 		1A0000D52CEE000100000001 /* SettingsSpeechAndAISection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D52CEE000100000001 /* SettingsSpeechAndAISection.swift */; };
 		1A0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift */; };
 		1A0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift */; };
+		1A00D0012CEE000100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1B00D0012CEE000100000001 /* PrivacyInfo.xcprivacy */; };
 		260B8F0C0D404602B56F39FD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8336B9012144485AB6650445 /* Assets.xcassets */; };
 		A80000000000000000000001 /* OfflineEngineKit in Frameworks */ = {isa = PBXBuildFile; productRef = A80000000000000000000002 /* OfflineEngineKit */; };
 		A80000000000000000000003 /* OfflineBenchmarkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000004; };
@@ -408,6 +344,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0022CEE000100000001 /* Cards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/Cards/Cards.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0042CEE000100000001 /* AboutAndLicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/AboutAndLicensesView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0B72CEE000100000001 /* SpeakerVoiceNaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Speakers/SpeakerVoiceNaming.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0B92CEE000100000001 /* VoiceProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Speakers/VoiceProfileStore.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0BB2CEE000100000001 /* SpeakerVoiceNamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Speakers/SpeakerVoiceNamingTests.swift"; sourceTree = SOURCE_ROOT; };
@@ -525,15 +463,7 @@
 		1B00C01C2CEE000100000001 /* MinutesReviewChecklistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MinutesReviewChecklistView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C01E2CEE000100000001 /* MeetingLifecycleReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/MeetingRecord/MeetingLifecycleReviewTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0162CEE000100000001 /* DataLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Services/DataLifecycleTests.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeRecentSectionView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/HomeUpcomingSectionView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsHomeRowView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0082CEE000100000001 /* MeetingsSearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingsSearchBarView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C00A2CEE000100000001 /* VerifyEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/VerifyEmailView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/WelcomeAndSignInView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/OtpDigitsRowView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/SignInPanelSubviews.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0142CEE000100000001 /* MicWaveformCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/Components/MicWaveformCardView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Analysis/AnalysisCoordinator.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0032CEE000100000001 /* AnalysisJobStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Analysis/AnalysisJobStore.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0052CEE000100000001 /* AppleCalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/AppleCalendarService.swift"; sourceTree = SOURCE_ROOT; };
@@ -581,7 +511,6 @@
 		1B00C0592CEE000100000001 /* NotesOnlyMinutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/NotesOnlyMinutes.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C05B2CEE000100000001 /* NotesOnlyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/NotesOnlyView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C05D2CEE000100000001 /* SearchResultSectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Search/Components/SearchResultSectionsView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C05F2CEE000100000001 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/AccountView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0612CEE000100000001 /* LocalRecordingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/LocalRecordingsView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0632CEE000100000001 /* NotificationsInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/NotificationsInboxView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0652CEE000100000001 /* RecordingPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/RecordingPlayerView.swift"; sourceTree = SOURCE_ROOT; };
@@ -608,7 +537,6 @@
 		1B0000022CEE000100000001 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Typography.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000032CEE000100000001 /* Spacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Spacing.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000042CEE000100000001 /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/Buttons/Buttons.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000052CEE000100000001 /* Cards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/Cards/Cards.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000062CEE000100000001 /* Badges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/Badges/Badges.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000072CEE000100000001 /* Inputs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/Inputs/Inputs.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000082CEE000100000001 /* AudioWaveformBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/Audio/AudioWaveformBar.swift"; sourceTree = SOURCE_ROOT; };
@@ -691,82 +619,30 @@
 		1B00006E2CEE000100000001 /* OnboardingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/ViewModels/OnboardingViewModel.swift"; sourceTree = SOURCE_ROOT; };
 		1B00006F2CEE000100000001 /* OnboardingViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/ViewModels/OnboardingViewModelTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000702CEE000100000001 /* NavigationRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/ViewModels/NavigationRouterTests.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000712CEE000100000001 /* AudioImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/ViewModels/AudioImportViewModel.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000722CEE000100000001 /* FolderTagViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/ViewModels/FolderTagViewModel.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000732CEE000100000001 /* HomeDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/HomeDashboardView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000742CEE000100000001 /* MeetingCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/MeetingCardView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000752CEE000100000001 /* GreetingHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/GreetingHeaderView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000762CEE000100000001 /* UpcomingMeetingsCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/UpcomingMeetingsCarouselView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000772CEE000100000001 /* UpcomingMeetingCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/UpcomingMeetingCardView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000782CEE000100000001 /* QuickFilterChipsBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/QuickFilterChipsBar.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000792CEE000100000001 /* RecentMeetingsFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/RecentMeetingsFeedView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00007A2CEE000100000001 /* RecentMeetingRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/RecentMeetingRowView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00007B2CEE000100000001 /* MeetingStatusBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingStatusBadgeView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00007C2CEE000100000001 /* FolderTagPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/FolderTagPickerSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B00007D2CEE000100000001 /* NewMeetingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/NewMeetingSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B00007E2CEE000100000001 /* ScheduleMeetingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/ScheduleMeetingView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00007F2CEE000100000001 /* MeetingTemplatePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/MeetingTemplatePicker.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000802CEE000100000001 /* ParticipantManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/ParticipantManagerView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000812CEE000100000001 /* AudioImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/AudioImportView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000822CEE000100000001 /* FolderManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/FolderManagerView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000832CEE000100000001 /* AudioImportViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/ViewModels/AudioImportViewModelTests.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000842CEE000100000001 /* FolderTagViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/ViewModels/FolderTagViewModelTests.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000852CEE000100000001 /* UpcomingMeetingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/UpcomingMeetingCard.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000862CEE000100000001 /* RecentMeetingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/RecentMeetingCard.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000872CEE000100000001 /* FilterChipBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/FilterChipBar.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000882CEE000100000001 /* RecordFABButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/RecordFABButton.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000892CEE000100000001 /* HomeHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/HomeHeaderView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00008A2CEE000100000001 /* NewMeetingOptionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/NewMeetingOptionCard.swift"; sourceTree = SOURCE_ROOT; };
-		1B00008C2CEE000100000001 /* ParticipantTokenChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/ParticipantTokenChip.swift"; sourceTree = SOURCE_ROOT; };
-		1B00008D2CEE000100000001 /* FolderPickerModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/FolderPickerModal.swift"; sourceTree = SOURCE_ROOT; };
-		1B00008E2CEE000100000001 /* FolderCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/FolderCreationSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1B00008F2CEE000100000001 /* TagAssignmentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/TagAssignmentSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000902CEE000100000001 /* HomeDashboardViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Views/HomeDashboardViewTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000912CEE000100000001 /* MeetingSetupViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Views/MeetingSetupViewTests.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000922CEE000100000001 /* AudioDropZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/AudioDropZoneView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000932CEE000100000001 /* MeetingCardAttendeesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingCardAttendeesView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000942CEE000100000001 /* MeetingCardFooterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Home/Components/MeetingCardFooterView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000952CEE000100000001 /* AudioImportHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/AudioImportHeaderView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000962CEE000100000001 /* AudioImportProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/AudioImportProgressView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000972CEE000100000001 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveRecordingView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000982CEE000100000001 /* LiveRecordingHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveRecordingHeaderView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000992CEE000100000001 /* LiveRecordingTimerBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveRecordingTimerBadgeView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00009A2CEE000100000001 /* WaveformVisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/WaveformVisualizerView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00009B2CEE000100000001 /* WaveformBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/WaveformBarView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00009C2CEE000100000001 /* LiveTranscriptScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveTranscriptScrollView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00009D2CEE000100000001 /* LiveTranscriptBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveTranscriptBubbleView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00009E2CEE000100000001 /* LiveInterimTranscriptBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveInterimTranscriptBubbleView.swift"; sourceTree = SOURCE_ROOT; };
-		1B00009F2CEE000100000001 /* LiveSpeakerSwitcherBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveSpeakerSwitcherBar.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000A02CEE000100000001 /* LiveActionToolDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveActionToolDock.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000A12CEE000100000001 /* LiveBookmarkButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveBookmarkButton.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000A22CEE000100000001 /* LiveNoteTakingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveNoteTakingSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000A32CEE000100000001 /* LiveMediaCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveMediaCaptureSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000A42CEE000100000001 /* RecordingControlBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/RecordingControlBarView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000A52CEE000100000001 /* MeetingProcessingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/MeetingProcessingView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000A62CEE000100000001 /* ProcessingProgressRingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/ProcessingProgressRingView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000A72CEE000100000001 /* ProcessingStageRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/ProcessingStageRowView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000F02CEE000100000001 /* OfflineAnalysisBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Background/OfflineAnalysisBackgroundScheduler.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000F12CEE000100000001 /* ScheduledMeetingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/ScheduledMeetingDetailView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000F22CEE000100000001 /* RollingAudioChunkWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Audio/RollingAudioChunkWriter.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000A82CEE000100000001 /* ActionItemsConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/ActionItemsConsoleView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000A92CEE000100000001 /* ActionItemFilterHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionItemFilterHeaderView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000AA2CEE000100000001 /* ActionItemGroupListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionItemGroupListView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000AB2CEE000100000001 /* ActionItemRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/ActionItemRowView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000AC2CEE000100000001 /* CreateActionItemSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/ActionItems/Components/CreateActionItemSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000AD2CEE000100000001 /* MeetingDetailContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MeetingDetailContainerView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000AE2CEE000100000001 /* MeetingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/MeetingDetailView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000AF2CEE000100000001 /* ActionItemEditModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/ActionItemEditModal.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000B02CEE000100000001 /* AskAIAssistantSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/AskAIAssistantSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000B12CEE000100000001 /* MeetingActionItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingActionItemRow.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000B22CEE000100000001 /* MeetingActionItemsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingActionItemsTabView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000B32CEE000100000001 /* MeetingDetailHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingDetailHeaderView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000B42CEE000100000001 /* MeetingDetailSheetsModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingDetailSheetsModifier.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000B52CEE000100000001 /* MeetingDetailTabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingDetailTabBarView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000B62CEE000100000001 /* MeetingDetailTabContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingDetailTabContentView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000B72CEE000100000001 /* MeetingExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingExportSheet.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000B82CEE000100000001 /* MeetingNotesMediaTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingNotesMediaTabView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000B92CEE000100000001 /* MeetingSummaryPointsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingSummaryPointsCard.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000BA2CEE000100000001 /* MeetingSummaryTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingSummaryTabView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000BB2CEE000100000001 /* MeetingTranscriptTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/MeetingTranscriptTabView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000BC2CEE000100000001 /* SpeakerReassignSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/SpeakerReassignSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000BD2CEE000100000001 /* StickyAudioPlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/StickyAudioPlayerBar.swift"; sourceTree = SOURCE_ROOT; };
@@ -774,11 +650,7 @@
 		1B0000BF2CEE000100000001 /* TranscriptSegmentRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/TranscriptSegmentRowView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000C02CEE000100000001 /* WhiteboardDetailModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Components/WhiteboardDetailModal.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000C12CEE000100000001 /* RootAlertModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Navigation/RootAlertModifier.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000C22CEE000100000001 /* TabPlaceholders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Navigation/TabPlaceholders.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000C32CEE000100000001 /* SearchConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Search/SearchConsoleView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000C42CEE000100000001 /* RecentSearchesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Search/Components/RecentSearchesView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000C52CEE000100000001 /* SearchResultRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Search/Components/SearchResultRowView.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000C62CEE000100000001 /* SearchScopeFilterBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Search/Components/SearchScopeFilterBar.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000C72CEE000100000001 /* ActionItemsConsoleViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Views/ActionItemsConsoleViewTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000C82CEE000100000001 /* LiveRecordingViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Views/LiveRecordingViewTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000C92CEE000100000001 /* MeetingDetailViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Views/MeetingDetailViewTests.swift"; sourceTree = SOURCE_ROOT; };
@@ -790,12 +662,12 @@
 		1B0000CF2CEE000100000001 /* ColorPresetChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/ColorPresetChip.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D02CEE000100000001 /* PermissionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/PermissionRowView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D12CEE000100000001 /* PrivacyGuaranteeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/PrivacyGuaranteeCard.swift"; sourceTree = SOURCE_ROOT; };
-		1B0000D22CEE000100000001 /* VoiceBaselineCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Onboarding/Components/VoiceBaselineCardView.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D32CEE000100000001 /* SettingsAboutAndDiagnosticsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsAboutAndDiagnosticsSection.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D42CEE000100000001 /* SettingsAudioQualitySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsAudioQualitySection.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D52CEE000100000001 /* SettingsSpeechAndAISection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsSpeechAndAISection.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D62CEE000100000001 /* SettingsStorageAndCacheSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsStorageAndCacheSection.swift"; sourceTree = SOURCE_ROOT; };
 		1B0000D72CEE000100000001 /* SettingsThemeAndAppearanceSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/Components/SettingsThemeAndAppearanceSection.swift"; sourceTree = SOURCE_ROOT; };
+		1B00D0012CEE000100000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "MeetMind/Resources/PrivacyInfo.xcprivacy"; sourceTree = SOURCE_ROOT; };
 		8336B9012144485AB6650445 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A80000000000000000000004 /* OfflineBenchmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/OfflineBenchmarkView.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -832,6 +704,8 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0022CEE000100000001 /* Cards.swift */,
+				1B00C0042CEE000100000001 /* AboutAndLicensesView.swift */,
 				1B00C0B72CEE000100000001 /* SpeakerVoiceNaming.swift */,
 				1B00C0B92CEE000100000001 /* VoiceProfileStore.swift */,
 				1B00C0B12CEE000100000001 /* EvaluationRunView.swift */,
@@ -925,15 +799,7 @@
 				1B00C0182CEE000100000001 /* MeetingLifecycle.swift */,
 				1B00C01A2CEE000100000001 /* ReviewStateStore.swift */,
 				1B00C01C2CEE000100000001 /* MinutesReviewChecklistView.swift */,
-				1B00C0022CEE000100000001 /* HomeRecentSectionView.swift */,
-				1B00C0042CEE000100000001 /* HomeUpcomingSectionView.swift */,
-				1B00C0062CEE000100000001 /* MeetingsHomeRowView.swift */,
-				1B00C0082CEE000100000001 /* MeetingsSearchBarView.swift */,
-				1B00C00A2CEE000100000001 /* VerifyEmailView.swift */,
 				1B00C00C2CEE000100000001 /* WelcomeAndSignInView.swift */,
-				1B00C00E2CEE000100000001 /* OtpDigitsRowView.swift */,
-				1B00C0102CEE000100000001 /* SignInPanelSubviews.swift */,
-				1B00C0142CEE000100000001 /* MicWaveformCardView.swift */,
 				1B00C0012CEE000100000001 /* AnalysisCoordinator.swift */,
 				1B00C0032CEE000100000001 /* AnalysisJobStore.swift */,
 				1B00C0052CEE000100000001 /* AppleCalendarService.swift */,
@@ -981,7 +847,6 @@
 				1B00C0592CEE000100000001 /* NotesOnlyMinutes.swift */,
 				1B00C05B2CEE000100000001 /* NotesOnlyView.swift */,
 				1B00C05D2CEE000100000001 /* SearchResultSectionsView.swift */,
-				1B00C05F2CEE000100000001 /* AccountView.swift */,
 				1B00C0612CEE000100000001 /* LocalRecordingsView.swift */,
 				1B00C0632CEE000100000001 /* NotificationsInboxView.swift */,
 				1B00C0652CEE000100000001 /* RecordingPlayerView.swift */,
@@ -1017,7 +882,6 @@
 			isa = PBXGroup;
 			children = (
 				1B0000042CEE000100000001 /* Buttons.swift */,
-				1B0000052CEE000100000001 /* Cards.swift */,
 				1B0000062CEE000100000001 /* Badges.swift */,
 				1B0000072CEE000100000001 /* Inputs.swift */,
 				1B0000082CEE000100000001 /* AudioWaveformBar.swift */,
@@ -1122,6 +986,7 @@
 			isa = PBXGroup;
 			children = (
 				1B0000242CEE000100000001 /* Info.plist */,
+				1B00D0012CEE000100000001 /* PrivacyInfo.xcprivacy */,
 				8336B9012144485AB6650445 /* Assets.xcassets */,
 			);
 			path = Resources;
@@ -1205,8 +1070,6 @@
 				1B0000392CEE000100000001 /* SettingsViewModel.swift */,
 				1B00003A2CEE000100000001 /* AppNavigationViewModel.swift */,
 				1B00006E2CEE000100000001 /* OnboardingViewModel.swift */,
-				1B0000712CEE000100000001 /* AudioImportViewModel.swift */,
-				1B0000722CEE000100000001 /* FolderTagViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -1247,8 +1110,6 @@
 				1B00004B2CEE000100000001 /* SettingsViewModelTests.swift */,
 				1B00006F2CEE000100000001 /* OnboardingViewModelTests.swift */,
 				1B0000702CEE000100000001 /* NavigationRouterTests.swift */,
-				1B0000832CEE000100000001 /* AudioImportViewModelTests.swift */,
-				1B0000842CEE000100000001 /* FolderTagViewModelTests.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -1303,22 +1164,11 @@
 			isa = PBXGroup;
 			children = (
 				1B0000972CEE000100000001 /* LiveRecordingView.swift */,
-				1B0000982CEE000100000001 /* LiveRecordingHeaderView.swift */,
-				1B0000992CEE000100000001 /* LiveRecordingTimerBadgeView.swift */,
 				1B00009A2CEE000100000001 /* WaveformVisualizerView.swift */,
 				1B00009B2CEE000100000001 /* WaveformBarView.swift */,
-				1B00009C2CEE000100000001 /* LiveTranscriptScrollView.swift */,
-				1B00009D2CEE000100000001 /* LiveTranscriptBubbleView.swift */,
-				1B00009E2CEE000100000001 /* LiveInterimTranscriptBubbleView.swift */,
-				1B00009F2CEE000100000001 /* LiveSpeakerSwitcherBar.swift */,
-				1B0000A02CEE000100000001 /* LiveActionToolDock.swift */,
-				1B0000A12CEE000100000001 /* LiveBookmarkButton.swift */,
 				1B0000A22CEE000100000001 /* LiveNoteTakingSheet.swift */,
 				1B0000A32CEE000100000001 /* LiveMediaCaptureSheet.swift */,
-				1B0000A42CEE000100000001 /* RecordingControlBarView.swift */,
 				1B0000A52CEE000100000001 /* MeetingProcessingView.swift */,
-				1B0000A62CEE000100000001 /* ProcessingProgressRingView.swift */,
-				1B0000A72CEE000100000001 /* ProcessingStageRowView.swift */,
 			);
 			path = Recording;
 			sourceTree = "<group>";
@@ -1327,12 +1177,6 @@
 			isa = PBXGroup;
 			children = (
 				1B0000732CEE000100000001 /* HomeDashboardView.swift */,
-				1B0000892CEE000100000001 /* HomeHeaderView.swift */,
-				1B0000852CEE000100000001 /* UpcomingMeetingCard.swift */,
-				1B0000862CEE000100000001 /* RecentMeetingCard.swift */,
-				1B0000872CEE000100000001 /* FilterChipBar.swift */,
-				1B0000882CEE000100000001 /* RecordFABButton.swift */,
-				1B0000742CEE000100000001 /* MeetingCardView.swift */,
 				1D00001D2CEE000100000001 /* Components */,
 			);
 			path = Home;
@@ -1341,16 +1185,6 @@
 		1D00001D2CEE000100000001 /* Components */ = {
 			isa = PBXGroup;
 			children = (
-				1B0000752CEE000100000001 /* GreetingHeaderView.swift */,
-				1B0000762CEE000100000001 /* UpcomingMeetingsCarouselView.swift */,
-				1B0000772CEE000100000001 /* UpcomingMeetingCardView.swift */,
-				1B0000782CEE000100000001 /* QuickFilterChipsBar.swift */,
-				1B0000792CEE000100000001 /* RecentMeetingsFeedView.swift */,
-				1B00007A2CEE000100000001 /* RecentMeetingRowView.swift */,
-				1B00007B2CEE000100000001 /* MeetingStatusBadgeView.swift */,
-				1B00007C2CEE000100000001 /* FolderTagPickerSheet.swift */,
-				1B0000932CEE000100000001 /* MeetingCardAttendeesView.swift */,
-				1B0000942CEE000100000001 /* MeetingCardFooterView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -1361,16 +1195,7 @@
 				1B00007D2CEE000100000001 /* NewMeetingSheet.swift */,
 				1B00008A2CEE000100000001 /* NewMeetingOptionCard.swift */,
 				1B00007E2CEE000100000001 /* ScheduleMeetingView.swift */,
-				1B0000802CEE000100000001 /* ParticipantManagerView.swift */,
-				1B00008C2CEE000100000001 /* ParticipantTokenChip.swift */,
 				1B0000812CEE000100000001 /* AudioImportView.swift */,
-				1B0000922CEE000100000001 /* AudioDropZoneView.swift */,
-				1B0000952CEE000100000001 /* AudioImportHeaderView.swift */,
-				1B0000962CEE000100000001 /* AudioImportProgressView.swift */,
-				1B00008D2CEE000100000001 /* FolderPickerModal.swift */,
-				1B00008E2CEE000100000001 /* FolderCreationSheet.swift */,
-				1B00008F2CEE000100000001 /* TagAssignmentSheet.swift */,
-				1B0000822CEE000100000001 /* FolderManagerView.swift */,
 			);
 			path = Setup;
 			sourceTree = "<group>";
@@ -1496,6 +1321,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00D0012CEE000100000001 /* PrivacyInfo.xcprivacy in Resources */,
 				260B8F0C0D404602B56F39FD /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1514,6 +1340,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0012CEE000100000001 /* Cards.swift in Sources */,
+				1A00C0032CEE000100000001 /* AboutAndLicensesView.swift in Sources */,
 				1A00C0B62CEE000100000001 /* SpeakerVoiceNaming.swift in Sources */,
 				1A00C0B82CEE000100000001 /* VoiceProfileStore.swift in Sources */,
 				1A00C0B02CEE000100000001 /* EvaluationRunView.swift in Sources */,
@@ -1607,15 +1435,7 @@
 				1A00C0172CEE000100000001 /* MeetingLifecycle.swift in Sources */,
 				1A00C0192CEE000100000001 /* ReviewStateStore.swift in Sources */,
 				1A00C01B2CEE000100000001 /* MinutesReviewChecklistView.swift in Sources */,
-				1A00C0012CEE000100000001 /* HomeRecentSectionView.swift in Sources */,
-				1A00C0032CEE000100000001 /* HomeUpcomingSectionView.swift in Sources */,
-				1A00C0052CEE000100000001 /* MeetingsHomeRowView.swift in Sources */,
-				1A00C0072CEE000100000001 /* MeetingsSearchBarView.swift in Sources */,
-				1A00C0092CEE000100000001 /* VerifyEmailView.swift in Sources */,
 				1A00C00B2CEE000100000001 /* WelcomeAndSignInView.swift in Sources */,
-				1A00C00D2CEE000100000001 /* OtpDigitsRowView.swift in Sources */,
-				1A00C00F2CEE000100000001 /* SignInPanelSubviews.swift in Sources */,
-				1A00C0132CEE000100000001 /* MicWaveformCardView.swift in Sources */,
 				1A00C0002CEE000100000001 /* AnalysisCoordinator.swift in Sources */,
 				1A00C0022CEE000100000001 /* AnalysisJobStore.swift in Sources */,
 				1A00C0042CEE000100000001 /* AppleCalendarService.swift in Sources */,
@@ -1663,7 +1483,6 @@
 				1A00C0582CEE000100000001 /* NotesOnlyMinutes.swift in Sources */,
 				1A00C05A2CEE000100000001 /* NotesOnlyView.swift in Sources */,
 				1A00C05C2CEE000100000001 /* SearchResultSectionsView.swift in Sources */,
-				1A00C05E2CEE000100000001 /* AccountView.swift in Sources */,
 				1A00C0602CEE000100000001 /* LocalRecordingsView.swift in Sources */,
 				1A00C0622CEE000100000001 /* NotificationsInboxView.swift in Sources */,
 				1A00C0642CEE000100000001 /* RecordingPlayerView.swift in Sources */,
@@ -1689,7 +1508,6 @@
 				1A0000022CEE000100000001 /* Typography.swift in Sources */,
 				1A0000032CEE000100000001 /* Spacing.swift in Sources */,
 				1A0000042CEE000100000001 /* Buttons.swift in Sources */,
-				1A0000052CEE000100000001 /* Cards.swift in Sources */,
 				1A0000062CEE000100000001 /* Badges.swift in Sources */,
 				1A0000072CEE000100000001 /* Inputs.swift in Sources */,
 				1A0000082CEE000100000001 /* AudioWaveformBar.swift in Sources */,
@@ -1734,78 +1552,28 @@
 				1A00006C2CEE000100000001 /* OnboardingContainerView.swift in Sources */,
 				1A00006D2CEE000100000001 /* SettingsView.swift in Sources */,
 				1A00006E2CEE000100000001 /* OnboardingViewModel.swift in Sources */,
-				1A0000712CEE000100000001 /* AudioImportViewModel.swift in Sources */,
-				1A0000722CEE000100000001 /* FolderTagViewModel.swift in Sources */,
 				1A0000732CEE000100000001 /* HomeDashboardView.swift in Sources */,
-				1A0000742CEE000100000001 /* MeetingCardView.swift in Sources */,
-				1A0000752CEE000100000001 /* GreetingHeaderView.swift in Sources */,
-				1A0000762CEE000100000001 /* UpcomingMeetingsCarouselView.swift in Sources */,
-				1A0000772CEE000100000001 /* UpcomingMeetingCardView.swift in Sources */,
-				1A0000782CEE000100000001 /* QuickFilterChipsBar.swift in Sources */,
-				1A0000792CEE000100000001 /* RecentMeetingsFeedView.swift in Sources */,
-				1A00007A2CEE000100000001 /* RecentMeetingRowView.swift in Sources */,
-				1A00007B2CEE000100000001 /* MeetingStatusBadgeView.swift in Sources */,
-				1A00007C2CEE000100000001 /* FolderTagPickerSheet.swift in Sources */,
 				1A00007D2CEE000100000001 /* NewMeetingSheet.swift in Sources */,
 				1A00007E2CEE000100000001 /* ScheduleMeetingView.swift in Sources */,
 				1A00007F2CEE000100000001 /* MeetingTemplatePicker.swift in Sources */,
-				1A0000802CEE000100000001 /* ParticipantManagerView.swift in Sources */,
 				1A0000812CEE000100000001 /* AudioImportView.swift in Sources */,
-				1A0000822CEE000100000001 /* FolderManagerView.swift in Sources */,
-				1A0000852CEE000100000001 /* UpcomingMeetingCard.swift in Sources */,
-				1A0000862CEE000100000001 /* RecentMeetingCard.swift in Sources */,
-				1A0000872CEE000100000001 /* FilterChipBar.swift in Sources */,
-				1A0000882CEE000100000001 /* RecordFABButton.swift in Sources */,
-				1A0000892CEE000100000001 /* HomeHeaderView.swift in Sources */,
 				1A00008A2CEE000100000001 /* NewMeetingOptionCard.swift in Sources */,
-				1A00008C2CEE000100000001 /* ParticipantTokenChip.swift in Sources */,
-				1A00008D2CEE000100000001 /* FolderPickerModal.swift in Sources */,
-				1A00008E2CEE000100000001 /* FolderCreationSheet.swift in Sources */,
-				1A00008F2CEE000100000001 /* TagAssignmentSheet.swift in Sources */,
-				1A0000922CEE000100000001 /* AudioDropZoneView.swift in Sources */,
-				1A0000932CEE000100000001 /* MeetingCardAttendeesView.swift in Sources */,
-				1A0000942CEE000100000001 /* MeetingCardFooterView.swift in Sources */,
-				1A0000952CEE000100000001 /* AudioImportHeaderView.swift in Sources */,
-				1A0000962CEE000100000001 /* AudioImportProgressView.swift in Sources */,
 				1A0000972CEE000100000001 /* LiveRecordingView.swift in Sources */,
-				1A0000982CEE000100000001 /* LiveRecordingHeaderView.swift in Sources */,
-				1A0000992CEE000100000001 /* LiveRecordingTimerBadgeView.swift in Sources */,
 				1A00009A2CEE000100000001 /* WaveformVisualizerView.swift in Sources */,
 				1A00009B2CEE000100000001 /* WaveformBarView.swift in Sources */,
-				1A00009C2CEE000100000001 /* LiveTranscriptScrollView.swift in Sources */,
-				1A00009D2CEE000100000001 /* LiveTranscriptBubbleView.swift in Sources */,
-				1A00009E2CEE000100000001 /* LiveInterimTranscriptBubbleView.swift in Sources */,
-				1A00009F2CEE000100000001 /* LiveSpeakerSwitcherBar.swift in Sources */,
-				1A0000A02CEE000100000001 /* LiveActionToolDock.swift in Sources */,
-				1A0000A12CEE000100000001 /* LiveBookmarkButton.swift in Sources */,
 				1A0000A22CEE000100000001 /* LiveNoteTakingSheet.swift in Sources */,
 				1A0000A32CEE000100000001 /* LiveMediaCaptureSheet.swift in Sources */,
-				1A0000A42CEE000100000001 /* RecordingControlBarView.swift in Sources */,
 				1A0000A52CEE000100000001 /* MeetingProcessingView.swift in Sources */,
-				1A0000A62CEE000100000001 /* ProcessingProgressRingView.swift in Sources */,
-				1A0000A72CEE000100000001 /* ProcessingStageRowView.swift in Sources */,
 				1A0000F02CEE000100000001 /* OfflineAnalysisBackgroundScheduler.swift in Sources */,
 				1A0000F12CEE000100000001 /* ScheduledMeetingDetailView.swift in Sources */,
 				1A0000F22CEE000100000001 /* RollingAudioChunkWriter.swift in Sources */,
 				1A0000A82CEE000100000001 /* ActionItemsConsoleView.swift in Sources */,
-				1A0000A92CEE000100000001 /* ActionItemFilterHeaderView.swift in Sources */,
-				1A0000AA2CEE000100000001 /* ActionItemGroupListView.swift in Sources */,
-				1A0000AB2CEE000100000001 /* ActionItemRowView.swift in Sources */,
-				1A0000AC2CEE000100000001 /* CreateActionItemSheet.swift in Sources */,
 				1A0000AD2CEE000100000001 /* MeetingDetailContainerView.swift in Sources */,
 				1A0000AE2CEE000100000001 /* MeetingDetailView.swift in Sources */,
 				1A0000AF2CEE000100000001 /* ActionItemEditModal.swift in Sources */,
 				1A0000B02CEE000100000001 /* AskAIAssistantSheet.swift in Sources */,
-				1A0000B12CEE000100000001 /* MeetingActionItemRow.swift in Sources */,
-				1A0000B22CEE000100000001 /* MeetingActionItemsTabView.swift in Sources */,
-				1A0000B32CEE000100000001 /* MeetingDetailHeaderView.swift in Sources */,
 				1A0000B42CEE000100000001 /* MeetingDetailSheetsModifier.swift in Sources */,
-				1A0000B52CEE000100000001 /* MeetingDetailTabBarView.swift in Sources */,
-				1A0000B62CEE000100000001 /* MeetingDetailTabContentView.swift in Sources */,
 				1A0000B72CEE000100000001 /* MeetingExportSheet.swift in Sources */,
-				1A0000B82CEE000100000001 /* MeetingNotesMediaTabView.swift in Sources */,
-				1A0000B92CEE000100000001 /* MeetingSummaryPointsCard.swift in Sources */,
-				1A0000BA2CEE000100000001 /* MeetingSummaryTabView.swift in Sources */,
 				1A0000BB2CEE000100000001 /* MeetingTranscriptTabView.swift in Sources */,
 				1A0000BC2CEE000100000001 /* SpeakerReassignSheet.swift in Sources */,
 				1A0000BD2CEE000100000001 /* StickyAudioPlayerBar.swift in Sources */,
@@ -1813,18 +1581,13 @@
 				1A0000BF2CEE000100000001 /* TranscriptSegmentRowView.swift in Sources */,
 				1A0000C02CEE000100000001 /* WhiteboardDetailModal.swift in Sources */,
 				1A0000C12CEE000100000001 /* RootAlertModifier.swift in Sources */,
-				1A0000C22CEE000100000001 /* TabPlaceholders.swift in Sources */,
 				1A0000C32CEE000100000001 /* SearchConsoleView.swift in Sources */,
-				1A0000C42CEE000100000001 /* RecentSearchesView.swift in Sources */,
-				1A0000C52CEE000100000001 /* SearchResultRowView.swift in Sources */,
-				1A0000C62CEE000100000001 /* SearchScopeFilterBar.swift in Sources */,
 				1A0000CC2CEE000100000001 /* RootSheetViews.swift in Sources */,
 				1A0000CD2CEE000100000001 /* CarouselCardView.swift in Sources */,
 				1A0000CE2CEE000100000001 /* CarouselIndicatorView.swift in Sources */,
 				1A0000CF2CEE000100000001 /* ColorPresetChip.swift in Sources */,
 				1A0000D02CEE000100000001 /* PermissionRowView.swift in Sources */,
 				1A0000D12CEE000100000001 /* PrivacyGuaranteeCard.swift in Sources */,
-				1A0000D22CEE000100000001 /* VoiceBaselineCardView.swift in Sources */,
 				1A0000D32CEE000100000001 /* SettingsAboutAndDiagnosticsSection.swift in Sources */,
 				1A0000D42CEE000100000001 /* SettingsAudioQualitySection.swift in Sources */,
 				1A0000D52CEE000100000001 /* SettingsSpeechAndAISection.swift in Sources */,
@@ -1898,8 +1661,6 @@
 				1A0000522CEE000100000001 /* UniversalSearchE2ETests.swift in Sources */,
 				1A00006F2CEE000100000001 /* OnboardingViewModelTests.swift in Sources */,
 				1A0000702CEE000100000001 /* NavigationRouterTests.swift in Sources */,
-				1A0000832CEE000100000001 /* AudioImportViewModelTests.swift in Sources */,
-				1A0000842CEE000100000001 /* FolderTagViewModelTests.swift in Sources */,
 				1A0000902CEE000100000001 /* HomeDashboardViewTests.swift in Sources */,
 				1A0000912CEE000100000001 /* MeetingSetupViewTests.swift in Sources */,
 				1A0000C72CEE000100000001 /* ActionItemsConsoleViewTests.swift in Sources */,
@@ -1996,7 +1757,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -2019,7 +1780,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -2037,7 +1798,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MeetMind.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MeetMind";
 			};
 			name = Debug;
@@ -2056,7 +1817,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MeetMind.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MeetMind";
 			};
 			name = Release;

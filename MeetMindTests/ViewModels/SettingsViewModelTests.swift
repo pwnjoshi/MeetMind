@@ -72,16 +72,6 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(palette.liveBlueHex, "#3B82F6")
     }
     
-    /// Tier 1: Feature 2 - Validates exact brand color hex values match Figma specification Node 8:2.
-    func test_tier1_feature2_brandColorHexValuesMatchFigma() throws {
-        XCTAssertEqual(ThemeColorTokens.slatePrimary, "#1E2E28")
-        XCTAssertEqual(ThemeColorTokens.amberAccent, "#F59E0B")
-        XCTAssertEqual(ThemeColorTokens.blueLive, "#3B82F6")
-        XCTAssertEqual(ThemeColorTokens.purpleAI, "#8B5CF6")
-        XCTAssertEqual(ThemeColorTokens.greenSuccess, "#10B981")
-        XCTAssertEqual(ThemeColorTokens.redRecording, "#EF4444")
-    }
-    
     /// Tier 1: Feature 2 - Validates typography scale point sizes match standard HIG scales.
     func test_tier1_feature2_typographyScaleMapping() throws {
         let typography = sut.typographyTokens

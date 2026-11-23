@@ -1,0 +1,280 @@
+name: Release to TestFlight
+
+# Manual only. Archives a signed Release build of Manent and uploads it to App Store Connect
+# (TestFlight) with an App Store Connect API key. Build number = this workflow's run number.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   APP_STORE_CONNECT_KEY_ID      Key ID of the App Store Connect API key
+#   APP_STORE_CONNECT_ISSUER_ID   Issuer ID (UUID) shown on the API keys page
+#   APP_STORE_CONNECT_KEY_P8      base64 of the AuthKey_<KEYID>.p8 file
+#   DISTRIBUTION_CERT_P12         base64 of the Apple Distribution certificate + private key (.p12)
+#   CERT_PASSWORD                 password used when exporting the .p12
+#   PROVISIONING_PROFILE          base64 of the App Store .mobileprovision for com.meetmind.app
+# Create a base64 value on Windows PowerShell:
+#   [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\file.p12")) | Set-Clipboard
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-testflight
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Upload to TestFlight (untick to only build and validate the IPA)"
+        type: boolean
+        default: true
+
+env:
+  BUNDLE_ID: com.meetmind.app
+  SCHEME: MeetMind
+
+jobs:
+  release:
+    name: Archive and upload Manent
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check required secrets
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+          DISTRIBUTION_CERT_P12: ${{ secrets.DISTRIBUTION_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+          PROVISIONING_PROFILE: ${{ secrets.PROVISIONING_PROFILE }}
+        run: |
+          missing=""
+          for name in APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY_P8 \
+                      DISTRIBUTION_CERT_P12 CERT_PASSWORD PROVISIONING_PROFILE; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Missing release secrets::Add these repository secrets and run again:$missing. See the comment at the top of .github/workflows/release.yml and docs/appstore/pricing-and-launch.md."
+            exit 1
+          fi
+          echo "All release secrets are present."
+
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Verify source, project and compliance metadata
+        run: |
+          python3 -X utf8 Scripts/verify_project.py
+          python3 Scripts/register_new_sources.py --check
+          python3 Scripts/validate_ipa.py MeetMind/Resources/Info.plist
+          git diff --check
+
+      - name: Identify native toolchain
+        id: native-toolchain
+        run: echo "version=$(xcodebuild -version | tr '\n' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pinned native runtime
+        uses: actions/cache@v5
+        with:
+          path: OfflineEngineKit/Artifacts
+          key: llama-b12491-arm64-simulator-${{ runner.os }}-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('Scripts/prepare_llama.sh') }}
+
+      - name: Prepare native runtime
+        run: bash Scripts/prepare_llama.sh
+
+      - name: Restore compiled Swift dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            OfflineEngineKit/.build
+            build/DerivedData
+          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('OfflineEngineKit/Package.swift', 'OfflineEngineKit/Package.resolved', 'Scripts/prepare_llama.sh') }}-${{ github.sha }}
+          restore-keys: |
+            swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('OfflineEngineKit/Package.swift', 'OfflineEngineKit/Package.resolved', 'Scripts/prepare_llama.sh') }}-
+
+      - name: Verify Xcode Environment
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project MeetMind.xcodeproj
+
+      - name: Create public synthetic audio resource
+        run: say -o OfflineEngineKit/Sources/OfflineEngineKit/Resources/synthetic-smoke.aiff 'Rahul will send the estimate tomorrow. We have not decided to change the design.'
+
+      - name: Test offline engine contracts (no model downloads)
+        run: swift test --package-path OfflineEngineKit
+
+      - name: Install signing certificate and provisioning profile
+        env:
+          DISTRIBUTION_CERT_P12: ${{ secrets.DISTRIBUTION_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+          PROVISIONING_PROFILE: ${{ secrets.PROVISIONING_PROFILE }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/release-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+
+          echo "$DISTRIBUTION_CERT_P12" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          echo "$PROVISIONING_PROFILE" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/dist.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/profile.plist")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$RUNNER_TEMP/profile.plist")
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$RUNNER_TEMP/profile.plist")
+          APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$RUNNER_TEMP/profile.plist")
+          EXPIRES=$(/usr/libexec/PlistBuddy -c "Print :ExpirationDate" "$RUNNER_TEMP/profile.plist")
+
+          if [ "$APP_ID" != "$TEAM_ID.$BUNDLE_ID" ]; then
+            echo "::error title=Wrong provisioning profile::Profile is for '$APP_ID' but this build is '$TEAM_ID.$BUNDLE_ID'."
+            exit 1
+          fi
+          if /usr/libexec/PlistBuddy -c "Print :ProvisionedDevices" "$RUNNER_TEMP/profile.plist" > /dev/null 2>&1; then
+            echo "::error title=Not an App Store profile::The profile lists devices, so it is a development or ad hoc profile. Create an App Store distribution profile."
+            exit 1
+          fi
+          echo "Using profile '$PROFILE_NAME' (team $TEAM_ID), expires $EXPIRES"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+
+      - name: Install App Store Connect API key
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          echo "$APP_STORE_CONNECT_KEY_P8" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          if ! grep -q "BEGIN PRIVATE KEY" "$KEY_PATH"; then
+            echo "::error title=Bad API key::APP_STORE_CONNECT_KEY_P8 does not decode to a .p8 private key. Re-encode the file with base64."
+            exit 1
+          fi
+          echo "API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Archive Release build
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          echo "Archiving build number $BUILD_NUMBER"
+          xcodebuild archive \
+            -project MeetMind.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Manent.xcarchive \
+            -derivedDataPath ./build/DerivedData \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            2>&1 | tee build/xcodebuild-archive.log
+
+      - name: Write ExportOptions
+        run: |
+          write_options() {
+            cat > "$1" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key><string>app-store-connect</string>
+              <key>destination</key><string>$2</string>
+              <key>teamID</key><string>$TEAM_ID</string>
+              <key>signingStyle</key><string>manual</string>
+              <key>signingCertificate</key><string>Apple Distribution</string>
+              <key>provisioningProfiles</key>
+              <dict><key>$BUNDLE_ID</key><string>$PROFILE_NAME</string></dict>
+              <key>uploadSymbols</key><true/>
+              <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          }
+          write_options build/ExportOptions-export.plist export
+          write_options build/ExportOptions-upload.plist upload
+          plutil -lint build/ExportOptions-export.plist build/ExportOptions-upload.plist
+
+      - name: Export IPA
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/Manent.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions-export.plist
+          ls -lh build/export
+
+      - name: Validate exported IPA (privacy manifest, encryption flag, background modes)
+        run: |
+          set -euo pipefail
+          IPA=$(ls build/export/*.ipa | head -1)
+          python3 Scripts/validate_ipa.py "$IPA"
+          unzip -p "$IPA" 'Payload/*.app/Info.plist' > build/exported-Info.plist
+          echo "Version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/exported-Info.plist)"
+          echo "Build:   $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/exported-Info.plist)"
+
+      - name: Upload to App Store Connect (TestFlight)
+        if: ${{ inputs.upload }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/Manent.xcarchive \
+            -exportPath build/upload \
+            -exportOptionsPlist build/ExportOptions-upload.plist \
+            -authenticationKeyPath "$API_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            2>&1 | tee build/xcodebuild-upload.log
+          echo "Uploaded. The build appears in TestFlight after App Store Connect finishes processing."
+
+      - name: Upload IPA artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: Manent-AppStore-IPA
+          path: build/export/*.ipa
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload crash symbols
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: Manent-Release-dSYMs
+          path: build/Manent.xcarchive/dSYMs
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Manent-Release-Logs
+          path: build/*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then security delete-keychain "$KEYCHAIN_PATH" || true; fi
+          rm -f "$RUNNER_TEMP/dist.p12" "$RUNNER_TEMP/profile.mobileprovision" "$RUNNER_TEMP/profile.plist"
+          if [ -n "${API_KEY_PATH:-}" ]; then rm -f "$API_KEY_PATH"; fi
+          if [ -n "${PROFILE_UUID:-}" ]; then rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"; fi

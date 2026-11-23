@@ -46,44 +46,6 @@ final class MeetingDetailViewTests: XCTestCase {
         XCTAssertEqual(view.viewModel.selectedTab, .summary)
     }
     
-    func test_meetingDetailHeaderView_callbacks() throws {
-        var renamed = false
-        var exported = false
-        var askedAI = false
-        var deleted = false
-        let header = MeetingDetailHeaderView(
-            title: "Architecture Strategy",
-            durationText: "30:00",
-            statusTitle: "Completed",
-            onRename: { renamed = true },
-            onExport: { exported = true },
-            onAskAI: { askedAI = true },
-            onDelete: { deleted = true }
-        )
-        XCTAssertNotNil(header)
-        XCTAssertEqual(header.title, "Architecture Strategy")
-        
-        header.onRename()
-        XCTAssertTrue(renamed)
-        header.onExport()
-        XCTAssertTrue(exported)
-        header.onAskAI()
-        XCTAssertTrue(askedAI)
-        header.onDelete()
-        XCTAssertTrue(deleted)
-    }
-    
-    func test_meetingDetailTabBarView_selection() throws {
-        var selectedTab: MeetingDetailTab = .summary
-        let bar = MeetingDetailTabBarView(selectedTab: .summary) { tab in
-            selectedTab = tab
-        }
-        XCTAssertNotNil(bar)
-        XCTAssertEqual(bar.selectedTab, .summary)
-        bar.onSelectTab(.transcript)
-        XCTAssertEqual(selectedTab, .transcript)
-    }
-    
     func test_stickyAudioPlayerBar_controls() throws {
         var didToggle = false
         var soughtTime: TimeInterval = 0

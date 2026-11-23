@@ -155,10 +155,6 @@ public final class LocalInboxReadStore {
         Set(defaults.stringArray(forKey: Self.defaultsKey) ?? [])
     }
 
-    public func isRead(_ id: String) -> Bool {
-        readIDs.contains(id)
-    }
-
     public func markRead(_ id: String) {
         var ids = readIDs
         ids.insert(id)

@@ -79,33 +79,6 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
         }
     }
 
-    /// Downloads the on-device live caption model for the current language if it is missing.
-    /// Call this while the user is not recording (for example when changing the language).
-    /// Returns true when live captions can run on-device afterwards.
-    public func prepareLiveCaptionModels() async -> Bool {
-        let language = LiveCaptionLanguage.stored(in: userDefaults)
-        if let dual = LiveCaptionLocalePlanner.dualPlan(language: language,
-                                                        preferredLocaleIdentifier: preferredLocaleIdentifier) {
-            // Code-switching needs both models; captions still work when only one is available.
-            let hindiReady = await prepareModels(for: dual.hindi)
-            let englishReady = await prepareModels(for: dual.english)
-            return hindiReady || englishReady
-        }
-        let plan = LiveCaptionLocalePlanner.plan(language: language,
-                                                 preferredLocaleIdentifier: preferredLocaleIdentifier)
-        return await prepareModels(for: plan)
-    }
-
-    private func prepareModels(for plan: LiveCaptionLocalePlan) async -> Bool {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *), let choice = await ModernCaptionResolver.resolve(plan: plan) {
-            if choice.isInstalled { return true }
-            if await SpeechAnalyzerCaptionEngine.installAssets(for: choice) { return true }
-        }
-        #endif
-        return LiveCaptionSession.makeOnDeviceRecognizer(candidates: plan.candidates) != nil
-    }
-
     public func startLiveTranscription(audioBufferStream: AsyncStream<AVAudioPCMBuffer>) -> AsyncThrowingStream<LiveTranscriptChunk, Error> {
         let configuration = LiveCaptionSession.Configuration(
             language: LiveCaptionLanguage.stored(in: userDefaults),

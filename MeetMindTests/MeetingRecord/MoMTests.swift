@@ -179,11 +179,6 @@ final class MoMTests: XCTestCase {
     // MARK: Share outcome routing
 
     func testEveryCompletedShareReachesSentScreen() {
-        XCTAssertTrue(MoMShareRouting.showsSentScreen(.mailSent))
-        XCTAssertTrue(MoMShareRouting.showsSentScreen(.shared))
-        XCTAssertFalse(MoMShareRouting.showsSentScreen(.cancelled))
-        XCTAssertFalse(MoMShareRouting.showsSentScreen(.mailSaved))
-        XCTAssertFalse(MoMShareRouting.showsSentScreen(.failed("x")))
         XCTAssertEqual(MinutesShareOutcome.fromActivity(completed: true), .shared)
         XCTAssertEqual(MinutesShareOutcome.fromActivity(completed: false), .cancelled)
         XCTAssertEqual(MinutesShareOutcome.fromMail(.sent, error: nil), .mailSent)

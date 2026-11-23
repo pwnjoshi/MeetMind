@@ -530,7 +530,4 @@ public struct LiveRecordingView: View {
         }
     }
 
-    private func transcriptTimestamp(_ seconds: TimeInterval) -> String {
-        Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond))
-    }
 }

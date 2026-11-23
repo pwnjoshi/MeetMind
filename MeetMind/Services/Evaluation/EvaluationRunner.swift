@@ -1,4 +1,5 @@
 import Foundation
+import os
 import OfflineEngineKit
 
 /// Runs the production analysis pipeline over golden-set recordings pushed to
@@ -89,6 +90,41 @@ enum EvaluationRunner {
         }
     }
 
+    /// Content-free diagnostics used by the CI preflight (Scripts/ci_sim_eval.py): whether this is the
+    /// simulator, the memory the OS reports as available, and the state and folder name of every
+    /// model the pipeline needs. The folder name is the real `<id>-<digest>` the app looks for.
+    static func reportEnvironment() async {
+        #if targetEnvironment(simulator)
+        let simulator = 1
+        #else
+        let simulator = 0
+        #endif
+        let availableMB = Int(os_proc_available_memory() / 1_048_576)
+        line("env simulator=\(simulator) available_mb=\(availableMB)")
+        guard let profiles = try? OfflineModelStore.profiles() else {
+            line("model id=manifest state=unreadable dir=none")
+            return
+        }
+        for id in MeetingAnalysisPipeline.requiredModelIDs {
+            guard let profile = profiles.first(where: { $0.id == id }) else {
+                line("model id=\(id) state=not_in_manifest dir=none")
+                continue
+            }
+            let state = await OfflineModelStore.shared.readiness(profile)
+            let directory = (try? await OfflineModelStore.shared.directoryURL(for: profile))?.lastPathComponent ?? "unknown"
+            let label: String
+            switch state {
+            case .ready: label = "ready"
+            case .absent: label = "absent"
+            case .downloading: label = "downloading"
+            case .verifying: label = "verifying"
+            case .corrupt: label = "corrupt"
+            case .incompatible: label = "incompatible"
+            }
+            line("model id=\(id) state=\(label) dir=\(directory)")
+        }
+    }
+
     /// Returns true when every selected recording produced a result.
     static func runAll(options: Options, status: (String) -> Void) async -> Bool {
         let root = evaluationRoot()
@@ -103,6 +139,7 @@ enum EvaluationRunner {
         let commit = Bundle.main.object(forInfoDictionaryKey: "ManentBuildCommit") as? String ?? "unknown"
         let device = deviceIdentifier()
         line("start folders=\(selected.count) commit=\(commit) device=\(device)")
+        await reportEnvironment()
         let scratch = fileManager.temporaryDirectory.appendingPathComponent("EvaluationScratch", isDirectory: true)
         try? fileManager.createDirectory(at: scratch, withIntermediateDirectories: true)
         var completed = 0

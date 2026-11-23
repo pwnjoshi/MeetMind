@@ -360,10 +360,3 @@ enum MoMTopicResolver {
 }
 
 // MARK: - Share outcome routing
-
-enum MoMShareRouting {
-    /// True when the outcome must show the animated "sent" screen.
-    static func showsSentScreen(_ outcome: MinutesShareOutcome) -> Bool {
-        MinutesSentState.make(outcome: outcome, recipients: []) != nil
-    }
-}

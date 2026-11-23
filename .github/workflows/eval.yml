@@ -1,0 +1,187 @@
+name: Offline Evaluation (synthetic meetings)
+
+# Measures transcript accuracy, speaker attribution, minutes quality and speed on synthetic
+# meetings (macOS `say` voices) inside an iOS Simulator. It builds the app itself and is a
+# separate workflow, so a failure here never blocks or alters the IPA build in build_ios.yml.
+# Simulator numbers are CPU-only: use them to compare builds with each other, not with an iPhone.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Comma-separated meeting ids (empty = all), e.g. synth-en-standup,synth-hi-review"
+        required: false
+        default: ""
+      language:
+        description: "Force the transcription language code, e.g. hi (empty = automatic)"
+        required: false
+        default: ""
+  push:
+    branches: [ codex/complete-offline-meeting-flow ]
+    paths:
+      - 'MeetMind/**'
+      - 'MeetMind.xcodeproj/**'
+      - 'OfflineEngineKit/**'
+      - 'Scripts/synth_meetings.py'
+      - 'Scripts/ci_install_models.py'
+      - 'Scripts/ci_sim_eval.py'
+      - 'Scripts/eval_score.py'
+      - '.github/workflows/eval.yml'
+
+env:
+  BUNDLE_ID: com.meetmind.app
+
+jobs:
+  evaluate:
+    name: Evaluate on simulator
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Test the evaluation tooling (no simulator needed)
+        run: |
+          python3 -m unittest discover -s Scripts -p 'test_eval_*.py'
+          python3 -X utf8 -m unittest discover -s Scripts -p 'test_synth_meetings.py'
+          python3 -X utf8 -m unittest discover -s Scripts -p 'test_ci_install_models.py'
+
+      - name: Identify native toolchain
+        id: native-toolchain
+        run: echo "version=$(xcodebuild -version | tr '\n' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pinned native runtime
+        uses: actions/cache@v5
+        with:
+          path: OfflineEngineKit/Artifacts
+          key: llama-b12491-arm64-simulator-${{ runner.os }}-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('Scripts/prepare_llama.sh') }}
+
+      - name: Prepare native runtime with simulator support
+        run: bash Scripts/prepare_llama.sh
+
+      - name: Restore compiled Swift dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            OfflineEngineKit/.build
+            build/DerivedData
+          key: evalswift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('OfflineEngineKit/Package.swift', 'OfflineEngineKit/Package.resolved', 'Scripts/prepare_llama.sh') }}-${{ github.sha }}
+          restore-keys: |
+            evalswift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('OfflineEngineKit/Package.swift', 'OfflineEngineKit/Package.resolved', 'Scripts/prepare_llama.sh') }}-
+
+      - name: Pick a simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          echo "Simulator: $UDID"
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+
+      - name: Build MeetMind for the simulator (Debug)
+        timeout-minutes: 35
+        run: |
+          mkdir -p build
+          set -o pipefail
+          xcodebuild build \
+            -project MeetMind.xcodeproj \
+            -scheme MeetMind \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath ./build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/xcodebuild-eval.log
+
+      - name: Stamp the build commit and install the app
+        run: |
+          APP=build/DerivedData/Build/Products/Debug-iphonesimulator/MeetMind.app
+          test -d "$APP"
+          /usr/libexec/PlistBuddy -c "Set :ManentBuildCommit ${GITHUB_SHA::7}" "$APP/Info.plist" 2>/dev/null ||
+            /usr/libexec/PlistBuddy -c "Add :ManentBuildCommit string ${GITHUB_SHA::7}" "$APP/Info.plist"
+          python3 -c 'import subprocess,sys; subprocess.run(["xcrun","simctl","bootstatus",sys.argv[1],"-b"], check=True, timeout=300)' "$UDID"
+          xcrun simctl install "$UDID" "$APP"
+          # One normal launch creates the app's data container, then models can be placed in it.
+          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+          sleep 8
+          xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
+
+      - name: Restore model downloads
+        id: models-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: build/ci-models
+          key: eval-models-v1-${{ hashFiles('OfflineEngineKit/Sources/OfflineEngineKit/Resources/models.json') }}
+
+      - name: Download, verify and install models (whisper-large, diarization, qwen-1.7b)
+        timeout-minutes: 30
+        run: python3 -X utf8 Scripts/ci_install_models.py --cache-dir build/ci-models --udid "$UDID"
+
+      - name: Save model downloads
+        if: ${{ always() && steps.models-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: build/ci-models
+          key: eval-models-v1-${{ hashFiles('OfflineEngineKit/Sources/OfflineEngineKit/Resources/models.json') }}
+
+      - name: Generate synthetic meetings
+        run: |
+          say -v '?' | tee build/say-voices.txt
+          python3 -X utf8 Scripts/synth_meetings.py --out build/eval-golden --clean
+          ls -la build/eval-golden
+
+      - name: Preflight (models visible to the app, simulator memory)
+        timeout-minutes: 20
+        run: python3 -X utf8 Scripts/ci_sim_eval.py preflight --udid "$UDID"
+
+      - name: Run evaluation in the simulator
+        id: evaluate
+        timeout-minutes: 60
+        env:
+          EVAL_ONLY: ${{ inputs.only }}
+          EVAL_LANGUAGE: ${{ inputs.language }}
+        run: |
+          ARGS=()
+          if [ -n "$EVAL_ONLY" ]; then ARGS+=(--only "$EVAL_ONLY"); fi
+          if [ -n "$EVAL_LANGUAGE" ]; then ARGS+=(--language "$EVAL_LANGUAGE"); fi
+          python3 -X utf8 Scripts/ci_sim_eval.py run --udid "$UDID" --golden build/eval-golden \
+            --commit "${GITHUB_SHA::7}" --timeout 3300 "${ARGS[@]}"
+
+      - name: Write report to the job summary
+        if: ${{ always() }}
+        run: python3 -X utf8 Scripts/ci_sim_eval.py summary --out build/eval --outcome "${{ steps.evaluate.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect simulator logs and crash reports
+        if: ${{ always() }}
+        run: |
+          mkdir -p build/eval-logs
+          cp build/eval-work/*.log build/eval-logs/ 2>/dev/null || true
+          cp build/xcodebuild-eval.log build/say-voices.txt build/eval-logs/ 2>/dev/null || true
+          find "$HOME/Library/Logs/DiagnosticReports" -name 'MeetMind*.ips' -exec cp {} build/eval-logs/ \; 2>/dev/null || true
+          if [ -n "${UDID:-}" ]; then
+            xcrun simctl spawn "$UDID" log show --last 2h --predicate 'process == "MeetMind"' 2>&1 | tail -c 3000000 > build/eval-logs/simulator-process.log || true
+          fi
+
+      - name: Upload evaluation report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: offline-evaluation-report
+          path: |
+            build/eval
+            build/eval-golden
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: eval-logs
+          path: build/eval-logs
+          if-no-files-found: warn
+          retention-days: 14

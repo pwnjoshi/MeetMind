@@ -92,10 +92,6 @@ final class MinutesStudioStore {
         persistConfigs()
     }
 
-    func removeConfig(for meetingID: UUID) {
-        try? remove(meetingID: meetingID)
-    }
-
     func remove(meetingID: UUID) throws {
         if loadFailure != nil { throw SidecarStoreError.corrupt("Minutes Studio") }
         let previous = configFile

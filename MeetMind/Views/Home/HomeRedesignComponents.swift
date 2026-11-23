@@ -263,45 +263,6 @@ struct HomeAvatarStack: View {
     }
 }
 
-@MainActor
-struct HomeMeetingCollectionView: View {
-    let title: String
-    let meetings: [Meeting]
-    let recentSubtitle: (Meeting) -> String?
-
-    var body: some View {
-        List(meetings) { meeting in
-            NavigationLink {
-                MeetingDetailContainerView(meetingId: meeting.id)
-            } label: {
-                HStack(spacing: 12) {
-                    HomeDateTile(date: HomeViewModel.recencyDate(for: meeting))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(RecentMeetingPresenter.title(for: meeting))
-                        if let detail = detailText(for: meeting) {
-                            Text(detail).font(.subheadline).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer(minLength: 8)
-                    if meeting.isFavorite { ImportantBadge(iconOnly: true) }
-                }
-                .frame(minHeight: 52)
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
-    }
-
-    private func detailText(for meeting: Meeting) -> String? {
-        if meeting.status == .scheduled {
-            let planned = meeting.scheduledStartTime ?? meeting.createdAt
-            if planned > Date() { return planned.formatted(date: .omitted, time: .shortened) }
-        }
-        return recentSubtitle(meeting)
-    }
-}
-
 /// v5 Up Next surface: MeshGradient on iOS 18+, LinearGradient before that.
 struct UpNextBackground: View {
     var body: some View {

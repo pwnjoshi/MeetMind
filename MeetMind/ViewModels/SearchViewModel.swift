@@ -453,7 +453,4 @@ public final class SearchViewModel {
         clearHistory()
     }
     
-    public func removeRecentSearch(_ query: String) {
-        recentSearches.removeAll { $0 == query }
-    }
 }

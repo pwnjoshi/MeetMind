@@ -15,7 +15,6 @@ public struct MeetingDetailView: View {
     @State private var recordStore = MeetingRecordStore.shared
     @State private var reviewStore = ReviewStateStore.shared
 
-    @State private var transcriptSearch: String = ""
     @State private var showRenameAlert: Bool = false
     @State private var renameText: String = ""
     @State private var showExportSheet: Bool = false
@@ -27,15 +26,12 @@ public struct MeetingDetailView: View {
     @State private var showDeleteConfirmation = false
     @State private var deletionError: String?
     @State private var showNoteSheet = false
-    @State private var showTaskReview = false
-    @State private var showAnalysisEvidence = false
     @State private var showPeople = false
     @State private var showMinutesEditor = false
     @State private var followUpDraft: MeetingSetupViewModel?
     @State private var showFollowUp = false
     @State private var recordSection = "Minutes"
     @State private var showsTranscriptPage = false
-    @State private var showsMediaPage = false
     @State private var showsStudio = false
     @State private var showsApproval = false
     @State private var showsSeriesComparison = false
@@ -165,13 +161,6 @@ public struct MeetingDetailView: View {
         .navigationDestination(isPresented: $showsTranscriptPage) {
             if let id = viewModel.meeting?.id { MeetingTranscriptScreen(meetingId: id) }
         }
-        .navigationDestination(isPresented: $showsMediaPage) {
-            MeetingNotesMediaTabView(notes: viewModel.notes,
-                                     onAddNote: { showNoteSheet = true },
-                                     onSelectPhoto: { showPhotoModal = $0 })
-                .navigationTitle("Notes & Media")
-                .toolbar(.hidden, for: .tabBar)
-        }
         .navigationDestination(isPresented: $showsPDFPreview) {
             if let document = momDocument() {
                 MoMPDFPreviewView(document: document) { url in
@@ -253,12 +242,6 @@ public struct MeetingDetailView: View {
                 ScheduleMeetingView(viewModel: followUpDraft)
                     .presentationDragIndicator(.visible)
             }
-        }
-        .sheet(isPresented: $showTaskReview) {
-            if let meeting = viewModel.meeting { MeetingTaskReviewView(meeting: meeting) }
-        }
-        .sheet(isPresented: $showAnalysisEvidence) {
-            if let result = viewModel.meeting?.offlineAnalysis { MeetingAnalysisEvidenceView(result: result) }
         }
         .modifier(MeetingDetailSheetsModifier(
             viewModel: viewModel,

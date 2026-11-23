@@ -3,8 +3,6 @@ import SwiftData
 import Observation
 import AVFoundation
 
-public typealias TemplatePreset = MeetingTemplateType
-
 /// Setup workflow options presented in the initial new meeting launcher sheet
 public enum SetupOption: String, CaseIterable, Sendable {
     case quickStart = "quickStart"
@@ -339,11 +337,6 @@ public final class MeetingSetupViewModel {
         ]
     }
     
-    public func openScheduleForm() {
-        isSheetPresented = true
-        isFormOpen = true
-        currentWorkflow = .scheduleForm
-    }
     
     public func presentSheet() {
         isSheetPresented = true
@@ -375,10 +368,6 @@ public final class MeetingSetupViewModel {
         shouldSimulateCorruptFile = false
     }
     
-    public func cancelAndDismiss() {
-        dismissSheet()
-        isFormOpen = false
-    }
     
     public func selectSetupOption(_ option: SetupOption) {
         switch option {
@@ -466,17 +455,6 @@ public final class MeetingSetupViewModel {
         }
     }
     
-    public func createCustomTemplate(name: String, sections: [String], defaultDuration: TimeInterval = 3600) {
-        let agenda = sections.joined(separator: "\n")
-        let template = MeetingTemplate(
-            name: name,
-            description: "Custom user template",
-            iconName: "doc.badge.gearshape",
-            defaultAgenda: agenda
-        )
-        availableTemplates.append(template)
-        self.endDate = self.startDate.addingTimeInterval(defaultDuration)
-    }
     
     public func resetTemplateSelection() {
         selectedTemplate = .general
@@ -549,9 +527,6 @@ public final class MeetingSetupViewModel {
         selectedFolder = folder
     }
     
-    public func setFolder(_ folder: Folder?) {
-        selectedFolder = folder
-    }
     
     public func detachFolder(for meeting: Meeting) {
         meeting.folder = nil
@@ -568,13 +543,6 @@ public final class MeetingSetupViewModel {
         selectedTags.removeAll { $0.id == tag.id }
     }
     
-    public func toggleTag(_ tag: Tag) {
-        if let idx = selectedTags.firstIndex(where: { $0.id == tag.id }) {
-            selectedTags.remove(at: idx)
-        } else {
-            selectedTags.append(tag)
-        }
-    }
     
     @discardableResult
     public func createTag(name: String, colorHex: String) -> Tag {
@@ -795,37 +763,7 @@ public final class MeetingSetupViewModel {
         return meeting
     }
     
-    public func quickLaunchMeeting() -> Meeting {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, h:mm a"
-        let timestamp = formatter.string(from: Date())
-        let meeting = Meeting(
-            id: UUID(),
-            title: "Meeting - \(timestamp)",
-            createdAt: Date(),
-            scheduledStartTime: Date(),
-            duration: 0,
-            status: .recording,
-            audioQuality: defaultAudioQuality,
-            templateName: selectedTemplate?.name,
-            folder: selectedFolder
-        )
-        meeting.tags = selectedTags
-        meeting.participants = participants
-        
-        if let context = modelContext {
-            context.insert(meeting)
-            try? context.save()
-        }
-        
-        onNavigateToRecording?(meeting.id)
-        dismissSheet()
-        return meeting
-    }
     
-    public func createQuickMeeting() -> Meeting {
-        quickStartMeeting()
-    }
     
     // MARK: - Audio Import
     public func isExtensionSupported(_ ext: String) -> Bool {
@@ -833,9 +771,6 @@ public final class MeetingSetupViewModel {
         return ["m4a", "mp3", "wav"].contains(clean)
     }
     
-    public func isSupportedAudioExtension(_ ext: String) -> Bool {
-        isExtensionSupported(ext)
-    }
     
     public func setSimulatedAudioDuration(_ duration: TimeInterval) {
         self.simulatedAudioDuration = duration

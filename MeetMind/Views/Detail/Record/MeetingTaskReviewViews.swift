@@ -2,39 +2,6 @@ import SwiftUI
 import SwiftData
 import OfflineEngineKit
 
-struct MeetingAnalysisEvidenceView: View {
-    let result: MeetingAnalysisCheckpoint
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                evidenceSection("Discussion", points: result.analysis.flatMap(\.discussion))
-                evidenceSection("Decisions", points: result.analysis.flatMap(\.decisions))
-            }
-            .navigationTitle("Summary evidence")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        }
-    }
-
-    private func evidenceSection(_ title: String, points: [SupportedPoint]) -> some View {
-        Section(title) {
-            if points.isEmpty { Text("No supported points extracted.").foregroundStyle(.secondary) }
-            ForEach(Array(points.enumerated()), id: \.offset) { _, point in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(point.text).font(.headline)
-                    ForEach(Array(point.evidence.enumerated()), id: \.offset) { _, source in
-                        if let turn = result.turns.first(where: { $0.id == source.turnID }) {
-                            Text(String(format: "[%02d:%02d] ", Int(turn.start) / 60, Int(turn.start) % 60) + source.quote)
-                                .font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 struct MeetingTaskReviewView: View {
     let meeting: Meeting
     @Environment(\.dismiss) private var dismiss

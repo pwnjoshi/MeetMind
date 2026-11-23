@@ -31,7 +31,7 @@ final class LocalLanguageModel {
         guard let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber else {
             throw OfflineError.unavailable("Unable to determine the model's memory requirements.")
         }
-        #if os(iOS)
+        #if os(iOS) && !targetEnvironment(simulator)
         let available = UInt64(os_proc_available_memory())
         #else
         // macOS builds exercise contracts; iOS supplies the real process budget.
@@ -58,7 +58,7 @@ final class LocalLanguageModel {
         do {
             try ModelMemoryAdmission.check(modelBytes: ModelMemoryAdmission.footprint(),
                 availableBytes: ModelMemoryAdmission.maximumBudget, reserveBytes: configuration.reserveBytes)
-            #if os(iOS)
+            #if os(iOS) && !targetEnvironment(simulator)
             let remaining = UInt64(os_proc_available_memory())
             guard remaining >= configuration.reserveBytes else {
                 throw OfflineError.memoryBudget(requiredEstimate: configuration.reserveBytes, budget: remaining)

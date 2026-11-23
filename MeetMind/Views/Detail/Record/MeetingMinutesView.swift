@@ -258,16 +258,6 @@ struct MeetingMinutesView: View {
     }
 }
 
-/// One line of text describing an action: owner, due date and status.
-enum MeetingActionText {
-    static func detail(_ action: MeetingMinutesContent.ActionLine) -> String {
-        var parts: [String] = [action.ownerName]
-        if let due = action.dueText { parts.append("Due \(due)") }
-        parts.append(action.statusText)
-        return parts.joined(separator: " \u{00B7} ")
-    }
-}
-
 /// A suggested task with inline Accept, Edit and Discard.
 /// Accepting turns it into an action item (and so into the minutes); discarding removes it for good.
 @MainActor
