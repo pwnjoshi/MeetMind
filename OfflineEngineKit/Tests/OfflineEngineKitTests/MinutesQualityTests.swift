@@ -404,7 +404,7 @@ final class MinutesQualityTests: XCTestCase {
         for needle in ["Roman letters", "rehne do", "never in decisions", "main ... dunga"] {
             XCTAssertTrue(prompt.contains(needle), needle)
         }
-        XCTAssertEqual(OfflineAnalysisContract.promptVersion, "meeting-analysis-v10")
+        XCTAssertEqual(OfflineAnalysisContract.promptVersion, "meeting-analysis-v11")
     }
 
     // MARK: - One model
