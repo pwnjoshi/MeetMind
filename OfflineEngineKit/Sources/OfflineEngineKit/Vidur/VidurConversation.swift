@@ -151,7 +151,7 @@ public enum VidurProactive {
 
 // MARK: - Routing
 
-public enum VidurRoute: Sendable, Equatable {
+public enum VidurConversationRoute: Sendable, Equatable {
     case smallTalk(VidurSmallTalkReply)
     case command(VidurCommand)
     /// A request Vidur cannot carry out, or needs more detail for. The text is the reply.
@@ -163,7 +163,7 @@ public enum VidurRoute: Sendable, Equatable {
 /// Decides what a message is: small talk, a command, or a question for the meetings.
 public enum VidurConversationRouter {
     public static func route(_ text: String, context: VidurAssistantContext, seed: Int = 0,
-                             now: Date = Date(), calendar: Calendar = .current) -> VidurRoute {
+                             now: Date = Date(), calendar: Calendar = .current) -> VidurConversationRoute {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return .question(trimmed) }
         if let reply = VidurSmallTalk.reply(to: trimmed, context: context, seed: seed, now: now, calendar: calendar) {

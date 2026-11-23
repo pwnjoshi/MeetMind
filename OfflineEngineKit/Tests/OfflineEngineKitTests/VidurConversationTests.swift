@@ -76,7 +76,7 @@ final class VidurConversationTests: XCTestCase {
     }
 
     func testRouterSeparatesSmallTalkCommandsAndQuestions() {
-        func route(_ text: String) -> VidurRoute {
+        func route(_ text: String) -> VidurConversationRoute {
             VidurConversationRouter.route(text, context: busyDay, seed: 0, now: VidurTestClock.now,
                                           calendar: VidurTestClock.calendar)
         }
