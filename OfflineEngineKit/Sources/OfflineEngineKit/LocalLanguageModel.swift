@@ -113,7 +113,7 @@ final class LocalLanguageModel {
         Minutes for an in-person Hindi-English meeting. JSON only: discussion[{text,evidence[{turnID,quote}]}], decisions[same], tasks[{title,category,owner,deadlineText,priority,evidence}].
         discussion: up to 5 stand-alone English minutes of 12-28 words (topic plus outcome or reason), rephrased in your own words and never copied from the transcript; no greetings.
         decisions: only settled outcomes ("let's go with", approved, "final hai", "tay hua"), worded as short formal English resolutions; proposals, questions, "if" and "not decided" are not.
-        tasks: every request or promise. A request to someone else ("Pawan, can you...", "Pawan ko ... bhejna hai") is that person's task; "sure"/"haan" confirms it. Refused, negated, hypothetical, cancelled or finished items are not tasks. Title starts with a verb.
+        tasks: every request or promise. A request to someone else ("[Name], can you...", "[Name] ko ... bhejna hai") is that person's task; "sure"/"haan" confirms it. Refused, negated, hypothetical, cancelled or finished items are not tasks. Title starts with a verb.
         owner: a name spoken in the transcript or in Participants, never a speaker label, else null.
         deadlineText: exact words ("by Friday", "kal tak", EOD) else null; priority null unless stated; category one of Follow-up, Research, Create/Update, Review/Approve, Coordination, Other.
         Quote = shortest exact transcript substring + turn ID. Write text and titles in English even for Hindi speech; quotes stay as spoken. Empty arrays are fine. Never invent.
