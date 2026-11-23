@@ -55,7 +55,7 @@ final class PromptExampleRepairTests: XCTestCase {
         XCTAssertEqual(meeting.summary?.id, summaryID, "The existing summary is updated, not replaced")
         XCTAssertFalse(meeting.summary?.keyDecisions.contains { $0.contains("Pune") } ?? true)
         XCTAssertFalse(meeting.summary?.executiveSummary.contains("Pune") ?? true)
-        XCTAssertFalse(meeting.minutesNeedFinalization, "A repair never reopens reviewed minutes")
+        XCTAssertEqual(meeting.minutesNeedFinalization, false, "A repair never reopens reviewed minutes")
         let data = try XCTUnwrap(meeting.offlineAnalysisData)
         let saved = try JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data)
         XCTAssertTrue(saved.analysis.allSatisfy { $0.decisions.isEmpty })
