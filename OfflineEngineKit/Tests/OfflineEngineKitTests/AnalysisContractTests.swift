@@ -4,7 +4,7 @@ import XCTest
 final class AnalysisContractTests: XCTestCase {
     func testManifestIsPinnedAndHasAllCandidates() throws {
         let profiles = try OfflineModelStore.profiles()
-        XCTAssertEqual(Set(profiles.map(\.id)), Set(["whisper-small", "whisper-large", "diarization", "qwen-1.7b", "qwen-4b"]))
+        XCTAssertEqual(Set(profiles.map(\.id)), Set(["whisper-small", "whisper-large", "diarization", "qwen-1.7b"]))
         for profile in profiles {
             XCTAssertFalse(profile.revision.contains("main"))
             XCTAssertGreaterThan(profile.downloadBytes, 0)

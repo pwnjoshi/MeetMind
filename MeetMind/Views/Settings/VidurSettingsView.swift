@@ -7,7 +7,6 @@ import OfflineEngineKit
 public struct VidurSettingsView: View {
     @Environment(SettingsViewModel.self) private var environmentViewModel: SettingsViewModel?
     @State private var localViewModel = SettingsViewModel()
-    @AppStorage(VidurModel.preferenceKey) private var vidurModel: VidurModel = .fast
     @AppStorage(VidurDeepAnswerSetting.key) private var deepAnswers = true
     @AppStorage(VidurVoiceSettings.voiceRepliesKey) private var voiceReplies = false
     @AppStorage(VidurVoiceSettings.heyVidurKey) private var heyVidur = false
@@ -48,12 +47,7 @@ public struct VidurSettingsView: View {
             }
 
             Section {
-                Picker("Model", selection: $vidurModel) {
-                    ForEach(VidurModel.allCases, id: \.self) { model in
-                        Text(model.title).tag(model)
-                    }
-                }
-                .pickerStyle(.menu)
+                LabeledContent("Model", value: VidurModel.fast.title)
                 Picker("Answer Length", selection: Binding(
                     get: { preferences.answerLength },
                     set: { preferences.answerLength = $0 }

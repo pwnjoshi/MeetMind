@@ -73,6 +73,11 @@ public struct SpeakerSpan: Codable, Sendable {
     public let speaker: String
     public let start: Double
     public let end: Double
+    public init(speaker: String, start: Double, end: Double) {
+        self.speaker = speaker
+        self.start = start
+        self.end = end
+    }
 }
 
 /// Holds at most one loaded Whisper engine. 	ake hands it out exclusively, so two
@@ -423,6 +428,12 @@ enum LocalSpeech {
         return (turns, results.first?.language)
     }
     static func diarize(audio: URL, folder: URL, expectedSpeakers: Int? = nil) async throws -> [SpeakerSpan] {
+        try await diarizeWithEmbeddings(audio: audio, folder: folder, expectedSpeakers: expectedSpeakers).spans
+    }
+
+    /// Diarization plus one voice embedding per label, taken from the clustering result at no extra cost.
+    static func diarizeWithEmbeddings(audio: URL, folder: URL,
+                                      expectedSpeakers: Int? = nil) async throws -> SpeakerDiarizationOutput {
         await releaseCachedEngine()
         // All compute units in the foreground. In the background iOS denies the GPU,
         // so only the CPU and Neural Engine are requested.
@@ -440,8 +451,8 @@ enum LocalSpeech {
         }
     }
 
-    private static func diarizeOnce(audio: URL, folder: URL, expectedSpeakers: Int?,
-                                    computeUnits: MLComputeUnits) async throws -> [SpeakerSpan] {
+    /// Loads the diarization Core ML models from a verified model folder.
+    private static func loadDiarizerModels(folder: URL, computeUnits: MLComputeUnits) throws -> OfflineDiarizerModels {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = computeUnits
         func load(_ name: String) throws -> MLModel {
@@ -455,21 +466,32 @@ enum LocalSpeech {
         }
         var floats = [Float](repeating: 0, count: bytes.count / 4)
         _ = floats.withUnsafeMutableBytes { bytes.copyBytes(to: $0) }
-        let models = try OfflineDiarizerModels(segmentationModel: load("Segmentation"),
+        return try OfflineDiarizerModels(segmentationModel: load("Segmentation"),
             fbankModel: load("FBank"), embeddingModel: load("Embedding"), pldaRhoModel: load("PldaRho"),
             pldaPsi: floats.map(Double.init), compilationDuration: 0)
+    }
+
+    private static func diarizeOnce(audio: URL, folder: URL, expectedSpeakers: Int?,
+                                    computeUnits: MLComputeUnits) async throws -> SpeakerDiarizationOutput {
+        let models = try loadDiarizerModels(folder: folder, computeUnits: computeUnits)
         var config = OfflineDiarizerConfig()
         // The former batch size of four underutilized the Neural Engine on modern
         // iPhones and made speaker processing the dominant post-recording delay.
         // Eight keeps the peak bounded while materially increasing Core ML throughput.
         config.segmentation.batchSize = 8
         config.embedding.batchSize = 8
-        func run(_ settings: OfflineDiarizerConfig) async throws -> [SpeakerSpan] {
+        func run(_ settings: OfflineDiarizerConfig) async throws -> SpeakerDiarizationOutput {
             let manager = OfflineDiarizerManager(config: settings)
             manager.initialize(models: models)
             let result = try await manager.process(audio)
             try Task.checkCancellation()
-            return result.segments.map { SpeakerSpan(speaker: $0.speakerId, start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds)) }
+            let spans = result.segments.map { SpeakerSpan(speaker: $0.speakerId, start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds)) }
+            // The per-cluster mean embeddings are a by-product of clustering. Voice naming reuses them.
+            var embeddings: [String: [Float]] = [:]
+            for (label, vector) in result.speakerDatabase ?? [:] {
+                if let unit = SpeakerEmbeddingMath.normalized(vector) { embeddings[label] = unit }
+            }
+            return SpeakerDiarizationOutput(spans: spans, embeddings: embeddings)
         }
         // Named attendees give the expected voice count. Small counts are a reliable target; larger
         // groups only cap the count because some attendees may never speak.
@@ -484,5 +506,40 @@ enum LocalSpeech {
             // An unusable speaker-count request must not cost the meeting its speaker labels.
             return try await run(config)
         }
+    }
+
+    /// One L2-normalised voice embedding for a short enrolment recording, from the same embedding model
+    /// the diarizer uses. At most eight 3-second windows of the first 24 seconds are embedded, so the
+    /// cost is bounded. Returns nil when the recording holds less than two seconds of audio.
+    static func embedVoiceSample(audio: URL, folder: URL) async throws -> [Float]? {
+        await releaseCachedEngine()
+        let models = try loadDiarizerModels(folder: folder, computeUnits: .cpuAndNeuralEngine)
+        var config = OfflineDiarizerConfig()
+        config.embedding.batchSize = 4
+        let manager = OfflineDiarizerManager(config: config)
+        manager.initialize(models: models)
+        let sampleRate = Double(config.segmentation.sampleRate)
+        let (source, _) = try AudioSourceFactory().makeDiskBackedSource(
+            from: audio, targetSampleRate: config.segmentation.sampleRate)
+        defer { source.cleanup() }
+        let seconds = Double(source.sampleCount) / sampleRate
+        guard seconds >= 2 else { return nil }
+        var spans: [Range<TimeInterval>] = []
+        var start: TimeInterval = 0
+        while spans.count < 8, start + 1.5 <= seconds {
+            spans.append(start..<min(start + 3, seconds))
+            start += 3
+        }
+        try Task.checkCancellation()
+        let vectors = try await manager.embedSpans(audioSource: source, spans: spans)
+        try Task.checkCancellation()
+        var sum: [Float] = []
+        for vector in vectors {
+            guard let unit = SpeakerEmbeddingMath.normalized(vector) else { continue }
+            if sum.isEmpty { sum = unit } else if sum.count == unit.count {
+                for index in sum.indices { sum[index] += unit[index] }
+            }
+        }
+        return SpeakerEmbeddingMath.normalized(sum)
     }
 }

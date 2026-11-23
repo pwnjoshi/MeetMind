@@ -154,6 +154,7 @@ public final class DeletionCoordinator {
     private let jobs: AnalysisJobStore
     private let reviewStates: ReviewStateStore
     private let momSidecars: MoMSidecarStore
+    private let voiceProfiles: VoiceProfileStore
     private let clearsSystemNotifications: Bool
     private let clearsLiveAnalysisPipeline: Bool
     private let interruptAfterJournalWrite: Bool
@@ -162,7 +163,7 @@ public final class DeletionCoordinator {
         self.init(context: modelContext, inventory: .live(), defaults: .standard,
                   meetingRecords: .shared, taskResponses: .shared, minutesStudio: .shared,
                   meetingPrep: .shared, approvals: .shared, vidur: .shared, jobs: .shared,
-                  reviewStates: .shared)
+                  reviewStates: .shared, voiceProfiles: .shared)
     }
 
     init(context: ModelContext, inventory: UserContentInventory, defaults: UserDefaults,
@@ -170,7 +171,7 @@ public final class DeletionCoordinator {
          minutesStudio: MinutesStudioStore, meetingPrep: MeetingPrepStore,
          approvals: MinutesApprovalStore, vidur: VidurPreferences, jobs: AnalysisJobStore,
          reviewStates: ReviewStateStore = .shared, momSidecars: MoMSidecarStore = .shared,
-         fileManager: FileManager = .default, clearsSystemNotifications: Bool = true,
+         voiceProfiles: VoiceProfileStore? = nil, fileManager: FileManager = .default, clearsSystemNotifications: Bool = true,
          clearsLiveAnalysisPipeline: Bool = true, interruptAfterJournalWrite: Bool = false) {
         self.context = context
         self.inventory = inventory
@@ -184,6 +185,9 @@ public final class DeletionCoordinator {
         self.jobs = jobs
         self.reviewStates = reviewStates
         self.momSidecars = momSidecars
+        // Without an explicit store, voice data is read from this inventory so tests never touch the live file.
+        self.voiceProfiles = voiceProfiles ?? VoiceProfileStore(
+            fileURL: VoiceProfileStore.storeURL(applicationSupportRoot: inventory.applicationSupportRoot))
         self.fileManager = fileManager
         self.clearsSystemNotifications = clearsSystemNotifications
         self.clearsLiveAnalysisPipeline = clearsLiveAnalysisPipeline
@@ -304,6 +308,7 @@ public final class DeletionCoordinator {
                 attempt("Vidur history \(meetingID)") { try vidur.remove(meetingID: meetingID) }
                 attempt("minutes review state \(meetingID)") { try reviewStates.remove(meetingID: meetingID) }
         attempt("minutes of meeting \(meetingID)") { try momSidecars.remove(meetingID: meetingID) }
+                attempt("voice matches \(meetingID)") { try voiceProfiles.removeMeeting(meetingID) }
                 do { try await jobs.remove(meetingID: meetingID) }
                 catch { failures.append(DeletionFailure(artifact: "analysis job \(meetingID)", reason: error.localizedDescription)) }
             }
@@ -346,6 +351,7 @@ public final class DeletionCoordinator {
             vidur.eraseAll()
             attempt("minutes review states") { try reviewStates.eraseAll() }
         attempt("minutes of meeting") { try momSidecars.eraseAll() }
+        attempt("voice profiles") { try voiceProfiles.eraseAll() }
         attempt("signature") { try SignatureStore.shared.eraseAll() }
         OrganizationProfileStore().eraseAll(defaults: defaults)
             do { try await jobs.eraseAll() }
@@ -448,11 +454,15 @@ public final class DeletionCoordinator {
             if !approvals.isEmpty { failures.append(.init(artifact: "approval history", reason: "Records remain")) }
             if !vidur.isEmpty { failures.append(.init(artifact: "Vidur history", reason: "History remains")) }
             if !reviewStates.isEmpty { failures.append(.init(artifact: "minutes review states", reason: "Records remain")) }
+            if !voiceProfiles.isEmpty { failures.append(.init(artifact: "voice profiles", reason: "Records remain")) }
             for key in UserContentInventory.privateDefaultsKeys where defaults.object(forKey: key) != nil {
                 failures.append(.init(artifact: "preference \(key)", reason: "Private value remains"))
             }
         } else {
             for id in journal.meetingIDs {
+                if voiceProfiles.hasMeeting(id) {
+                    failures.append(.init(artifact: "voice matches \(id)", reason: "Record remains"))
+                }
                 if meetingRecords.record(for: id) != MeetingRecordData() {
                     failures.append(.init(artifact: "meeting record \(id)", reason: "Record remains"))
                 }

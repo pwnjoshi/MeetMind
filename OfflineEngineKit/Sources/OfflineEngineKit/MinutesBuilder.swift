@@ -40,6 +40,22 @@ enum MinutesBuilder {
         return HindiText.lowercaseFirst(value)
     }
 
+    /// "go with Stripe because the fees are lower" -> ("go with Stripe", "because the fees are lower").
+    /// The reason belongs in the rationale, not in the name of the thing that was chosen.
+    static func splitReason(_ short: String) -> (head: String, reason: String?) {
+        let pattern = #"(?i)^(.+?)(?:,\s*|\s+)(because|since|due\s+to)\s+(.+)$"#
+        guard let head = MinutesRegex.firstMatch(pattern, in: short, group: 1),
+              let marker = MinutesRegex.firstMatch(pattern, in: short, group: 2),
+              let tail = MinutesRegex.firstMatch(pattern, in: short, group: 3) else { return (short, nil) }
+        let cleanedHead = head.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: ",")))
+        let cleanedTail = tail.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines
+            .union(CharacterSet(charactersIn: ".!?")))
+        guard cleanedHead.split(separator: " ").count >= 2, cleanedTail.split(separator: " ").count >= 2,
+              !HindiText.looksRomanizedHindi(cleanedTail) else { return (short, nil) }
+        let word = marker.lowercased().replacingOccurrences(of: "  ", with: " ")
+        return (cleanedHead, word + " " + HindiText.lowercaseFirst(cleanedTail))
+    }
+
     private static func firstDate(in text: String) -> String? {
         MinutesRegex.firstMatch(DueDateResolver.datePhrasePattern, in: text)
     }
@@ -89,10 +105,10 @@ enum MinutesBuilder {
         if let date = date {
             if lower.contains("launch") || lower.contains("release") {
                 let noun = lower.contains("launch") ? "launch" : "release"
-                return "That the " + noun + " be held on " + date + "." + rationaleSuffix(rationale)
+                return "That the " + noun + " be held on " + date + rationaleSuffix(rationale) + "."
             }
             if lower.hasPrefix("finalize ") || lower.hasPrefix("finalise ") {
-                return "That the date be fixed as " + date + "." + rationaleSuffix(rationale)
+                return "That the date be fixed as " + date + rationaleSuffix(rationale) + "."
             }
             var base = short
             if let range = base.range(of: date, options: .caseInsensitive) { base.removeSubrange(range) }
@@ -100,19 +116,19 @@ enum MinutesBuilder {
             base = base.trimmingCharacters(in: .whitespaces)
             if !base.isEmpty {
                 let article = hasDeterminer(base) ? "" : "the "
-                return "That " + article + HindiText.lowercaseFirst(base) + " be scheduled for " + date + "." + rationaleSuffix(rationale)
+                return "That " + article + HindiText.lowercaseFirst(base) + " be scheduled for " + date + rationaleSuffix(rationale) + "."
             }
         }
         if lower.hasPrefix("finalize ") || lower.hasPrefix("finalise ") {
             let object = String(short.dropFirst("finalize ".count)).trimmingCharacters(in: .whitespaces)
             if !object.isEmpty {
-                return "That " + (hasDeterminer(object) ? "" : "the ") + object + " be finalized." + rationaleSuffix(rationale)
+                return "That " + (hasDeterminer(object) ? "" : "the ") + object + " be finalized" + rationaleSuffix(rationale) + "."
             }
         }
         if ActionExtractor.startsWithVerb(short) {
-            return "It was resolved to " + HindiText.lowercaseFirst(short) + "." + rationaleSuffix(rationale)
+            return "It was resolved to " + HindiText.lowercaseFirst(short) + rationaleSuffix(rationale) + "."
         }
-        return "Resolved: " + HindiText.capitalizeFirst(short) + "." + rationaleSuffix(rationale)
+        return "Resolved: " + HindiText.capitalizeFirst(short) + rationaleSuffix(rationale) + "."
     }
 
     private static func rationaleSuffix(_ rationale: String?) -> String {
@@ -329,9 +345,11 @@ enum MinutesBuilder {
                                                     timestamp: turn?.start, speaker: speakerName(turn)))
                     continue
                 }
-                let short = MinutesBuilder.shortPhrase(decision.text)
+                let spoken = MinutesBuilder.shortPhrase(decision.text)
+                let split = MinutesBuilder.splitReason(spoken)
+                let short = split.head
                 let rationale = MinutesBuilder.findRationale(decisionText: short, evidence: decision.evidence,
-                    turns: input.turns, indexByID: indexByID, pieces: pieces)
+                    turns: input.turns, indexByID: indexByID, pieces: pieces) ?? split.reason
                 let formal = MinutesBuilder.formalResolution(short: short, original: decision.text, rationale: rationale,
                                                              hasLaunchContext: launchContext)
                 let topic = ensureTopic(text: short, title: MinutesBuilder.topicTitle(fromShort: short), evidence: decision.evidence)

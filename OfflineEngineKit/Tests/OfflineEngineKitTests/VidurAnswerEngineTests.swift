@@ -32,6 +32,15 @@ private final class Counter: @unchecked Sendable {
     var loadCount: Int { lock.lock(); defer { lock.unlock() }; return loads }
 }
 
+private final class RevisionBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = "r1"
+    var value: String {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); stored = newValue; lock.unlock() }
+    }
+}
+
 private final class MutableClock: @unchecked Sendable {
     private let lock = NSLock()
     private var current = Date(timeIntervalSince1970: 1_000)
@@ -72,14 +81,16 @@ final class VidurAnswerEngineTests: XCTestCase {
         XCTAssertTrue(warm)
     }
 
-    func testChangingModelOrRevisionReplacesSession() async throws {
+    func testChangingRevisionReplacesSession() async throws {
         let counter = Counter()
-        let engine = makeEngine(counter: counter)
+        let revision = RevisionBox()
+        let engine = makeEngine(counter: counter, revision: { revision.value })
         _ = try await engine.answer(question: "pricing page", turns: turns, model: .fast)
-        _ = try await engine.answer(question: "pricing page", turns: turns, model: .large)
+        revision.value = "r2"
+        _ = try await engine.answer(question: "pricing page", turns: turns, model: .fast)
         XCTAssertEqual(counter.loadCount, 2)
         let key = await engine.warmModelKey
-        XCTAssertEqual(key, "qwen-4b@r1")
+        XCTAssertEqual(key, "qwen-1.7b@r2")
     }
 
     func testEvictionForcesReload() async throws {

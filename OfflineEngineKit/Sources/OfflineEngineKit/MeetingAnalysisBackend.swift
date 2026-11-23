@@ -41,6 +41,11 @@ protocol MeetingAnalysisBackend: Sendable {
     func transcribe(audio: URL, folder: URL, request: SpeechRequest) async throws -> [AnalysisTurn]
     /// A named-attendee voice count. Conformers that ignore it inherit the default.
     func diarize(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> [SpeakerSpan]
+    /// Diarization plus one voice embedding per label. Conformers without embeddings inherit a default
+    /// that returns none, so voices simply stay unnamed.
+    func diarizeWithEmbeddings(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> SpeakerDiarizationOutput
+    /// One voice embedding for an enrolment recording. Conformers without the model inherit nil.
+    func embedVoiceSample(audio: URL, folder: URL) async throws -> [Float]?
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession
     func isInstalled(_ profile: ModelProfile) async -> Bool
     /// Frees a speech engine kept loaded between transcription calls, before another
@@ -57,6 +62,10 @@ extension MeetingAnalysisBackend {
     func diarize(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> [SpeakerSpan] {
         try await diarize(audio: audio, folder: folder)
     }
+    func diarizeWithEmbeddings(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> SpeakerDiarizationOutput {
+        SpeakerDiarizationOutput(spans: try await diarize(audio: audio, folder: folder, expectedSpeakers: expectedSpeakers))
+    }
+    func embedVoiceSample(audio: URL, folder: URL) async throws -> [Float]? { nil }
 }
 
 struct LocalMeetingAnalysisBackend: MeetingAnalysisBackend {
@@ -78,6 +87,12 @@ struct LocalMeetingAnalysisBackend: MeetingAnalysisBackend {
     }
     func diarize(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> [SpeakerSpan] {
         try await LocalSpeech.diarize(audio: audio, folder: folder, expectedSpeakers: expectedSpeakers)
+    }
+    func diarizeWithEmbeddings(audio: URL, folder: URL, expectedSpeakers: Int?) async throws -> SpeakerDiarizationOutput {
+        try await LocalSpeech.diarizeWithEmbeddings(audio: audio, folder: folder, expectedSpeakers: expectedSpeakers)
+    }
+    func embedVoiceSample(audio: URL, folder: URL) async throws -> [Float]? {
+        try await LocalSpeech.embedVoiceSample(audio: audio, folder: folder)
     }
     func makeSession(folder: URL, configuration: LocalModelConfiguration) throws -> any MeetingAnalysisSession {
         try LocalLanguageModel(url: folder.appendingPathComponent("model.gguf"), configuration: configuration)

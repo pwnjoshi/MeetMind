@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 public struct ModelAsset: Codable, Sendable, Equatable {
     public let path: String
@@ -72,7 +73,12 @@ public actor OfflineModelStore {
     private var verificationCache: [String: [AssetMetadata]] = [:]
     private let rootOverride: URL?
 
-    public static let shared = OfflineModelStore()
+    public static let shared: OfflineModelStore = {
+        let store = OfflineModelStore()
+        // The retired 4B download is 2.5 GB. Delete it once in the background; the app no longer offers it.
+        Task.detached(priority: .utility) { await store.removeRetiredModelsOnce() }
+        return store
+    }()
 
     /// A root override keeps model lifecycle tests local and deterministic.
     public init(rootDirectory: URL? = nil) {
@@ -202,6 +208,36 @@ public actor OfflineModelStore {
     /// trusting the presence of a marker file.
     public func isInstalled(_ profile: ModelProfile) -> Bool {
         readiness(profile) == .ready
+    }
+
+    /// Deletes downloads of models the app no longer offers (matched by the `<id>-<digest>` folder name,
+    /// including partial `.download` folders). Returns the removed folder names. Missing folders are fine.
+    @discardableResult
+    public func removeRetiredModels(ids: [String]) -> [String] {
+        guard !ids.isEmpty, let root = try? modelsRoot(),
+              let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) else { return [] }
+        var removed: [String] = []
+        for name in names where ids.contains(where: { name.hasPrefix($0 + "-") }) {
+            do {
+                try FileManager.default.removeItem(at: root.appendingPathComponent(name))
+                removed.append(name)
+            } catch {
+                Self.retiredLog.error("Could not remove a retired model folder.")
+            }
+        }
+        verificationCache = verificationCache.filter { entry in !ids.contains { entry.key.hasPrefix($0 + "|") } }
+        return removed
+    }
+
+    private static let retiredLog = os.Logger(subsystem: "OfflineEngineKit", category: "models")
+    private static let retiredCleanupKey = "Manent.retiredModelsRemoved.v1"
+
+    /// One-time cleanup at first launch after the update: frees the space of the removed 4B model.
+    func removeRetiredModelsOnce(defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: Self.retiredCleanupKey) else { return }
+        let removed = removeRetiredModels(ids: VidurModel.retiredModelIDs)
+        Self.retiredLog.notice("Removed \(removed.count) retired model folder(s) to free storage.")
+        defaults.set(true, forKey: Self.retiredCleanupKey)
     }
 
     public func remove(_ profile: ModelProfile) throws {

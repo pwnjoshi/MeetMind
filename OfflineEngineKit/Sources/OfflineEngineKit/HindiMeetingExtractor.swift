@@ -602,6 +602,10 @@ var words: [String] = []
                 if let comma = rest[index...].firstIndex(where: { $0.commaAfter }), comma > index {
                     tail = Array(keys[(index + 1)...comma])
                 }
+                // "Stripe final hai kyunki price kam hai": the reason clause is not part of the decision.
+                if let reason = tail.firstIndex(where: { $0 == "kyonki" || $0 == "because" || $0 == "isliye" }) {
+                    tail = Array(tail[..<reason])
+                }
                 let isFinal = keys[index] == "final"
                 if isFinal {
                     guard tail.allSatisfy({ allowedTail.contains($0) }) else { continue }
@@ -849,6 +853,9 @@ var words: [String] = []
         func finishTasks() {
             for draft in drafts {
                 var evidence = draft.evidence
+                if ActionExtractor.isCancelled(turns: turns, pieces: pieces, turnIndex: draft.turn, sentenceIndex: draft.piece) {
+                    continue
+                }
                 if draft.isRequest {
                     let outcome = ActionExtractor.replies(turns: turns, pieces: pieces, turnIndex: draft.turn,
                                                           sentenceIndex: draft.piece, requestIsQuestion: draft.isQuestion)

@@ -467,6 +467,10 @@ public enum MeetingAnalysisReducer {
         "whether", "maybe", "perhaps", "might",
         "decide nahi", "decide nahin", "tay nahi", "tay nahin", "fix nahi", "final nahi", "pata nahi",
         "shayad", "kya hum", "kya humein",
+        "defer", "deferred", "deferring", "put off the decision", "decision is deferred", "decision deferred",
+        "take it up in the next meeting", "take this up in the next meeting",
+        "taken up at the next meeting", "taken up in the next meeting", "discuss this in the next meeting",
+        "discuss it in the next meeting", "baad mein decide karenge", "agli meeting mein decide karenge",
         "\u{0924}\u{092F} \u{0928}\u{0939}\u{0940}\u{0902}", "\u{0924}\u{092F} \u{0928}\u{0939}\u{0940}",
         "\u{0936}\u{093E}\u{092F}\u{0926}"
     ]

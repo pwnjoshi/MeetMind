@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import llama
 import os
 
@@ -11,6 +12,16 @@ final class LocalLanguageModel {
     /// GPU in the foreground; CPU while the app is in the background, where iOS
     /// rejects Metal work on iPhone. Chosen once, when the model loads.
     let placement: ComputePlacement
+
+    /// Results for prompts this session already answered (same chunk, participants, agenda and question), so a
+    /// retry or a repeated chunk costs no model time. Bounded; the oldest entry goes first.
+    private var resultCache: [String: LocalAnalysisResult] = [:]
+    private var resultCacheOrder: [String] = []
+    private static let resultCacheLimit = 24
+    /// Prompt tokens whose keys and values are still in the context. Empty whenever the context content is unknown.
+    private var cachedPromptTokens: [llama_token] = []
+    /// A shared prefix shorter than this is cheaper to read again than to trim.
+    private static let minimumReusablePrefix = 48
 
     init(url: URL, configuration: LocalModelConfiguration = .standard,
          placement: ComputePlacement = ComputeEnvironment.preferredPlacement) throws {
@@ -88,13 +99,13 @@ final class LocalLanguageModel {
         var seen = Set<String>()
         var names: [String] = []
         for raw in participants {
-            let name = String(raw.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+            let name = String(HindiRomanizer.romanize(raw).trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
             let lower = name.lowercased()
             guard !name.isEmpty, !lower.hasPrefix("speaker"), seen.insert(lower).inserted else { continue }
             names.append(name)
             if names.count == 8 { break }
         }
-        let flattened = (agenda ?? "").components(separatedBy: .newlines)
+        let flattened = HindiRomanizer.romanize(agenda ?? "").components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "; ")
         let bounded = String(flattened.prefix(200))
         return (names, bounded.isEmpty ? nil : bounded)
@@ -108,12 +119,12 @@ final class LocalLanguageModel {
             String(decoding: try encoder.encode(value), as: UTF8.self)
                 .replacingOccurrences(of: "<|", with: "\\u003c|")
         }
-        let input = try encoded(turns)
+        let input = try encoded(PromptNormalizer.romanized(turns))
         var system = """
-        Minutes for an in-person Hindi-English meeting. JSON only: discussion[{text,evidence[{turnID,quote}]}], decisions[same], tasks[{title,category,owner,deadlineText,priority,evidence}].
-        discussion: up to 5 stand-alone English minutes of 12-28 words (topic plus outcome or reason), rephrased in your own words and never copied from the transcript; no greetings.
-        decisions: only settled outcomes ("let's go with", approved, "final hai", "tay hua"), worded as short formal English resolutions; proposals, questions, "if" and "not decided" are not.
-        tasks: every request or promise. A request to someone else ("[Name], can you...", "[Name] ko ... bhejna hai") is that person's task; "sure"/"haan" confirms it. Refused, negated, hypothetical, cancelled or finished items are not tasks. Title starts with a verb.
+        Minutes for an in-person Hindi-English meeting; Hindi may be in Roman letters. JSON only: discussion[{text,evidence[{turnID,quote}]}], decisions[same], tasks[{title,category,owner,deadlineText,priority,evidence}].
+        discussion: up to 5 stand-alone English minutes of 12-28 words (topic plus outcome or reason), rephrased in your own words and never copied from the transcript; no greetings. Undecided or deferred matters go here, never in decisions.
+        decisions: only settled outcomes ("let's go with", approved, "final hai", "tay hua"), worded as short formal English resolutions with the stated reason; proposals, questions, "if" and "not decided" are not.
+        tasks: every request or promise. A request to someone else ("[Name], can you...", "[Name] ko ... bhejna hai") is that person's task; "sure"/"haan" confirms it; "I will"/"main ... dunga" is the speaker's own. Refused, negated, hypothetical, cancelled ("rehne do") or finished items are not tasks. Title starts with a verb.
         owner: a name spoken in the transcript or in Participants, never a speaker label, else null.
         deadlineText: exact words ("by Friday", "kal tak", EOD) else null; priority null unless stated; category one of Follow-up, Research, Create/Update, Review/Approve, Coordination, Other.
         Quote = shortest exact transcript substring + turn ID. Write text and titles in English even for Hindi speech; quotes stay as spoken. Empty arrays are fine. Never invent.
@@ -153,6 +164,39 @@ final class LocalLanguageModel {
 
     var inputTokenLimit: Int { Int(configuration.inputTokens) }
 
+    // MARK: Reuse and budgets
+
+    /// Hash of everything that determines a result: the prompt the model reads and the original turn text.
+    static func cacheKey(prompt: String, turns: [AnalysisTurn]) -> String {
+        var data = Data(prompt.utf8)
+        for turn in turns {
+            data.append(0)
+            data.append(contentsOf: Array(turn.text.utf8))
+        }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func remember(_ result: LocalAnalysisResult, forKey key: String) {
+        if resultCache[key] == nil { resultCacheOrder.append(key) }
+        resultCache[key] = result
+        while resultCacheOrder.count > Self.resultCacheLimit {
+            resultCache.removeValue(forKey: resultCacheOrder.removeFirst())
+        }
+    }
+
+    static func commonPrefixLength(_ lhs: [llama_token], _ rhs: [llama_token]) -> Int {
+        let limit = min(lhs.count, rhs.count)
+        var index = 0
+        while index < limit, lhs[index] == rhs[index] { index += 1 }
+        return index
+    }
+
+    /// Output tokens allowed for a chunk. The grammar ends the JSON as soon as it is complete, so this only bounds a
+    /// model that keeps writing; a short chunk gets a lower ceiling than a full one.
+    static func outputBudget(transcriptBytes: Int, limit: Int) -> Int {
+        min(limit, max(448, 256 + transcriptBytes * 3 / 4))
+    }
+
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int {
         try inputTokenCount(turns: turns, meetingDate: meetingDate, timezone: timezone, question: question,
                             participants: [], agenda: nil)
@@ -175,15 +219,33 @@ final class LocalLanguageModel {
 
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?,
                  participants: [String], agenda: String?) throws -> LocalAnalysisResult {
+        // Chunks with no request, promise, decision, deferral or question and almost no speech cannot yield
+        // minutes. The deterministic rules still read them in the reducer.
+        if question == nil, !ChunkCueDetector.needsModel(turns) {
+            return LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
+        }
         let prompt = try Self.makePrompt(turns: turns, meetingDate: meetingDate, timezone: timezone, question: question,
                                          participants: participants, agenda: agenda)
+        let cacheKey = Self.cacheKey(prompt: prompt, turns: turns)
+        if let cached = resultCache[cacheKey] { return cached }
+        let transcriptBytes = turns.reduce(0) { $0 + PromptNormalizer.romanText($1.text).utf8.count }
         var tokens = [llama_token](repeating: 0, count: prompt.utf8.count + 16)
         let count = llama_tokenize(vocab, prompt, Int32(prompt.utf8.count), &tokens, Int32(tokens.count), false, true)
         guard count > 0, count <= configuration.inputTokens else {
             throw OfflineError.unavailable("Transcript chunk exceeds the local model context limit.")
         }
         tokens = Array(tokens.prefix(Int(count)))
-        llama_memory_clear(llama_get_memory(context), true)
+        // The instructions, examples, participants and agenda are identical for every chunk of a meeting, so
+        // their keys and values stay in the cache and only the new transcript is read. The cache is forgotten
+        // until the prompt has been read completely, so an interrupted run can never leave a stale prefix.
+        let sharedPrefix = Self.commonPrefixLength(cachedPromptTokens, tokens)
+        cachedPromptTokens = []
+        var firstUnread = 0
+        if sharedPrefix >= Self.minimumReusablePrefix {
+            let reusable = min(sharedPrefix, tokens.count - 1)
+            if llama_memory_seq_rm(llama_get_memory(context), 0, Int32(reusable), -1) { firstUnread = reusable }
+        }
+        if firstUnread == 0 { llama_memory_clear(llama_get_memory(context), true) }
         guard let batch = llama_batch_ext_init(context) else { throw OfflineError.unavailable("Unable to allocate model input.") }
         defer { llama_batch_ext_free(batch) }
         func decode(_ input: [llama_token], offset: Int) throws {
@@ -205,9 +267,10 @@ final class LocalLanguageModel {
             }
         }
         let batchSize = Int(configuration.batchTokens)
-        for offset in stride(from: 0, to: tokens.count, by: batchSize) {
+        for offset in stride(from: firstUnread, to: tokens.count, by: batchSize) {
             try decode(Array(tokens[offset..<min(offset + batchSize, tokens.count)]), offset: offset)
         }
+        cachedPromptTokens = tokens
         guard let grammarURL = Bundle.module.url(forResource: "analysis", withExtension: "gbnf") else {
             throw OfflineError.unavailable("Analysis output grammar is missing.")
         }
@@ -220,12 +283,15 @@ final class LocalLanguageModel {
         llama_sampler_chain_add(sampler, grammarSampler)
         llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
         var output = Data()
-        for index in 0..<configuration.outputTokens {
+        let outputBudget = Self.outputBudget(transcriptBytes: transcriptBytes, limit: configuration.outputTokens)
+        for index in 0..<outputBudget {
             try Task.checkCancellation()
             let token = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, token) {
-                let result = try JSONDecoder().decode(LocalAnalysisResult.self, from: output)
-                return result.sanitized(against: turns)
+                let decoded = try JSONDecoder().decode(LocalAnalysisResult.self, from: output)
+                let result = PromptNormalizer.restoringQuotes(in: decoded, original: turns).sanitized(against: turns)
+                remember(result, forKey: cacheKey)
+                return result
             }
             var bytes = [CChar](repeating: 0, count: 256)
             let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
@@ -278,6 +344,7 @@ final class LocalLanguageModel {
             throw OfflineError.unavailable("Vidur's question and context exceed the local model limit.")
         }
         tokens = Array(tokens.prefix(Int(count)))
+        cachedPromptTokens = []
         llama_memory_clear(llama_get_memory(context), true)
         guard let batch = llama_batch_ext_init(context) else { throw OfflineError.unavailable("Unable to allocate model input.") }
         defer { llama_batch_ext_free(batch) }

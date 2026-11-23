@@ -230,7 +230,11 @@ public final class AnalysisCoordinator {
                     await self?.reached(stage, meetingID: meetingID, lease: lease, progress: progress)
                 }
             try Task.checkCancellation()
-            if reviewedTurns.isEmpty { replaceTranscript(of: meeting, with: result.turns) }
+            if reviewedTurns.isEmpty {
+                // Known voices are named before the transcript is rebuilt, so the names carry through.
+                await SpeakerVoiceNaming.apply(result, to: meeting, context: context)
+                replaceTranscript(of: meeting, with: result.turns)
+            }
             let warning = await pipeline.speakerWarning()
             if stopAfterSpeakers {
                 meeting.analysisState = "speakerReview"
@@ -239,7 +243,8 @@ public final class AnalysisCoordinator {
                 try await jobs.release(lease)
                 return try await requiredSnapshot(meetingID)
             }
-            try commitMinutes(result, to: meeting)
+            // Voice embeddings stay in the voice store, not in the meeting's saved analysis.
+            try commitMinutes(result.withoutVoiceEmbeddings(), to: meeting)
             try context.save()
             let reuse = await pipeline.analysisReuseCounts()
             let fallback = await pipeline.analysisFallbackSummary()

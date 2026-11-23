@@ -3,18 +3,29 @@ import AVFoundation
 import CryptoKit
 
 public enum VidurModel: String, CaseIterable, Sendable {
+    /// The only analysis and answer model. The 4B option was retired: the app stays on one
+    /// 1.7B download and gets its accuracy from the deterministic rules around it.
     case fast = "qwen-1.7b"
-    case large = "qwen-4b"
 
     public static let preferenceKey = "Manent.vidurModel"
+    /// Model downloads the app no longer offers. `OfflineModelStore` deletes their files once.
+    public static let retiredModelIDs = ["qwen-4b"]
+
     public static var selected: Self {
-        UserDefaults.standard.string(forKey: preferenceKey).flatMap(Self.init(rawValue:)) ?? .fast
+        migrateSavedSelection()
+        return .fast
+    }
+
+    /// A saved selection of a retired model (the old 4B) becomes the 1.7B model.
+    public static func migrateSavedSelection(defaults: UserDefaults = .standard) {
+        if let saved = defaults.string(forKey: preferenceKey), saved != Self.fast.rawValue {
+            defaults.set(Self.fast.rawValue, forKey: preferenceKey)
+        }
     }
 
     public var title: String {
         switch self {
-        case .fast: return "Qwen3 1.7B · 1.28 GB"
-        case .large: return "Qwen3 4B · 2.50 GB"
+        case .fast: return "Qwen3 1.7B \u{00B7} 1.28 GB"
         }
     }
 }
@@ -34,10 +45,17 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     /// Document-grade minutes (topics, resolutions, contextual actions, suggested attendees).
     /// Written by the reducer; absent in checkpoints saved by older versions.
     public var minutes: MinutesContent? = nil
+    /// L2-normalised voice embedding per speaker label, from the diarization clustering. Used only to
+    /// recognise known voices on this device. Absent in checkpoints saved by older versions.
+    public var speakerEmbeddings: [String: [Float]]? = nil
+    /// Revision of the diarization model that produced `speakerEmbeddings`. Embeddings from different
+    /// revisions are not comparable.
+    public var speakerEmbeddingModel: String? = nil
 
     public init(sourceSignature: String, stage: MeetingAnalysisStage, turns: [AnalysisTurn],
                 speakers: [SpeakerSpan], analysis: [LocalAnalysisResult], analyzedChunks: Int,
-                chunkTurnIDs: [[String]]? = nil, minutes: MinutesContent? = nil) {
+                chunkTurnIDs: [[String]]? = nil, minutes: MinutesContent? = nil,
+                speakerEmbeddings: [String: [Float]]? = nil, speakerEmbeddingModel: String? = nil) {
         self.sourceSignature = sourceSignature
         self.stage = stage
         self.turns = turns
@@ -46,6 +64,8 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
         self.analyzedChunks = analyzedChunks
         self.chunkTurnIDs = chunkTurnIDs
         self.minutes = minutes
+        self.speakerEmbeddings = speakerEmbeddings
+        self.speakerEmbeddingModel = speakerEmbeddingModel
     }
 }
 
@@ -85,7 +105,7 @@ public actor MeetingAnalysisPipeline {
     private let checkpointRoot: URL?
     private let resourceGate: @Sendable () -> Bool
     private var preAnalyzing = false
-    public static let analysisModelID = "qwen-4b"
+    public static let analysisModelID = "qwen-1.7b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
     public static let checkpointFormatVersion = "asr-prefill-v2"
     private static let modelConfiguration = LocalModelConfiguration.compact
@@ -375,7 +395,7 @@ public actor MeetingAnalysisPipeline {
         try discardCheckpoint(meetingID: meetingID)
     }
 
-    public func answer(question: String, turns: [AnalysisTurn], model: VidurModel = .large) async throws -> [SupportedPoint] {
+    public func answer(question: String, turns: [AnalysisTurn], model: VidurModel = .fast) async throws -> [SupportedPoint] {
         guard !running else { throw OfflineError.unavailable("Wait for the current analysis to finish or pause it first.") }
         guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               question.utf8.count <= 300, !turns.isEmpty else {
@@ -438,7 +458,7 @@ public actor MeetingAnalysisPipeline {
         TranscriptReuseRegistry.shared.clear(meetingID: meetingID)
     }
 
-    public func modelReadiness(model: VidurModel = .large, speakersOnly: Bool = false) async throws -> [(ModelProfile, ModelReadiness)] {
+    public func modelReadiness(model: VidurModel = .fast, speakersOnly: Bool = false) async throws -> [(ModelProfile, ModelReadiness)] {
         let profiles = try requiredProfiles(model: model)
         var states: [(ModelProfile, ModelReadiness)] = []
         for profile in profiles.prefix(speakersOnly ? 2 : profiles.count) {
@@ -447,10 +467,31 @@ public actor MeetingAnalysisPipeline {
         return states
     }
 
-    public func missingModels(model: VidurModel = .large, speakersOnly: Bool = false) async throws -> [ModelProfile] {
+    public func missingModels(model: VidurModel = .fast, speakersOnly: Bool = false) async throws -> [ModelProfile] {
         try await modelReadiness(model: model, speakersOnly: speakersOnly).compactMap { profile, state in
             state == .ready ? nil : profile
         }
+    }
+
+    /// Revision of the installed diarization model. Voice profiles are valid only for one revision.
+    public func diarizationModelRevision() -> String? {
+        (try? OfflineModelStore.profiles())?.first { $0.id == "diarization" }?.revision
+    }
+
+    /// Embeds a short enrolment recording (a person's voice sample) with the diarization embedding
+    /// model. Refused while a meeting is being analyzed, so two large models never load at once.
+    public func embedVoiceSample(_ audio: URL) async throws -> (embedding: [Float], modelRevision: String)? {
+        guard audio.isFileURL else { throw OfflineError.unavailable("Choose a voice sample saved on this iPhone.") }
+        guard !running else { return nil }
+        running = true
+        defer { running = false }
+        try checkConditions()
+        guard let profile = try OfflineModelStore.profiles().first(where: { $0.id == "diarization" }) else {
+            throw OfflineError.unavailable("Required offline model is missing from the manifest.")
+        }
+        let folder = try await backend.verifiedFolder(profile)
+        guard let embedding = try await backend.embedVoiceSample(audio: audio, folder: folder) else { return nil }
+        return (embedding, profile.revision)
     }
 
     public func requiredProfiles(model: VidurModel) throws -> [ModelProfile] {
@@ -464,7 +505,7 @@ public actor MeetingAnalysisPipeline {
     }
 
     public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String? = nil,
-                    model: VidurModel = .large,
+                    model: VidurModel = .fast,
                     stopAfterSpeakers: Bool = false,
                     reviewedTurns: [AnalysisTurn] = [],
                     participants: [String] = [], agenda: String? = nil,
@@ -530,12 +571,14 @@ public actor MeetingAnalysisPipeline {
             defer { lastStageTimings.speakersMs = elapsedMs(speakersStarted) }
             await backend.releaseSpeechEngine()
             let rawSpans: [SpeakerSpan]
+            var voiceEmbeddings: [String: [Float]] = [:]
             do {
                 let folder = try await backend.verifiedFolder(profiles[1])
                 let named = participants.filter { !$0.lowercased().hasPrefix("speaker") && !$0.isEmpty }
                 let expectedVoices: Int? = named.count >= 2 ? named.count : nil
-                let found = try await backend.diarize(audio: audio, folder: folder, expectedSpeakers: expectedVoices)
-                rawSpans = SpeakerClusterMerge.mergeExcess(found, expected: expectedVoices)
+                let found = try await backend.diarizeWithEmbeddings(audio: audio, folder: folder, expectedSpeakers: expectedVoices)
+                rawSpans = SpeakerClusterMerge.mergeExcess(found.spans, expected: expectedVoices)
+                voiceEmbeddings = found.embeddings
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -543,6 +586,11 @@ public actor MeetingAnalysisPipeline {
                 lastSpeakerWarning = "Voices could not be separated. Minutes will continue with unnamed speakers."
             }
             checkpoint.speakers = Self.stabilizeSpeakerSpans(rawSpans)
+            // Keep embeddings only for voices still present after merging and smoothing.
+            let presentLabels = Set(checkpoint.speakers.map(\.speaker))
+            let keptEmbeddings = voiceEmbeddings.filter { presentLabels.contains($0.key) }
+            checkpoint.speakerEmbeddings = keptEmbeddings.isEmpty ? nil : keptEmbeddings
+            checkpoint.speakerEmbeddingModel = keptEmbeddings.isEmpty ? nil : profiles[1].revision
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)
             checkpoint.stage = .analysis
             try save()

@@ -104,6 +104,7 @@ enum ActionExtractor {
 
     static func replies(turns: [AnalysisTurn], pieces: [[String]], turnIndex: Int, sentenceIndex: Int,
                                 requestIsQuestion: Bool) -> (refused: Bool, acceptance: SourceEvidence?) {
+        if isCancelled(turns: turns, pieces: pieces, turnIndex: turnIndex, sentenceIndex: sentenceIndex) { return (true, nil) }
         for reply in replyWindow(turns: turns, pieces: pieces, turnIndex: turnIndex, sentenceIndex: sentenceIndex) {
             if isRefusal(reply.sentence, requestIsQuestion: requestIsQuestion) { return (true, nil) }
             if isAcceptance(reply.sentence) { return (false, SourceEvidence(turnID: reply.turnID, quote: reply.sentence)) }
@@ -133,6 +134,55 @@ enum ActionExtractor {
 
     private static func wordCount(_ sentence: String) -> Int {
         sentence.split(whereSeparator: { $0.isWhitespace }).count
+    }
+
+    // MARK: - Cancellation
+
+    /// Whole-clause cancellations. The clause must be the cancellation and nothing else, so "Rahul, cancel that
+    /// booking" (a new request) never cancels an earlier task.
+    private static let cancellationClauses: Set<String> = Set<String>([
+        "never mind", "nevermind", "forget it", "forget that", "scrap that", "scrap it", "cancel that", "cancel it",
+        "cancel this", "drop that", "drop it", "ignore that", "ignore it", "leave it", "leave that", "no need",
+        "no need now", "not needed", "not needed now", "not needed anymore", "no longer needed", "no longer required",
+        "that is cancelled", "that's cancelled", "that is canceled", "that's canceled", "it is cancelled",
+        "it's cancelled", "never mind that", "forget about it", "skip that", "skip it", "no longer necessary",
+        "rehne do", "rehne de", "rahne do", "rahne de", "chhod do", "chod do", "chhodo", "chodo", "chhor do",
+        "zaroorat nahi", "zaroorat nahi hai", "ab zaroorat nahi", "ab zaroorat nahi hai", "jarurat nahi",
+        "jarurat nahi hai", "ab jarurat nahi", "ab jarurat nahi hai", "ab nahi chahiye", "nahi chahiye",
+        "cancel kar do", "cancel karo", "cancel ho gaya", "cancel hai", "ye cancel hai", "wo cancel hai",
+        "yeh cancel hai", "woh cancel hai", "cancel kar diya",
+        "\u{0930}\u{0939}\u{0928}\u{0947} \u{0926}\u{094B}", "\u{0930}\u{0939}\u{0928}\u{0947} \u{0926}\u{0940}\u{091C}\u{093F}\u{090F}"
+    ])
+    private static let cancellationLead: Set<String> = Set<String>([
+        "actually", "wait", "sorry", "okay", "ok", "oh", "hmm", "arre", "are", "haan", "accha", "achha", "ji", "listen",
+        "so", "and", "but", "well", "no", "nahi", "yaar", "hold", "on", "sir"
+    ])
+    private static let cancellationTail: Set<String> = Set<String>(["please", "yaar", "ji", "na", "now", "bhai", "anyway", "then", "sir"])
+
+    static func isCancellation(_ sentence: String) -> Bool {
+        guard wordCount(sentence) <= 8 else { return false }
+        var words = MeetingAnalysisReducer.clauseKey(sentence).split(separator: " ").map(String.init)
+        // Peel leading and trailing filler words, then compare the whole remaining clause.
+        // "No." / "Nahi" alone is a refusal, handled elsewhere; "no need" keeps its "no" because the phrase list has it.
+        while let first = words.first, cancellationLead.contains(first), words.count > 1 {
+            if words.count >= 2, cancellationClauses.contains(words.joined(separator: " ")) { break }
+            words.removeFirst()
+        }
+        while let last = words.last, cancellationTail.contains(last), words.count > 1 { words.removeLast() }
+        return cancellationClauses.contains(words.joined(separator: " "))
+    }
+
+    /// True when the request or promise in `pieces[turnIndex][sentenceIndex]` is withdrawn in the same turn
+    /// or in the next two turns, by anyone ("never mind", "rehne do", "cancel that").
+    static func isCancelled(turns: [AnalysisTurn], pieces: [[String]], turnIndex: Int, sentenceIndex: Int) -> Bool {
+        guard turnIndex < pieces.count else { return false }
+        for sentence in pieces[turnIndex].dropFirst(sentenceIndex + 1).prefix(2) where isCancellation(sentence) { return true }
+        var next = turnIndex + 1
+        while next < pieces.count, next <= turnIndex + 2 {
+            for sentence in pieces[next].prefix(3) where isCancellation(sentence) { return true }
+            next += 1
+        }
+        return false
     }
 
     private static let refusalPhrases: [String] = [
