@@ -73,27 +73,25 @@ public struct HomeDashboardView: View {
                 NavigationStack { LocalSeriesTimeline(seriesID: id) }
             }
         }
-        .sheet(isPresented: $showsAllUpcoming) {
-            NavigationStack {
-                AllMeetingsView(
-                    upcoming: viewModel.filteredUpcomingMeetings,
-                    earlier: viewModel.filteredRecentMeetings,
-                    subtitle: recentSubtitle,
-                    statusColor: recentStatusColor
-                )
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsAllUpcoming = false } } }
-            }
+        // A4: pushed full screen (back button, no tab bar). "See All" on Upcoming opens the
+        // Upcoming tab; "See All" on Recent opens Earlier.
+        .navigationDestination(isPresented: $showsAllUpcoming) {
+            AllMeetingsView(
+                upcoming: viewModel.filteredUpcomingMeetings,
+                earlier: viewModel.filteredRecentMeetings,
+                subtitle: recentSubtitle,
+                statusColor: recentStatusColor,
+                initialScope: .upcoming
+            )
         }
-        .sheet(isPresented: $showsAllRecent) {
-            NavigationStack {
-                AllMeetingsView(
-                    upcoming: viewModel.filteredUpcomingMeetings,
-                    earlier: viewModel.filteredRecentMeetings,
-                    subtitle: recentSubtitle,
-                    statusColor: recentStatusColor
-                )
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsAllRecent = false } } }
-            }
+        .navigationDestination(isPresented: $showsAllRecent) {
+            AllMeetingsView(
+                upcoming: viewModel.filteredUpcomingMeetings,
+                earlier: viewModel.filteredRecentMeetings,
+                subtitle: recentSubtitle,
+                statusColor: recentStatusColor,
+                initialScope: .earlier
+            )
         }
         .sheet(isPresented: $showsVidur) {
             if let meeting = vidurMeeting {

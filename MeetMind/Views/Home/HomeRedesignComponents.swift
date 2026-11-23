@@ -363,77 +363,90 @@ struct GlassCircleButtonStyle: ViewModifier {
     }
 }
 
-/// A4 All meetings: Upcoming, then earlier meetings grouped by month, with search.
+/// A4 All meetings: an Upcoming / Earlier switch over one list, pushed full screen
+/// without the tab bar, with search.
 @MainActor
 struct AllMeetingsView: View {
+    enum Scope: String, CaseIterable, Identifiable {
+        case upcoming = "Upcoming"
+        case earlier = "Earlier"
+        var id: String { rawValue }
+    }
+
     let upcoming: [Meeting]
     let earlier: [Meeting]
     let subtitle: (Meeting) -> String?
     let statusColor: (Meeting) -> Color
+    @State private var scope: Scope
     @State private var query = ""
-    @Environment(\.dismiss) private var dismiss
+    @State private var searchPresented = false
+
+    init(upcoming: [Meeting], earlier: [Meeting], subtitle: @escaping (Meeting) -> String?,
+         statusColor: @escaping (Meeting) -> Color, initialScope: Scope = .upcoming) {
+        self.upcoming = upcoming
+        self.earlier = earlier
+        self.subtitle = subtitle
+        self.statusColor = statusColor
+        _scope = State(initialValue: initialScope)
+    }
 
     var body: some View {
         List {
-            if !filteredUpcoming.isEmpty {
-                Section("Upcoming") {
-                    ForEach(filteredUpcoming) { meeting in
-                        row(meeting, isUpcoming: true)
+            Section {
+                Picker("Meetings", selection: $scope) {
+                    ForEach(Scope.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0))
+            }
+            let meetings = scope == .upcoming ? filteredUpcoming : filteredEarlier
+            if meetings.isEmpty {
+                Section {
+                    Text(emptyText).foregroundStyle(.secondary)
+                }
+            } else {
+                Section {
+                    ForEach(meetings) { meeting in
+                        row(meeting, isUpcoming: scope == .upcoming)
                     }
                 }
-            }
-            ForEach(monthGroups, id: \.title) { group in
-                Section(group.title) {
-                    ForEach(group.meetings) { meeting in
-                        row(meeting, isUpcoming: false)
-                    }
-                }
-            }
-            if filteredUpcoming.isEmpty && monthGroups.isEmpty {
-                Text(query.isEmpty ? "No meetings yet" : "No meetings match \"\(query)\"")
-                    .foregroundStyle(.secondary)
             }
         }
         .listStyle(.insetGrouped)
-        .headerProminence(.increased)
+        .listSectionSpacing(.compact)
         .navigationTitle("All Meetings")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "Search meetings")
+        .toolbar(.hidden, for: .tabBar)
+        .searchable(text: $query, isPresented: $searchPresented, prompt: "Search meetings")
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            ToolbarItem(placement: .primaryAction) {
+                Button { searchPresented = true } label: { Image(systemName: "magnifyingglass") }
+                    .accessibilityLabel("Search meetings")
+            }
         }
+        .animation(.default, value: scope)
+    }
+
+    private var emptyText: String {
+        if !query.isEmpty { return "No meetings match \"\(query)\"" }
+        return scope == .upcoming ? "No upcoming meetings" : "No earlier meetings yet"
     }
 
     private var filteredUpcoming: [Meeting] { filtered(upcoming) }
+
+    /// Earlier meetings, most recent first, without any meeting that is also upcoming.
+    private var filteredEarlier: [Meeting] {
+        let upcomingIDs = Set(upcoming.map { $0.id })
+        return filtered(earlier)
+            .filter { !upcomingIDs.contains($0.id) }
+            .sorted { HomeViewModel.recencyDate(for: $0) > HomeViewModel.recencyDate(for: $1) }
+    }
 
     private func filtered(_ meetings: [Meeting]) -> [Meeting] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return meetings }
         return meetings.filter { $0.title.localizedCaseInsensitiveContains(trimmed) }
-    }
-
-    private struct MonthGroup {
-        let title: String
-        let meetings: [Meeting]
-    }
-
-    private var monthGroups: [MonthGroup] {
-        let upcomingIDs = Set(upcoming.map { $0.id })
-        let items = filtered(earlier).filter { !upcomingIDs.contains($0.id) }
-        let calendar = Calendar.current
-        var order: [Date] = []
-        var buckets: [Date: [Meeting]] = [:]
-        for meeting in items {
-            let date = HomeViewModel.recencyDate(for: meeting)
-            let comps = calendar.dateComponents([.year, .month], from: date)
-            let key = calendar.date(from: comps) ?? date
-            if buckets[key] == nil { order.append(key) }
-            buckets[key, default: []].append(meeting)
-        }
-        order.sort(by: >)
-        return order.map { key in
-            MonthGroup(title: key.formatted(.dateTime.month(.wide).year()), meetings: buckets[key] ?? [])
-        }
     }
 
     private func row(_ meeting: Meeting, isUpcoming: Bool) -> some View {
