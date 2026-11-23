@@ -43,18 +43,17 @@ enum PlannedAgenda {
     /// gets an empty agenda; a processed one gets the topics of its own minutes.
     static func repairCopiedAgendas(context: ModelContext, defaults: UserDefaults = .standard) {
         guard !defaults.bool(forKey: repairKey) else { return }
+        // Marked done first: a failure here must never repeat on every launch.
+        defaults.set(true, forKey: repairKey)
         guard let all = try? context.fetch(FetchDescriptor<Meeting>()) else { return }
         var changed = false
-        for meeting in all where isCopiedFromSeries(meeting, among: all) {
+        for meeting in all where !meeting.isDeleted && isCopiedFromSeries(meeting, among: all) {
             let own = derivedAgenda(meeting)
             if own.map({ normalized($0) }) == normalized(meeting.agendaText ?? "") { continue }
             meeting.agendaText = own
             changed = true
         }
-        if changed {
-            do { try context.save() } catch { return }
-        }
-        defaults.set(true, forKey: repairKey)
+        if changed { try? context.save() }
     }
 
     static func normalized(_ text: String) -> String {

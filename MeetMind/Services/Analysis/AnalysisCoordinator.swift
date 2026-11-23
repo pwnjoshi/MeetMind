@@ -308,14 +308,20 @@ public final class AnalysisCoordinator {
 
     /// Earlier prompt versions let the model copy an example decision ("The Pune vendor is
     /// engaged") into real minutes. Re-sanitizes each saved chunk result against its own
-    /// transcript and rebuilds the minutes only of meetings where something was removed.
+    /// transcript and refreshes the minutes text of meetings where something was removed.
+    ///
+    /// Runs at most once: the flag is set before any work, so a failure can never turn into
+    /// a crash on every launch. Only stored text changes; no summary object is deleted or
+    /// created, and a meeting's review, finalized or shared state is left as it is.
     public func repairPromptExampleLeaks() {
-        guard Self.needsPromptExampleRepair,
-              let meetings = try? context.fetch(FetchDescriptor<Meeting>()) else { return }
+        guard Self.needsPromptExampleRepair else { return }
+        UserDefaults.standard.set(true, forKey: Self.promptExampleRepairKey)
+        guard let meetings = try? context.fetch(FetchDescriptor<Meeting>()) else { return }
         func itemCount(_ result: LocalAnalysisResult) -> Int {
             result.discussion.count + result.decisions.count + result.tasks.count + result.openIssues.count
         }
-        for meeting in meetings {
+        var changedAny = false
+        for meeting in meetings where !meeting.isDeleted {
             guard let data = meeting.offlineAnalysisData,
                   var checkpoint = try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: data),
                   checkpoint.stage == .completed else { continue }
@@ -334,21 +340,30 @@ public final class AnalysisCoordinator {
                 }
             }
             guard changed else { continue }
+            let previousDerivedAgenda = PlannedAgenda.derivedAgenda(meeting)
             checkpoint.minutes = nil
-            do {
-                try commitMinutes(checkpoint, to: meeting)
-            } catch {
-                continue
+            let fields = minutesFields(checkpoint, for: meeting)
+            guard let encoded = try? JSONEncoder().encode(fields.reduced.checkpoint) else { continue }
+            meeting.offlineAnalysisData = encoded
+            if let summary = meeting.summary, !summary.isDeleted, summary.modelContext != nil {
+                summary.executiveSummary = fields.overview
+                summary.keyPoints = fields.points
+                summary.keyDecisions = fields.decisions
             }
+            // An agenda the minutes filled in is refreshed; an agenda the person wrote is kept.
+            let currentAgenda = PlannedAgenda.normalized(meeting.agendaText ?? "")
+            if let previousDerivedAgenda, PlannedAgenda.normalized(previousDerivedAgenda) == currentAgenda,
+               !fields.topicAgenda.isEmpty {
+                meeting.agendaText = fields.topicAgenda
+            }
+            changedAny = true
         }
-        do { try context.save() } catch { return }
-        UserDefaults.standard.set(true, forKey: Self.promptExampleRepairKey)
+        if changedAny { try? context.save() }
     }
 
-    private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
-        // Names the user gave attendees let the reducer attach an owner to requests
-        // ("Pawan, can you ...") and to first-person promises. Generic labels never count.
-        // Includes voices the user assigned in People, not only label speakers.
+    /// The minutes text derived from a completed checkpoint, shared by the final pass and repairs.
+    private func minutesFields(_ result: MeetingAnalysisCheckpoint, for meeting: Meeting)
+        -> (reduced: ReducedMeetingAnalysis, overview: String, points: [String], decisions: [String], topicAgenda: String) {
         let speakerNames = MeetingSpeakerNames(meeting: meeting, store: MeetingRecordStore.shared).assignedLabels
         let zone = TimeZone(identifier: meeting.analysisTimezone ?? "") ?? TimeZone.current
         let reduced = MeetingAnalysisReducer.reduce(result, participants: meeting.namedAttendees.map(\.name),
@@ -356,27 +371,40 @@ public final class AnalysisCoordinator {
                                                     meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
                                                     timeZone: zone)
         let minutes = reduced.minutes
-        // Open issues live in the checkpoint as their own list; the minutes
-        // content builder renders them in a dedicated Open Issues section.
-        // Topic bullets are rephrased English; a model discussion point never replaces them.
         var pointSource: [String] = []
         for topic in minutes.topics { pointSource.append(contentsOf: topic.discussion) }
         if pointSource.isEmpty { pointSource = reduced.discussion.map(\.text) }
-        let points = uniqueTexts(pointSource)
         var decisionSource = minutes.resolutions.map(\.text)
         if decisionSource.isEmpty { decisionSource = reduced.decisions.map(\.text) }
-        let decisions = uniqueTexts(decisionSource)
         let overview = minutes.topics.isEmpty || minutes.executiveSummary.isEmpty
             ? reduced.executiveSummary : minutes.executiveSummary
-        if let old = meeting.summary { context.delete(old) }
-        meeting.summary = Summary(executiveSummary: overview,
-            keyPoints: points, keyDecisions: decisions, meeting: meeting)
+        let topicAgenda = minutes.topics.isEmpty ? reduced.agendaTopics.joined(separator: "\n") : minutes.agendaText
+        return (reduced, overview, uniqueTexts(pointSource), uniqueTexts(decisionSource), topicAgenda)
+    }
+
+    private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
+        // Names the user gave attendees let the reducer attach an owner to requests
+        // ("Pawan, can you ...") and to first-person promises. Generic labels never count.
+        // Topic bullets are rephrased English; a model discussion point never replaces them.
+        let fields = minutesFields(result, for: meeting)
+        let reduced = fields.reduced
+        // The existing summary is updated in place. Deleting it and attaching a new one in
+        // the same change tripped a SwiftData assertion on launch-time repairs.
+        if let summary = meeting.summary, !summary.isDeleted, summary.modelContext != nil {
+            summary.executiveSummary = fields.overview
+            summary.keyPoints = fields.points
+            summary.keyDecisions = fields.decisions
+            summary.generatedAt = Date()
+        } else {
+            meeting.summary = Summary(executiveSummary: fields.overview,
+                keyPoints: fields.points, keyDecisions: fields.decisions, meeting: meeting)
+        }
         // Tasks stay review suggestions (never auto-accepted); owner and context are preassigned in the checkpoint.
         // Suggested attendees live in `minutes.suggestedAttendees` and are never added automatically.
         meeting.offlineAnalysisData = try JSONEncoder().encode(reduced.checkpoint)
         // An empty or placeholder agenda is filled with the topics heard in the meeting; the user can edit it later.
         let currentAgenda = (meeting.agendaText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let topicAgenda = minutes.topics.isEmpty ? reduced.agendaTopics.joined(separator: "\n") : minutes.agendaText
+        let topicAgenda = fields.topicAgenda
         let seriesMeetings = meeting.seriesID == nil ? [] : ((try? context.fetch(FetchDescriptor<Meeting>())) ?? [])
         let copiedAgenda = PlannedAgenda.isCopiedFromSeries(meeting, among: seriesMeetings)
         if !topicAgenda.isEmpty, currentAgenda.isEmpty || isPlaceholderAgenda(currentAgenda) || copiedAgenda {

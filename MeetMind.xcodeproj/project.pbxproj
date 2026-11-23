@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0A22CEE000100000001 /* PromptExampleRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A32CEE000100000001 /* PromptExampleRepairTests.swift */; };
 		1A00C09F2CEE000100000001 /* MeetingDetailsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A02CEE000100000001 /* MeetingDetailsSheet.swift */; };
 		1A00C0A12CEE000100000001 /* MeetingRecordComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0A22CEE000100000001 /* MeetingRecordComponents.swift */; };
 		1A00C0902CEE000100000001 /* PlannedAgenda.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0912CEE000100000001 /* PlannedAgenda.swift */; };
@@ -376,6 +377,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0A32CEE000100000001 /* PromptExampleRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Analysis/PromptExampleRepairTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A02CEE000100000001 /* MeetingDetailsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingDetailsSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0A22CEE000100000001 /* MeetingRecordComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Record/MeetingRecordComponents.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0912CEE000100000001 /* PlannedAgenda.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Calendar/PlannedAgenda.swift"; sourceTree = SOURCE_ROOT; };
@@ -1041,6 +1043,7 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0A32CEE000100000001 /* PromptExampleRepairTests.swift */,
 				1B00C08F2CEE000100000001 /* ContinuedAnalysisRunTests.swift */,
 				1B00C09C2CEE000100000001 /* NameSpeakerSuggestionTests.swift */,
 				1B00C09E2CEE000100000001 /* SettingsV5Tests.swift */,
@@ -1716,6 +1719,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0A22CEE000100000001 /* PromptExampleRepairTests.swift in Sources */,
 				1A00C08E2CEE000100000001 /* ContinuedAnalysisRunTests.swift in Sources */,
 				1A00C09B2CEE000100000001 /* NameSpeakerSuggestionTests.swift in Sources */,
 				1A00C09D2CEE000100000001 /* SettingsV5Tests.swift in Sources */,
