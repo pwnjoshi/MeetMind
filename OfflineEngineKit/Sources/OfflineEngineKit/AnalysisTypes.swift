@@ -1,7 +1,7 @@
 import Foundation
 
 public enum OfflineAnalysisContract {
-    public static let promptVersion = "meeting-analysis-v10"
+    public static let promptVersion = "meeting-analysis-v11"
 }
 
 public struct AnalysisTurn: Codable, Sendable, Identifiable {

@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import llama
 import os
+import Accelerate
 
 /// One instance per stage; no HTTP client, no transcript logging, bounded context.
 final class LocalLanguageModel {
@@ -267,6 +268,7 @@ final class LocalLanguageModel {
             }
         }
         let batchSize = Int(configuration.batchTokens)
+        let prefillStarted = Date()
         for offset in stride(from: firstUnread, to: tokens.count, by: batchSize) {
             try decode(Array(tokens[offset..<min(offset + batchSize, tokens.count)]), offset: offset)
         }
@@ -275,19 +277,26 @@ final class LocalLanguageModel {
             throw OfflineError.unavailable("Analysis output grammar is missing.")
         }
         let grammar = try String(contentsOf: grammarURL, encoding: .utf8)
-        guard let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params()),
-              let grammarSampler = llama_sampler_init_grammar(vocab, grammar, "root") else {
+        guard let grammarSampler = llama_sampler_init_grammar(vocab, grammar, "root") else {
             throw OfflineError.unavailable("Unable to initialize constrained analysis output.")
         }
-        defer { llama_sampler_free(sampler) }
-        llama_sampler_chain_add(sampler, grammarSampler)
-        llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        defer { llama_sampler_free(grammarSampler) }
         var output = Data()
         let outputBudget = Self.outputBudget(transcriptBytes: transcriptBytes, limit: configuration.outputTokens)
+        let decodeStarted = Date()
+        var grammarFallbacks = 0
+        func logRun(_ generated: Int, completed: Bool) {
+            let prefillMs = Int(decodeStarted.timeIntervalSince(prefillStarted) * 1_000)
+            let decodeMs = Int(Date().timeIntervalSince(decodeStarted) * 1_000)
+            Self.log.notice("LLM chunk prompt_tokens=\(tokens.count, privacy: .public) reused_tokens=\(firstUnread, privacy: .public) prefill_ms=\(prefillMs, privacy: .public) output_tokens=\(generated, privacy: .public) decode_ms=\(decodeMs, privacy: .public) grammar_fallbacks=\(grammarFallbacks, privacy: .public) completed=\(completed, privacy: .public)")
+        }
         for index in 0..<outputBudget {
             try Task.checkCancellation()
-            let token = llama_sampler_sample(sampler, context, -1)
+            let sampled = sampleConstrained(grammarSampler)
+            let token = sampled.token
+            if sampled.fellBack { grammarFallbacks += 1 }
             if llama_vocab_is_eog(vocab, token) {
+                logRun(index, completed: true)
                 let decoded = try JSONDecoder().decode(LocalAnalysisResult.self, from: output)
                 let result = PromptNormalizer.restoringQuotes(in: decoded, original: turns).sanitized(against: turns)
                 remember(result, forKey: cacheKey)
@@ -299,6 +308,7 @@ final class LocalLanguageModel {
             output.append(contentsOf: bytes.prefix(Int(length)).map { UInt8(bitPattern: $0) })
             try decode([token], offset: tokens.count + index)
         }
+        logRun(outputBudget, completed: false)
         throw OfflineError.unavailable("Analysis reached its output limit. Shorten the input and retry.")
     }
 
@@ -374,17 +384,14 @@ final class LocalLanguageModel {
             throw OfflineError.unavailable("Answer output grammar is missing.")
         }
         let grammar = try String(contentsOf: grammarURL, encoding: .utf8)
-        guard let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params()),
-              let grammarSampler = llama_sampler_init_grammar(vocab, grammar, "root") else {
+        guard let grammarSampler = llama_sampler_init_grammar(vocab, grammar, "root") else {
             throw OfflineError.unavailable("Unable to initialize constrained answer output.")
         }
-        defer { llama_sampler_free(sampler) }
-        llama_sampler_chain_add(sampler, grammarSampler)
-        llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        defer { llama_sampler_free(grammarSampler) }
         var output = Data()
         for index in 0..<maxTokens {
             try Task.checkCancellation()
-            let token = llama_sampler_sample(sampler, context, -1)
+            let token = sampleConstrained(grammarSampler).token
             if llama_vocab_is_eog(vocab, token) { return (output, true) }
             var bytes = [CChar](repeating: 0, count: 256)
             let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
@@ -393,6 +400,57 @@ final class LocalLanguageModel {
             try decode([token], offset: tokens.count + index)
         }
         return (output, false)
+    }
+
+    // MARK: Constrained greedy sampling
+
+    private static let log = Logger(subsystem: "com.meetmind.app", category: "Analysis")
+    /// Reused candidate buffer for the rare full grammar pass (one entry per vocabulary token).
+    private var candidateBuffer: [llama_token_data] = []
+
+    /// Greedy decoding that checks the grammar against the single best token first and falls back to
+    /// filtering the whole vocabulary only when that token is not allowed (the approach llama.cpp's own
+    /// sampler uses). Checking ~152k Qwen tokens on every step was the slowest part of writing minutes.
+    /// The result is identical to grammar-then-greedy: the best allowed token.
+    private func sampleConstrained(_ grammar: UnsafeMutablePointer<llama_sampler>) -> (token: llama_token, fellBack: Bool) {
+        let vocabularySize = Int(llama_vocab_n_tokens(vocab))
+        guard vocabularySize > 0, let logits = llama_get_logits_ith(context, -1) else {
+            let eos = llama_vocab_eos(vocab)
+            return (eos, false)
+        }
+        var bestValue: Float = 0
+        var bestIndex: vDSP_Length = 0
+        vDSP_maxvi(logits, 1, &bestValue, &bestIndex, vDSP_Length(vocabularySize))
+        var single = llama_token_data(id: llama_token(bestIndex), logit: bestValue, p: 0)
+        let allowed: Bool = withUnsafeMutablePointer(to: &single) { pointer in
+            var array = llama_token_data_array(data: pointer, size: 1, selected: -1, sorted: false)
+            llama_sampler_apply(grammar, &array)
+            return array.data[0].logit.isFinite
+        }
+        if allowed {
+            let token = llama_token(bestIndex)
+            llama_sampler_accept(grammar, token)
+            return (token, false)
+        }
+        if candidateBuffer.count != vocabularySize {
+            candidateBuffer = [llama_token_data](repeating: llama_token_data(id: 0, logit: 0, p: 0), count: vocabularySize)
+        }
+        var chosen = llama_vocab_eos(vocab)
+        candidateBuffer.withUnsafeMutableBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return }
+            for index in 0..<vocabularySize {
+                base[index] = llama_token_data(id: llama_token(index), logit: logits[index], p: 0)
+            }
+            var array = llama_token_data_array(data: base, size: vocabularySize, selected: -1, sorted: false)
+            llama_sampler_apply(grammar, &array)
+            var best = -Float.infinity
+            for index in 0..<array.size where array.data[index].logit > best {
+                best = array.data[index].logit
+                chosen = array.data[index].id
+            }
+        }
+        llama_sampler_accept(grammar, chosen)
+        return (chosen, true)
     }
 }
 
