@@ -23,17 +23,8 @@ on:
         description: "Force the transcription language code, e.g. hi (empty = automatic)"
         required: false
         default: ""
-  push:
-    branches: [ codex/complete-offline-meeting-flow ]
-    paths:
-      - 'MeetMind/**'
-      - 'MeetMind.xcodeproj/**'
-      - 'OfflineEngineKit/**'
-      - 'Scripts/synth_meetings.py'
-      - 'Scripts/ci_install_models.py'
-      - 'Scripts/ci_sim_eval.py'
-      - 'Scripts/eval_score.py'
-      - '.github/workflows/eval.yml'
+  # Manual only: CI Macs have no Neural Engine, so full Whisper on the CPU is too slow to run on every push.
+  # The full-audio evaluation runs on a real iPhone with Scripts/device_eval.py.
 
 env:
   BUNDLE_ID: com.meetmind.app
