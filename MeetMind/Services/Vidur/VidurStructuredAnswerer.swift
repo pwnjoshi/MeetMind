@@ -58,11 +58,14 @@ public struct VidurMeetingFacts: Sendable, Equatable {
     public let decisions: [VidurFactLine]
     public let openIssues: [VidurFactLine]
     public let tasks: [VidurTaskFact]
+    /// Name of the series this meeting belongs to, when it has one.
+    public let seriesName: String?
 
     public init(meetingID: UUID, title: String, date: Date, duration: TimeInterval = 0,
                 attendees: [String] = [], absent: [String] = [], attendanceRecorded: Bool = false,
                 agenda: [String] = [], summary: String = "", discussion: [String] = [],
-                decisions: [VidurFactLine] = [], openIssues: [VidurFactLine] = [], tasks: [VidurTaskFact] = []) {
+                decisions: [VidurFactLine] = [], openIssues: [VidurFactLine] = [], tasks: [VidurTaskFact] = [],
+                seriesName: String? = nil) {
         self.meetingID = meetingID
         self.title = title
         self.date = date
@@ -76,6 +79,7 @@ public struct VidurMeetingFacts: Sendable, Equatable {
         self.decisions = decisions
         self.openIssues = openIssues
         self.tasks = tasks
+        self.seriesName = seriesName
     }
 
     public var participantNames: [String] { attendees + absent }
@@ -144,7 +148,8 @@ public struct VidurMeetingFacts: Sendable, Equatable {
             attendanceRecorded: meeting.absentParticipantIDs != nil,
             agenda: agenda, summary: meeting.summary?.executiveSummary ?? "",
             discussion: meeting.summary?.discussionLines ?? [],
-            decisions: decisions, openIssues: issues, tasks: tasks)
+            decisions: decisions, openIssues: issues, tasks: tasks,
+            seriesName: meeting.seriesName)
     }
 
     /// Strips list markers such as "- ", a bullet, "1." or "2)" but keeps text like "2026 budget".

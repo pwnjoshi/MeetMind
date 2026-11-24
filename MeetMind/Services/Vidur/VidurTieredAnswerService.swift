@@ -4,7 +4,7 @@ import OfflineEngineKit
 public enum VidurAnswerStage: Sendable, Equatable {
     /// A usable answer that may still be replaced.
     case instant
-    /// The deep answer is being generated. `answer` holds a reliable quick answer when there is one.
+    /// The deep answer is being written. `answer` holds the quick answer or the words written so far.
     case refining
     case final
 }
@@ -15,7 +15,7 @@ public enum VidurAnswerTier: Sendable, Equatable {
     case structured
     /// Tier 1: exact transcript quotes ranked by BM25.
     case quote
-    /// Tier 2: written by an on-device model from the minutes, transcript and notes.
+    /// Tier 2: written by an on-device model from the retrieved minutes and transcript passages.
     case generated
 }
 
@@ -35,7 +35,7 @@ public struct VidurTieredRequest: Sendable {
     public let allowRefinement: Bool
     /// Minutes of other meetings in scope. They feed deep answers but not the instant structured tier.
     public let additionalFacts: [VidurMeetingFacts]
-    /// Up to the last two question and answer pairs, so follow-ups such as "aur Neha ne?" work.
+    /// Up to the last four question and answer pairs, so follow-ups such as "aur Neha ne?" work.
     public let history: [VidurChatTurn]
     /// True when the user turned off deep answers in Settings.
     public let userDisabledRefinement: Bool
@@ -65,22 +65,46 @@ public struct VidurRefineInput: Sendable {
     public let facts: [VidurMeetingFacts]
     public let history: [VidurChatTurn]
     public let length: VidurAnswerLength
+    public let selfNames: [String]
+    /// Receives the reply as the model writes it. Nil when nobody is watching.
+    public let onPartial: (@Sendable (String) -> Void)?
+}
+
+/// Everything the "say it naturally" step needs. The verified text comes from the saved minutes.
+public struct VidurRephraseInput: Sendable {
+    public let question: String
+    public let sources: [VidurSourceMeeting]
+    public let facts: [VidurMeetingFacts]
+    public let history: [VidurChatTurn]
+    public let selfNames: [String]
+    public let verifiedText: String
+    public let onPartial: (@Sendable (String) -> Void)?
 }
 
 /// Seams for the model-backed tier so tests run without a model.
 public struct VidurTieredHooks: Sendable {
-    public static let defaultRefineTimeout: TimeInterval = 8
+    /// Writing a cited answer takes a model load (first question only), about three seconds of prefill and
+    /// up to 160 tokens of output, so the deadline is generous. Words stream to the screen meanwhile.
+    public static let defaultRefineTimeout: TimeInterval = 20
 
     public var refinementAvailable: @Sendable () async -> Bool
+    /// True when the model is loaded and the device is cool, so a quick answer can be reworded in a few seconds.
+    public var rephraseAvailable: @Sendable () async -> Bool
+    /// Says the verified quick answer naturally. Returns nil when the model could not do it faithfully.
+    public var rephrase: @Sendable (_ input: VidurRephraseInput) async throws -> String?
     public var refine: @Sendable (_ input: VidurRefineInput) async throws -> VidurAnswer
     /// Seconds before the deep answer is abandoned and the quick answer is kept.
     public var refineTimeout: TimeInterval
 
     public init(refinementAvailable: @escaping @Sendable () async -> Bool,
                 refineTimeout: TimeInterval = VidurTieredHooks.defaultRefineTimeout,
+                rephraseAvailable: @escaping @Sendable () async -> Bool = { false },
+                rephrase: @escaping @Sendable (VidurRephraseInput) async throws -> String? = { _ in nil },
                 refine: @escaping @Sendable (VidurRefineInput) async throws -> VidurAnswer) {
         self.refinementAvailable = refinementAvailable
         self.refineTimeout = refineTimeout
+        self.rephraseAvailable = rephraseAvailable
+        self.rephrase = rephrase
         self.refine = refine
     }
 
@@ -89,9 +113,32 @@ public struct VidurTieredHooks: Sendable {
             if AppleIntelligenceAnswerer.isAvailable { return true }
             return await VidurAnswerService.isModelInstalled()
         },
+        rephraseAvailable: {
+            await VidurTieredAnswerService.rephraseIsFast()
+        },
+        rephrase: { input in
+            try await VidurTieredAnswerService.liveRephrase(input)
+        },
         refine: { input in
             try await VidurTieredAnswerService.liveRefine(input)
         })
+}
+
+/// Lets a growing reply reach the screen word by word instead of character by character.
+final class VidurStreamGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last = ""
+
+    func shouldEmit(_ text: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !text.isEmpty, text != last else { return false }
+        let tail = text.last ?? " "
+        let boundary = tail == " " || ".,;:!?\u{0964}".contains(tail)
+        guard boundary || text.count - last.count >= 8 else { return false }
+        last = text
+        return true
+    }
 }
 
 public enum VidurTieredAnswerService {
@@ -121,7 +168,7 @@ public enum VidurTieredAnswerService {
     }
 
     public static func run(_ request: VidurTieredRequest, hooks: VidurTieredHooks = .live,
-                           emit: @Sendable (VidurAnswerUpdate) -> Void) async {
+                           emit: @escaping @Sendable (VidurAnswerUpdate) -> Void) async {
         let question = request.question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else {
             emit(.init(stage: .final, tier: .none, answer: VidurAnswer(text: "Ask a question first.", kind: .failed)))
@@ -150,9 +197,26 @@ public enum VidurTieredAnswerService {
         let quickTier: VidurAnswerTier = !found ? .none : (quick.intent == .topic ? .quote : .structured)
         guard !Task.isCancelled else { return }
 
-        // A model only helps when the saved data found nothing, or the question asks "why" or "how".
+        // The model writes the answer when the saved data found nothing, when the question asks "why" or
+        // "how", or when it is open ended ("what were the main concerns?"). Facts the minutes state
+        // outright stay as they are, or are reworded naturally when the model is already warm.
+        let openEnded = VidurRagRouting.isOpenEnded(question)
         let needsDeepAnswer = quick.confidence == .notFound || (quick.confidence == .partial && quick.wantsReasoning)
+            || openEnded
         guard needsDeepAnswer else {
+            if found, request.allowRefinement, VidurRagRouting.canRephrase(quick.text), await hooks.rephraseAvailable() {
+                emit(.init(stage: .refining, tier: quickTier, answer: quickAnswer))
+                let natural = await rephrased(quickAnswer: quickAnswer, question: question, request: request,
+                                              facts: allFacts, hooks: hooks, emit: emit)
+                guard !Task.isCancelled else { return }
+                if let natural {
+                    let answer = VidurAnswer(text: natural, citations: quickAnswer.citations, kind: .generated,
+                                             notice: nil, people: quickAnswer.people,
+                                             relatedTasks: quickAnswer.relatedTasks, suggestions: quickAnswer.suggestions)
+                    emit(.init(stage: .final, tier: .generated, answer: answer))
+                    return
+                }
+            }
             emit(.init(stage: .final, tier: quickTier, answer: quickAnswer))
             return
         }
@@ -172,10 +236,17 @@ public enum VidurTieredAnswerService {
         }
         guard !Task.isCancelled else { return }
 
-        // Tier 2: the model reads the best minutes and transcript lines. The quick answer stays on screen.
-        emit(.init(stage: .refining, tier: quickTier, answer: found ? quickAnswer : nil))
-        let input = VidurRefineInput(question: question, sources: request.sources, facts: allFacts,
-                                     history: request.history, length: request.length)
+        // Tier 2: the model reads the best minutes and transcript passages. A reliable quick answer stays on
+        // screen while it works; an open ended question shows the search animation instead.
+        emit(.init(stage: .refining, tier: quickTier, answer: (found && !openEnded) ? quickAnswer : nil))
+        let gate = VidurStreamGate()
+        let input = VidurRefineInput(
+            question: question, sources: request.sources, facts: allFacts, history: request.history,
+            length: request.length, selfNames: request.selfNames,
+            onPartial: { partial in
+                guard gate.shouldEmit(partial) else { return }
+                emit(.init(stage: .refining, tier: .generated, answer: VidurAnswer(text: partial, kind: .generated)))
+            })
         do {
             let refined = try await VidurDeadline.run(seconds: hooks.refineTimeout) { try await hooks.refine(input) }
             guard !Task.isCancelled else { return }
@@ -195,7 +266,39 @@ public enum VidurTieredAnswerService {
         }
     }
 
+    /// Asks the model to say the verified quick answer naturally. Nil keeps the saved wording.
+    private static func rephrased(quickAnswer: VidurAnswer, question: String, request: VidurTieredRequest,
+                                  facts: [VidurMeetingFacts], hooks: VidurTieredHooks,
+                                  emit: @escaping @Sendable (VidurAnswerUpdate) -> Void) async -> String? {
+        let gate = VidurStreamGate()
+        let input = VidurRephraseInput(
+            question: question, sources: request.sources, facts: facts, history: request.history,
+            selfNames: request.selfNames, verifiedText: quickAnswer.text,
+            onPartial: { partial in
+                guard gate.shouldEmit(partial) else { return }
+                emit(.init(stage: .refining, tier: .generated,
+                           answer: VidurAnswer(text: partial, citations: quickAnswer.citations, kind: .generated,
+                                               people: quickAnswer.people, relatedTasks: quickAnswer.relatedTasks)))
+            })
+        do {
+            let seconds = min(hooks.refineTimeout, 12)
+            return try await VidurDeadline.run(seconds: seconds) { try await hooks.rephrase(input) }
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: Live Tier 2
+
+    /// A reworded answer is only worth it when the model is already loaded and the iPhone is cool and not in
+    /// Low Power Mode. Then it takes about five seconds. Otherwise the saved wording is shown at once.
+    static func rephraseIsFast() async -> Bool {
+        guard VidurDeepAnswerSetting.isEnabled, !AppleIntelligenceAnswerer.isAvailable else { return false }
+        let info = ProcessInfo.processInfo
+        guard !info.isLowPowerModeEnabled,
+              info.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue else { return false }
+        return await VidurAnswerEngine.shared.isWarm
+    }
 
     static func maximumTokens(for length: VidurAnswerLength) -> Int {
         switch length {
@@ -221,16 +324,26 @@ public enum VidurTieredAnswerService {
         return VidurAnswerLanguage.detect(previous.question)
     }
 
+    /// The saved meetings as one search index, rebuilt only when their content changes, and the best
+    /// chunks and facts for this question.
+    static func ragRetrieval(question: String, sources: [VidurSourceMeeting], facts: [VidurMeetingFacts],
+                             history: [VidurChatTurn], selfNames: [String], limit: Int) -> VidurRagRetrieval {
+        let records = VidurRecordAdapter.records(facts: facts, sources: sources)
+        let index = VidurRagIndexCache.index(for: records)
+        return VidurRagRetriever.retrieve(
+            VidurRagQuery(question: question, history: history, selfNames: selfNames, limit: limit), index: index)
+    }
+
     static func liveRefine(_ input: VidurRefineInput) async throws -> VidurAnswer {
-        let corpus = VidurSnippetBuilder.corpus(sources: input.sources, facts: input.facts)
-        let names = input.facts.flatMap { $0.participantNames + $0.tasks.compactMap(\.owner) }
-        let selected = VidurGroundedRetriever.select(question: input.question, history: input.history,
-                                                     corpus: corpus, names: names)
         let language = answerLanguage(question: input.question, history: input.history)
-        guard !selected.isEmpty else {
-            return VidurAnswer(text: VidurGroundedPrompt.notDiscussed(for: language), kind: .notFound)
-        }
         if AppleIntelligenceAnswerer.isAvailable {
+            let corpus = VidurSnippetBuilder.corpus(sources: input.sources, facts: input.facts)
+            let names = input.facts.flatMap { $0.participantNames + $0.tasks.compactMap(\.owner) }
+            let selected = VidurGroundedRetriever.select(question: input.question, history: input.history,
+                                                         corpus: corpus, names: names)
+            guard !selected.isEmpty else {
+                return VidurAnswer(text: VidurGroundedPrompt.notDiscussed(for: language), kind: .notFound)
+            }
             do {
                 return try await appleRefine(question: input.question, selected: selected, language: language)
             } catch is CancellationError {
@@ -243,14 +356,61 @@ public enum VidurTieredAnswerService {
         guard await VidurAnswerService.isModelInstalled() else {
             throw OfflineError.unavailable("Vidur's local model is not downloaded. " + VidurAnswerService.unavailableHint)
         }
-        let request = VidurGroundedRequest(
-            question: input.question,
-            snippets: selected.map { VidurSnippet(text: $0.text, isPinned: $0.isPinned) },
-            history: Array(input.history.suffix(VidurGroundedPrompt.maximumHistoryTurns)),
-            language: language, maxTokens: maximumTokens(for: input.length),
-            maxSentences: maximumSentences(for: input.length))
-        let result = try await VidurAnswerEngine.shared.answerGrounded(request, model: VidurModel.selected)
-        return try VidurGroundedAnswerBuilder.build(result: result, snippets: selected, question: input.question)
+        return try await ragRefine(input, language: language)
+    }
+
+    /// Retrieval augmented answer: index, hybrid retrieval, a fitted prompt, streamed generation, and sources
+    /// taken from the blocks the model cited.
+    static func ragRefine(_ input: VidurRefineInput, language: VidurAnswerLanguage) async throws -> VidurAnswer {
+        let retrieval = ragRetrieval(question: input.question, sources: input.sources, facts: input.facts,
+                                     history: input.history, selfNames: input.selfNames,
+                                     limit: VidurRagRetriever.defaultLimit)
+        guard !retrieval.isEmpty else {
+            return VidurAnswer(text: VidurGroundedPrompt.notDiscussed(for: language), kind: .notFound)
+        }
+        let promptInput = VidurRagPromptInput(
+            question: input.question, history: input.history, userName: input.selfNames.first ?? "", now: Date(),
+            retrieval: retrieval, language: language)
+        let result = try await VidurAnswerEngine.shared.answerRag(
+            VidurRagRequest(input: promptInput), model: VidurModel.selected) { partial in
+                input.onPartial?(partial)
+            }
+        guard result.found else { return VidurAnswer(text: result.answer, kind: .notFound) }
+        let sources = VidurRagCitations.sources(for: result)
+        let citations = sources.items.map { source in
+            VidurCitation(meetingID: source.meetingID, meetingTitle: source.meetingTitle,
+                          timestamp: source.timestamp ?? 0, quote: source.quote, speaker: source.speaker,
+                          sourceLabel: source.label, hasTimestamp: source.timestamp != nil)
+        }
+        guard !citations.isEmpty else { throw VidurGroundingError.uncited }
+        var notices: [String] = []
+        if sources.inferred { notices.append("Sources are the closest matches to this answer.") }
+        if !VidurRagGuard.isFaithful(answer: result.answer, evidence: [result.prompt.user] + input.selfNames) {
+            notices.append("Check the sources: a detail may not match your meetings.")
+        }
+        return VidurAnswer(text: result.answer, citations: citations, kind: .generated,
+                           notice: notices.isEmpty ? nil : notices.joined(separator: " "))
+    }
+
+    /// Says a verified quick answer naturally. Returns nil unless the reworded text keeps every fact.
+    static func liveRephrase(_ input: VidurRephraseInput) async throws -> String? {
+        guard await VidurAnswerService.isModelInstalled() else { return nil }
+        let retrieval = ragRetrieval(question: input.question, sources: input.sources, facts: input.facts,
+                                     history: input.history, selfNames: input.selfNames, limit: 3)
+        guard !retrieval.isEmpty else { return nil }
+        let language = answerLanguage(question: input.question, history: input.history)
+        let promptInput = VidurRagPromptInput(
+            question: input.question, history: input.history, userName: input.selfNames.first ?? "", now: Date(),
+            retrieval: retrieval, language: language, verifiedAnswer: input.verifiedText)
+        let result = try await VidurAnswerEngine.shared.answerRag(
+            VidurRagRequest(input: promptInput), model: VidurModel.selected) { partial in
+                input.onPartial?(partial)
+            }
+        guard result.found, !result.truncated else { return nil }
+        let evidence = [result.prompt.user] + input.selfNames
+        guard VidurRagGuard.isFaithful(answer: result.answer, evidence: evidence),
+              VidurRagGuard.keepsFacts(answer: result.answer, verified: input.verifiedText) else { return nil }
+        return result.answer
     }
 
     private static func appleRefine(question: String, selected: [VidurContextSnippet],

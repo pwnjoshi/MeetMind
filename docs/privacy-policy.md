@@ -46,8 +46,8 @@ Manent asks for these only when needed. You can change them any time in iOS Sett
 
 | Permission | Used for | Required |
 |---|---|---|
-| Microphone | Recording meetings, and listening for "Hey Vidur" if you turn that on | Yes, to record |
-| Speech Recognition | On-device live captions and "Hey Vidur" | Optional |
+| Microphone | Recording meetings | Yes, to record |
+| Speech Recognition | On-device live captions while you record | Optional |
 | Calendars (full access) | Showing upcoming meetings, adding follow-up events you ask for | Optional |
 | Reminders (full access) | Exporting action items you choose and syncing their completed state | Optional |
 | Camera | Photographing a whiteboard or slide to attach to a meeting | Optional |

@@ -115,7 +115,7 @@ public enum VidurSmallTalk {
                 + "Just say it in English or Hinglish. I\u{2019}ll show you what I understood and confirm before I change anything."
             return VidurSmallTalkReply(intent: intent, text: text, suggestions: capabilityChips(context, now: now, calendar: calendar))
         case .goodbye:
-            let text = hinglish ? "Phir milte hain! Zaroorat ho to bulaiye." : pick(["Bye! I\u{2019}m here whenever you need me.", "See you soon.", "Take care. Just say Hey Vidur if you need me."])
+            let text = hinglish ? "Phir milte hain! Zaroorat ho to bulaiye." : pick(["Bye! I\u{2019}m here whenever you need me.", "See you soon.", "Take care. I\u{2019}m here when you need me."])
             return VidurSmallTalkReply(intent: intent, text: text, suggestions: [])
         case .acknowledge:
             let text = pick(["Okay. Ask me whenever you\u{2019}re ready.", "Sure. What would you like to look at next?", "Got it."])

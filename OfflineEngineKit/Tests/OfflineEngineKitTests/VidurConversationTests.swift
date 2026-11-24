@@ -105,21 +105,6 @@ final class VidurConversationTests: XCTestCase {
         XCTAssertFalse(list.isEmpty)
     }
 
-    func testSpokenTextStripsFormatting() {
-        let spoken = VidurSpokenText.make(from: "**Decisions**\n\u{2022} Launch on 20 Nov\n\u{2022} Budget approved (12:30)")
-        XCTAssertFalse(spoken.contains("\u{2022}"), spoken)
-        XCTAssertFalse(spoken.contains("**"), spoken)
-        XCTAssertFalse(spoken.contains("12:30"), spoken)
-        XCTAssertTrue(spoken.contains("Launch on 20 Nov"), spoken)
-    }
-
-    func testSpokenTextIsShortened() {
-        let long = (1...40).map { "This is sentence number \($0)." }.joined(separator: " ")
-        let spoken = VidurSpokenText.make(from: long, maxCharacters: 100)
-        XCTAssertTrue(spoken.hasSuffix("The rest is on screen."), spoken)
-        XCTAssertLessThan(spoken.count, 140)
-    }
-
     func testConfirmationUnderstandsYesAndNo() {
         XCTAssertEqual(VidurConfirmation.answer(to: "Yes"), true)
         XCTAssertEqual(VidurConfirmation.answer(to: "yes, schedule it"), true)

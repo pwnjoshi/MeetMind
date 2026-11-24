@@ -352,8 +352,8 @@ final class LocalLanguageModel {
     }
 
     /// Prefill and constrained greedy decoding. Returns `completed == false` when `maxTokens` ran out.
-    private func runConstrained(prompt: String, grammarResource: String,
-                                maxTokens: Int) throws -> (text: Data, completed: Bool) {
+    private func runConstrained(prompt: String, grammarResource: String, maxTokens: Int,
+                                onText: ((String) -> Void)? = nil) throws -> (text: Data, completed: Bool) {
         var tokens = [llama_token](repeating: 0, count: prompt.utf8.count + 16)
         let count = llama_tokenize(vocab, prompt, Int32(prompt.utf8.count), &tokens, Int32(tokens.count), false, true)
         guard count > 0, count <= configuration.inputTokens,
@@ -404,6 +404,7 @@ final class LocalLanguageModel {
             let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
             guard length >= 0 else { throw OfflineError.unavailable("Model token exceeded its output buffer.") }
             output.append(contentsOf: bytes.prefix(Int(length)).map { UInt8(bitPattern: $0) })
+            if let onText { onText(String(decoding: output, as: UTF8.self)) }
             try decode([token], offset: tokens.count + index)
         }
         return (output, false)
@@ -462,3 +463,32 @@ final class LocalLanguageModel {
 }
 
 extension LocalLanguageModel: VidurGroundedSession {}
+
+// MARK: Retrieval answers (Vidur)
+
+extension LocalLanguageModel: VidurRagSession {
+    func promptTokenCount(_ prompt: String) throws -> Int {
+        let required = llama_tokenize(vocab, prompt, Int32(prompt.utf8.count), nil, 0, false, true)
+        let count = abs(Int(required))
+        guard count > 0 else { throw OfflineError.unavailable("Unable to tokenize the question safely.") }
+        return count
+    }
+
+    /// Prefill and grammar constrained decoding of a finished Vidur prompt. `onText` receives the whole
+    /// output so far after every token, so the caller can show the answer as it is written.
+    func generateRag(prompt: String, maxTokens: Int, onText: ((String) -> Void)?) throws -> VidurModelAnswer {
+        let generated = try runConstrained(prompt: prompt, grammarResource: "answer",
+                                           maxTokens: min(max(maxTokens, 32), Int(configuration.contextTokens) / 4),
+                                           onText: onText)
+        if generated.completed {
+            guard let parsed = VidurGroundedParser.parse(generated.text) else {
+                throw OfflineError.unavailable("Vidur\u{2019}s answer was not valid. No cloud fallback was used.")
+            }
+            return parsed
+        }
+        guard let salvaged = VidurGroundedParser.salvage(String(decoding: generated.text, as: UTF8.self)) else {
+            throw OfflineError.unavailable("Vidur\u{2019}s answer reached its length limit. Try a narrower question.")
+        }
+        return salvaged
+    }
+}

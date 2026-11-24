@@ -29,9 +29,9 @@
     
     <!-- Privacy Descriptions -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>Manent records meeting audio with the microphone, including while the screen is locked, and uses it for Hey Vidur if you turn that on. Audio is saved and processed only on this iPhone.</string>
+    <string>Manent records meeting audio with the microphone, including while the screen is locked. Audio is saved and processed only on this iPhone.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Manent uses Apple speech recognition on this iPhone to show live captions while you record and to listen for Hey Vidur if you turn that on. Speech is not sent to a server.</string>
+    <string>Manent uses Apple speech recognition on this iPhone to show live captions while you record. Speech is not sent to a server.</string>
     <key>NSCalendarsUsageDescription</key>
     <string>Manent reads your calendar to show upcoming meetings you can record, and adds events to it only when you ask it to schedule a follow-up.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>

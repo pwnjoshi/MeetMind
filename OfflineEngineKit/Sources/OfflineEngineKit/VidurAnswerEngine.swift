@@ -387,6 +387,53 @@ public actor VidurAnswerEngine {
         }
     }
 
+    /// Writes Vidur's answer from retrieved context blocks and streams the reply text as it is written.
+    ///
+    /// The prompt is fitted to `VidurRagPromptBuilder.tokenBudget` with the model's own tokenizer. `onPartial`
+    /// receives the reply so far (decoded, without block markers) after every token. The model's citations are
+    /// validated against the blocks it was shown.
+    public func answerRag(_ request: VidurRagRequest, model: VidurModel = VidurModel.selected,
+                          onPartial: @escaping @Sendable (String) -> Void) async throws -> VidurRagModelResult {
+        let question = request.input.question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, question.utf8.count <= Self.maximumQuestionBytes,
+              !request.input.retrieval.hits.isEmpty else {
+            throw OfflineError.unavailable("Ask a short question after a transcript is available.")
+        }
+        try ensureNotProcessing()
+        await acquire()
+        defer { release() }
+        try Task.checkCancellation()
+        try ensureNotProcessing()
+        guard resourceGate() else {
+            throw OfflineError.unavailable("iPhone is too warm or in Low Power Mode. Vidur is using quick matches only.")
+        }
+        let (session, warm) = try await loadedSession(for: model)
+        idleTask?.cancel()
+        guard let rag = session as? VidurRagSession else {
+            throw OfflineError.unavailable("The loaded model cannot write answers.")
+        }
+        do {
+            let prompt = VidurRagPromptBuilder.build(request.input) { text in
+                (try? rag.promptTokenCount(text)) ?? VidurRagPromptBuilder.estimateTokens(text)
+            }
+            let maxTokens = min(max(request.maxTokens, 48), VidurRagPromptBuilder.maximumOutputTokens)
+            let output = try rag.generateRag(prompt: prompt.text, maxTokens: maxTokens, onText: { text in
+                onPartial(VidurRagAnswerParser.clean(VidurRagAnswerParser.partialAnswer(from: text), streaming: true))
+            })
+            lastUsed = clock()
+            scheduleIdleEviction()
+            let cleaned = VidurRagAnswerParser.clean(output.answer)
+            let found = output.found && !cleaned.isEmpty
+            let cited = found ? VidurRagAnswerParser.citedBlocks(output.citationLabels, blockCount: prompt.blocks.count) : []
+            let text = cleaned.isEmpty ? VidurGroundedPrompt.notDiscussed(for: prompt.language) : cleaned
+            return VidurRagModelResult(answer: text, found: found, citedBlocks: cited, prompt: prompt,
+                                       usedWarmSession: warm, truncated: output.truncated)
+        } catch {
+            if case OfflineError.memoryBudget = error { evict() }
+            else { scheduleIdleEviction() }
+            throw error
+        }
+    }
     /// Loads the model ahead of the first question. Best effort: returns false when it did not load.
     @discardableResult
     public func prewarm(model: VidurModel = VidurModel.selected) async -> Bool {

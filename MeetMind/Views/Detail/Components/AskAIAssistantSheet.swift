@@ -39,7 +39,8 @@ private struct VidurConversationItem: Identifiable {
 
 /// Vidur: the on-device meeting assistant. It chats, answers from saved meetings, runs commands
 /// (schedule, add or finish an action, open a meeting, start a recording, star a meeting) after
-/// asking for confirmation, and can listen and talk. Everything runs on this iPhone.
+/// asking for confirmation. Answers are retrieval based: Vidur finds the matching minutes and transcript
+/// passages first, then writes the reply from them. Everything runs on this iPhone.
 ///
 /// Without `meeting` the sheet behaves as before and forwards questions to `onAsk`.
 public struct AskAIAssistantSheet: View {
@@ -61,12 +62,7 @@ public struct AskAIAssistantSheet: View {
     @State private var isLocalBusy = false
     @State private var answerTask: Task<Void, Never>?
     @State private var assistant = VidurAssistantContext()
-    @State private var dictation = VidurDictation()
-    @State private var voiceMode = false
-    @State private var askedByVoice = false
-    @State private var isSpeaking = false
     @State private var showsSettings = false
-    @AppStorage(VidurVoiceSettings.voiceRepliesKey) private var voiceReplies = false
     @Environment(SettingsViewModel.self) private var settings: SettingsViewModel?
     @Environment(AppState.self) private var appState: AppState?
     @Environment(NavigationRouter.self) private var router: NavigationRouter?
@@ -148,7 +144,6 @@ public struct AskAIAssistantSheet: View {
                     withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(newID, anchor: .bottom) }
                 }
             }
-            voiceStatus
             inputBar
         }
         .background(Color(uiColor: .systemGroupedBackground))
@@ -179,9 +174,6 @@ public struct AskAIAssistantSheet: View {
                             }
                         }
                     }
-                    Toggle(isOn: $voiceReplies) {
-                        Label("Voice replies", systemImage: "speaker.wave.2")
-                    }
                     Button(role: .destructive) { clearConversation() } label: {
                         Label("Clear conversation", systemImage: "trash")
                     }
@@ -205,29 +197,21 @@ public struct AskAIAssistantSheet: View {
             }
         }
         .onAppear {
-            VidurVoiceCoordinator.shared.isSheetOpen = true
             scope = VidurPreferences.shared.searchScope
             loadPersistedHistory()
             refreshAssistant()
             startPrewarm()
-            if let wake = VidurVoiceCoordinator.shared.consumeWake() { handleWake(wake) }
         }
         .onChange(of: scope) { _, newScope in
             if persistScope { VidurPreferences.shared.searchScope = newScope }
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .background else { return }
-            stopVoice()
             onDismiss()
-        }
-        .onChange(of: appState?.isRecordingActive) { _, recording in
-            if recording == true { stopVoice() }
         }
         .onChange(of: busy) { _, isBusyNow in UIApplication.shared.isIdleTimerDisabled = isBusyNow }
         .onDisappear {
             answerTask?.cancel()
-            stopVoice()
-            VidurVoiceCoordinator.shared.isSheetOpen = false
             UIApplication.shared.isIdleTimerDisabled = false
         }
     }
@@ -241,14 +225,12 @@ public struct AskAIAssistantSheet: View {
 
     @MainActor
     private func closeSheet() {
-        stopVoice()
         onDismiss()
     }
 
     @MainActor
     private func clearConversation() {
         answerTask?.cancel()
-        stopVoice()
         localItems.removeAll()
         isLocalBusy = false
         if let meeting { try? VidurPreferences.shared.remove(meetingID: meeting.id) }
@@ -340,7 +322,7 @@ public struct AskAIAssistantSheet: View {
                 submit(question)
             }
             .disabled(busy)
-            Text("Vidur runs on this iPhone and uses a small on-device model. It relies on your saved minutes and transcripts, and tells you when it can\u{2019}t find something. Audio never leaves your phone.")
+            Text("Vidur runs on this iPhone and uses a small on-device model. It relies on your saved minutes and transcripts, and tells you when it can\u{2019}t find something. Your meetings never leave your phone.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -371,10 +353,7 @@ public struct AskAIAssistantSheet: View {
                     result: item.result,
                     onConfirm: { confirmPending(item.id) },
                     onCancel: { cancelPending(item.id) },
-                    onOpenMeeting: { id in
-                        stopVoice()
-                        onOpenMeeting(id)
-                    })
+                    onOpenMeeting: { id in onOpenMeeting(id) })
             }
         } else {
             answerRow(item)
@@ -392,7 +371,8 @@ public struct AskAIAssistantSheet: View {
             notice: item.notice,
             isQuick: item.tier == .structured || item.tier == .quote,
             isRefining: item.phase == .refining,
-            currentMeetingID: meeting?.id)
+            currentMeetingID: meeting?.id,
+            isWriting: item.phase == .refining && item.tier == .generated)
         return VidurConversationRow(
             prompt: item.prompt,
             model: model,
@@ -440,7 +420,6 @@ public struct AskAIAssistantSheet: View {
     // MARK: Input
 
     private var inputPlaceholder: String {
-        if dictation.isListening { return "Listening\u{2026}" }
         if !items.isEmpty { return "Ask a follow-up, or tell me what to do" }
         switch scope {
         case .allMeetings where meeting != nil: return "Ask about your meetings"
@@ -448,44 +427,20 @@ public struct AskAIAssistantSheet: View {
         }
     }
 
-    @MainActor @ViewBuilder
-    private var voiceStatus: some View {
-        if isRecordingActive {
-            Label(VidurVoiceSettings.recordingPausedMessage, systemImage: "mic.slash")
-                .font(.footnote).foregroundStyle(.secondary)
-                .padding(.horizontal, Spacing.lg)
-        } else if let message = dictation.errorMessage {
-            Label(message, systemImage: "exclamationmark.circle")
-                .font(.footnote).foregroundStyle(.secondary)
-                .padding(.horizontal, Spacing.lg)
-        }
-    }
-
     @MainActor
     private var inputBar: some View {
-        let text: Binding<String> = dictation.isListening ? Binding.constant(dictation.partialText) : $queryText
-        return HStack(spacing: Spacing.sm) {
+        HStack(spacing: Spacing.sm) {
             Image(systemName: "sparkle")
                 .foregroundStyle(Theme.Colors.manentAccent)
                 .accessibilityHidden(true)
-            TextField(inputPlaceholder, text: text)
+            TextField(inputPlaceholder, text: $queryText)
                 .textFieldStyle(.plain)
                 .submitLabel(.send)
                 .onSubmit { sendTyped() }
-                .disabled(dictation.isListening)
-            if isSpeaking {
-                Button { stopSpeaking() } label: {
-                    Image(systemName: "speaker.slash.fill").font(.system(size: 18))
-                        .foregroundStyle(Theme.Colors.manentAccent)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Stop speaking")
-            }
-            VidurMicButton(isListening: dictation.isListening, isDisabled: isRecordingActive) { toggleVoice() }
             Button { sendTyped() } label: {
                 Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.Colors.manentAccent)
             }
-            .disabled(isBusy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || dictation.isListening)
+            .disabled(isBusy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel("Ask Vidur")
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -501,84 +456,14 @@ public struct AskAIAssistantSheet: View {
         submit(trimmed)
     }
 
-    // MARK: Voice
-
-    @MainActor
-    private func toggleVoice() {
-        if isRecordingActive { return }
-        if dictation.isListening {
-            voiceMode = false
-            dictation.cancel()
-            return
-        }
-        stopSpeaking()
-        voiceMode = true
-        startListening()
-    }
-
-    @MainActor
-    private func startListening() {
-        guard !isRecordingActive, !dictation.isListening else { return }
-        Task { @MainActor in
-            await dictation.start { heard in
-                if heard.isEmpty {
-                    voiceMode = false
-                } else {
-                    submit(heard, byVoice: true)
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private func stopSpeaking() {
-        VidurSpeaker.shared.stop()
-        isSpeaking = false
-    }
-
-    @MainActor
-    private func stopVoice() {
-        voiceMode = false
-        dictation.cancel()
-        stopSpeaking()
-    }
-
-    @MainActor
-    private func handleWake(_ wake: VidurWakeRequest) {
-        persistScope = false
-        scope = .allMeetings
-        voiceMode = true
-        if wake.text.isEmpty {
-            startListening()
-        } else {
-            submit(wake.text, byVoice: true)
-        }
-    }
-
-    /// Speaks a reply when the user asked by voice or turned on Voice replies. Never while recording.
-    @MainActor
-    private func speakReply(_ text: String) {
-        guard !isRecordingActive, voiceReplies || askedByVoice else { return }
-        let spoken = VidurSpokenText.make(from: text)
-        guard !spoken.isEmpty else { return }
-        isSpeaking = true
-        VidurSpeaker.shared.speak(spoken) {
-            isSpeaking = false
-            if voiceMode { startListening() }
-        }
-    }
-
     // MARK: Routing
 
     /// Everything the user says or taps goes through here: chat, commands, then questions.
     @MainActor
-    private func submit(_ text: String, byVoice: Bool = false) {
+    private func submit(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        stopSpeaking()
-        if dictation.isListening { dictation.cancel() }
         guard meeting != nil else { send(trimmed); return }
-        askedByVoice = byVoice
 
         if let index = localItems.lastIndex(where: { $0.pending != nil && $0.pendingState == .awaiting }),
            index == localItems.count - 1, let decision = VidurConfirmation.answer(to: trimmed) {
@@ -607,7 +492,6 @@ public struct AskAIAssistantSheet: View {
         item.tier = .structured
         item.suggestions = suggestions
         localItems.append(item)
-        speakReply(text)
     }
 
     // MARK: Commands
@@ -623,33 +507,14 @@ public struct AskAIAssistantSheet: View {
             item.pending = action
             item.pendingIntro = intro
             localItems.append(item)
-            speakReply(spokenPrompt(for: action, intro: intro))
         case .openMeeting(let id, let title):
             appendNote(prompt: prompt, text: "Opening \(title).", suggestions: [])
-            stopVoice()
             onOpenMeeting(id)
         case .openScreen(let screen):
             appendNote(prompt: prompt, text: "Opening \(screen.title).", suggestions: [])
             open(screen)
         case .message(let text):
             appendNote(prompt: prompt, text: text, suggestions: VidurProactive.suggestions(for: assistant, limit: 3))
-        }
-    }
-
-    private func spokenPrompt(for action: VidurPendingAction, intro: String) -> String {
-        switch action.kind {
-        case .schedule(let draft):
-            var sentence = "Schedule \(draft.title) for \(VidurActions.describe(draft.start))"
-            if !draft.people.isEmpty { sentence += " with " + draft.people.joined(separator: " and ") }
-            return sentence + "? Say yes to confirm, or tap Edit."
-        case .addAction(let draft, _, let meetingTitle):
-            return "Add \(draft.title) to \(meetingTitle)? Say yes to confirm."
-        case .completeAction(_, let title, _):
-            return "Mark \(title) as done? Say yes to confirm."
-        case .setImportant(_, let title, let important):
-            return (important ? "Star " : "Remove the star from ") + title + "? Say yes to confirm."
-        case .startRecording:
-            return "Start a quick recording now? Say yes to confirm."
         }
     }
 
@@ -665,7 +530,6 @@ public struct AskAIAssistantSheet: View {
     private func confirmPending(_ id: UUID) {
         guard let index = localItems.firstIndex(where: { $0.id == id }),
               let pending = localItems[index].pending, localItems[index].pendingState == .awaiting else { return }
-        stopSpeaking()
         if case .startRecording = pending.kind, isRecordingActive {
             localItems[index].result = VidurActionResult(
                 message: "A recording is already running, so I didn\u{2019}t start another one.", succeeded: false)
@@ -676,7 +540,6 @@ public struct AskAIAssistantSheet: View {
         localItems[index].result = result
         localItems[index].pendingState = .done
         refreshAssistant()
-        speakReply(result.message)
         if let recordingID = result.recordingMeetingID { openRecorder(recordingID) }
     }
 
@@ -684,14 +547,11 @@ public struct AskAIAssistantSheet: View {
     private func cancelPending(_ id: UUID) {
         guard let index = localItems.firstIndex(where: { $0.id == id }),
               localItems[index].pendingState == .awaiting else { return }
-        stopSpeaking()
         localItems[index].pendingState = .cancelled
-        speakReply("Okay, I\u{2019}ve cancelled that.")
     }
 
     @MainActor
     private func openRecorder(_ meetingID: UUID) {
-        stopVoice()
         appState?.activeTab = .home
         onDismiss()
         router?.navigate(to: .liveRecording(id: meetingID), in: .home)
@@ -699,7 +559,6 @@ public struct AskAIAssistantSheet: View {
 
     @MainActor
     private func open(_ screen: VidurScreen) {
-        stopVoice()
         switch screen {
         case .home: appState?.activeTab = .home
         case .actions: appState?.activeTab = .actionItems
@@ -777,9 +636,6 @@ public struct AskAIAssistantSheet: View {
                 if answer.isRecordable {
                     VidurPreferences.shared.record(VidurHistoryEntry(meetingID: meetingID, question: question, answer: answer.text))
                 }
-                speakReply(answer.text)
-            } else if voiceMode {
-                startListening()
             }
             isLocalBusy = false
         }
@@ -796,14 +652,14 @@ public struct AskAIAssistantSheet: View {
         isLocalBusy = false
     }
 
-    /// The last two finished question and answer pairs, so "aur Neha ne?" follows the previous question.
+    /// The last four finished question and answer pairs, so "aur Neha ne?" follows the previous question.
     @MainActor
     private func conversationHistory() -> [VidurChatTurn] {
         let usable = localItems.filter { item in
             guard item.phase == .done, !item.isNote, item.pending == nil, !item.answerText.isEmpty else { return false }
             return item.kind != .failed && item.kind != .unavailable
         }
-        return usable.suffix(2).map { VidurChatTurn(question: $0.prompt, answer: $0.answerText) }
+        return usable.suffix(4).map { VidurChatTurn(question: $0.prompt, answer: $0.answerText) }
     }
 
     /// Minutes of the other meetings in scope (the 20 most recent), with the current meeting last.

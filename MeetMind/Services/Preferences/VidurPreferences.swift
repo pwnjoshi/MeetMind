@@ -81,6 +81,10 @@ public final class VidurPreferences {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        // Voice mode was removed. Drop its two old switches so no stale setting stays behind.
+        for legacyKey in ["Manent_Vidur_VoiceReplies", "Manent_Vidur_HeyVidur"] {
+            defaults.removeObject(forKey: legacyKey)
+        }
         answerLength = defaults.string(forKey: Key.answerLength).flatMap(VidurAnswerLength.init) ?? .standard
         searchScope = defaults.string(forKey: Key.searchScope).flatMap(VidurSearchScope.init) ?? .thisMeeting
         showsSources = defaults.object(forKey: Key.showSources) as? Bool ?? true

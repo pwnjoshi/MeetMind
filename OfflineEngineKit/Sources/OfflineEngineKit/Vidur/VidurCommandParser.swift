@@ -765,30 +765,10 @@ public enum VidurTitleMatcher {
     }
 }
 
-// MARK: - Wake word
+// MARK: - Typed greeting
 
-/// Finds "Hey Vidur" in a live transcript. Speech recognition often spells the name differently,
-/// so several spellings count.
-public enum VidurWakeWord {
-    public struct Match: Sendable, Equatable {
-        /// What was said after the phrase, which may be empty.
-        public let remainder: String
-    }
-
-    private static let phrase = #"\b(?:hey|hi|hay|hai|ok|okay|hello)\s+vi+d+h?(?:u|oo|a|o|e)+r\b"#
-
-    public static func detect(in transcript: String) -> Match? {
-        let cleaned = VidurRx.replacing(#"[^\p{L}\p{M}\p{N}\s']"#, in: transcript, with: " ")
-        guard let expression = VidurRx.regex(phrase) else { return nil }
-        let ns = cleaned as NSString
-        guard let match = expression.firstMatch(in: cleaned, options: [], range: NSRange(location: 0, length: ns.length)) else {
-            return nil
-        }
-        let after = ns.substring(from: match.range.location + match.range.length)
-        return Match(remainder: VidurRx.tidy(after))
-    }
-
-    /// Removes a leading "hey Vidur" from typed or spoken text.
+public enum VidurAddressPrefix {
+    /// Removes a leading "hey Vidur" from typed text, so "hey vidur what did we decide" is just the question.
     public static func stripLeading(_ text: String) -> String {
         let pattern = #"^\s*(?:(?:hey|hi|hay|hello|ok|okay)\s+)?vi+d+h?(?:u|oo|a|o|e)+r\b[,\s]*"#
         return VidurRx.replacing(pattern, in: text, with: "").trimmingCharacters(in: .whitespacesAndNewlines)

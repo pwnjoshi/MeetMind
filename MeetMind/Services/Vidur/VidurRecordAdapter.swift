@@ -36,7 +36,7 @@ public enum VidurRecordAdapter {
             attendees: facts.attendees, absent: facts.absent, attendanceRecorded: facts.attendanceRecorded,
             agenda: facts.agenda, summary: facts.summary, discussion: facts.discussion,
             decisions: facts.decisions.map(line), openIssues: facts.openIssues.map(line), tasks: tasks,
-            turns: turns(source))
+            turns: turns(source), seriesTitle: facts.seriesName)
     }
 
     static func record(source: VidurSourceMeeting) -> VidurMeetingRecord {

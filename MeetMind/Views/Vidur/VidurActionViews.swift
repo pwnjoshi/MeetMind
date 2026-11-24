@@ -264,24 +264,3 @@ struct VidurActionCard: View {
             })
     }
 }
-
-/// The microphone button next to the composer. Pulses while Vidur is listening.
-struct VidurMicButton: View {
-    let isListening: Bool
-    let isDisabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: isListening ? "stop.circle.fill" : "mic.fill")
-                .font(.system(size: isListening ? 28 : 20))
-                .foregroundStyle(isListening ? Color.red : Theme.Colors.manentAccent)
-                .frame(width: 32, height: 32)
-                .symbolEffect(.pulse, isActive: isListening)
-        }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
-        .accessibilityLabel(isListening ? "Stop listening" : "Talk to Vidur")
-        .accessibilityHint("Speech is recognised on this iPhone and never sent anywhere")
-    }
-}

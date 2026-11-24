@@ -89,7 +89,7 @@ public enum VidurQuickAnswerer {
 
     // MARK: Follow-ups
 
-    private static func isFollowUp(_ parsed: VidurParsedQuestion) -> Bool {
+    static func isFollowUp(_ parsed: VidurParsedQuestion) -> Bool {
         guard parsed.wordCount <= 8 else { return false }
         if parsed.intents == [.topic] {
             return parsed.followUpCue || (!parsed.people.isEmpty && parsed.residual.isEmpty)
@@ -98,7 +98,7 @@ public enum VidurQuickAnswerer {
     }
 
     /// A short follow-up ("and Neha?", "what about pricing?") borrows what it leaves out from the previous question.
-    private static func merge(_ current: VidurParsedQuestion, with previous: VidurParsedQuestion) -> VidurParsedQuestion {
+    static func merge(_ current: VidurParsedQuestion, with previous: VidurParsedQuestion) -> VidurParsedQuestion {
         var result = current
         let currentIsOpen = current.intents == [.topic]
         let carriesTopic: Set<VidurQuickIntent> = [.tasks, .decisions, .openIssues, .topic]

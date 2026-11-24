@@ -87,6 +87,8 @@ struct VidurAnswerCardModel {
     var isQuick: Bool
     var isRefining: Bool
     var currentMeetingID: UUID?
+    /// True while the model is writing the reply, so the words on screen are still growing.
+    var isWriting = false
 
     var meetingCountText: String? {
         let titles = Set(citations.map(\.meetingTitle))
@@ -136,7 +138,7 @@ struct VidurAnswerCard: View {
             if model.isRefining, !model.text.isEmpty {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
-                    Text("Checking the transcript in more depth\u{2026}")
+                    Text(model.isWriting ? "Writing from your meetings\u{2026}" : "Checking the transcript in more depth\u{2026}")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)

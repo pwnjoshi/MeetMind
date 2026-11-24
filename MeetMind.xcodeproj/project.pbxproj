@@ -29,8 +29,6 @@
 		1A00C0AD2CEE000100000001 /* LiveCaptionPlanning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0AE2CEE000100000001 /* LiveCaptionPlanning.swift */; };
 		1A00C0AF2CEE000100000001 /* LiveCaptionStitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B02CEE000100000001 /* LiveCaptionStitcher.swift */; };
 		1A00C0B12CEE000100000001 /* VidurActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B22CEE000100000001 /* VidurActions.swift */; };
-		1A00C0B32CEE000100000001 /* VidurVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B42CEE000100000001 /* VidurVoice.swift */; };
-		1A00C0B52CEE000100000001 /* VidurWakeWordListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B62CEE000100000001 /* VidurWakeWordListener.swift */; };
 		1A00C0B72CEE000100000001 /* LiveCapturesPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B82CEE000100000001 /* LiveCapturesPanel.swift */; };
 		1A00C0B92CEE000100000001 /* LiveRecordingBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0BA2CEE000100000001 /* LiveRecordingBackdrop.swift */; };
 		1A00C0BB2CEE000100000001 /* PrepAgendaEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0BC2CEE000100000001 /* PrepAgendaEditor.swift */; };
@@ -366,8 +364,6 @@
 		1B00C0AE2CEE000100000001 /* LiveCaptionPlanning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionPlanning.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0B02CEE000100000001 /* LiveCaptionStitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Transcription/LiveCaptionStitcher.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0B22CEE000100000001 /* VidurActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurActions.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0B42CEE000100000001 /* VidurVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurVoice.swift"; sourceTree = SOURCE_ROOT; };
-		1B00C0B62CEE000100000001 /* VidurWakeWordListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurWakeWordListener.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0B82CEE000100000001 /* LiveCapturesPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveCapturesPanel.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0BA2CEE000100000001 /* LiveRecordingBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Recording/LiveRecordingBackdrop.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0BC2CEE000100000001 /* PrepAgendaEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Setup/PrepAgendaEditor.swift"; sourceTree = SOURCE_ROOT; };
@@ -724,8 +720,6 @@
 				1B00C0AE2CEE000100000001 /* LiveCaptionPlanning.swift */,
 				1B00C0B02CEE000100000001 /* LiveCaptionStitcher.swift */,
 				1B00C0B22CEE000100000001 /* VidurActions.swift */,
-				1B00C0B42CEE000100000001 /* VidurVoice.swift */,
-				1B00C0B62CEE000100000001 /* VidurWakeWordListener.swift */,
 				1B00C0B82CEE000100000001 /* LiveCapturesPanel.swift */,
 				1B00C0BA2CEE000100000001 /* LiveRecordingBackdrop.swift */,
 				1B00C0BC2CEE000100000001 /* PrepAgendaEditor.swift */,
@@ -1360,8 +1354,6 @@
 				1A00C0AD2CEE000100000001 /* LiveCaptionPlanning.swift in Sources */,
 				1A00C0AF2CEE000100000001 /* LiveCaptionStitcher.swift in Sources */,
 				1A00C0B12CEE000100000001 /* VidurActions.swift in Sources */,
-				1A00C0B32CEE000100000001 /* VidurVoice.swift in Sources */,
-				1A00C0B52CEE000100000001 /* VidurWakeWordListener.swift in Sources */,
 				1A00C0B72CEE000100000001 /* LiveCapturesPanel.swift in Sources */,
 				1A00C0B92CEE000100000001 /* LiveRecordingBackdrop.swift in Sources */,
 				1A00C0BB2CEE000100000001 /* PrepAgendaEditor.swift in Sources */,

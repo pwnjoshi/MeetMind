@@ -73,12 +73,15 @@ public struct VidurMeetingRecord: Sendable, Equatable, Identifiable {
     public let turns: [VidurMeetingTurn]
     /// "Next meeting" text from the minutes, when the user wrote one.
     public let nextMeetingText: String?
+    /// The series this meeting belongs to (for example a weekly sync), when it has one.
+    public let seriesTitle: String?
 
     public init(id: UUID = UUID(), title: String, date: Date, duration: TimeInterval = 0,
                 attendees: [String] = [], absent: [String] = [], attendanceRecorded: Bool = false,
                 agenda: [String] = [], summary: String = "", discussion: [String] = [],
                 decisions: [VidurMeetingLine] = [], openIssues: [VidurMeetingLine] = [],
-                tasks: [VidurMeetingTask] = [], turns: [VidurMeetingTurn] = [], nextMeetingText: String? = nil) {
+                tasks: [VidurMeetingTask] = [], turns: [VidurMeetingTurn] = [], nextMeetingText: String? = nil,
+                seriesTitle: String? = nil) {
         self.id = id
         self.title = title
         self.date = date
@@ -94,6 +97,7 @@ public struct VidurMeetingRecord: Sendable, Equatable, Identifiable {
         self.tasks = tasks
         self.turns = turns
         self.nextMeetingText = nextMeetingText
+        self.seriesTitle = seriesTitle
     }
 
     /// True when there is anything to answer from.

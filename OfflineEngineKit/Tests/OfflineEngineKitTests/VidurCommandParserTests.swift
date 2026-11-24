@@ -139,12 +139,10 @@ final class VidurCommandParserTests: XCTestCase {
         XCTAssertNil(VidurTitleMatcher.best(query: "zebra", in: items, now: now))
     }
 
-    func testWakeWord() {
-        XCTAssertEqual(VidurWakeWord.detect(in: "hey vidur what did we decide")?.remainder, "what did we decide")
-        XCTAssertEqual(VidurWakeWord.detect(in: "Hey, Vidur!")?.remainder, "")
-        XCTAssertEqual(VidurWakeWord.detect(in: "ok vidhur schedule a meeting")?.remainder, "schedule a meeting")
-        XCTAssertNil(VidurWakeWord.detect(in: "hey video"))
-        XCTAssertNil(VidurWakeWord.detect(in: "hello there"))
-        XCTAssertEqual(VidurWakeWord.stripLeading("Hey Vidur, what is overdue"), "what is overdue")
+    func testTypedGreetingPrefixIsStripped() {
+        XCTAssertEqual(VidurAddressPrefix.stripLeading("Hey Vidur, what is overdue"), "what is overdue")
+        XCTAssertEqual(VidurAddressPrefix.stripLeading("ok vidhur schedule a meeting"), "schedule a meeting")
+        XCTAssertEqual(VidurAddressPrefix.stripLeading("what did we decide"), "what did we decide")
+        XCTAssertEqual(VidurAddressPrefix.stripLeading("hey video"), "hey video")
     }
 }

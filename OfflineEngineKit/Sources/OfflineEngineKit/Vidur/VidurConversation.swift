@@ -174,43 +174,8 @@ public enum VidurConversationRouter {
         case .reply(let text): return .reply(text)
         case .none: break
         }
-        let stripped = VidurWakeWord.stripLeading(trimmed)
+        let stripped = VidurAddressPrefix.stripLeading(trimmed)
         return .question(stripped.isEmpty ? trimmed : stripped)
-    }
-}
-
-// MARK: - Spoken text
-
-/// Turns an answer into something that sounds natural when read aloud: no bullets, symbols or
-/// timecodes, and at most a few sentences.
-public enum VidurSpokenText {
-    public static func make(from text: String, maxCharacters: Int = 420) -> String {
-        var spoken = text
-        for symbol in ["**", "__", "`", "#"] { spoken = spoken.replacingOccurrences(of: symbol, with: "") }
-        spoken = VidurRx.replacing(#"(?m)^\s*(?:[\x{2022}\x{25CF}\x{2013}\x{2014}*-]|\d+[.)])\s+"#, in: spoken, with: "")
-        spoken = VidurRx.replacing(#"\(?\b\d{1,2}:\d{2}(?::\d{2})?\b\)?"#, in: spoken, with: " ")
-        spoken = VidurRx.replacing(#"\s*\n+\s*"#, in: spoken, with: ". ")
-        spoken = spoken.replacingOccurrences(of: "\u{2026}", with: ".")
-        spoken = VidurRx.replacing(#"([.!?])(?:\s*\.)+"#, in: spoken, with: "$1")
-        spoken = VidurRx.replacing(#"\s+"#, in: spoken, with: " ")
-        spoken = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard spoken.count > maxCharacters else { return spoken }
-        var kept = ""
-        var sentence = ""
-        for character in spoken {
-            sentence.append(character)
-            if ".!?".contains(character) {
-                if kept.count + sentence.count > maxCharacters { break }
-                kept += sentence
-                sentence = ""
-            }
-        }
-        if kept.isEmpty {
-            kept = String(spoken.prefix(maxCharacters))
-            if let space = kept.lastIndex(of: " ") { kept = String(kept[kept.startIndex..<space]) }
-            kept += "."
-        }
-        return kept.trimmingCharacters(in: .whitespaces) + " The rest is on screen."
     }
 }
 

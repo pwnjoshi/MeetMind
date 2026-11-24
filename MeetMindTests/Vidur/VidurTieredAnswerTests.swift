@@ -251,6 +251,65 @@ final class VidurTieredFlowTests: XCTestCase {
         XCTAssertEqual(received.map(\.stage), [.final])
     }
 
+    private func naturalHooks(counter: CallCounter, warm: Bool = true, reply: String? = "Meera was away. Rahul and Asha were there.") -> VidurTieredHooks {
+        VidurTieredHooks(
+            refinementAvailable: { true },
+            rephraseAvailable: { warm },
+            rephrase: { _ in
+                counter.increment()
+                return reply
+            },
+            refine: { _ in
+                counter.increment()
+                return VidurAnswer(text: "Written by the model.", kind: .generated)
+            })
+    }
+
+    func testFactualAnswerIsSaidNaturallyWhenTheModelIsWarm() async {
+        let counter = CallCounter()
+        let updates = await run("Who attended?", facts: populatedFacts, hooks: naturalHooks(counter: counter))
+        XCTAssertEqual(counter.count, 1)
+        XCTAssertEqual(updates.map(\.stage), [.refining, .final])
+        XCTAssertTrue(updates[0].answer?.text.contains("Present (2)") == true, "The saved wording shows first")
+        XCTAssertEqual(updates[1].tier, .generated)
+        XCTAssertEqual(updates[1].answer?.text, "Meera was away. Rahul and Asha were there.")
+        XCTAssertEqual(updates[1].answer?.kind, .generated)
+    }
+
+    func testSavedWordingIsKeptWhenTheRewriteIsRejected() async {
+        let counter = CallCounter()
+        let updates = await run("Who attended?", facts: populatedFacts, hooks: naturalHooks(counter: counter, reply: nil))
+        XCTAssertEqual(counter.count, 1)
+        XCTAssertEqual(updates.map(\.stage), [.refining, .final])
+        XCTAssertEqual(updates[1].tier, .structured)
+        XCTAssertTrue(updates[1].answer?.text.contains("Present (2)") == true)
+    }
+
+    func testNoRewriteWhenTheModelIsNotWarm() async {
+        let counter = CallCounter()
+        let updates = await run("Who attended?", facts: populatedFacts, hooks: naturalHooks(counter: counter, warm: false))
+        XCTAssertEqual(counter.count, 0)
+        XCTAssertEqual(updates.map(\.stage), [.final])
+        XCTAssertEqual(updates[0].tier, .structured)
+    }
+
+    func testNoRewriteWhenDeepAnswersAreOff() async {
+        let counter = CallCounter()
+        let updates = await run("Who attended?", facts: populatedFacts, userDisabled: true, hooks: naturalHooks(counter: counter))
+        XCTAssertEqual(counter.count, 0)
+        XCTAssertEqual(updates.map(\.stage), [.final])
+    }
+
+    func testOpenEndedQuestionGoesToTheModelEvenWhenTheMinutesHaveSomething() async {
+        let counter = CallCounter()
+        let updates = await run("What were the main concerns about the pricing page?", facts: populatedFacts,
+                                hooks: naturalHooks(counter: counter))
+        XCTAssertEqual(counter.count, 1)
+        XCTAssertEqual(updates.map(\.stage), [.refining, .final])
+        XCTAssertNil(updates[0].answer, "An open question shows the search animation, not a loose quote")
+        XCTAssertEqual(updates[1].answer?.text, "Written by the model.")
+        XCTAssertEqual(updates[1].tier, .generated)
+    }
     func testRecordAdapterMergesMinutesAndTranscript() {
         let decision = VidurFactLine(text: "Launch Friday", timestamp: 12, quote: "launch moves to Friday", speaker: "Asha")
         let task = VidurTaskFact(title: "Send quote", owner: "Rahul", timestamp: 30)
