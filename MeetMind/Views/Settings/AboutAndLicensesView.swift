@@ -47,13 +47,27 @@ struct AboutAndLicensesView: View {
 
             Section {
                 ForEach(Self.components) { component in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(component.name).font(.body)
-                            Spacer(minLength: 8)
-                            Text(component.license).font(.footnote).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(component.name)
+                                    .font(.body)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                Spacer(minLength: 8)
+                                Text(component.license)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(component.name).font(.body)
+                                Text(component.license).font(.footnote).foregroundStyle(.secondary)
+                            }
                         }
-                        Text(component.role).font(.footnote).foregroundStyle(.secondary)
+                        Text(component.role)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .accessibilityElement(children: .combine)
                 }

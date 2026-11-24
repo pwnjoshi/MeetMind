@@ -1,17 +1,11 @@
 import Foundation
+import OSLog
 
-/// Joins an English and a Hindi recognizer that hear the same audio into one caption stream.
+/// Joins English and Hindi recognizers that hear the same audio into one caption stream.
 ///
-/// Each recognizer reports into its own `CaptionChannelSink`, which stitches that recognizer's
-/// partials and finals (so restarts never repeat words) and hands the hub finished phrases and
-/// the open tail. The hub then:
-/// - groups the phrases of both languages that overlap in audio time into one unit,
-/// - waits until both languages have reported past the unit (or a short grace period, or the
-///   other language was dropped),
-/// - lets `LiveCaptionLanguageArbiter` pick the language, and commits only that language's words,
-/// - shows the open (partial) text of the language that is currently winning.
-/// Everything leaves through one downstream `CaptionResultSink`, whose stitcher removes
-/// any remaining overlap, so no phrase is printed twice.
+/// Final phrases wait here only for arbitration. They are never folded back into the mutable
+/// preview. The downstream stream therefore consists of an immutable committed prefix and, at
+/// most, one mutable phrase whose words are all after `frontier`.
 final class CaptionLanguageHub: @unchecked Sendable {
     private struct Phrase {
         let words: [CaptionWord]
@@ -34,12 +28,23 @@ final class CaptionLanguageHub: @unchecked Sendable {
         var taken: [CaptionSpeechLanguage: [Int]]
     }
 
-    /// How long a phrase waits for the other language before it is judged alone.
+    private struct PendingDecision {
+        var start: TimeInterval
+        var end: TimeInterval
+        let language: CaptionSpeechLanguage
+        /// Snapshot of the winning candidate when the first final froze this decision.
+        let words: [CaptionWord]
+        let switched: Bool
+        let firstFinalArrival: Date
+    }
+
+    /// The first final waits at most this long for the other recognizer's final confidence.
     private let graceSeconds: TimeInterval
-    /// Audio-time lead of newer speech that also ends the wait.
     private let maximumLagSeconds: TimeInterval = 4.0
     private let coverTolerance: TimeInterval = 0.4
     private let overlapTolerance: TimeInterval = 0.15
+    private let phrasePause: TimeInterval = 0.9
+    private let previewContinuationMargin: TimeInterval = 0.45
     private let maximumUnitSeconds: TimeInterval = 25
 
     private let lock = NSLock()
@@ -47,19 +52,33 @@ final class CaptionLanguageHub: @unchecked Sendable {
     private var arbiter: LiveCaptionLanguageArbiter
     private var queues: [CaptionSpeechLanguage: [Phrase]] = [.english: [], .hindi: []]
     private var opens: [CaptionSpeechLanguage: [CaptionWord]] = [.english: [], .hindi: []]
-    private var committedEnd: [CaptionSpeechLanguage: TimeInterval] = [.english: 0, .hindi: 0]
+    private var finalizedEnd: [CaptionSpeechLanguage: TimeInterval] = [.english: 0, .hindi: 0]
     private var active: Set<CaptionSpeechLanguage>
     private var latestEnd: TimeInterval = 0
     private var frontier: TimeInterval = 0
+    private var pendingDecision: PendingDecision?
+    private var previewLanguage: CaptionSpeechLanguage?
+    private var previewStart: TimeInterval = 0
+    private var previewEnd: TimeInterval = 0
     private var lastDisplayKey = ""
+    private var hasPublishedOpen = false
+    private var tickScheduled = false
+
+    // Content-free operational metrics. Never include recognized text in this logger.
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "MeetMind", category: "LiveCaptions")
+    private var committedPhraseCount = 0
+    private var languageSwitchCount = 0
+    private var ignoredLateAlternateCount = 0
+    private var totalDecisionDelay: TimeInterval = 0
+    private var lastMetricsLogAt = Date.distantPast
 
     init(downstream: any CaptionResultSink, languages: Set<CaptionSpeechLanguage> = [.english, .hindi],
-         arbiter: LiveCaptionLanguageArbiter = LiveCaptionLanguageArbiter(), graceSeconds: TimeInterval = 1.6) {
+         arbiter: LiveCaptionLanguageArbiter = LiveCaptionLanguageArbiter(), graceSeconds: TimeInterval = 0.55) {
         self.downstream = downstream
         self.active = languages
         self.arbiter = arbiter
-        self.graceSeconds = graceSeconds
-        // The hub already splits phrases; the downstream stitcher only removes overlap.
+        self.graceSeconds = min(0.6, max(0, graceSeconds))
+        // The hub owns phrase boundaries. The final downstream stitcher only removes overlap.
         downstream.setAutoCommit(nil)
     }
 
@@ -72,10 +91,19 @@ final class CaptionLanguageHub: @unchecked Sendable {
     func receiveFinal(_ language: CaptionSpeechLanguage, words: [CaptionWord]) {
         lock.lock()
         defer { lock.unlock() }
-        note(words, language: language, isFinal: true)
+
+        noteLatest(words)
         let kept = trimToFrontier(words)
+        if !words.isEmpty, kept.isEmpty {
+            ignoredLateAlternateCount += 1
+            logMetrics()
+            opens[language] = []
+            publishOpen()
+            return
+        }
         if let phrase = Phrase(words: kept, arrival: Date()) {
             queues[language, default: []].append(phrase)
+            finalizedEnd[language] = max(finalizedEnd[language] ?? 0, phrase.end)
             scheduleTick()
         }
         opens[language] = []
@@ -86,8 +114,14 @@ final class CaptionLanguageHub: @unchecked Sendable {
     func receiveOpen(_ language: CaptionSpeechLanguage, words: [CaptionWord]) {
         lock.lock()
         defer { lock.unlock() }
-        note(words, language: language, isFinal: false)
-        opens[language] = trimToFrontier(words)
+
+        noteLatest(words)
+        let kept = trimToFrontier(words)
+        if !words.isEmpty, kept.isEmpty {
+            ignoredLateAlternateCount += 1
+            logMetrics()
+        }
+        opens[language] = kept
         drain(force: false)
         publishOpen()
     }
@@ -101,12 +135,13 @@ final class CaptionLanguageHub: @unchecked Sendable {
         publishOpen()
     }
 
-    /// Judges everything that is still waiting. Call once all recognizers have returned.
+    /// Judges everything still waiting. Call once all recognizers have returned.
     func finish() {
         lock.lock()
         defer { lock.unlock() }
         active.removeAll()
         drain(force: true)
+        clearPublishedOpen()
     }
 
     func notice(_ message: String) {
@@ -115,21 +150,20 @@ final class CaptionLanguageHub: @unchecked Sendable {
 
     // MARK: Internals (call with `lock` held)
 
-    private func note(_ words: [CaptionWord], language: CaptionSpeechLanguage, isFinal: Bool) {
+    private func noteLatest(_ words: [CaptionWord]) {
         guard let last = words.last else { return }
         latestEnd = max(latestEnd, last.end)
-        if isFinal {
-            committedEnd[language] = max(committedEnd[language] ?? 0, last.end)
-        }
     }
 
-    /// Words whose middle lies before the already emitted audio were judged already.
+    /// Words whose midpoint lies before immutable committed audio are already decided.
     private func trimToFrontier(_ words: [CaptionWord]) -> [CaptionWord] {
         words.filter { ($0.start + $0.end) / 2 >= frontier }
     }
 
     private func scheduleTick() {
-        let delay = graceSeconds + 0.05
+        guard !tickScheduled else { return }
+        tickScheduled = true
+        let delay = graceSeconds + 0.02
         DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.tick()
         }
@@ -137,19 +171,24 @@ final class CaptionLanguageHub: @unchecked Sendable {
 
     private func tick() {
         lock.lock()
-        defer { lock.unlock() }
+        tickScheduled = false
         drain(force: false)
         publishOpen()
+        if queues.values.contains(where: { !$0.isEmpty }) {
+            scheduleTick()
+        }
+        lock.unlock()
     }
 
     private func drain(force: Bool) {
         while let unit = nextUnit() {
+            lockDecision(for: unit)
             guard force || isReady(unit) else { break }
             emit(unit)
         }
     }
 
-    /// The earliest phrase plus every phrase of either language that overlaps it in time.
+    /// The earliest final phrase plus every final phrase that overlaps it in audio time.
     private func nextUnit() -> Unit? {
         var earliest: (language: CaptionSpeechLanguage, index: Int, phrase: Phrase)?
         for language in CaptionSpeechLanguage.allCases {
@@ -165,8 +204,7 @@ final class CaptionLanguageHub: @unchecked Sendable {
         while changed {
             changed = false
             for language in CaptionSpeechLanguage.allCases {
-                let phrases = queues[language] ?? []
-                for (index, phrase) in phrases.enumerated() {
+                for (index, phrase) in (queues[language] ?? []).enumerated() {
                     if unit.taken[language]?.contains(index) == true { continue }
                     let overlaps = phrase.start < unit.end - overlapTolerance && phrase.end > unit.start + overlapTolerance
                     let span = max(unit.end, phrase.end) - min(unit.start, phrase.start)
@@ -181,27 +219,59 @@ final class CaptionLanguageHub: @unchecked Sendable {
         return unit
     }
 
-    private func isReady(_ unit: Unit) -> Bool {
-        let now = Date()
-        var oldest = now
-        for (language, indexes) in unit.taken {
-            for index in indexes {
-                if let phrase = queues[language]?[index], phrase.arrival < oldest { oldest = phrase.arrival }
-            }
+    /// The first final freezes the displayed/committed language for this audio unit. The other
+    /// recognizer's overlapping partial is valid evidence, but later results cannot flip it.
+    private func lockDecision(for unit: Unit) {
+        if let pending = pendingDecision,
+           rangesOverlap(pending.start, pending.end, unit.start, unit.end) {
+            pendingDecision?.start = min(pending.start, unit.start)
+            pendingDecision?.end = max(pending.end, unit.end)
+            return
         }
-        let waitedLongEnough = now.timeIntervalSince(oldest) >= graceSeconds
+
+        let candidates = candidates(for: unit)
+        let decision = arbiter.decide(english: candidates[.english] ?? [], hindi: candidates[.hindi] ?? [])
+        let lockedWords = candidates[decision.language] ?? []
+        let arrival = firstArrival(in: unit) ?? Date()
+        pendingDecision = PendingDecision(start: unit.start, end: unit.end, language: decision.language,
+                                          words: lockedWords, switched: decision.switched,
+                                          firstFinalArrival: arrival)
+        // A final is pending, so its previous partial must no longer remain mutable in the UI.
+        clearPublishedOpen()
+    }
+
+    private func isReady(_ unit: Unit) -> Bool {
+        guard pendingDecision != nil else { return false }
+        let now = Date()
+        let arrival = firstArrival(in: unit) ?? now
+        let waitedLongEnough = now.timeIntervalSince(arrival) >= graceSeconds
         let newerSpeech = latestEnd - unit.end > maximumLagSeconds
 
         for language in active {
             let contributed = !(unit.taken[language] ?? []).isEmpty
-            let covered = contributed || (committedEnd[language] ?? 0) >= unit.end - coverTolerance
+            let covered = contributed || (finalizedEnd[language] ?? 0) >= unit.end - coverTolerance
             if !covered && !(waitedLongEnough || newerSpeech) { return false }
         }
         return true
     }
 
-    private func emit(_ unit: Unit) {
-        var candidates: [CaptionSpeechLanguage: [CaptionWord]] = [:]
+    private func firstArrival(in unit: Unit) -> Date? {
+        var oldest: Date?
+        for (language, indexes) in unit.taken {
+            for index in indexes {
+                guard let phrase = queues[language]?[index] else { continue }
+                if let oldestArrival = oldest {
+                    if phrase.arrival < oldestArrival { oldest = phrase.arrival }
+                } else {
+                    oldest = phrase.arrival
+                }
+            }
+        }
+        return oldest
+    }
+
+    private func candidates(for unit: Unit) -> [CaptionSpeechLanguage: [CaptionWord]] {
+        var result: [CaptionSpeechLanguage: [CaptionWord]] = [:]
         for language in CaptionSpeechLanguage.allCases {
             let phrases = queues[language] ?? []
             var words: [CaptionWord] = []
@@ -209,68 +279,163 @@ final class CaptionLanguageHub: @unchecked Sendable {
                 words.append(contentsOf: phrases[index].words)
             }
             if words.isEmpty {
-                // This recognizer has not finished a phrase here; use its partial if it has one.
                 words = (opens[language] ?? []).filter {
-                    let middle = ($0.start + $0.end) / 2
-                    return middle >= unit.start - overlapTolerance && middle <= unit.end + overlapTolerance
+                    let midpoint = ($0.start + $0.end) / 2
+                    return midpoint >= unit.start - overlapTolerance && midpoint <= unit.end + overlapTolerance
                 }
             }
-            candidates[language] = words
+            result[language] = words
         }
+        return result
+    }
 
-        let english = candidates[.english] ?? []
-        let hindi = candidates[.hindi] ?? []
-        let decision = arbiter.decide(english: english, hindi: hindi)
-        var winner = decision.language == .english ? english : hindi
-        if winner.isEmpty { winner = decision.language == .english ? hindi : english }
+    private func emit(_ unit: Unit) {
+        let candidates = candidates(for: unit)
+        let lock = pendingDecision
+        let preferred = lock?.language ?? .english
+        var winner = candidates[preferred] ?? []
+        if winner.isEmpty {
+            // Do not change languages after the first final. The locked snapshot is safer than
+            // committing a later alternate recognizer's rewrite.
+            winner = lock?.words ?? []
+        }
         if !winner.isEmpty {
             downstream.commit(winner)
+            committedPhraseCount += 1
+            if lock?.switched == true { languageSwitchCount += 1 }
+            if let arrival = lock?.firstFinalArrival {
+                totalDecisionDelay += max(0, Date().timeIntervalSince(arrival))
+            }
         }
 
         for language in CaptionSpeechLanguage.allCases {
             let taken = Set(unit.taken[language] ?? [])
-            var remaining: [Phrase] = []
-            for (index, phrase) in (queues[language] ?? []).enumerated() where !taken.contains(index) {
-                remaining.append(phrase)
+            queues[language] = (queues[language] ?? []).enumerated().compactMap { index, phrase in
+                taken.contains(index) ? nil : phrase
             }
-            queues[language] = remaining
         }
+
+        // Advance by audio, not text. This suppresses late alternate-language finals and
+        // overlapping recognizer restarts even when their spelling differs.
         frontier = max(frontier, unit.end)
         for language in CaptionSpeechLanguage.allCases {
-            queues[language] = (queues[language] ?? []).filter { $0.end > frontier }
+            queues[language] = (queues[language] ?? []).compactMap { phrase in
+                Phrase(words: trimToFrontier(phrase.words), arrival: phrase.arrival)
+            }
             opens[language] = trimToFrontier(opens[language] ?? [])
         }
-        lastDisplayKey = ""
+        pendingDecision = nil
+        previewLanguage = nil
+        previewStart = frontier
+        previewEnd = frontier
+        clearPublishedOpen()
+        logMetrics(force: true)
     }
 
-    /// Shows the partial of the language that currently wins, including phrases still waiting
-    /// for their verdict so the caption never goes blank while the other recognizer catches up.
+    /// Emits only the latest current open unit. Queued finals are deliberately absent.
     private func publishOpen() {
-        var display: [CaptionSpeechLanguage: [CaptionWord]] = [:]
-        for language in CaptionSpeechLanguage.allCases {
-            var words: [CaptionWord] = []
-            for phrase in queues[language] ?? [] { words.append(contentsOf: phrase.words) }
-            words.append(contentsOf: opens[language] ?? [])
-            display[language] = words
+        let current = currentOpenCandidates()
+        let english = current[.english] ?? []
+        let hindi = current[.hindi] ?? []
+        guard !english.isEmpty || !hindi.isEmpty else {
+            clearPublishedOpen()
+            return
         }
-        let english = display[.english] ?? []
-        let hindi = display[.hindi] ?? []
-        guard !english.isEmpty || !hindi.isEmpty else { return }
 
-        let chosen = arbiter.preview(english: english, hindi: hindi)
+        let all = english + hindi
+        let start = all.map(\.start).min() ?? frontier
+        let end = all.map(\.end).max() ?? start
+        let continuesPreview = previewLanguage != nil && start <= previewEnd + previewContinuationMargin
+
+        let evidence = LiveCaptionLanguageArbiter.evidence(english: english, hindi: hindi,
+                                                           configuration: arbiter.configuration)
+        var chosen: CaptionSpeechLanguage
+        if let pending = pendingDecision,
+           rangesOverlap(pending.start, pending.end, start, end) {
+            chosen = pending.language
+        } else if continuesPreview, let currentLanguage = previewLanguage {
+            chosen = LiveCaptionLanguageArbiter.resolve(evidence: evidence, current: currentLanguage,
+                                                        configuration: arbiter.configuration)
+        } else {
+            chosen = arbiter.preview(english: english, hindi: hindi)
+        }
+
+        // Once a phrase has a language, a weak or missing alternate cannot rewrite it. A clear
+        // arbiter margin can switch an unfinalized phrase; a pause starts a freely chosen phrase.
         var words = chosen == .english ? english : hindi
-        if words.isEmpty { words = chosen == .english ? hindi : english }
-        guard !words.isEmpty else { return }
+        if words.isEmpty, !continuesPreview, pendingDecision == nil {
+            chosen = chosen == .english ? .hindi : .english
+            words = chosen == .english ? english : hindi
+        }
+        guard !words.isEmpty else {
+            clearPublishedOpen()
+            return
+        }
 
-        let key = words.map(\.text).joined(separator: " ")
+        previewLanguage = chosen
+        previewStart = continuesPreview ? min(previewStart, start) : start
+        previewEnd = max(end, words.last?.end ?? end)
+        let key = "\(chosen.rawValue):" + words.map(\.text).joined(separator: " ")
         guard key != lastDisplayKey else { return }
         lastDisplayKey = key
+        hasPublishedOpen = true
         downstream.updateOpen(words)
+    }
+
+    /// Takes the suffix after the latest real pause, then pairs only candidates that overlap the
+    /// most recent recognizer result. This keeps one mutable phrase even when a recognizer's
+    /// partial contains its full session hypothesis.
+    private func currentOpenCandidates() -> [CaptionSpeechLanguage: [CaptionWord]] {
+        var phrases: [CaptionSpeechLanguage: [CaptionWord]] = [:]
+        for language in CaptionSpeechLanguage.allCases {
+            phrases[language] = currentPhrase(in: trimToFrontier(opens[language] ?? []))
+        }
+        guard let anchor = phrases.values.filter({ !$0.isEmpty }).max(by: {
+            ($0.last?.end ?? 0) < ($1.last?.end ?? 0)
+        }), let anchorFirst = anchor.first, let anchorLast = anchor.last else { return phrases }
+
+        let anchorStart = anchorFirst.start
+        let anchorEnd = anchorLast.end
+        for language in CaptionSpeechLanguage.allCases {
+            guard let words = phrases[language], let first = words.first, let last = words.last else { continue }
+            if !rangesOverlap(first.start, last.end, anchorStart, anchorEnd) {
+                phrases[language] = []
+            }
+        }
+        return phrases
+    }
+
+    private func currentPhrase(in words: [CaptionWord]) -> [CaptionWord] {
+        guard words.count > 1 else { return words }
+        var startIndex = 0
+        for index in 1..<words.count where words[index].start - words[index - 1].end >= phrasePause {
+            startIndex = index
+        }
+        return Array(words[startIndex...])
+    }
+
+    private func rangesOverlap(_ firstStart: TimeInterval, _ firstEnd: TimeInterval,
+                               _ secondStart: TimeInterval, _ secondEnd: TimeInterval) -> Bool {
+        firstStart < secondEnd + overlapTolerance && firstEnd > secondStart - overlapTolerance
+    }
+
+    private func clearPublishedOpen() {
+        guard hasPublishedOpen || !lastDisplayKey.isEmpty else { return }
+        hasPublishedOpen = false
+        lastDisplayKey = ""
+        downstream.clearOpen()
+    }
+
+    private func logMetrics(force: Bool = false) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastMetricsLogAt) >= 1 else { return }
+        lastMetricsLogAt = now
+        let average = committedPhraseCount == 0 ? 0 : totalDecisionDelay / Double(committedPhraseCount)
+        logger.info("caption_metrics committed=\(self.committedPhraseCount, privacy: .public) switches=\(self.languageSwitchCount, privacy: .public) ignored_late=\(self.ignoredLateAlternateCount, privacy: .public) avg_delay_ms=\(Int(average * 1000), privacy: .public)")
     }
 }
 
-/// One recognizer's view of the session. Stitches its own partials and finals, then reports
-/// finished phrases and the open tail to the hub.
+/// One recognizer's view of the session. It stitches its own restarts before reporting to the hub.
 final class CaptionChannelSink: CaptionResultSink, @unchecked Sendable {
     let language: CaptionSpeechLanguage
     private let hub: CaptionLanguageHub
@@ -296,6 +461,13 @@ final class CaptionChannelSink: CaptionResultSink, @unchecked Sendable {
         deliver(chunks: chunks, open: open)
     }
 
+    func clearOpen() {
+        lock.lock()
+        stitcher.clearOpen()
+        lock.unlock()
+        hub.receiveOpen(language, words: [])
+    }
+
     func commit(_ words: [CaptionWord]) {
         lock.lock()
         let chunk = stitcher.commit(words)
@@ -307,7 +479,6 @@ final class CaptionChannelSink: CaptionResultSink, @unchecked Sendable {
         hub.notice(message)
     }
 
-    /// Tells the hub this recognizer is done (audio ended or it was dropped).
     func end() {
         hub.channelEnded(language)
     }

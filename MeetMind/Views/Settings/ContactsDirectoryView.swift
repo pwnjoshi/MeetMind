@@ -104,8 +104,15 @@ struct ContactsDirectoryView: View {
                 .frame(width: 36, height: 36)
                 .background(Color(hex: person.avatarColorHex), in: Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text(person.name).font(.subheadline)
-                Text(subtitle(person)).font(.footnote).foregroundStyle(.secondary)
+                Text(person.name)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(subtitle(person))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)

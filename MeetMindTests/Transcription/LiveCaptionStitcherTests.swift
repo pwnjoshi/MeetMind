@@ -127,6 +127,53 @@ final class LiveCaptionStitcherTests: XCTestCase {
         XCTAssertNil(stitcher.commit([word("", 0, 0.1)]))
     }
 
+    func test_clearOpenPreservesCommittedFrontier() {
+        var stitcher = LiveCaptionStitcher()
+        _ = stitcher.commit([word("fixed", 0, 0.5)])
+        _ = stitcher.updateOpen([word("mutable", 0.5, 1.0)])
+        stitcher.clearOpen()
+
+        XCTAssertTrue(stitcher.openWords.isEmpty)
+        XCTAssertEqual(stitcher.committedEnd, 0.5, accuracy: 0.001)
+        XCTAssertEqual(stitcher.committedWordCount, 1)
+    }
+
+    @MainActor
+    func test_emptyNonFinalChunkClearsViewModelInterimText() {
+        let viewModel = LiveRecordingViewModel(updatesFromRecordingClock: false)
+        viewModel.receiveLiveTranscriptChunk(LiveTranscriptChunk(text: "mutable phrase", isFinal: false))
+        XCTAssertEqual(viewModel.interimTranscriptText, "mutable phrase")
+
+        viewModel.receiveLiveTranscriptChunk(LiveTranscriptChunk(text: "", isFinal: false, segments: []))
+        XCTAssertEqual(viewModel.interimTranscriptText, "")
+    }
+
+    func test_captionAssemblerEmitsExplicitEmptyInterimAfterCommit() {
+        final class ChunkRecorder: @unchecked Sendable {
+            private let lock = NSLock()
+            private var stored: [LiveTranscriptChunk] = []
+            func append(_ chunk: LiveTranscriptChunk) {
+                lock.lock()
+                stored.append(chunk)
+                lock.unlock()
+            }
+            var chunks: [LiveTranscriptChunk] {
+                lock.lock()
+                defer { lock.unlock() }
+                return stored
+            }
+        }
+
+        let recorder = ChunkRecorder()
+        let assembler = CaptionAssembler { recorder.append($0) }
+        assembler.updateOpen([word("mutable", 0, 0.5)])
+        assembler.commit([word("final", 0, 0.5)])
+
+        XCTAssertEqual(recorder.chunks.map(\.isFinal), [false, true, false])
+        XCTAssertEqual(recorder.chunks.last?.text, "")
+        XCTAssertTrue(recorder.chunks.last?.segments.isEmpty == true)
+    }
+
     // MARK: - Restart de-duplication
 
     func test_restartedRequestDoesNotRepeatWordsHeardTwice() throws {

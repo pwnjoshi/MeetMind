@@ -39,7 +39,7 @@ home_pid="${server_output##*: }"
 sleep 3
 kill -0 "$home_pid"
 simctl io "$device_id" screenshot build/smoke/home-populated.png
-for screen in recording-active recording-paused recording-finish meeting-review meeting-draft meeting-finalized; do
+for screen in profile-long recording-active recording-paused recording-finish meeting-review meeting-draft meeting-finalized; do
     simctl terminate "$device_id" "$bundle_id" 2>/dev/null || true
     recording_output=$(simctl launch "$device_id" "$bundle_id" "--ui-$screen")
     recording_pid="${recording_output##*: }"
@@ -61,4 +61,4 @@ if ! kill -0 "$minutes_sent_pid"; then
     exit 1
 fi
 simctl io "$device_id" screenshot build/smoke/minutes-sent.png
-echo "PASS: onboarding, main tabs, recording, and post-meeting visual states stayed alive"
+echo "PASS: onboarding, Profile long-content, main tabs, recording, and post-meeting visual states stayed alive"

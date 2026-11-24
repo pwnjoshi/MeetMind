@@ -48,11 +48,21 @@ public struct NotificationsInboxView: View {
                                     .fill(readIDs.contains(item.id) ? Color.clear : Theme.Colors.manentAccent)
                                     .frame(width: 8, height: 8)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.kind.title).foregroundStyle(.primary)
-                                    Text(item.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(item.kind.title)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(item.detail)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 8)
-                                Text(dateText(for: item)).font(.subheadline).foregroundStyle(.secondary)
+                                Text(dateText(for: item))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: true, vertical: false)
                             }
                         }
                     }

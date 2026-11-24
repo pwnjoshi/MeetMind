@@ -119,6 +119,11 @@ public struct LiveCaptionStitcher: Sendable {
         return output
     }
 
+    /// Removes only the mutable hypothesis. Committed timing and deduplication history remain.
+    public mutating func clearOpen() {
+        openWords = []
+    }
+
     /// Commits a final result. Returns nil when everything in it was already committed.
     public mutating func commit(_ words: [CaptionWord]) -> LiveTranscriptChunk? {
         let fresh = trimmed(words)

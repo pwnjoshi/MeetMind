@@ -174,6 +174,8 @@ final class LiveCaptionLanguageArbiterTests: XCTestCase {
     private final class RecordingSink: CaptionResultSink, @unchecked Sendable {
         private let lock = NSLock()
         private var storedCommits: [[CaptionWord]] = []
+        private var storedOpens: [[CaptionWord]] = []
+        private var storedClearCount = 0
 
         var commits: [[CaptionWord]] {
             lock.lock()
@@ -181,8 +183,29 @@ final class LiveCaptionLanguageArbiterTests: XCTestCase {
             return storedCommits
         }
 
+        var opens: [[CaptionWord]] {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedOpens
+        }
+
+        var clearCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedClearCount
+        }
+
         func setAutoCommit(_ policy: LiveCaptionStitcher.AutoCommitPolicy?) {}
-        func updateOpen(_ words: [CaptionWord]) {}
+        func updateOpen(_ words: [CaptionWord]) {
+            lock.lock()
+            storedOpens.append(words)
+            lock.unlock()
+        }
+        func clearOpen() {
+            lock.lock()
+            storedClearCount += 1
+            lock.unlock()
+        }
         func commit(_ words: [CaptionWord]) {
             lock.lock()
             storedCommits.append(words)
@@ -249,5 +272,115 @@ final class LiveCaptionLanguageArbiterTests: XCTestCase {
         XCTAssertTrue(sink.commits.isEmpty)
         hub.finish()
         XCTAssertEqual(sink.commits.count, 1)
+    }
+
+    func test_englishCommitThenHindiPhraseNeverRewritesCommittedEnglish() {
+        let sink = RecordingSink()
+        let hub = CaptionLanguageHub(downstream: sink)
+        let english = hub.sink(for: .english)
+        let hindi = hub.sink(for: .hindi)
+
+        english.updateOpen(words("We will review the project today", confidence: 0.9, start: 0, end: 2))
+        hindi.updateOpen(words("वी विल रिव्यू द प्रोजेक्ट टुडे", confidence: 0.5, start: 0, end: 2))
+        english.commit(words("We will review the project today", confidence: 0.9, start: 0, end: 2))
+        hindi.commit(words("वी विल रिव्यू द प्रोजेक्ट टुडे", confidence: 0.5, start: 0, end: 2))
+
+        XCTAssertEqual(sink.commits.map(text), ["We will review the project today"])
+        let openBoundary = sink.opens.count
+
+        hindi.updateOpen(words("मैं कल सुबह घर जाऊंगा", confidence: 0.9, start: 3, end: 5))
+        english.updateOpen(words("may call some her go", confidence: 0.25, start: 3, end: 5))
+        hindi.commit(words("मैं कल सुबह घर जाऊंगा", confidence: 0.9, start: 3, end: 5))
+        english.commit(words("may call some her go", confidence: 0.25, start: 3, end: 5))
+
+        XCTAssertEqual(sink.commits.map(text), ["We will review the project today", "मैं कल सुबह घर जाऊंगा"])
+        let laterOpens = sink.opens.dropFirst(openBoundary).map(text)
+        XCTAssertFalse(laterOpens.contains(where: { $0.contains("We will review") }))
+        XCTAssertFalse(laterOpens.contains(where: { $0.contains("वी विल रिव्यू") }))
+    }
+
+    func test_lateHindiAlternateBeforeFrontierIsIgnored() {
+        let sink = RecordingSink()
+        let hub = CaptionLanguageHub(downstream: sink)
+        let english = hub.sink(for: .english)
+        let hindi = hub.sink(for: .hindi)
+
+        english.commit(words("Please send the project update", confidence: 0.92, start: 0, end: 2))
+        hindi.commit(words("प्लीज सेंड द प्रोजेक्ट अपडेट", confidence: 0.45, start: 0, end: 2))
+        hindi.commit(words("कृपया परियोजना की जानकारी भेजें", confidence: 0.99, start: 0.05, end: 1.95))
+
+        XCTAssertEqual(sink.commits.map(text), ["Please send the project update"])
+    }
+
+    func test_samePhrasePartialCorrectionStaysMutableInOneLanguage() {
+        let sink = RecordingSink()
+        let hub = CaptionLanguageHub(downstream: sink)
+        let english = hub.sink(for: .english)
+
+        english.updateOpen(words("Please sand", confidence: 0.7, start: 0, end: 1))
+        english.updateOpen(words("Please send the report", confidence: 0.9, start: 0, end: 1.8))
+
+        XCTAssertEqual(Array(sink.opens.map(text).suffix(2)), ["Please sand", "Please send the report"])
+        XCTAssertTrue(sink.commits.isEmpty)
+    }
+
+    func test_commitExplicitlyClearsOpenPhrase() {
+        let sink = RecordingSink()
+        let hub = CaptionLanguageHub(downstream: sink)
+        let english = hub.sink(for: .english)
+        let hindi = hub.sink(for: .hindi)
+
+        english.updateOpen(words("A stable English phrase", confidence: 0.9, start: 0, end: 2))
+        let clearsBeforeFinal = sink.clearCount
+        english.commit(words("A stable English phrase", confidence: 0.9, start: 0, end: 2))
+        hindi.commit(words("ए स्टेबल इंग्लिश फ्रेज", confidence: 0.4, start: 0, end: 2))
+
+        XCTAssertEqual(sink.commits.map(text), ["A stable English phrase"])
+        XCTAssertGreaterThan(sink.clearCount, clearsBeforeFinal)
+    }
+
+    func test_restartOverlapUsesAudioFrontierAndDoesNotDuplicateFinalWords() {
+        let sink = RecordingSink()
+        let hub = CaptionLanguageHub(downstream: sink)
+        let english = hub.sink(for: .english)
+        let hindi = hub.sink(for: .hindi)
+
+        english.commit(words("hello team", confidence: 0.9, start: 0, end: 2))
+        hindi.commit(words("हेलो टीम", confidence: 0.4, start: 0, end: 2))
+        english.commit(words("team starts now", confidence: 0.9, start: 1.5, end: 3.5))
+        hindi.commit(words("टीम स्टार्ट्स नाउ", confidence: 0.4, start: 1.5, end: 3.5))
+
+        XCTAssertEqual(sink.commits.count, 2)
+        XCTAssertEqual(text(sink.commits[0]), "hello team")
+        XCTAssertFalse(text(sink.commits[1]).hasPrefix("team "))
+        XCTAssertEqual(text(sink.commits[1]), "starts now")
+    }
+
+    func test_threePhraseEnglishHindiEnglishSwitchesRemainOrdered() {
+        let sink = RecordingSink()
+        let hub = CaptionLanguageHub(downstream: sink)
+        let english = hub.sink(for: .english)
+        let hindi = hub.sink(for: .hindi)
+
+        english.updateOpen(words("Review the project today", confidence: 0.95, start: 0, end: 2))
+        hindi.updateOpen(words("रिव्यू द प्रोजेक्ट टुडे", confidence: 0.4, start: 0, end: 2))
+        english.commit(words("Review the project today", confidence: 0.95, start: 0, end: 2))
+        hindi.commit(words("रिव्यू द प्रोजेक्ट टुडे", confidence: 0.4, start: 0, end: 2))
+
+        hindi.updateOpen(words("मैं कल घर जाऊंगा", confidence: 0.95, start: 3, end: 5))
+        english.updateOpen(words("may call her go", confidence: 0.2, start: 3, end: 5))
+        hindi.commit(words("मैं कल घर जाऊंगा", confidence: 0.95, start: 3, end: 5))
+        english.commit(words("may call her go", confidence: 0.2, start: 3, end: 5))
+
+        english.updateOpen(words("Send the notes tomorrow", confidence: 0.95, start: 6, end: 8))
+        hindi.updateOpen(words("सेंड द नोट्स टुमारो", confidence: 0.4, start: 6, end: 8))
+        english.commit(words("Send the notes tomorrow", confidence: 0.95, start: 6, end: 8))
+        hindi.commit(words("सेंड द नोट्स टुमारो", confidence: 0.4, start: 6, end: 8))
+
+        XCTAssertEqual(sink.commits.map(text), [
+            "Review the project today",
+            "मैं कल घर जाऊंगा",
+            "Send the notes tomorrow"
+        ])
     }
 }

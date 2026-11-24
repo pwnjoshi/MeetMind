@@ -263,6 +263,8 @@ public final class LiveRecordingViewModel {
     private var meterTask: Task<Void, Never>?
     private var clockTask: Task<Void, Never>?
     private var speechTask: Task<Void, Never>?
+    /// Audio-time boundary of the immutable live-caption prefix.
+    private var liveTranscriptCommittedEnd: TimeInterval = 0
     private var interruptionTask: Task<Void, Never>?
     private var chunkPump: RecordingChunkPump?
     private var preprocessingWorker: RecordingPreprocessingWorker?
@@ -568,24 +570,49 @@ public final class LiveRecordingViewModel {
     /// transcript after the recording stops. This prevents a partial hypothesis
     /// from becoming a permanent incorrect minute or task source.
     public func receiveLiveTranscriptChunk(_ chunk: LiveTranscriptChunk) {
-        let trimmed = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        interimTranscriptText = trimmed
-        guard chunk.isFinal else { return }
+        let incomingText = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let start = chunk.segments.map(\.startTime).min() ?? max(0, elapsedDuration - 5)
-        let end = chunk.segments.map(\.endTime).max() ?? elapsedDuration
-        let confidence = chunk.segments.map(\.confidence).min() ?? 0
-        // Some recognizers resend their full finalized hypothesis. Do not render
-        // it twice while the meeting is still live.
-        guard finalTranscriptSegments.last?.text != trimmed else {
+        // CaptionAssembler uses an empty non-final chunk as an explicit mutable-tail clear.
+        if !chunk.isFinal, incomingText.isEmpty {
             interimTranscriptText = ""
             return
         }
+        guard !incomingText.isEmpty else { return }
+
+        var acceptedSegments = chunk.segments
+        if !acceptedSegments.isEmpty, liveTranscriptCommittedEnd > 0 {
+            acceptedSegments = acceptedSegments.filter {
+                ($0.startTime + $0.endTime) / 2 >= liveTranscriptCommittedEnd
+            }
+            // A delayed alternate recognizer or restarted request cannot alter the committed UI.
+            guard !acceptedSegments.isEmpty else { return }
+        }
+
+        let acceptedText: String
+        if acceptedSegments.count == chunk.segments.count || chunk.segments.isEmpty {
+            acceptedText = incomingText
+        } else {
+            acceptedText = acceptedSegments.map(\.text).joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !acceptedText.isEmpty else { return }
+
+        if !chunk.isFinal {
+            interimTranscriptText = acceptedText
+            return
+        }
+
+        let start = acceptedSegments.map(\.startTime).min() ?? max(0, elapsedDuration - 5)
+        let end = acceptedSegments.map(\.endTime).max() ?? elapsedDuration
+        let confidence = acceptedSegments.map(\.confidence).min() ?? 0
         let speaker = activeSpeaker?.name ?? "Speaker"
-        finalTranscriptSegments.append(LiveTranscriptSegmentItem(speakerName: speaker, text: trimmed,
+        finalTranscriptSegments.append(LiveTranscriptSegmentItem(speakerName: speaker, text: acceptedText,
             startTime: start, endTime: max(start, end), confidence: confidence))
-        liveTranscriptChunks.append(chunk)
+        let acceptedChunk = LiveTranscriptChunk(text: acceptedText, isFinal: true, segments: acceptedSegments)
+        liveTranscriptChunks.append(acceptedChunk)
+        if !acceptedSegments.isEmpty {
+            liveTranscriptCommittedEnd = max(liveTranscriptCommittedEnd, end)
+        }
         interimTranscriptText = ""
     }
     

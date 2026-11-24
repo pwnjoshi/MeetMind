@@ -208,7 +208,9 @@ struct MeetMindApp: App {
     @ViewBuilder
     private var appContent: some View {
         #if targetEnvironment(simulator)
-        if ProcessInfo.processInfo.arguments.contains("--ui-home-populated") {
+        if ProcessInfo.processInfo.arguments.contains("--ui-profile-long") {
+            profileVisualFixture()
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-home-populated") {
             homeVisualFixture()
         } else if ProcessInfo.processInfo.arguments.contains("--ui-meeting-review") {
             meetingVisualFixture(.review)
@@ -233,6 +235,50 @@ struct MeetMindApp: App {
     }
 
     #if targetEnvironment(simulator)
+    private struct ProfileVisualFixture {
+        let store: ModelContainer
+        let settings: SettingsViewModel
+        let defaults: UserDefaults
+    }
+
+    @MainActor private static var profileFixture: ProfileVisualFixture?
+
+    @MainActor private func profileVisualFixture() -> some View {
+        let fixture = Self.profileFixture ?? Self.createProfileFixture()
+        Self.profileFixture = fixture
+        return NavigationStack {
+            SettingsView(fixtureStatistics: ProfileStatistics(
+                meetings: "12,345",
+                recorded: "987 h",
+                openActions: "4,567"
+            ))
+        }
+        .modelContainer(fixture.store)
+        .defaultAppStorage(fixture.defaults)
+        .environment(AppState(userDefaults: fixture.defaults))
+        .environment(NavigationRouter())
+        .environment(fixture.settings)
+    }
+
+    @MainActor private static func createProfileFixture() -> ProfileVisualFixture {
+        let store = try! ModelContainerFactory.createInMemoryContainer()
+        let suiteName = "Manent.ProfileVisualFixture"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set(
+            "International Institute for Human-Centred Product Engineering",
+            forKey: OrganizationProfileStore.nameKey
+        )
+        let settings = SettingsViewModel(userDefaults: defaults)
+        settings.saveUserProfile(UserProfile(
+            name: "Dr. Chandrashekhar Venkataraman",
+            email: "chandrashekhar.venkataraman@example.com",
+            role: "Senior Director of Product Design and Applied Intelligence",
+            avatarColorHex: "#5E5CE6"
+        ))
+        return ProfileVisualFixture(store: store, settings: settings, defaults: defaults)
+    }
+
     @MainActor private static var homeFixtureStore: ModelContainer?
 
     @MainActor private func homeVisualFixture() -> some View {

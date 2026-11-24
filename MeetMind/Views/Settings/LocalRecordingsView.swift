@@ -50,8 +50,15 @@ public struct LocalRecordingsView: View {
                             HStack(spacing: 12) {
                                 dateTile(row.file.date)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(row.file.title).font(.subheadline)
-                                    Text(subtitle(for: row.file)).font(.caption).foregroundStyle(.secondary)
+                                    Text(row.file.title)
+                                        .font(.subheadline)
+                                        .lineLimit(2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(subtitle(for: row.file))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                             }
                         }

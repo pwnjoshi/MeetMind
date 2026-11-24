@@ -61,4 +61,26 @@ final class SettingsV5Tests: XCTestCase {
         defaults.set(MinutesFormat.briefNote.rawValue, forKey: MinutesFormat.preferenceKey)
         XCTAssertEqual(MinutesFormat.preferred(defaults: defaults), .briefNote)
     }
+
+    func testProfileFormattingPreservesLongVisibleValues() {
+        let name = "  Dr. Chandrashekhar Venkataraman  "
+        let role = "Senior Director of Product Design and Applied Intelligence"
+        XCTAssertTrue(ProfileFormatting.isValidName(name))
+        XCTAssertEqual(ProfileFormatting.cleaned(name), "Dr. Chandrashekhar Venkataraman")
+        XCTAssertEqual(
+            ProfileFormatting.shownOnMinutes(name: name, role: role),
+            "Dr. Chandrashekhar Venkataraman, Senior Director of Product Design and Applied Intelligence"
+        )
+    }
+
+    func testProfileFormattingRejectsWhitespaceAndNewlineOnlyName() {
+        XCTAssertFalse(ProfileFormatting.isValidName("  \n\t  "))
+        XCTAssertEqual(ProfileFormatting.shownOnMinutes(name: " \n ", role: "Director"), "Your name")
+    }
+
+    func testProfileRecordedDurationFormattingHandlesBounds() {
+        XCTAssertEqual(ProfileFormatting.recordedDurationText(seconds: -10), "0 m")
+        XCTAssertEqual(ProfileFormatting.recordedDurationText(seconds: 3_600), "1 h")
+        XCTAssertEqual(ProfileFormatting.recordedDurationText(seconds: 3_600 * 987), "987 h")
+    }
 }

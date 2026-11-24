@@ -104,8 +104,16 @@ final class CaptionAudioRouter: @unchecked Sendable {
 protocol CaptionResultSink: AnyObject, Sendable {
     func setAutoCommit(_ policy: LiveCaptionStitcher.AutoCommitPolicy?)
     func updateOpen(_ words: [CaptionWord])
+    /// Removes the one mutable phrase without changing the committed prefix.
+    func clearOpen()
     func commit(_ words: [CaptionWord])
     func notice(_ message: String)
+}
+
+/// Keeps existing lightweight/test sinks source-compatible. Production sinks that display an
+/// open phrase implement this explicitly.
+extension CaptionResultSink {
+    func clearOpen() {}
 }
 
 /// Thread-safe front for `LiveCaptionStitcher`. Every caption leaves through here so
@@ -134,13 +142,24 @@ final class CaptionAssembler: @unchecked Sendable {
         }
     }
 
+    /// Explicitly removes the mutable tail. An empty non-final chunk is a semantic clear signal
+    /// to consumers; it is never persisted as transcript content.
+    func clearOpen() {
+        lock.lock()
+        stitcher.clearOpen()
+        lock.unlock()
+        sink(LiveTranscriptChunk(text: "", isFinal: false, segments: []))
+    }
+
     /// A final result.
     func commit(_ words: [CaptionWord]) {
         lock.lock()
-        defer { lock.unlock() }
-        if let chunk = stitcher.commit(words) {
+        let chunk = stitcher.commit(words)
+        lock.unlock()
+        if let chunk {
             sink(chunk)
         }
+        clearOpen()
     }
 
     /// A status message shown in place of the live caption. It is never final, so it is
