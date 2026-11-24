@@ -87,6 +87,36 @@ so they are indexed only when the data exists (`VidurMeetingRecord.nextMeetingTe
   retrieved blocks stand in and the card says "Sources are the closest matches". If the reply contains a
   number or name that is in none of the blocks, the card says to check the sources.
 
+### 3b. Plain answers, scope and typos (VidurGist, VidurQuestionNormalizer, VidurScopeNote)
+
+* **No quote dumps.** A transcript match is never the answer body. When a model is available the match goes to the
+  RAG path like any open question, and the sentence below shows while it works. Without a model the quick answer
+  is a template sentence built by `VidurGist`: fillers ("uh", "um") and stutters are dropped, a garbled start is
+  cut at the nearest subject ("we", "I", "let's") before the topic word, a dangling "and" at the end is dropped,
+  and "we", "I" and "my" become "they" and "their". It adds no word that was not said and does not fix
+  "20 number". Exact words are only in the source chips. Hindi and Hinglish lines keep the old quoted form
+  because they cannot be reported safely.
+* **Decisions.** "What did we decide about X?" reads saved decisions first (all meetings in scope). If none match
+  it says "There's no recorded decision about X, but on 22 Nov Pawan said that ...".
+* **Who owns X?** Saved actions are matched by stemmed topic words and answered as "Neha, Send the presentation
+  (due Fri 28 Nov)" with a dash. With no saved action the transcript is searched for a request ("send ...
+  presentation") and the person named in the same line: "No saved action covers presentation, but on 22 Nov
+  Pawan asked Neha to send the presentation."
+* **Wording.** An undecided matter is an "open issue". `VidurAnswerPolish` rewrites "task" to "issue" in model
+  replies unless an action block was retrieved or the question asks about tasks, and replaces "Speaker 1" with
+  "someone". The system prompt carries the same two rules.
+* **Speaker labels.** "Speaker 1", "S1" and notes never reach a sentence or a source chip
+  (`VidurAnswerPolish.chipSpeaker`, `VidurQuickContext.speakerWord`).
+* **Typos.** `VidurQuickAnswerer.answer` answers the question as typed. If that is not a complete, non-empty
+  answer it repairs the question with `VidurQuestionNormalizer` (curly apostrophes, "r" to "are", a word glued by
+  a stray letter such as "thevpresentation", one-letter typos against the meetings' own vocabulary and attendee
+  names) and keeps the repaired answer only when it is stronger. The model gets the repaired question too.
+* **Meetings that cannot answer.** The sheet opens on All meetings for a scheduled meeting (the saved scope
+  preference is untouched). In "This meeting" or "Meeting + series", `VidurTieredRequest.widerScopes` lists the
+  series and then the other meetings. If the meeting has no transcript, notes or minutes, or finds nothing, the
+  first wider scope that finds something answers, and the reply starts with one line ("This meeting hasn't happened
+  yet, so I looked at your other meetings."). A single-meeting answer about the current meeting says "this
+  meeting", never its title. The note is left out of the chat history sent to the model (`VidurScopeNote.strip`).
 ### 4. The prompt (`VidurRagPromptBuilder`)
 
 ChatML for Qwen3 non-thinking mode (`/no_think`, empty think block). Budget 1,100 tokens in total, output at
@@ -204,4 +234,5 @@ prefix is stripped (`VidurAddressPrefix`).
 * `VidurRagEngineTests`: streamed, cited answer through a fake model session.
 * `VidurRagEvaluationTests`: 25 question to expected-record cases, recall at 6 of at least 85 percent.
 * `VidurQuickAnswererTests` and the 42 `VidurEvaluationFixtures` cases are unchanged.
-* `MeetMindTests/Vidur/VidurTieredAnswerTests`: rewording, rejection of a rewrite, open-ended routing.
+* `VidurRealConversationTests`: the real iPhone conversation (scheduled meeting, two noisy `Quick meeting` recordings, typos, owners, speaker labels, wording).
+* `MeetMindTests/Vidur/VidurTieredAnswerTests`: rewording, rejection of a rewrite, open-ended routing, transcript matches go to the model, scope widening for a scheduled meeting.

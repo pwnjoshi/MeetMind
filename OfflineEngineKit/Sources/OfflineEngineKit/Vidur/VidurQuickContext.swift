@@ -20,6 +20,8 @@ struct VidurQuickContext {
     let selfPerson: VidurPerson?
     let now: Date
     let calendar: Calendar
+    /// The meeting Vidur was opened from. A single-meeting answer about it says "this meeting".
+    var currentMeetingID: UUID?
     private let dayFormatter: DateFormatter
     private let longFormatter: DateFormatter
     private let dueFormatter: DateFormatter
@@ -61,7 +63,10 @@ struct VidurQuickContext {
 
     /// "the Launch sync meeting", "your meetings" or "the meetings from last week".
     var scopeText: String {
-        if records.count == 1, let only = records.first { return Self.title(only) }
+        if records.count == 1, let only = records.first {
+            if only.id == currentMeetingID, parsed.matchedTitles.isEmpty { return "this meeting" }
+            return Self.title(only)
+        }
         if let label = parsed.rangeLabel, parsed.meetingRange != nil { return "your meetings \(label)" }
         return "your meetings"
     }
@@ -69,18 +74,33 @@ struct VidurQuickContext {
     func source(_ record: VidurMeetingRecord, label: String?, timestamp: TimeInterval?, quote: String,
                 speaker: String?) -> VidurQuickSource {
         VidurQuickSource(meetingID: record.id, meetingTitle: Self.title(record), meetingDate: record.date,
-                         label: label, timestamp: timestamp, quote: quote, speaker: speaker)
+                         label: label, timestamp: timestamp, quote: quote, speaker: VidurAnswerPolish.chipSpeaker(speaker))
     }
 
+    /// A name that is safe to put in a sentence. "Speaker 1" and "S1" become "Someone"; notes have no name.
     func displayName(_ raw: String?) -> String? {
         guard let raw, !raw.isEmpty else { return nil }
         if VidurPersonIndex.isGenericLabel(raw) {
             let lowered = raw.lowercased()
             if lowered == "note" || lowered == "notes" { return nil }
-            let digits = lowered.filter(\.isNumber)
-            return digits.isEmpty ? "Someone" : "Speaker \(digits)"
+            return "Someone"
         }
         return index.person(forRaw: raw)?.canonical ?? raw
+    }
+
+    /// The speaker as one word of a running sentence: a real name, otherwise "someone".
+    func speakerWord(_ raw: String?) -> String {
+        guard let name = displayName(raw), name != "Someone" else { return "someone" }
+        return name
+    }
+
+    /// First names (lower case, Latin letters) of the people in the meetings, so a clause can capitalise them.
+    var firstNames: Set<String> {
+        var names = Set<String>()
+        for person in index.people {
+            for first in person.firsts where VidurQuestionNormalizer.isPlainLatin(first) { names.insert(first) }
+        }
+        return names
     }
 
     static func timecode(_ time: TimeInterval) -> String {

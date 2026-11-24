@@ -147,9 +147,40 @@ enum VidurTopicSearch {
             return "\u{2022} \(who ?? "Note") (\(place(hit)), \(stamp)): \u{201C}\(quote)\u{201D}"
         }
 
+        let names = context.firstNames
+        /// A cautious sentence for a transcript hit, or nil when the line is not plain English.
+        func spoken(_ hit: Hit) -> String? {
+            let doc = hit.doc
+            guard doc.label == nil, doc.text.unicodeScalars.allSatisfy({ $0.isASCII }),
+                  VidurAnswerLanguage.detect(doc.text) == .english else { return nil }
+            let day = context.day(doc.record.date)
+            let who = context.speakerWord(doc.speaker)
+            if let clause = VidurGist.clause(from: doc.text, topicKeys: queryKeys, names: names) {
+                return "On \(day), \(who) said that \(clause)."
+            }
+            return "On \(day), \(who) talked about \(topicText)."
+        }
+        func lowercasedFirst(_ sentence: String) -> String {
+            String(sentence.prefix(1)).lowercased() + String(sentence.dropFirst())
+        }
+        func isSame(_ lhs: Hit, _ rhs: Hit) -> Bool {
+            lhs.doc.record.id == rhs.doc.record.id && lhs.doc.timestamp == rhs.doc.timestamp && lhs.doc.text == rhs.doc.text
+        }
+
+        let decisionAsked = original.intents.contains(.decisions)
+        let ownerAsked = original.intents.contains(.tasks) && original.asksOwner
+        var lead: Hit?
+        var isSaved = true
         let text: String
-        if chosen.count == 1 {
-            text = line(top, standalone: true)
+        if ownerAsked, let found = ownerSentence(hits: hits, context: context, keys: queryKeys, topic: topicText) {
+            text = found.text
+            lead = found.hit
+            isSaved = false
+        } else if decisionAsked, top.doc.label == nil, let sentence = spoken(top) {
+            text = "There\u{2019}s no recorded decision about \(topicText), but " + lowercasedFirst(sentence)
+            isSaved = false
+        } else if chosen.count == 1 {
+            text = spoken(top) ?? line(top, standalone: true)
         } else {
             let head: String
             if !people.isEmpty {
@@ -159,12 +190,25 @@ enum VidurTopicSearch {
             } else {
                 head = "Here\u{2019}s what your meetings say about \(topicText):"
             }
-            text = head + "\n" + chosen.map { line($0, standalone: false) }.joined(separator: "\n")
+            var bullets: [String] = []
+            for hit in chosen {
+                if let sentence = spoken(hit) {
+                    bullets.append("\u{2022} " + sentence)
+                } else {
+                    bullets.append(line(hit, standalone: false))
+                }
+            }
+            text = head + "\n" + bullets.joined(separator: "\n")
         }
 
+        var shown = chosen
+        if let lead {
+            shown = [lead] + chosen.filter { !isSame($0, lead) }
+            if shown.count > 3 { shown = Array(shown.prefix(3)) }
+        }
         var sources: [VidurQuickSource] = []
         var speakers: [String] = []
-        for hit in chosen {
+        for hit in shown {
             let doc = hit.doc
             sources.append(context.source(doc.record, label: doc.label, timestamp: doc.timestamp, quote: doc.quote,
                                           speaker: doc.speaker))
@@ -173,8 +217,22 @@ enum VidurTopicSearch {
                 speakers.append(name)
             }
         }
-        let complete = top.coverage >= 1.0 && !original.wantsReasoning
+        let complete = top.coverage >= 1.0 && !original.wantsReasoning && isSaved
         return VidurSection(text: text, sources: sources, people: speakers, isComplete: complete, intent: .topic)
+    }
+
+    /// "Who owns X?" with no saved action: the person a speaker asked to do it, from the transcript.
+    private static func ownerSentence(hits: [Hit], context: VidurQuickContext, keys: Set<String>,
+                                      topic: String) -> (text: String, hit: Hit)? {
+        for hit in hits.prefix(8) where hit.doc.label == nil {
+            guard let found = VidurGist.request(in: hit.doc.text, topicKeys: keys, speaker: hit.doc.speaker,
+                                                index: context.index) else { continue }
+            let day = context.day(hit.doc.record.date)
+            let who = context.speakerWord(hit.doc.speaker)
+            let text = "No saved action covers \(topic), but on \(day) \(who) asked \(found.person.canonical) to \(found.phrase)."
+            return (text, hit)
+        }
+        return nil
     }
 
     /// "What did Pawan say?" without a topic: his longest recent turns.
@@ -192,13 +250,25 @@ enum VidurTopicSearch {
         }
         guard !picks.isEmpty else { return nil }
         let name = people.map(\.canonical).joined(separator: " and ")
+        let names = context.firstNames
+        var sentences: [String] = []
         var lines: [String] = []
         var sources: [VidurQuickSource] = []
         for pick in picks.sorted(by: { $0.turn.start < $1.turn.start }) {
             let quote = VidurQuickContext.excerpt(pick.turn.text, keys: [], limit: 200)
             lines.append("\u{2022} \(VidurQuickContext.timecode(pick.turn.start)): \u{201C}\(quote)\u{201D}")
+            if let clause = VidurGist.clause(from: pick.turn.text, topicKeys: [], names: names) {
+                sentences.append("On \(context.day(pick.record.date)), \(name) said that \(clause).")
+            }
             sources.append(context.source(pick.record, label: nil, timestamp: pick.turn.start, quote: pick.turn.text,
                                           speaker: pick.turn.speaker))
+        }
+        if sentences.count == picks.count {
+            let body = sentences.count == 1
+                ? sentences[0]
+                : "Here\u{2019}s what \(name) said:\n" + sentences.map { "\u{2022} " + $0 }.joined(separator: "\n")
+            return VidurSection(text: body, sources: sources, people: people.map(\.canonical), isComplete: false,
+                                intent: .topic)
         }
         let place = picks[0].record
         return VidurSection(text: "In \(context.label(place)), \(name) said:\n" + lines.joined(separator: "\n"),

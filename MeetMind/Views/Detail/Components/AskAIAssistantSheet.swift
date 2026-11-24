@@ -160,6 +160,12 @@ public struct AskAIAssistantSheet: View {
         }
         .onAppear {
             scope = VidurPreferences.shared.searchScope
+            // A meeting that has not happened has nothing to ask about, so Vidur starts on all meetings.
+            // The saved scope preference is left alone until the user picks a scope themselves.
+            if meeting?.status == .scheduled, scope != .allMeetings {
+                persistScope = false
+                scope = .allMeetings
+            }
             activateConversation()
             refreshAssistant()
             startPrewarm()
@@ -603,7 +609,8 @@ public struct AskAIAssistantSheet: View {
             allowRefinement: meeting.status != .processing, additionalFacts: extraFacts,
             history: conversationHistory(),
             userDisabledRefinement: !VidurDeepAnswerSetting.isEnabled,
-            selfNames: selfNames)
+            selfNames: selfNames,
+            widerScopes: scope == .allMeetings ? [] : widerScopes(for: meeting))
         let item = VidurConversationItem(prompt: question, answerText: "", citations: [], kind: nil, notice: nil,
                                          phase: .searching)
         let itemID = item.id
@@ -680,7 +687,32 @@ public struct AskAIAssistantSheet: View {
             guard item.phase == .done, !item.isNote, item.pending == nil, !item.answerText.isEmpty else { return false }
             return item.kind != .failed && item.kind != .unavailable
         }
-        return usable.suffix(4).map { VidurChatTurn(question: $0.prompt, answer: $0.answerText) }
+        return usable.suffix(4).map { VidurChatTurn(question: $0.prompt, answer: VidurScopeNote.strip($0.answerText)) }
+    }
+
+    /// What Vidur may search when this meeting has not happened or cannot answer: the series first, then the
+    /// other meetings (the 20 most recent of each).
+    @MainActor
+    private func widerScopes(for meeting: Meeting) -> [VidurWiderScope] {
+        let context = meeting.modelContext ?? modelContext
+        var others = ((try? context.fetch(FetchDescriptor<Meeting>())) ?? []).filter { $0.id != meeting.id }
+        others.sort { $0.createdAt < $1.createdAt }
+        var scopes: [VidurWiderScope] = []
+        if scope == .thisMeeting, let seriesID = meeting.seriesID {
+            let related = Array(others.filter { $0.seriesID == seriesID }.suffix(20))
+            if !related.isEmpty {
+                scopes.append(VidurWiderScope(
+                    kind: .series, sources: related.map { VidurSourceMeeting.make(from: $0) },
+                    facts: related.map { VidurMeetingFacts.make(from: $0) }))
+            }
+        }
+        let recent = Array(others.suffix(20))
+        if !recent.isEmpty {
+            scopes.append(VidurWiderScope(
+                kind: .allMeetings, sources: recent.map { VidurSourceMeeting.make(from: $0) },
+                facts: recent.map { VidurMeetingFacts.make(from: $0) }))
+        }
+        return scopes
     }
 
     /// Minutes of the other meetings in scope (the 20 most recent), with the current meeting last.

@@ -84,6 +84,10 @@ enum VidurQuickSections {
             return empty("There are no \(nounPlural)\(about) in \(context.scopeText).", .tasks)
         }
 
+        if parsed.asksOwner, who == nil, !parsed.residual.isEmpty {
+            return ownerAnswer(rows: rows, context: context)
+        }
+
         var head: String
         let count = rows.count
         let nounText = noun.replacingOccurrences(of: "task", with: count == 1 ? "task" : "tasks")
@@ -134,6 +138,39 @@ enum VidurQuickSections {
     }
 
     // MARK: Decisions and open issues
+
+    /// "Who owns the presentation?" answered from saved actions: "Neha \u{2014} Send the presentation (due Fri 21 Nov)".
+    private static func ownerAnswer(rows: [(task: VidurMeetingTask, record: VidurMeetingRecord)],
+                                    context: VidurQuickContext) -> VidurSection {
+        let shown = Array(rows.prefix(3))
+        var lines: [String] = []
+        var sources: [VidurQuickSource] = []
+        var people: [String] = []
+        for row in shown {
+            var owner = "No owner is set"
+            if let raw = row.task.owner, !raw.isEmpty {
+                owner = context.index.person(forRaw: raw)?.canonical ?? raw
+                if !people.contains(owner) { people.append(owner) }
+            }
+            var line = owner + " \u{2014} " + row.task.title
+            if let due = row.task.dueDate {
+                line += " (due \(context.dueDay(due)))"
+            } else if let text = row.task.dueText, !text.isEmpty {
+                line += " (due \(text))"
+            }
+            lines.append(line)
+            sources.append(context.source(row.record, label: "Action", timestamp: row.task.timestamp,
+                                          quote: row.task.quote ?? row.task.title, speaker: nil))
+        }
+        var text = lines[0]
+        if lines.count > 1 { text = lines.map { "\u{2022} " + $0 }.joined(separator: "\n") }
+        let related = shown.map {
+            VidurQuickTask(title: $0.task.title, owner: $0.task.owner, dueDate: $0.task.dueDate, dueText: $0.task.dueText,
+                           isCompleted: $0.task.isCompleted, meetingID: $0.record.id,
+                           meetingTitle: VidurQuickContext.title($0.record))
+        }
+        return VidurSection(text: text, sources: sources, people: people, tasks: related, isComplete: true, intent: .tasks)
+    }
 
     private static func lines(_ context: VidurQuickContext, intent: VidurQuickIntent) -> VidurSection {
         let isDecision = intent == .decisions

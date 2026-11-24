@@ -13,8 +13,40 @@ public enum VidurQuickAnswerer {
 
     public static func answer(question rawQuestion: String, records: [VidurMeetingRecord],
                               history: [VidurChatTurn] = [], selfNames: [String] = [],
-                              now: Date = Date(), calendar: Calendar = .current) -> VidurQuickAnswer {
+                              now: Date = Date(), calendar: Calendar = .current,
+                              currentMeetingID: UUID? = nil) -> VidurQuickAnswer {
         let question = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let first = answerOnce(question: question, records: records, history: history, selfNames: selfNames,
+                               now: now, calendar: calendar, currentMeetingID: currentMeetingID)
+        if first.confidence == .complete, !first.foundNothing { return first }
+
+        // A typo ("thevpresentation", "pawans") can make a good question look empty. Try the repaired
+        // question, and keep it only when it finds more than the question as typed.
+        let usable = records.filter(\.hasContent)
+        let repaired = VidurQuestionNormalizer.normalize(question, records: usable, names: selfNames)
+        guard repaired != question else { return first }
+        var repairedHistory: [VidurChatTurn] = []
+        for turn in history {
+            let fixed = VidurQuestionNormalizer.normalize(turn.question, records: usable, names: selfNames)
+            repairedHistory.append(VidurChatTurn(question: fixed, answer: turn.answer))
+        }
+        let second = answerOnce(question: repaired, records: records, history: repairedHistory, selfNames: selfNames,
+                                now: now, calendar: calendar, currentMeetingID: currentMeetingID)
+        return strength(second) > strength(first) ? second : first
+    }
+
+    private static func strength(_ answer: VidurQuickAnswer) -> Int {
+        if answer.foundNothing { return 0 }
+        switch answer.confidence {
+        case .complete: return 3
+        case .partial: return 2
+        case .notFound: return 0
+        }
+    }
+
+    private static func answerOnce(question: String, records: [VidurMeetingRecord], history: [VidurChatTurn],
+                                   selfNames: [String], now: Date, calendar: Calendar,
+                                   currentMeetingID: UUID?) -> VidurQuickAnswer {
         let usable = records.filter(\.hasContent).sorted { $0.date < $1.date }
 
         var names: [String] = selfNames
@@ -61,8 +93,9 @@ public enum VidurQuickAnswerer {
         }
 
         if parsed.intents.contains(.attendees) { parsed.intents.removeAll { $0 == .absent } }
-        let context = VidurQuickContext(records: scoped, parsed: parsed, index: index, selfPerson: selfPerson,
+        var context = VidurQuickContext(records: scoped, parsed: parsed, index: index, selfPerson: selfPerson,
                                         now: now, calendar: calendar)
+        context.currentMeetingID = currentMeetingID
         var sections: [VidurSection] = []
         var missing: [String] = []
         var missingIsFinal = parsed.residual.isEmpty
@@ -145,7 +178,8 @@ public enum VidurQuickAnswerer {
                 text = "I couldn\u{2019}t find that in your meetings."
             }
             return VidurQuickAnswer(text: text, sources: [], people: [], tasks: [], confidence: forced ?? .notFound,
-                                    intent: intent, suggestions: suggestions, meetingTitles: [], wantsReasoning: reasoning)
+                                    intent: intent, suggestions: suggestions, meetingTitles: [], wantsReasoning: reasoning,
+                                    foundNothing: true)
         }
         var text = sections.map(\.text).joined(separator: "\n\n")
         var sources: [VidurQuickSource] = []

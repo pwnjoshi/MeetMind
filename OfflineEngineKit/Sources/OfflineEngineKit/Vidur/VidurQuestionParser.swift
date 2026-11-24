@@ -18,6 +18,8 @@ struct VidurParsedQuestion {
     var residual: [String] = []
     var wantsCount = false
     var whoSaid = false
+    /// "who owns the presentation", "who is responsible for it": the answer is a person.
+    var asksOwner = false
     var wantsReasoning = false
     /// "and", "also", "what about" or a pronoun: the question leans on the one before it.
     var followUpCue = false
@@ -219,6 +221,11 @@ enum VidurQuestionParser {
             || (has(dateWords) && !isTask && wordSet.contains("meeting"))
         parsed.wantsCount = phrase(["how many", "kitne", "kitni", "count", "number of", "total"])
         parsed.whoSaid = has(["who", "kaun", "kisne"]) && has(speechVerbs) || phrase(["kisne kaha", "kisne bola", "who said"])
+        parsed.asksOwner = phrase([
+            "who owns", "who own", "who is responsible", "who is handling", "who handles", "who is taking care",
+            "who has to", "who needs to", "who will", "who is going to", "who should", "whose task", "whose job",
+            "kaun karega", "kaun karegi", "kiski zimmedari", "kiski jimmedari"
+        ])
         parsed.wantsReasoning = has(reasoningWords) || phrase(["how come", "how did", "how do", "how can", "how should"])
         parsed.pronounCue = phrase(["uska", "uski", "unka", "his", "her", "their", "isme", "usme", "it", "that", "those", "its"])
         parsed.followUpCue = parsed.pronounCue || phrase(["and", "aur", "also", "what about", "how about"])

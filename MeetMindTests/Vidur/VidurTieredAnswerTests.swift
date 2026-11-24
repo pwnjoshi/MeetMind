@@ -100,22 +100,38 @@ final class VidurTieredFlowTests: XCTestCase {
         XCTAssertTrue(updates[0].answer?.text.contains("Meera") == true)
     }
 
-    func testTranscriptQuestionIsAnsweredInstantlyWithASourceAndNoModel() async {
+    /// Changed on purpose: a transcript match used to show the matched line as the answer. It now goes to the
+    /// model, and without a model it is written as a short sentence. Quotes live in the sources only.
+    func testTranscriptQuestionWithoutAModelIsASentenceWithASourceNotAQuote() async {
         let counter = CallCounter()
         let started = Date()
-        let updates = await run("When does the pricing page launch?", facts: facts, hooks: hooks(counter: counter))
+        let updates = await run("When does the pricing page launch?", facts: facts,
+                                hooks: hooks(counter: counter, available: false))
         XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
         XCTAssertEqual(counter.count, 0)
         XCTAssertEqual(updates.map(\.stage), [.final])
         XCTAssertEqual(updates[0].tier, .quote)
         let answer = updates[0].answer
         XCTAssertTrue(answer?.text.contains("Friday") == true)
+        XCTAssertTrue(answer?.text.hasPrefix("On ") == true, answer?.text ?? "")
+        XCTAssertTrue(answer?.text.contains("Asha said that") == true, answer?.text ?? "")
+        XCTAssertFalse(answer?.text.contains("\u{201C}") == true, "No quotation marks in the answer body")
         XCTAssertEqual(answer?.citations.first?.timecode, "00:12")
         XCTAssertEqual(answer?.citations.first?.meetingID, meetingID)
         XCTAssertEqual(answer?.citations.first?.speaker, "Asha")
         XCTAssertEqual(answer?.kind, .extractive)
     }
 
+    func testTranscriptQuestionGoesToTheModelAndShowsTheSentenceFirst() async {
+        let counter = CallCounter()
+        let updates = await run("When does the pricing page launch?", facts: facts, hooks: hooks(counter: counter))
+        XCTAssertEqual(counter.count, 1)
+        XCTAssertEqual(updates.map(\.stage), [.refining, .final])
+        XCTAssertEqual(updates[0].tier, .quote)
+        XCTAssertTrue(updates[0].answer?.text.contains("Friday") == true, "The written sentence shows while the model works")
+        XCTAssertEqual(updates[1].tier, .generated)
+        XCTAssertEqual(updates[1].answer?.text, "Moved to Friday.")
+    }
     func testReasoningQuestionShowsTheQuickAnswerThenTheModelAnswer() async {
         let counter = CallCounter()
         let updates = await run(reasoning, facts: facts, hooks: hooks(counter: counter))
@@ -309,6 +325,118 @@ final class VidurTieredFlowTests: XCTestCase {
         XCTAssertNil(updates[0].answer, "An open question shows the search animation, not a loose quote")
         XCTAssertEqual(updates[1].answer?.text, "Written by the model.")
         XCTAssertEqual(updates[1].tier, .generated)
+    }
+    // MARK: A meeting that has not happened, or cannot answer
+
+    private let scheduledID = UUID()
+    private let quickID = UUID()
+    private let scheduledTitle = "Scheduled Meeting - 23 Nov 2026 at 11:36AM"
+
+    private var scheduledFacts: VidurMeetingFacts {
+        VidurMeetingFacts(meetingID: scheduledID, title: scheduledTitle, date: Date(), attendees: ["Pawan", "Neha"])
+    }
+
+    private var scheduledSources: [VidurSourceMeeting] {
+        [VidurSourceMeeting(id: scheduledID, title: scheduledTitle, date: Date(), turns: [])]
+    }
+
+    private var quickSource: VidurSourceMeeting {
+        VidurSourceMeeting(id: quickID, title: "Quick meeting", date: Date(timeIntervalSince1970: 1_763_800_000), turns: [
+            VidurSourceTurn(text: "uh prepare the agenda power by friday and send the neha you send the presentation please uh",
+                            start: 3, end: 8, speaker: "Pawan"),
+            VidurSourceTurn(text: "kalta and we will launch this website on 20 number and also make sure to go with the pune vendor and",
+                            start: 9, end: 14, speaker: "Pawan")
+        ])
+    }
+
+    private var quickFacts: VidurMeetingFacts {
+        VidurMeetingFacts(meetingID: quickID, title: "Quick meeting", date: Date(timeIntervalSince1970: 1_763_800_000),
+                          attendees: ["Pawan", "Neha"], attendanceRecorded: true,
+                          tasks: [VidurTaskFact(title: "Send the agenda", owner: "Pawan", timestamp: 3)])
+    }
+
+    private func widerRun(_ question: String, sources: [VidurSourceMeeting], facts: VidurMeetingFacts,
+                          wider: [VidurWiderScope], hooks: VidurTieredHooks) async -> [VidurAnswerUpdate] {
+        let box = UpdateBox()
+        let request = VidurTieredRequest(question: question, sources: sources, facts: facts, length: .standard,
+                                         widerScopes: wider)
+        await VidurTieredAnswerService.run(request, hooks: hooks) { box.add($0) }
+        return box.updates
+    }
+
+    /// A recorded meeting that never mentions the launch.
+    private var quietSources: [VidurSourceMeeting] {
+        [VidurSourceMeeting(id: meetingID, title: "Weekly sync", date: Date(), turns: [
+            VidurSourceTurn(text: "Welcome everyone, let us begin the weekly sync", start: 1, end: 4, speaker: "Asha")
+        ])]
+    }
+
+    private var everything: [VidurWiderScope] {
+        [VidurWiderScope(kind: .allMeetings, sources: [quickSource], facts: [quickFacts])]
+    }
+
+    func testScheduledMeetingAnswersFromOtherMeetingsAndSaysSo() async {
+        let counter = CallCounter()
+        let updates = await widerRun("What are Pawan\u{2019}s task?", sources: scheduledSources, facts: scheduledFacts,
+                                     wider: everything, hooks: hooks(counter: counter, available: false))
+        XCTAssertEqual(updates.count, 1)
+        let text = updates[0].answer?.text ?? ""
+        XCTAssertTrue(text.hasPrefix(VidurScopeNote.notHappened), text)
+        XCTAssertTrue(text.contains("Pawan has 1 open task"), text)
+        XCTAssertFalse(text.contains("Scheduled Meeting"), "The meeting name stays out of the sentence")
+    }
+
+    func testScheduledMeetingDecisionQuestionIsHonestAndNaturalWithoutAModel() async {
+        let counter = CallCounter()
+        let updates = await widerRun("What did we decide about the launch?", sources: scheduledSources,
+                                     facts: scheduledFacts, wider: everything,
+                                     hooks: hooks(counter: counter, available: false))
+        let text = updates.last?.answer?.text ?? ""
+        XCTAssertTrue(text.hasPrefix(VidurScopeNote.notHappened), text)
+        XCTAssertTrue(text.contains("no recorded decision about launch"), text)
+        XCTAssertTrue(text.contains("Pawan said that they will launch this website"), text)
+        XCTAssertFalse(text.contains("\u{201C}"), "No pasted quote")
+        XCTAssertEqual(updates.last?.tier, .quote)
+        XCTAssertEqual(updates.last?.answer?.citations.first?.speaker, "Pawan")
+    }
+
+    func testScopeNoteStaysInFrontOfEveryUpdateOfAModelAnswer() async {
+        let counter = CallCounter()
+        let reply = VidurAnswer(text: "Pawan said they would launch on the 20th.", kind: .generated)
+        let updates = await widerRun("What did we decide about the launch?", sources: scheduledSources,
+                                     facts: scheduledFacts, wider: everything, hooks: hooks(counter: counter, reply: reply))
+        XCTAssertEqual(counter.count, 1)
+        XCTAssertEqual(updates.map(\.stage), [.refining, .final])
+        for answer in updates.compactMap(\.answer) {
+            XCTAssertTrue(answer.text.hasPrefix(VidurScopeNote.notHappened), answer.text)
+        }
+        XCTAssertTrue(updates.last?.answer?.text.contains("launch on the 20th") == true)
+        XCTAssertEqual(updates.last?.tier, .generated)
+    }
+
+    func testRecordedMeetingThatCannotAnswerLooksAtItsSeriesFirst() async {
+        let counter = CallCounter()
+        let weekly = [VidurWiderScope(kind: .series, sources: [quickSource], facts: [quickFacts]),
+                      VidurWiderScope(kind: .allMeetings, sources: [quickSource], facts: [quickFacts])]
+        let updates = await widerRun("What did we decide about the launch?", sources: quietSources, facts: populatedFacts,
+                                     wider: weekly, hooks: hooks(counter: counter, available: false))
+        let text = updates.last?.answer?.text ?? ""
+        XCTAssertTrue(text.hasPrefix(VidurScopeNote.notCoveredSeries), text)
+        XCTAssertTrue(text.contains("Pawan said that they will launch"), text)
+    }
+
+    func testRecordedMeetingThatCanAnswerIsNotWidened() async {
+        let counter = CallCounter()
+        let updates = await widerRun("Who attended?", sources: sources, facts: populatedFacts, wider: everything,
+                                     hooks: hooks(counter: counter))
+        XCTAssertFalse(updates.last?.answer?.text.hasPrefix(VidurScopeNote.notCovered) == true)
+        XCTAssertTrue(updates.last?.answer?.text.contains("Present (2)") == true)
+    }
+
+    func testScopeNoteIsLeftOutOfChatHistory() {
+        let text = VidurScopeNote.prefixed("Pawan has 1 open task.", note: VidurScopeNote.notHappened)
+        XCTAssertEqual(VidurScopeNote.strip(text), "Pawan has 1 open task.")
+        XCTAssertEqual(VidurScopeNote.strip("Plain answer."), "Plain answer.")
     }
     func testRecordAdapterMergesMinutesAndTranscript() {
         let decision = VidurFactLine(text: "Launch Friday", timestamp: 12, quote: "launch moves to Friday", speaker: "Asha")

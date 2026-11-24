@@ -170,4 +170,6 @@ public struct VidurQuickAnswer: Sendable, Equatable {
     public let meetingTitles: [String]
     /// True for "why" and "how" questions that a model can explain better than a lookup.
     public let wantsReasoning: Bool
+    /// True when the saved data had nothing for the question (even if the answer says so plainly).
+    public var foundNothing: Bool = false
 }

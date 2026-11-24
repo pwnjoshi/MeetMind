@@ -13,7 +13,7 @@ public enum VidurAnswerTier: Sendable, Equatable {
     case none
     /// Tier 0: read from the saved minutes, tasks, decisions, people and agenda.
     case structured
-    /// Tier 1: exact transcript quotes ranked by BM25.
+    /// Tier 1: transcript matches ranked by BM25, written as a short sentence. The exact words are the sources.
     case quote
     /// Tier 2: written by an on-device model from the retrieved minutes and transcript passages.
     case generated
@@ -23,6 +23,29 @@ public struct VidurAnswerUpdate: Sendable, Equatable {
     public let stage: VidurAnswerStage
     public let tier: VidurAnswerTier
     public let answer: VidurAnswer?
+}
+
+/// Meetings Vidur may search when the meeting it was opened from cannot answer: its series first, then the rest.
+public struct VidurWiderScope: Sendable {
+    public enum Kind: Sendable, Equatable { case series, allMeetings }
+
+    public let kind: Kind
+    public let sources: [VidurSourceMeeting]
+    public let facts: [VidurMeetingFacts]
+
+    public init(kind: Kind, sources: [VidurSourceMeeting], facts: [VidurMeetingFacts]) {
+        self.kind = kind
+        self.sources = sources
+        self.facts = facts
+    }
+}
+
+extension VidurAnswer {
+    /// The same answer with a one-line scope note in front ("This meeting hasn't happened yet, ...").
+    func withScopeNote(_ note: String) -> VidurAnswer {
+        VidurAnswer(text: VidurScopeNote.prefixed(text, note: note), citations: citations, kind: kind, notice: notice,
+                    people: people, relatedTasks: relatedTasks, suggestions: suggestions)
+    }
 }
 
 public struct VidurTieredRequest: Sendable {
@@ -41,11 +64,14 @@ public struct VidurTieredRequest: Sendable {
     public let userDisabledRefinement: Bool
     /// Names the user goes by, so "my tasks" and "what do I owe" find their own tasks.
     public let selfNames: [String]
+    /// Wider searches tried in order when this meeting has not happened yet or cannot answer.
+    public let widerScopes: [VidurWiderScope]
 
     public init(question: String, sources: [VidurSourceMeeting], facts: VidurMeetingFacts?,
                 length: VidurAnswerLength, allowRefinement: Bool = true,
                 additionalFacts: [VidurMeetingFacts] = [], history: [VidurChatTurn] = [],
-                userDisabledRefinement: Bool = false, selfNames: [String] = [UserProfile.defaultLocalName]) {
+                userDisabledRefinement: Bool = false, selfNames: [String] = [UserProfile.defaultLocalName],
+                widerScopes: [VidurWiderScope] = []) {
         self.question = question
         self.sources = sources
         self.facts = facts
@@ -55,6 +81,7 @@ public struct VidurTieredRequest: Sendable {
         self.history = history
         self.userDisabledRefinement = userDisabledRefinement
         self.selfNames = selfNames
+        self.widerScopes = widerScopes
     }
 }
 
@@ -185,43 +212,54 @@ public enum VidurTieredAnswerService {
         }
         let hasTranscript = request.sources.contains { !$0.turns.isEmpty }
         let allFacts = (request.facts.map { [$0] } ?? []) + request.additionalFacts
-        guard hasTranscript || !allFacts.isEmpty else {
+        let hasWider = request.widerScopes.contains { scope in
+            scope.sources.contains { !$0.turns.isEmpty } || !scope.facts.isEmpty
+        }
+        guard hasTranscript || !allFacts.isEmpty || hasWider else {
             emit(.init(stage: .final, tier: .none,
                        answer: VidurAnswer(text: "There is no saved transcript to search yet.", kind: .notFound)))
             return
         }
 
         // Tiers 0 and 1: saved minutes, tasks, people and transcripts of every meeting in scope.
-        // Pure in-memory search, so this takes milliseconds.
-        let records = VidurRecordAdapter.records(facts: allFacts, sources: request.sources)
-        let quick = VidurQuickAnswerer.answer(question: question, records: records, history: request.history,
-                                              selfNames: request.selfNames)
+        // Pure in-memory search, so this takes milliseconds. A meeting that has not happened, or cannot
+        // answer, hands the question to the wider scopes (its series, then every other meeting).
+        let searched = search(question, request: request, facts: allFacts)
+        let quick = searched.quick
+        let scopeSources = searched.sources
+        let scopeFacts = searched.facts
+        let output = decorated(emit, note: searched.note)
+        let usableRecords = searched.records.filter(\.hasContent)
+        let modelQuestion = VidurQuestionNormalizer.normalize(question, records: usableRecords, names: request.selfNames)
         let quickAnswer = VidurAnswer(quick: quick)
         let found = quick.confidence != .notFound
         let quickTier: VidurAnswerTier = !found ? .none : (quick.intent == .topic ? .quote : .structured)
         guard !Task.isCancelled else { return }
 
         // The model writes the answer when the saved data found nothing, when the question asks "why" or
-        // "how", or when it is open ended ("what were the main concerns?"). Facts the minutes state
-        // outright stay as they are, or are reworded naturally when the model is already warm.
+        // "how", when it is open ended ("what were the main concerns?"), and whenever the quick answer is a
+        // transcript match: a loose line is turned into a plain sentence. Facts the minutes state outright
+        // stay as they are, or are reworded naturally when the model is already warm. Without a model the
+        // quick answer already is a short sentence written from the transcript, never a pasted quote.
         let openEnded = VidurRagRouting.isOpenEnded(question)
+        let transcriptMatch = found && quick.intent == .topic
         let needsDeepAnswer = quick.confidence == .notFound || (quick.confidence == .partial && quick.wantsReasoning)
-            || openEnded
+            || openEnded || transcriptMatch
         guard needsDeepAnswer else {
             if found, request.allowRefinement, VidurRagRouting.canRephrase(quick.text), await hooks.rephraseAvailable() {
-                emit(.init(stage: .refining, tier: quickTier, answer: quickAnswer))
-                let natural = await rephrased(quickAnswer: quickAnswer, question: question, request: request,
-                                              facts: allFacts, hooks: hooks, emit: emit)
+                output(.init(stage: .refining, tier: quickTier, answer: quickAnswer))
+                let natural = await rephrased(quickAnswer: quickAnswer, question: modelQuestion, request: request,
+                                              sources: scopeSources, facts: scopeFacts, hooks: hooks, emit: output)
                 guard !Task.isCancelled else { return }
                 if let natural {
                     let answer = VidurAnswer(text: natural, citations: quickAnswer.citations, kind: .generated,
                                              notice: nil, people: quickAnswer.people,
                                              relatedTasks: quickAnswer.relatedTasks, suggestions: quickAnswer.suggestions)
-                    emit(.init(stage: .final, tier: .generated, answer: answer))
+                    output(.init(stage: .final, tier: .generated, answer: answer))
                     return
                 }
             }
-            emit(.init(stage: .final, tier: quickTier, answer: quickAnswer))
+            output(.init(stage: .final, tier: quickTier, answer: quickAnswer))
             return
         }
         guard request.allowRefinement, await hooks.refinementAvailable() else {
@@ -235,21 +273,21 @@ public enum VidurTieredAnswerService {
             } else {
                 notice = "Vidur's local model is not downloaded. " + VidurAnswerService.unavailableHint
             }
-            emit(.init(stage: .final, tier: quickTier, answer: quickAnswer.withNotice(notice)))
+            output(.init(stage: .final, tier: quickTier, answer: quickAnswer.withNotice(notice)))
             return
         }
         guard !Task.isCancelled else { return }
 
         // Tier 2: the model reads the best minutes and transcript passages. A reliable quick answer stays on
         // screen while it works; an open ended question shows the search animation instead.
-        emit(.init(stage: .refining, tier: quickTier, answer: (found && !openEnded) ? quickAnswer : nil))
+        output(.init(stage: .refining, tier: quickTier, answer: (found && !openEnded) ? quickAnswer : nil))
         let gate = VidurStreamGate()
         let input = VidurRefineInput(
-            question: question, sources: request.sources, facts: allFacts, history: request.history,
+            question: modelQuestion, sources: scopeSources, facts: scopeFacts, history: request.history,
             length: request.length, selfNames: request.selfNames,
             onPartial: { partial in
                 guard gate.shouldEmit(partial) else { return }
-                emit(.init(stage: .refining, tier: .generated, answer: VidurAnswer(text: partial, kind: .generated)))
+                output(.init(stage: .refining, tier: .generated, answer: VidurAnswer(text: partial, kind: .generated)))
             })
         do {
             let refined = try await VidurDeadline.run(seconds: hooks.refineTimeout) { try await hooks.refine(input) }
@@ -257,26 +295,74 @@ public enum VidurTieredAnswerService {
             if refined.kind == .notFound {
                 let notice = found ? "Vidur\u{2019}s model found nothing more in your meetings."
                 : "Searched the saved minutes and transcripts with the on-device model."
-                emit(.init(stage: .final, tier: quickTier, answer: quickAnswer.withNotice(notice)))
+                output(.init(stage: .final, tier: quickTier, answer: quickAnswer.withNotice(notice)))
             } else {
-                emit(.init(stage: .final, tier: refined.kind == .generated ? .generated : quickTier, answer: refined))
+                output(.init(stage: .final, tier: refined.kind == .generated ? .generated : quickTier, answer: refined))
             }
         } catch is CancellationError {
             return
         } catch {
             guard !Task.isCancelled else { return }
             let kept = quickAnswer.withNotice("Quick answer shown. Deep answer unavailable: \(error.localizedDescription)")
-            emit(.init(stage: .final, tier: quickTier, answer: kept))
+            output(.init(stage: .final, tier: quickTier, answer: kept))
+        }
+    }
+
+    // MARK: Scope
+
+    private struct Searched {
+        let sources: [VidurSourceMeeting]
+        let facts: [VidurMeetingFacts]
+        let records: [VidurMeetingRecord]
+        let quick: VidurQuickAnswer
+        var note: String?
+    }
+
+    /// Searches the meeting in scope. When it has not happened yet (no transcript, notes or minutes) or has
+    /// nothing on the question, the wider scopes are tried in order, and the answer says so in one line.
+    private static func search(_ question: String, request: VidurTieredRequest,
+                               facts allFacts: [VidurMeetingFacts]) -> Searched {
+        func look(_ sources: [VidurSourceMeeting], _ facts: [VidurMeetingFacts], current: UUID?) -> Searched {
+            let records = VidurRecordAdapter.records(facts: facts, sources: sources)
+            let quick = VidurQuickAnswerer.answer(question: question, records: records, history: request.history,
+                                                  selfNames: request.selfNames, currentMeetingID: current)
+            return Searched(sources: sources, facts: facts, records: records, quick: quick, note: nil)
+        }
+        let here = look(request.sources, allFacts, current: request.facts?.meetingID)
+        guard !request.widerScopes.isEmpty else { return here }
+        let unrecorded = VidurScopeNote.isUnrecorded(here.records.filter(\.hasContent))
+        let nothingHere = unrecorded || here.quick.foundNothing || here.quick.confidence == .notFound
+        guard nothingHere else { return here }
+        var last = here
+        for wider in request.widerScopes {
+            var candidate = look(wider.sources, wider.facts, current: nil)
+            candidate.note = VidurScopeNote.note(unrecorded: unrecorded, isSeries: wider.kind == .series)
+            if !candidate.quick.foundNothing, candidate.quick.confidence != .notFound { return candidate }
+            last = candidate
+        }
+        return last
+    }
+
+    /// Puts the one-line scope note in front of every answer update when the search went wider.
+    private static func decorated(_ emit: @escaping @Sendable (VidurAnswerUpdate) -> Void,
+                                  note: String?) -> @Sendable (VidurAnswerUpdate) -> Void {
+        guard let note else { return emit }
+        return { update in
+            guard let answer = update.answer else {
+                emit(update)
+                return
+            }
+            emit(VidurAnswerUpdate(stage: update.stage, tier: update.tier, answer: answer.withScopeNote(note)))
         }
     }
 
     /// Asks the model to say the verified quick answer naturally. Nil keeps the saved wording.
     private static func rephrased(quickAnswer: VidurAnswer, question: String, request: VidurTieredRequest,
-                                  facts: [VidurMeetingFacts], hooks: VidurTieredHooks,
+                                  sources: [VidurSourceMeeting], facts: [VidurMeetingFacts], hooks: VidurTieredHooks,
                                   emit: @escaping @Sendable (VidurAnswerUpdate) -> Void) async -> String? {
         let gate = VidurStreamGate()
         let input = VidurRephraseInput(
-            question: question, sources: request.sources, facts: facts, history: request.history,
+            question: question, sources: sources, facts: facts, history: request.history,
             selfNames: request.selfNames, verifiedText: quickAnswer.text,
             onPartial: { partial in
                 guard gate.shouldEmit(partial) else { return }
@@ -291,7 +377,6 @@ public enum VidurTieredAnswerService {
             return nil
         }
     }
-
     // MARK: Live Tier 2
 
     /// A reworded answer is only worth it when the model is already loaded and the iPhone is cool and not in
@@ -375,15 +460,17 @@ public enum VidurTieredAnswerService {
         let promptInput = VidurRagPromptInput(
             question: input.question, history: input.history, userName: input.selfNames.first ?? "", now: Date(),
             retrieval: retrieval, language: language)
+        let allowTask = allowsTaskWord(question: input.question, retrieval: retrieval)
         let result = try await VidurAnswerEngine.shared.answerRag(
             VidurRagRequest(input: promptInput), model: VidurModel.selected) { partial in
-                input.onPartial?(partial)
+                input.onPartial?(VidurAnswerPolish.polish(partial, allowTask: allowTask))
             }
         guard result.found else { return VidurAnswer(text: result.answer, kind: .notFound) }
         let sources = VidurRagCitations.sources(for: result)
         let citations = sources.items.map { source in
             VidurCitation(meetingID: source.meetingID, meetingTitle: source.meetingTitle,
-                          timestamp: source.timestamp ?? 0, quote: source.quote, speaker: source.speaker,
+                          timestamp: source.timestamp ?? 0, quote: source.quote,
+                          speaker: VidurAnswerPolish.chipSpeaker(source.speaker),
                           sourceLabel: source.label, hasTimestamp: source.timestamp != nil)
         }
         guard !citations.isEmpty else { throw VidurGroundingError.uncited }
@@ -392,8 +479,17 @@ public enum VidurTieredAnswerService {
         if !VidurRagGuard.isFaithful(answer: result.answer, evidence: [result.prompt.user] + input.selfNames) {
             notices.append("Check the sources: a detail may not match your meetings.")
         }
-        return VidurAnswer(text: result.answer, citations: citations, kind: .generated,
+        let polished = VidurAnswerPolish.polish(result.answer, allowTask: allowTask)
+        return VidurAnswer(text: polished, citations: citations, kind: .generated,
                            notice: notices.isEmpty ? nil : notices.joined(separator: " "))
+    }
+
+    /// "Task" is only the right word when the question is about tasks or a saved action was retrieved.
+    /// An undecided matter is an open issue.
+    static func allowsTaskWord(question: String, retrieval: VidurRagRetrieval) -> Bool {
+        let lowered = question.lowercased()
+        if lowered.contains("task") || lowered.contains("action") || lowered.contains("todo") { return true }
+        return retrieval.hits.contains { $0.kind == .action }
     }
 
     /// Says a verified quick answer naturally. Returns nil unless the reworded text keeps every fact.
@@ -408,13 +504,13 @@ public enum VidurTieredAnswerService {
             retrieval: retrieval, language: language, verifiedAnswer: input.verifiedText)
         let result = try await VidurAnswerEngine.shared.answerRag(
             VidurRagRequest(input: promptInput), model: VidurModel.selected) { partial in
-                input.onPartial?(partial)
+                input.onPartial?(VidurAnswerPolish.polish(partial, allowTask: true))
             }
         guard result.found, !result.truncated else { return nil }
         let evidence = [result.prompt.user] + input.selfNames
         guard VidurRagGuard.isFaithful(answer: result.answer, evidence: evidence),
               VidurRagGuard.keepsFacts(answer: result.answer, verified: input.verifiedText) else { return nil }
-        return result.answer
+        return VidurAnswerPolish.polish(result.answer, allowTask: true)
     }
 
     private static func appleRefine(question: String, selected: [VidurContextSnippet],
