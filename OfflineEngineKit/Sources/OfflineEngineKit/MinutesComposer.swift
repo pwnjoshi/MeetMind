@@ -63,6 +63,50 @@ enum MinutesComposer {
 
     // MARK: - Summary
 
+    private static let leadingDeadlineWords: Set<String> = ["tomorrow", "today", "tonight", "eod", "eow", "cob"]
+
+    /// A deadline as the summary reads it: translated to English, a repeated word removed and "by" in front of a
+    /// bare day or date ("Friday" -> "by Friday", "by Friday Friday" -> "by Friday").
+    static func summaryDeadline(_ deadline: String) -> String {
+        let english = englishDeadline(deadline).trimmingCharacters(in: .whitespacesAndNewlines)
+        var words: [String] = []
+        for piece in english.split(whereSeparator: { $0.isWhitespace }) {
+            let word = String(piece)
+            if let last = words.last, last.lowercased() == word.lowercased() { continue }
+            words.append(word)
+        }
+        guard let first = words.first?.lowercased() else { return "" }
+        let joined = words.joined(separator: " ")
+        let isDay = HindiText.weekdays.contains(first) || HindiText.months.contains(first)
+        let startsWithDigit = first.first?.isNumber == true
+        if isDay || startsWithDigit || leadingDeadlineWords.contains(first) { return "by " + joined }
+        return joined
+    }
+
+    /// "Pawan will prepare the agenda by Friday". A deadline written inside the title is moved out of it, so the
+    /// deadline is said once.
+    static func taskLine(_ task: SuggestedTask) -> String {
+        let split = ActionExtractor.splitDeadline(task.title)
+        var base = task.title
+        var spoken = task.deadlineText
+        if let found = split.deadline {
+            let tail = task.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+            let rest = split.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;:-")))
+            if tail.lowercased().hasSuffix(found.lowercased()), rest.count >= 3 {
+                base = rest
+                if spoken == nil { spoken = found }
+            }
+        }
+        let title = HindiText.lowercaseFirst(base)
+        var line: String
+        if let owner = task.owner { line = owner + " will " + title } else { line = "To do: " + title }
+        if let deadline = spoken {
+            let phrase = summaryDeadline(deadline)
+            if !phrase.isEmpty { line += " " + phrase }
+        }
+        return line
+    }
+
     static func executiveSummary(names: [String], topics: [String], decisionPhrases: [String],
                                  tasks: [SuggestedTask], openSubjects: [String]) -> String {
         var sentences: [String] = []
@@ -77,13 +121,7 @@ enum MinutesComposer {
         }
         if !tasks.isEmpty {
             var lines: [String] = []
-            for task in tasks.prefix(4) {
-                var line: String
-                let title = HindiText.lowercaseFirst(task.title)
-                if let owner = task.owner { line = owner + " will " + title } else { line = "To do: " + title }
-                if let deadline = task.deadlineText { line += " " + englishDeadline(deadline) }
-                lines.append(line)
-            }
+            for task in tasks.prefix(4) { lines.append(taskLine(task)) }
             var text = lines.joined(separator: "; ")
             if tasks.count > 4 { text += "; and \(tasks.count - 4) more" }
             sentences.append(HindiText.capitalizeFirst(text) + ".")

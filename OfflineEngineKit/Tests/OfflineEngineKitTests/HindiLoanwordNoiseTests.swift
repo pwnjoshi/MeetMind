@@ -170,6 +170,139 @@ final class HindiLoanwordNoiseTests: XCTestCase {
         XCTAssertFalse(taskQuotes.contains { $0.contains("अभीते") }, "\(taskQuotes)")
     }
 
+    // MARK: - Device model output
+
+    /// What the 1.7B model returned on a device for this dialogue. It copies the owner and the deadline of the
+    /// agenda task onto the presentation task, turns the budget question into a task, and claims that the
+    /// design change was agreed although the transcript says it is still pending. Turn ids are 1-based.
+    private var deviceModel: LocalAnalysisResult {
+        let launchFinal = SourceEvidence(turnID: "t4", quote: "लोंच 20 नोवेंबर को ही फाइनल करते हैं")
+        let puneChoice = SourceEvidence(turnID: "t7", quote: "लेट एस गो विद दिपुने वेंदर")
+        let agendaRequest = SourceEvidence(turnID: "t8", quote: "पवन, क्या तुम फ्राइडे तक अजेंड तयार कर सकते हो")
+        let presentationRequest = SourceEvidence(turnID: "t10", quote: "और निहा, तुम कल तक प्लायंट को प्रेजंटेशन भेज दोगी")
+        let presentationPromise = SourceEvidence(turnID: "t11", quote: "मैं कल तक प्रेजंटेशन भेज दूंगी")
+        let budgetQuestion = SourceEvidence(turnID: "t12", quote: "बजित का क्या करें, मार्केटिंग के लिए कितना रखें")
+        let budgetOpen = SourceEvidence(turnID: "t13", quote: "बजट अभी डिसाइड नहीं हुआ है")
+        let designOpen = SourceEvidence(turnID: "t14", quote: "डिजाइन चेंज करना है या नहीं, वो भी अभीते नहीं हुआ")
+        let designPending = SourceEvidence(turnID: "t15", quote: "वो भी पेंडिंग है")
+        let decisions: [SupportedPoint] = [
+            SupportedPoint(text: "That the launch be held on 20 November.", evidence: [launchFinal]),
+            SupportedPoint(text: "That the Pune vendor be engaged for the launch (preferred for lower price).", evidence: [puneChoice]),
+            SupportedPoint(text: "That the design change be adopted.", evidence: [designOpen, designPending])
+        ]
+        let discussion: [SupportedPoint] = [
+            SupportedPoint(text: "It was agreed to go with the design change.", evidence: [designOpen, designPending])
+        ]
+        let tasks: [SuggestedTask] = [
+            SuggestedTask(title: "Prepare the agenda for the next meeting", category: "Create/Update", owner: "Pawan",
+                          deadlineText: "Friday", priority: nil, evidence: [agendaRequest]),
+            SuggestedTask(title: "Send launch presentation to client", category: "Follow-up", owner: "Pawan",
+                          deadlineText: "Friday", priority: nil, evidence: [presentationRequest]),
+            SuggestedTask(title: "Discuss budget for marketing", category: "Follow-up", owner: "Pawan",
+                          deadlineText: "Friday", priority: nil, evidence: [budgetQuestion, budgetOpen]),
+            SuggestedTask(title: "Send the launch presentation to the client", category: "Follow-up", owner: "Neha",
+                          deadlineText: "by tomorrow", priority: nil, evidence: [presentationPromise])
+        ]
+        return LocalAnalysisResult(discussion: discussion, decisions: decisions, tasks: tasks)
+    }
+
+    func testDeviceModelOutputReducesToTheExpectedMinutes() {
+        let turns = makeTurns(speaker: alternating)
+        let reduced = reduce(turns, model: deviceModel)
+        assertExpectedMinutes(reduced, turns: turns)
+        let debug = "tasks=\(reduced.tasks.map { "\($0.title)|\($0.owner ?? "nil")|\($0.deadlineText ?? "nil")" }) decisions=\(reduced.decisions.map(\.text)) discussion=\(reduced.discussion.map(\.text)) summary=\(reduced.executiveSummary)"
+
+        // Tasks: the borrowed owner and deadline never reach the presentation task, and the budget question is no task.
+        XCTAssertEqual(reduced.tasks.map { $0.owner ?? "nil" }, ["Pawan", "Neha"], debug)
+        XCTAssertFalse(reduced.tasks.contains { $0.title.lowercased().contains("budget") || $0.title.lowercased().contains("discuss") }, debug)
+        let stored = reduced.checkpoint.analysis.flatMap(\.tasks)
+        XCTAssertEqual(stored.count, 2, debug)
+        XCTAssertEqual(stored.map { $0.owner ?? "nil" }, ["Pawan", "Neha"], debug)
+        XCTAssertEqual(stored.map { $0.deadlineText ?? "nil" }, ["by Friday", "by tomorrow"], debug)
+        XCTAssertTrue(stored.first?.title.hasPrefix("Prepare the agenda") == true, debug)
+
+        // The design change is open, never agreed.
+        XCTAssertFalse(reduced.decisions.contains { $0.text.lowercased().contains("design") }, debug)
+        XCTAssertFalse(reduced.minutes.resolutions.contains { $0.text.lowercased().contains("design") }, debug)
+        XCTAssertFalse(reduced.discussion.contains { $0.text.lowercased().contains("agreed") }, debug)
+        XCTAssertFalse(reduced.executiveSummary.lowercased().contains("go with the design change"), debug)
+
+        // The summary names each deadline once, with "by".
+        let summary = reduced.executiveSummary
+        XCTAssertFalse(summary.contains("Friday Friday"), debug)
+        XCTAssertEqual(summary.components(separatedBy: "by Friday").count - 1, 1, debug)
+        XCTAssertEqual(summary.components(separatedBy: "by tomorrow").count - 1, 1, debug)
+        XCTAssertFalse(summary.contains("agenda Friday"), debug)
+        XCTAssertFalse(summary.lowercased().contains("budget for marketing"), debug)
+    }
+
+    func testDiscussionTasksAreNotActions() {
+        let turns = makeTurns(speaker: alternating)
+        let question = SourceEvidence(turnID: "t12", quote: "बजित का क्या करें, मार्केटिंग के लिए कितना रखें")
+        let model = LocalAnalysisResult(discussion: [], decisions: [], tasks: [
+            SuggestedTask(title: "Discuss the budget for marketing", category: "Follow-up", owner: nil, deadlineText: nil,
+                          priority: nil, evidence: [question]),
+            SuggestedTask(title: "Talk about the marketing budget", category: "Follow-up", owner: nil, deadlineText: nil,
+                          priority: nil, evidence: [question])
+        ])
+        let reduced = reduce(turns, model: model)
+        let titles = reduced.tasks.map(\.title)
+        XCTAssertEqual(reduced.tasks.count, 2, "\(titles)")
+        XCTAssertFalse(titles.contains { $0.lowercased().contains("budget") || $0.lowercased().contains("discuss") }, "\(titles)")
+    }
+
+    func testModelOwnerAndDeadlineMustComeFromTheCitedTurns() {
+        let turns = makeTurns(speaker: alternating)
+        let source = TaskGrounding.source(turns: turns, participants: ["Neha", "Pawan"], speakerNames: [:])
+        let request = [SourceEvidence(turnID: "t10", quote: "और निहा, तुम कल तक प्लायंट को प्रेजंटेशन भेज दोगी")]
+        XCTAssertNil(TaskGrounding.groundedOwner("Pawan", evidence: request, source: source))
+        XCTAssertEqual(TaskGrounding.groundedOwner("Neha", evidence: request, source: source), "Neha")
+        XCTAssertNil(TaskGrounding.groundedDeadline("Friday", evidence: request, source: source))
+        XCTAssertEqual(TaskGrounding.groundedDeadline("by tomorrow", evidence: request, source: source), "by tomorrow")
+        XCTAssertEqual(TaskGrounding.groundedDeadline("कल तक", evidence: request, source: source), "कल तक")
+        XCTAssertEqual(TaskGrounding.groundedDeadline("ASAP", evidence: request, source: source), "ASAP")
+        // A promise that names nobody cannot contradict the owner.
+        let promise = [SourceEvidence(turnID: "t11", quote: "मैं कल तक प्रेजंटेशन भेज दूंगी")]
+        XCTAssertEqual(TaskGrounding.groundedOwner("Neha", evidence: promise, source: source), "Neha")
+        XCTAssertEqual(TaskGrounding.timeIdentity("फ्राइडे तक"), ["friday"])
+        XCTAssertEqual(TaskGrounding.timeIdentity("by tomorrow"), ["tomorrow"])
+        XCTAssertEqual(TaskGrounding.timeIdentity("20th November"), ["20", "november"])
+    }
+
+    func testModelDecisionAboutAnOpenMatterIsDroppedInEnglishToo() {
+        let turns = MinutesFixtures.turns(MinutesFixtures.english)
+        let claim = SupportedPoint(text: "That the design change be adopted.",
+                                   evidence: [SourceEvidence(turnID: "t13", quote: "We will discuss it in the next meeting.")])
+        let model = LocalAnalysisResult(discussion: [], decisions: [claim], tasks: [])
+        let checkpoint = MeetingAnalysisCheckpoint(sourceSignature: "english", stage: .completed, turns: turns,
+            speakers: [], analysis: [model], analyzedChunks: 1)
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint, participants: ["Neha", "Pawan"])
+        XCTAssertEqual(reduced.decisions.count, 2, reduced.decisions.map(\.text).joined(separator: " | "))
+        XCTAssertFalse(reduced.decisions.contains { $0.text.lowercased().contains("design") })
+        XCTAssertEqual(reduced.openIssues.count, 2, reduced.openIssues.map(\.text).joined(separator: " | "))
+    }
+
+    // MARK: - Summary wording
+
+    func testSummaryNamesEachDeadlineOnceWithBy() {
+        let tasks = [
+            SuggestedTask(title: "Send presentation to client by Friday", category: "Follow-up", owner: "Pawan",
+                          deadlineText: "Friday", priority: nil, evidence: []),
+            SuggestedTask(title: "Prepare the agenda", category: "Create/Update", owner: "Pawan",
+                          deadlineText: "Friday", priority: nil, evidence: []),
+            SuggestedTask(title: "Send the report", category: "Follow-up", owner: nil,
+                          deadlineText: "by Friday Friday", priority: nil, evidence: [])
+        ]
+        let summary = MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [], tasks: tasks, openSubjects: [])
+        XCTAssertEqual(summary, "Pawan will send presentation to client by Friday; Pawan will prepare the agenda by Friday; "
+            + "To do: send the report by Friday.")
+        XCTAssertEqual(MinutesComposer.summaryDeadline("tomorrow"), "by tomorrow")
+        XCTAssertEqual(MinutesComposer.summaryDeadline("कल तक"), "by tomorrow")
+        XCTAssertEqual(MinutesComposer.summaryDeadline("20 November"), "by 20 November")
+        XCTAssertEqual(MinutesComposer.summaryDeadline("next week"), "next week")
+        XCTAssertEqual(MinutesComposer.summaryDeadline("ASAP"), "ASAP")
+    }
+
     // MARK: - Loanwords
 
     func testPhoneticLoanwordsResolveToEnglish() {

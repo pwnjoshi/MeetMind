@@ -62,6 +62,12 @@ public enum MeetingAnalysisReducer {
         for point in generatedDiscussion.compactMap(cleanedPoint) {
             if isUndecidedPoint(point, grounding) { openCandidates.append(point) } else { discussionCandidates.append(point) }
         }
+        // An explicit "not decided" or "pending" wins over a model claim that the same matter was settled.
+        let deterministicOpen = unresolvedOutcomes(in: checkpoint.turns, hindi: hindi) + hindiOpenPoints(hindi)
+        let openPool = openCandidates + deterministicOpen
+        let openSubjects = openSubjectSets(openPool)
+        decisionCandidates = decisionCandidates.filter { !claimsOpenMatterSettled($0, openSubjects, requireClaim: false) }
+        discussionCandidates = discussionCandidates.filter { !claimsOpenMatterSettled($0, openSubjects, requireClaim: true) }
 
         var decisions = deduplicatePoints(decisionCandidates)
         let deterministicDecisions = explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi)
@@ -72,7 +78,7 @@ public enum MeetingAnalysisReducer {
             : mergePoints(decisions, with: deterministicDecisions)
         decisions.removeAll { isContentlessDecision($0.text) }
 
-        var openIssues = deduplicateOpenIssues(openCandidates + unresolvedOutcomes(in: checkpoint.turns, hindi: hindi) + hindiOpenPoints(hindi), grounding)
+        var openIssues = deduplicateOpenIssues(openPool, grounding)
         decisions.removeAll { decision in
             openIssues.contains { nearDuplicate(decision.text, $0.text) || sharesFocus(decision, $0, grounding) }
         }
@@ -93,12 +99,22 @@ public enum MeetingAnalysisReducer {
         let settledSentences: Set<String> = hindi.hasDevanagari
             ? sentenceKeys(decisions.flatMap { $0.evidence } + openIssues.flatMap { $0.evidence }, grounding)
             : []
-        var tasks = deduplicateTasks(generatedTasks.compactMap(cleanedTask).map {
-            withResolvedOwner($0, speakerLabels: speakerLabels, speakerNames: speakerNames)
-        }.filter {
-            isGroundedCommitment($0, grounding) && !ActionExtractor.isRefusedRequest(evidence: $0.evidence, in: checkpoint.turns)
-                && !overlapsSettled($0, settledSentences, grounding)
-        }.map(englishTask), order: turnOrder)
+        let taskSource = TaskGrounding.source(turns: checkpoint.turns, participants: participants, speakerNames: speakerNames)
+        let openMatters = openSubjectSets(openIssues)
+        var modelTasks: [SuggestedTask] = []
+        for generated in generatedTasks {
+            guard let cleaned = cleanedTask(generated) else { continue }
+            let resolved = withResolvedOwner(cleaned, speakerLabels: speakerLabels, speakerNames: speakerNames)
+            // The owner and the deadline must come from the turns the task cites, not from a neighbouring task.
+            let anchored = TaskGrounding.anchored(resolved, taskSource)
+            guard isGroundedCommitment(anchored, grounding) else { continue }
+            guard !ActionExtractor.isRefusedRequest(evidence: anchored.evidence, in: checkpoint.turns) else { continue }
+            guard !overlapsSettled(anchored, settledSentences, grounding) else { continue }
+            guard !isNonActionTask(anchored, grounding, openMatters) else { continue }
+            guard !contradictsFloor(anchored, floorTasks, taskSource, turnOrder) else { continue }
+            modelTasks.append(englishTask(anchored))
+        }
+        var tasks = deduplicateTasks(modelTasks, order: turnOrder)
         tasks = mergeTasks(tasks, with: floorTasks, order: turnOrder)
         tasks = Array(tasks.prefix(24))
 
@@ -331,15 +347,20 @@ public enum MeetingAnalysisReducer {
                 // An English title beats one that still holds Devanagari, and the deterministic title beats
                 // the model's when both describe the same Hindi sentence.
                 if HindiText.containsDevanagari(title), !HindiText.containsDevanagari(other) { title = other }
+                var deadline = primary.deadlineText ?? secondary.deadlineText
                 if offset >= modelCount, index < modelCount, !overridden.contains(index), isHindiGrounded(task) {
                     title = task.title
                     overridden.insert(index)
+                    // The deterministic deadline keeps the spoken form ("फ्राइडे तक") that the minutes translate.
+                    if let spoken = task.deadlineText, let model = deadline, deadlineKey(spoken) == deadlineKey(model) {
+                        deadline = spoken
+                    }
                 }
                 result[index] = SuggestedTask(
                     title: title,
                     category: primary.category == "Other" ? secondary.category : primary.category,
                     owner: primary.owner ?? secondary.owner,
-                    deadlineText: primary.deadlineText ?? secondary.deadlineText,
+                    deadlineText: deadline,
                     priority: primary.priority ?? secondary.priority,
                     evidence: uniqueEvidence(primary.evidence + secondary.evidence)
                 )
@@ -801,6 +822,128 @@ public enum MeetingAnalysisReducer {
             if !found.matched || found.all.contains(where: isUndecidedSentence) { return false }
         }
         return true
+    }
+
+    // MARK: - Open matters
+
+    /// Words that describe the state of a matter ("not yet decided", "pending"), not the matter itself.
+    private static let matterStatusWords: Set<String> = [
+        "not", "yet", "pending", "still", "open", "undecided", "decision", "decide", "deciding", "discussed",
+        "discussion", "reached", "taken", "up", "next", "remain", "remains", "has", "have", "been", "hasn",
+        "haven", "tbd", "deferred", "defer", "later", "also", "too", "no", "was", "were", "raised"
+    ]
+
+    /// Stemmed content words of a decision, an open issue or a claim, without dates and status words.
+    private static func subjectStems(_ text: String) -> Set<String> {
+        var result = Set<String>()
+        for word in decisionTokens(text) where !matterStatusWords.contains(word) {
+            if HindiText.months.contains(word) { continue }
+            if word.allSatisfy({ $0.isNumber }) { continue }
+            result.insert(stem(word))
+        }
+        return result
+    }
+
+    private static func openSubjectSets(_ points: [SupportedPoint]) -> [Set<String>] {
+        var result: [Set<String>] = []
+        for point in points {
+            let subject = subjectStems(point.text)
+            if !subject.isEmpty { result.append(subject) }
+        }
+        return result
+    }
+
+    /// The same matter: identical subjects, or one subject of two or more words inside the other.
+    private static func sameMatter(_ lhs: Set<String>, _ rhs: Set<String>) -> Bool {
+        guard !lhs.isEmpty, !rhs.isEmpty else { return false }
+        if lhs == rhs { return true }
+        guard min(lhs.count, rhs.count) >= 2 else { return false }
+        return lhs.isSubset(of: rhs) || rhs.isSubset(of: lhs)
+    }
+
+    /// A positive statement that something was agreed, decided or adopted.
+    private static func assertsOutcome(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let negations = ["not ", "no decision", "n't", "undecided", "pending", "yet to", "unresolved", "open"]
+        for marker in negations where lower.contains(marker) { return false }
+        let claims = ["agreed", "decided", "resolved", "approved", "adopted", "finaliz", "go with", "going with",
+                      "selected", "chosen", "settled", "confirmed", "will be"]
+        for marker in claims where lower.contains(marker) { return true }
+        return false
+    }
+
+    /// True when a model decision (or an "agreed" discussion point) is about a matter the meeting left open.
+    private static func claimsOpenMatterSettled(_ point: SupportedPoint, _ matters: [Set<String>],
+                                                requireClaim: Bool) -> Bool {
+        if requireClaim, !assertsOutcome(point.text) { return false }
+        let claim = subjectStems(point.text)
+        for matter in matters where sameMatter(claim, matter) { return true }
+        return false
+    }
+
+    private static let discussionVerbs: Set<String> = [
+        "discuss", "decide", "determine", "deliberate", "debate", "brainstorm", "consider", "settle"
+    ]
+    private static let outcomeVerbs: Set<String> = ["handle", "finalize", "finalise", "settle", "resolve", "decide", "set", "fix"]
+
+    private static func titleWords(_ title: String) -> [String] {
+        var words: [String] = []
+        for piece in title.split(whereSeparator: { $0.isWhitespace }) {
+            let word = String(piece).lowercased().trimmingCharacters(in: CharacterSet.punctuationCharacters)
+            if !word.isEmpty { words.append(word) }
+        }
+        let lead: Set<String> = ["to", "please", "also", "then"]
+        while words.count > 1, let first = words.first, lead.contains(first) { words.removeFirst() }
+        return words
+    }
+
+    private static func isDiscussionTitle(_ title: String) -> Bool {
+        let words = titleWords(title)
+        guard let first = words.first else { return false }
+        if discussionVerbs.contains(first) { return true }
+        return first == "talk" && words.count > 1 && words[1] == "about"
+    }
+
+    /// Someone is asked or promises to do it ("can you", "please", "I'll", "needs to").
+    private static func hasExplicitRequest(_ sentences: [String]) -> Bool {
+        let pattern = #"(?i)\b(?:(?:can|could|would|will)\s+you|please|i'll|i\s+will|you'll|you\s+will|(?:needs?|has|have)\s+to|must|action\s+item)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        for raw in sentences {
+            let sentence = raw.replacingOccurrences(of: "\u{2019}", with: "'")
+            let range = NSRange(sentence.startIndex..<sentence.endIndex, in: sentence)
+            if regex.firstMatch(in: sentence, options: [], range: range) != nil { return true }
+        }
+        return false
+    }
+
+    /// "Discuss X", "talk about X" and "decide X" describe the conversation, not an action, unless someone is
+    /// explicitly asked to do it. A task that only restates a matter the meeting left open is not an action either.
+    private static func isNonActionTask(_ task: SuggestedTask, _ grounding: Grounding, _ matters: [Set<String>]) -> Bool {
+        let parts = verbAndObject(task.title)
+        if isDiscussionTitle(task.title) {
+            if !hasExplicitRequest(grounding.sentences(for: task.evidence)) { return true }
+            for matter in matters where !matter.isDisjoint(with: parts.object) { return true }
+            return false
+        }
+        guard !parts.object.isEmpty else { return false }
+        guard parts.verb.isEmpty || outcomeVerbs.contains(parts.verb) else { return false }
+        for matter in matters where parts.object.isSubset(of: matter) { return true }
+        return false
+    }
+
+    /// A model task whose owner differs from the owner of the deterministic task for the same object
+    /// in the same or an adjacent turn, and whose owner the cited turns never name, is the model's mistake.
+    private static func contradictsFloor(_ task: SuggestedTask, _ floor: [SuggestedTask],
+                                         _ source: TaskGrounding.Source, _ order: [String: Int]) -> Bool {
+        guard let owner = task.owner else { return false }
+        for other in floor {
+            guard let otherOwner = other.owner else { continue }
+            if TaskGrounding.samePerson(owner, otherOwner) { continue }
+            guard sameObjectNearby(task, other, order: order) else { continue }
+            let text = TaskGrounding.citedText(task.evidence, source)
+            if !TaskGrounding.mentions(owner, in: text) { return true }
+        }
+        return false
     }
 
     private static func stems(_ text: String) -> Set<String> {
