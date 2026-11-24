@@ -101,7 +101,7 @@ public struct VidurMeetingRecord: Sendable, Equatable, Identifiable {
     }
 
     /// True when there is anything to answer from.
-    var hasContent: Bool {
+    public var hasContent: Bool {
         !summary.isEmpty || !turns.isEmpty || !tasks.isEmpty || !decisions.isEmpty || !openIssues.isEmpty
             || !discussion.isEmpty || !attendees.isEmpty || !agenda.isEmpty
     }
