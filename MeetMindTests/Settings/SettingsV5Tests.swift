@@ -50,4 +50,15 @@ final class SettingsV5Tests: XCTestCase {
         XCTAssertEqual(ContactsDirectory.people(from: all, query: "financ").map(\.name), ["Arjun Mehta"])
         XCTAssertEqual(ContactsDirectory.people(from: all, query: "maya@").map(\.name), ["Maya Rao"])
     }
+
+    func testPreferredMinutesFormatDefaultsToAutomaticAndReadsStoredChoice() throws {
+        let suite = "format-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertNil(MinutesFormat.preferred(defaults: defaults))
+        defaults.set("", forKey: MinutesFormat.preferenceKey)
+        XCTAssertNil(MinutesFormat.preferred(defaults: defaults))
+        defaults.set(MinutesFormat.briefNote.rawValue, forKey: MinutesFormat.preferenceKey)
+        XCTAssertEqual(MinutesFormat.preferred(defaults: defaults), .briefNote)
+    }
 }

@@ -83,6 +83,10 @@ enum VidurActions {
         }
         let open = actions.filter { !$0.isCompleted }
         let overdue = open.filter { isMine($0) && ($0.dueDate ?? .distantFuture) < now }
+        let dueToday = open.filter { action in
+            guard isMine(action), let due = action.dueDate else { return false }
+            return due >= now && calendar.isDate(due, inSameDayAs: now)
+        }
 
         // Reading saved analysis is the slow part, so only the newest few meetings are checked.
         let analysed = meetings
@@ -99,10 +103,22 @@ enum VidurActions {
             userName: name, upcomingToday: today, nextMeeting: next, nextMeetingHasHistory: hasHistory,
             overdueActionCount: overdue.count, openActionCount: open.count, unreviewedSuggestionCount: pending,
             lastMeetingTitle: last?.title, lastMeetingHasMinutes: last?.summary != nil,
-            isRecording: isRecording, hasAnyMeetings: !meetings.isEmpty)
+            isRecording: isRecording, hasAnyMeetings: !meetings.isEmpty, dueTodayActionCount: dueToday.count)
     }
 
     private static func start(_ meeting: Meeting) -> Date { meeting.scheduledStartTime ?? meeting.createdAt }
+
+    /// The open action behind a task shown in an answer, ready to be confirmed as done. Matches the title inside
+    /// the task's own meeting, so two meetings with the same task title never mix up. Nil when it is gone or done.
+    static func pendingCompletion(for task: VidurQuickTask, modelContext: ModelContext) -> VidurPendingAction? {
+        let wanted = task.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let open = ((try? modelContext.fetch(FetchDescriptor<ActionItem>())) ?? []).filter { !$0.isCompleted }
+        guard let action = open.first(where: { item in
+            item.meeting?.id == task.meetingID && item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == wanted
+        }) else { return nil }
+        return VidurPendingAction(kind: .completeAction(actionID: action.id, title: action.title,
+                                                        meetingTitle: action.meeting?.title ?? task.meetingTitle))
+    }
 
     // MARK: Preparing
 

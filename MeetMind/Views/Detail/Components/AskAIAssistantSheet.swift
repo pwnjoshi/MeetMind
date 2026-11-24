@@ -3,38 +3,11 @@ import SwiftData
 import UIKit
 import OfflineEngineKit
 
-/// One thing the user said and Vidur's reply: an answer, a short chat reply, or a confirmation card.
-private struct VidurConversationItem: Identifiable {
-    enum Phase { case searching, refining, done }
-
+/// A task the user tapped the circle of, waiting for "Mark done" in the confirmation dialog.
+private struct VidurTaskCompletion: Identifiable {
     let id = UUID()
-    let prompt: String
-    var answerText: String
-    var citations: [VidurCitation]
-    var kind: VidurAnswerKind?
-    var notice: String?
-    var tier: VidurAnswerTier = .none
-    var people: [String] = []
-    var relatedTasks: [VidurQuickTask] = []
-    var suggestions: [String] = []
-    var phase: Phase = .done
-    /// A short chat reply (hello, thanks, a refusal). It never counts as an answer about a meeting.
-    var isNote = false
-    /// A change Vidur wants to make, shown as a confirmation card.
-    var pending: VidurPendingAction?
-    var pendingIntro = ""
-    var pendingState: VidurPendingState = .awaiting
-    var result: VidurActionResult?
-
-    init(prompt: String, answerText: String, citations: [VidurCitation], kind: VidurAnswerKind?,
-         notice: String?, phase: Phase = .done) {
-        self.prompt = prompt
-        self.answerText = answerText
-        self.citations = citations
-        self.kind = kind
-        self.notice = notice
-        self.phase = phase
-    }
+    let task: VidurQuickTask
+    let pending: VidurPendingAction
 }
 
 /// Vidur: the on-device meeting assistant. It chats, answers from saved meetings, runs commands
@@ -59,13 +32,18 @@ public struct AskAIAssistantSheet: View {
     @State private var scope: VidurSearchScope = .thisMeeting
     @State private var persistScope = true
     @State private var localItems: [VidurConversationItem] = []
+    /// The session key `localItems` belongs to. Nil until the sheet has loaded its conversation.
+    @State private var loadedKey: String?
     @State private var isLocalBusy = false
     @State private var answerTask: Task<Void, Never>?
     @State private var assistant = VidurAssistantContext()
     @State private var showsSettings = false
+    @State private var completion: VidurTaskCompletion?
     @Environment(SettingsViewModel.self) private var settings: SettingsViewModel?
     @Environment(AppState.self) private var appState: AppState?
     @Environment(NavigationRouter.self) private var router: NavigationRouter?
+
+    private static let bottomID = "vidurBottom"
 
     public init(
         history: [(prompt: String, response: AIAnswerResponse)],
@@ -119,32 +97,11 @@ public struct AskAIAssistantSheet: View {
     // MARK: Body
 
     public var body: some View {
-        VStack(spacing: Spacing.sm) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Spacing.md) {
-                        if items.isEmpty { emptyStateView }
-                        ForEach(items) { item in
-                            conversationRow(item)
-                        }
-                        if isBusy {
-                            HStack(spacing: Spacing.sm) {
-                                ProgressView()
-                                Text("Working on this iPhone\u{2026}")
-                                    .font(.footnote).foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, Spacing.lg)
-                        }
-                    }
-                    .padding(Spacing.lg)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: localItems.last?.id) { _, newID in
-                    guard let newID else { return }
-                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(newID, anchor: .bottom) }
-                }
-            }
-            inputBar
+        VStack(spacing: 0) {
+            conversationScroller
+            VidurComposer(
+                text: $queryText, scope: scopeBinding, placeholder: inputPlaceholder,
+                canSend: canSend, showsScope: meeting != nil, onSend: { sendTyped() })
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .tint(Theme.Colors.manentAccent)
@@ -164,18 +121,12 @@ public struct AskAIAssistantSheet: View {
                     Text("Vidur").font(.headline)
                     Text(subtitle).font(.caption).foregroundStyle(.secondary)
                 }
+                .accessibilityElement(children: .combine)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    if meeting != nil {
-                        Picker("Search in", selection: scopeBinding) {
-                            ForEach(VidurSearchScope.allCases) { option in
-                                Text(option.title).tag(option)
-                            }
-                        }
-                    }
-                    Button(role: .destructive) { clearConversation() } label: {
-                        Label("Clear conversation", systemImage: "trash")
+                    Button { newChat() } label: {
+                        Label("New chat", systemImage: "square.and.pencil")
                     }
                     Button { showsSettings = true } label: {
                         Label("Vidur settings", systemImage: "gearshape")
@@ -196,14 +147,26 @@ public struct AskAIAssistantSheet: View {
                     }
             }
         }
+        .confirmationDialog(
+            "Mark this action as done?",
+            isPresented: Binding(get: { completion != nil }, set: { shown in if !shown { completion = nil } }),
+            titleVisibility: .visible,
+            presenting: completion
+        ) { pending in
+            Button("Mark done") { confirmCompletion(pending) }
+            Button("Cancel", role: .cancel) {}
+        } message: { pending in
+            Text("\u{201C}\(pending.task.title)\u{201D} in \(pending.task.meetingTitle)")
+        }
         .onAppear {
             scope = VidurPreferences.shared.searchScope
-            loadPersistedHistory()
+            activateConversation()
             refreshAssistant()
             startPrewarm()
         }
         .onChange(of: scope) { _, newScope in
             if persistScope { VidurPreferences.shared.searchScope = newScope }
+            activateConversation()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .background else { return }
@@ -212,7 +175,48 @@ public struct AskAIAssistantSheet: View {
         .onChange(of: busy) { _, isBusyNow in UIApplication.shared.isIdleTimerDisabled = isBusyNow }
         .onDisappear {
             answerTask?.cancel()
+            persistConversation()
             UIApplication.shared.isIdleTimerDisabled = false
+        }
+    }
+
+    private var conversationScroller: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    if items.isEmpty { emptyStateView }
+                    ForEach(items) { item in
+                        conversationRow(item)
+                    }
+                    if isBusy {
+                        HStack(spacing: Spacing.sm) {
+                            ProgressView()
+                            Text("Working on this iPhone\u{2026}")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    Color.clear.frame(height: 1).id(Self.bottomID)
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.lg)
+                .padding(.bottom, Spacing.sm)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onAppear {
+                guard !localItems.isEmpty else { return }
+                DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+            }
+            .onChange(of: localItems.last?.id) { _, newID in
+                guard newID != nil else { return }
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+            }
+            // Words stream in a few at a time. Following them without animation avoids a stutter.
+            .onChange(of: localItems.last?.answerText.count) { _, _ in
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+            }
+            .onChange(of: localItems.last?.phase == .done) { _, _ in
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+            }
         }
     }
 
@@ -228,15 +232,42 @@ public struct AskAIAssistantSheet: View {
         onDismiss()
     }
 
+    // MARK: Conversation memory
+
+    /// Switches `localItems` to the conversation of the current scope. The one being left is kept for the session.
     @MainActor
-    private func clearConversation() {
+    private func activateConversation() {
+        let newKey = VidurSessionStore.key(meetingID: meeting?.id, scope: scope)
+        guard newKey != loadedKey else { return }
+        if let loadedKey {
+            answerTask?.cancel()
+            settlePendingItems()
+            VidurSessionStore.shared.save(localItems, for: loadedKey)
+        }
+        loadedKey = newKey
+        localItems = VidurSessionStore.shared.items(for: newKey)
+        if localItems.isEmpty { loadPersistedHistory() }
+    }
+
+    @MainActor
+    private func persistConversation() {
+        guard let loadedKey else { return }
+        settlePendingItems()
+        VidurSessionStore.shared.save(localItems, for: loadedKey)
+    }
+
+    /// Starts a fresh conversation in the current scope and forgets the saved answers of this meeting.
+    @MainActor
+    private func newChat() {
         answerTask?.cancel()
         localItems.removeAll()
         isLocalBusy = false
-        if let meeting { try? VidurPreferences.shared.remove(meetingID: meeting.id) }
+        queryText = ""
+        if let loadedKey { VidurSessionStore.shared.clear(loadedKey) }
+        if scope == .thisMeeting, let meeting { try? VidurPreferences.shared.remove(meetingID: meeting.id) }
     }
 
-    /// Loads the on-device model while the user is typing, so the first refined answer is warm.
+    /// Loads the model while the user is typing, so the first refined answer is warm.
     /// Skipped while minutes are being generated; the engine also refuses then.
     @MainActor
     private func startPrewarm() {
@@ -244,9 +275,10 @@ public struct AskAIAssistantSheet: View {
         Task(priority: .utility) { await VidurTieredAnswerService.prewarm() }
     }
 
+    /// Answers saved on this iPhone for this meeting, shown again when no session conversation exists yet.
     @MainActor
     private func loadPersistedHistory() {
-        guard localItems.isEmpty, let meeting else { return }
+        guard localItems.isEmpty, scope == .thisMeeting, let meeting else { return }
         localItems = VidurPreferences.shared.history(for: meeting.id).reversed().map { entry in
             VidurConversationItem(prompt: entry.question, answerText: entry.answer,
                                   citations: [], kind: nil, notice: "Saved on this iPhone")
@@ -263,7 +295,7 @@ public struct AskAIAssistantSheet: View {
     // MARK: Empty state
 
     @MainActor
-    private var recentQuestions: [VidurSuggestionList.Recent] {
+    private var recentQuestions: [VidurEmptyState.Recent] {
         var entries = VidurPreferences.shared.history
         if let meeting, scope == .thisMeeting {
             entries = entries.filter { $0.meetingID == meeting.id }
@@ -271,9 +303,9 @@ public struct AskAIAssistantSheet: View {
         var seen = Set<String>()
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
-        var result: [VidurSuggestionList.Recent] = []
+        var result: [VidurEmptyState.Recent] = []
         for entry in entries where seen.insert(entry.question).inserted {
-            result.append(VidurSuggestionList.Recent(
+            result.append(VidurEmptyState.Recent(
                 question: entry.question,
                 when: formatter.localizedString(for: entry.askedAt, relativeTo: Date())))
             if result.count == 3 { break }
@@ -281,61 +313,24 @@ public struct AskAIAssistantSheet: View {
         return result
     }
 
-    private var greetingText: String {
-        VidurSmallTalk.reply(to: "hi", context: assistant, seed: 0)?.text
-            ?? "Ask about your meetings, or tell me what to do."
-    }
-
     @MainActor
     private var emptyStateView: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "sparkles")
-                    .font(.body)
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(Theme.Colors.manentAccent, in: Circle())
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(greetingText)
-                        .font(.subheadline.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(scopeExplanation)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(16)
-            .background(
-                LinearGradient(
-                    colors: [Theme.Colors.manentAccent.opacity(0.14), Color.cyan.opacity(0.12)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-            )
-            .accessibilityElement(children: .combine)
-            VidurSuggestionList(
-                suggestions: VidurProactive.suggestions(for: assistant, limit: 4), recent: recentQuestions) { question in
-                submit(question)
-            }
+        VidurEmptyState(
+            title: VidurGreeting.title(for: assistant),
+            insight: VidurInsight.line(for: assistant),
+            detail: scopeExplanation,
+            suggestions: VidurProactive.smartSuggestions(for: assistant, limit: 4),
+            recent: recentQuestions,
+            onAsk: { submit($0) })
             .disabled(busy)
-            Text("Vidur runs on this iPhone and uses a small on-device model. It relies on your saved minutes and transcripts, and tells you when it can\u{2019}t find something. Your meetings never leave your phone.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var scopeExplanation: String {
         guard meeting != nil else { return "Answers come from this meeting\u{2019}s minutes, transcript and notes." }
         switch scope {
-        case .thisMeeting: return "Answering from \(meetingTitle). Use the menu to search a series or all meetings."
+        case .thisMeeting: return "Answering from \(meetingTitle). Use the pill below to search a series or all meetings."
         case .thisMeetingAndSeries: return "Answering from the minutes, transcripts and notes of this meeting and its series."
-        case .allMeetings: return "Answering from every meeting saved on this iPhone."
+        case .allMeetings: return "Answering from every meeting saved on this iPhone. Answers link to the moment it was said."
         }
     }
 
@@ -369,10 +364,10 @@ public struct AskAIAssistantSheet: View {
             tasks: item.relatedTasks,
             suggestions: item.phase == .done ? item.suggestions : [],
             notice: item.notice,
-            isQuick: item.tier == .structured || item.tier == .quote,
             isRefining: item.phase == .refining,
             currentMeetingID: meeting?.id,
-            isWriting: item.phase == .refining && item.tier == .generated)
+            isWriting: item.phase == .refining && item.tier == .generated,
+            completedTaskKeys: item.completedTaskKeys)
         return VidurConversationRow(
             prompt: item.prompt,
             model: model,
@@ -380,8 +375,8 @@ public struct AskAIAssistantSheet: View {
             now: Date(),
             onOpenSource: { openSource($0) },
             onOpenTask: { openTask($0) },
+            onToggleTask: { requestCompletion($0, in: item.id) },
             onAsk: { submit($0) })
-            .animation(.easeOut(duration: 0.2), value: item.phase)
     }
 
     private func isCurrentMeeting(_ citation: VidurCitation) -> Bool {
@@ -417,6 +412,40 @@ public struct AskAIAssistantSheet: View {
         ((try? dataContext.fetch(FetchDescriptor<Meeting>())) ?? []).contains { $0.id == id }
     }
 
+    // MARK: Marking an action done
+
+    /// The circle next to an action. Nothing changes until the user confirms in the dialog.
+    @MainActor
+    private func requestCompletion(_ task: VidurQuickTask, in itemID: UUID) {
+        guard !task.isCompleted else { return }
+        if let pending = VidurActions.pendingCompletion(for: task, modelContext: dataContext) {
+            completion = VidurTaskCompletion(task: task, pending: pending)
+        } else if let index = localItems.firstIndex(where: { $0.id == itemID }) {
+            localItems[index].notice = "That action is already done or no longer exists."
+        }
+    }
+
+    @MainActor
+    private func confirmCompletion(_ request: VidurTaskCompletion) {
+        let result = VidurActions.perform(request.pending, modelContext: dataContext)
+        guard result.succeeded else {
+            if let index = localItems.lastIndex(where: { item in
+                item.relatedTasks.contains { VidurTaskKey.key(for: $0) == VidurTaskKey.key(for: request.task) }
+            }) {
+                localItems[index].notice = result.message
+            }
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            return
+        }
+        let key = VidurTaskKey.key(for: request.task)
+        for index in localItems.indices
+        where localItems[index].relatedTasks.contains(where: { VidurTaskKey.key(for: $0) == key }) {
+            localItems[index].completedTaskKeys.insert(key)
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        refreshAssistant()
+    }
+
     // MARK: Input
 
     private var inputPlaceholder: String {
@@ -427,25 +456,8 @@ public struct AskAIAssistantSheet: View {
         }
     }
 
-    @MainActor
-    private var inputBar: some View {
-        HStack(spacing: Spacing.sm) {
-            Image(systemName: "sparkle")
-                .foregroundStyle(Theme.Colors.manentAccent)
-                .accessibilityHidden(true)
-            TextField(inputPlaceholder, text: $queryText)
-                .textFieldStyle(.plain)
-                .submitLabel(.send)
-                .onSubmit { sendTyped() }
-            Button { sendTyped() } label: {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.Colors.manentAccent)
-            }
-            .disabled(isBusy || queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .accessibilityLabel("Ask Vidur")
-        }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule()).padding(.horizontal, 16)
-        .padding(.bottom, Spacing.sm)
+    private var canSend: Bool {
+        !isBusy && !queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     @MainActor
@@ -463,6 +475,7 @@ public struct AskAIAssistantSheet: View {
     private func submit(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         guard meeting != nil else { send(trimmed); return }
 
         if let index = localItems.lastIndex(where: { $0.pending != nil && $0.pendingState == .awaiting }),
@@ -629,15 +642,23 @@ public struct AskAIAssistantSheet: View {
         case .final:
             localItems[index].phase = .done
             if let answer = update.answer {
+                if answer.kind == .notFound, answer.citations.isEmpty {
+                    // Say plainly that nothing was found and offer questions that can work, in the user's language.
+                    let ideas = answer.suggestions.isEmpty ? VidurQuickAnswerer.defaultSuggestions : answer.suggestions
+                    localItems[index].answerText = VidurFallback.notFound(
+                        base: answer.text, suggestions: ideas, language: VidurAnswerLanguage.detect(question))
+                }
                 if localItems[index].suggestions.isEmpty, answer.kind != .failed {
                     let intent: VidurQuickIntent? = answer.relatedTasks.isEmpty ? nil : .tasks
                     localItems[index].suggestions = VidurProactive.followUps(after: intent, asked: question, context: assistant)
                 }
                 if answer.isRecordable {
-                    VidurPreferences.shared.record(VidurHistoryEntry(meetingID: meetingID, question: question, answer: answer.text))
+                    VidurPreferences.shared.record(VidurHistoryEntry(
+                        meetingID: meetingID, question: question, answer: localItems[index].answerText))
                 }
             }
             isLocalBusy = false
+            if let loadedKey { VidurSessionStore.shared.save(localItems, for: loadedKey) }
         }
     }
 
@@ -652,7 +673,7 @@ public struct AskAIAssistantSheet: View {
         isLocalBusy = false
     }
 
-    /// The last four finished question and answer pairs, so "aur Neha ne?" follows the previous question.
+    /// The last four finished question and answer pairs, so "and who owns it?" follows the previous question.
     @MainActor
     private func conversationHistory() -> [VidurChatTurn] {
         let usable = localItems.filter { item in

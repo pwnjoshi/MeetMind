@@ -1,17 +1,37 @@
 import SwiftUI
 
-/// Rounded colored icon tile used by v5 Profile rows.
+extension Color {
+    /// 0xRRGGBB, used for the Figma tile colours on the Profile page.
+    init(settingsHex hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
+}
+
+/// Rounded colored icon tile used by v5 Profile rows (30 pt, 8 pt radius).
+/// Pass `label` to expose the tile to VoiceOver; rows that combine their content leave it nil.
 struct SettingsIconTile: View {
     let systemImage: String
     let color: Color
+    var label: String?
 
     var body: some View {
+        if let label {
+            tile.accessibilityLabel(label)
+        } else {
+            tile.accessibilityHidden(true)
+        }
+    }
+
+    private var tile: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: 16, weight: .regular))
             .foregroundStyle(.white)
             .frame(width: 30, height: 30)
             .background(color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .accessibilityHidden(true)
     }
 }
 
@@ -25,17 +45,63 @@ struct SettingsRowLabel: View {
     var body: some View {
         HStack(spacing: 12) {
             SettingsIconTile(systemImage: systemImage, color: color)
-            Text(title).font(.subheadline).foregroundStyle(.primary)
+            Text(title).font(.body).foregroundStyle(.primary)
             Spacer(minLength: 8)
             if let value, !value.isEmpty {
                 Text(value)
-                    .font(.subheadline)
+                    .font(.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
             }
         }
-        .accessibilityElement(children: .combine)
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 42 }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(value ?? ""))
+    }
+}
+
+/// Row whose trailing value opens a menu (up/down chevrons), as MoM Format and Audio Quality do in Figma.
+struct SettingsMenuRow<MenuContent: View>: View {
+    let title: String
+    let systemImage: String
+    let color: Color
+    let value: String
+    private let menuContent: MenuContent
+
+    init(title: String, systemImage: String, color: Color, value: String,
+         @ViewBuilder menuContent: () -> MenuContent) {
+        self.title = title
+        self.systemImage = systemImage
+        self.color = color
+        self.value = value
+        self.menuContent = menuContent()
+    }
+
+    var body: some View {
+        Menu {
+            menuContent
+        } label: {
+            HStack(spacing: 12) {
+                SettingsIconTile(systemImage: systemImage, color: color)
+                Text(title).font(.body).foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(value)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+            .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 42 }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(value))
     }
 }
 
@@ -72,12 +138,15 @@ struct SettingsStatTile: View {
     var tint: Color = Theme.Colors.manentAccent
 
     var body: some View {
-        VStack(spacing: 2) {
-            Text(value).font(.title3.weight(.bold)).foregroundStyle(tint)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+        VStack(spacing: 4) {
+            Text(value).font(.title2.weight(.bold)).foregroundStyle(tint)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(label).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.8)
         }
-        .frame(maxWidth: .infinity, minHeight: 64)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }

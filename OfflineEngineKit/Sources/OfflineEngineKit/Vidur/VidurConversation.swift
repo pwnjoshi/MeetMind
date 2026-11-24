@@ -31,11 +31,13 @@ public struct VidurAssistantContext: Sendable, Equatable {
     public var lastMeetingHasMinutes: Bool
     public var isRecording: Bool
     public var hasAnyMeetings: Bool
+    /// Open actions of the user that are due later today.
+    public var dueTodayActionCount: Int
 
     public init(userName: String? = nil, upcomingToday: [VidurMeetingBrief] = [], nextMeeting: VidurMeetingBrief? = nil,
                 nextMeetingHasHistory: Bool = false, overdueActionCount: Int = 0, openActionCount: Int = 0,
                 unreviewedSuggestionCount: Int = 0, lastMeetingTitle: String? = nil, lastMeetingHasMinutes: Bool = false,
-                isRecording: Bool = false, hasAnyMeetings: Bool = false) {
+                isRecording: Bool = false, hasAnyMeetings: Bool = false, dueTodayActionCount: Int = 0) {
         self.userName = userName
         self.upcomingToday = upcomingToday
         self.nextMeeting = nextMeeting
@@ -47,6 +49,7 @@ public struct VidurAssistantContext: Sendable, Equatable {
         self.lastMeetingHasMinutes = lastMeetingHasMinutes
         self.isRecording = isRecording
         self.hasAnyMeetings = hasAnyMeetings
+        self.dueTodayActionCount = dueTodayActionCount
     }
 
     /// "Arjun" for "Arjun Mehta". Nil when the name is the generic placeholder or empty.

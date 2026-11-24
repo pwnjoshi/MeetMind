@@ -159,8 +159,12 @@ public enum VidurTieredAnswerService {
 
     public static func stream(_ request: VidurTieredRequest, hooks: VidurTieredHooks = .live) -> AsyncStream<VidurAnswerUpdate> {
         AsyncStream { continuation in
+            let probe = VidurLatencyProbe()
             let task = Task {
-                await run(request, hooks: hooks) { continuation.yield($0) }
+                await run(request, hooks: hooks) { update in
+                    probe.observe(update)
+                    continuation.yield(update)
+                }
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }

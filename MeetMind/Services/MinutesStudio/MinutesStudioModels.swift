@@ -55,6 +55,14 @@ enum MinutesFormat: String, Codable, CaseIterable, Sendable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Profile > MoM Format. Absent means "Automatic" (each template's own default).
+    static let preferenceKey = "Manent.defaultMinutesFormat"
+
+    static func preferred(defaults: UserDefaults = .standard) -> MinutesFormat? {
+        guard let raw = defaults.string(forKey: preferenceKey) else { return nil }
+        return MinutesFormat(rawValue: raw)
+    }
+
     var title: String {
         switch self {
         case .corporateStandard: return "Corporate standard"
@@ -207,6 +215,11 @@ enum MinutesBuiltInTemplate: String, Codable, CaseIterable, Sendable, Identifiab
         }
     }
 
+    /// The format a new setup starts with: the user's Profile choice, else the template default.
+    var resolvedFormat: MinutesFormat {
+        MinutesFormat.preferred() ?? defaultFormat
+    }
+
     var defaultSections: [MinutesSection] {
         switch self {
         case .projectReview:
@@ -271,7 +284,7 @@ struct MinutesStudioConfig: Codable, Equatable, Sendable {
         return MinutesStudioConfig(
             meetingType: .teamProject,
             templateID: template.rawValue,
-            format: template.defaultFormat,
+            format: template.resolvedFormat,
             letterheadID: MinutesBuiltInLetterhead.plain.rawValue,
             organisationName: "",
             organisationAddress: "",

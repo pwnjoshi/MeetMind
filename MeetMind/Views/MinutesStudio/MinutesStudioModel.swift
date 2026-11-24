@@ -100,14 +100,14 @@ final class MinutesStudioModel {
         update { value in
             value.meetingType = type
             if !keepsCustomTemplate {
-                value.applyTemplate(id: suggested.rawValue, format: suggested.defaultFormat, sections: suggested.defaultSections)
+                value.applyTemplate(id: suggested.rawValue, format: suggested.resolvedFormat, sections: suggested.defaultSections)
             }
         }
     }
 
     func selectTemplate(_ template: MinutesBuiltInTemplate) {
         update {
-            $0.applyTemplate(id: template.rawValue, format: template.defaultFormat, sections: template.defaultSections)
+            $0.applyTemplate(id: template.rawValue, format: template.resolvedFormat, sections: template.defaultSections)
         }
     }
 

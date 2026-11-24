@@ -20,6 +20,7 @@ public struct SettingsView: View {
     @AppStorage(OrganizationProfileStore.nameKey) private var workspace = "iOS Center"
     @AppStorage(MinutesLanguagePreference.key) private var minutesLanguage = MinutesLanguage.english.rawValue
     @State private var studio = MinutesStudioStore.shared
+    @AppStorage(MinutesFormat.preferenceKey) private var minutesFormatRaw = ""
     @State private var notificationsStatus = "Off"
     @State private var showsEraseAlert = false
     @State private var eraseError: String?
@@ -37,6 +38,7 @@ public struct SettingsView: View {
                 profileHeader
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
             }
             youSection
             organizationSection
@@ -44,37 +46,22 @@ public struct SettingsView: View {
             vidurSection
             connectionsSection
             privacySection
-            Section("Models and Storage") {
-                NavigationLink {
-                    OfflineAnalysisModelsView()
-                } label: {
-                    SettingsRowLabel(title: "Offline Analysis Models", systemImage: "cpu", color: .indigo)
-                }
-            }
-            SettingsStorageAndCacheSection(viewModel: viewModel)
-            SettingsThemeAndAppearanceSection(viewModel: viewModel)
-            Section {
-                NavigationLink("About and Licences") { AboutAndLicensesView() }
-                #if DEBUG
-                NavigationLink("Diagnostics (debug builds only)") {
-                    Form {
-                        NavigationLink("Offline model benchmarks") { OfflineBenchmarkView() }
-                        SettingsAboutAndDiagnosticsSection(viewModel: viewModel)
-                    }
-                    .navigationTitle("Diagnostics")
-                }
-                #endif
-            } header: {
-                Text("About")
-            } footer: {
-                Text("Manent \(appVersion) \u{00B7} Recordings and minutes stay on this iPhone.")
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
+            appSection
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    ProfileEditorView(viewModel: viewModel)
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .accessibilityLabel("Edit profile")
+            }
+        }
         .tint(Theme.Colors.manentAccent)
         .task { await refreshNotificationStatus() }
         .alert("Delete All Data?", isPresented: $showsEraseAlert) {
@@ -97,32 +84,41 @@ public struct SettingsView: View {
     private var profile: UserProfile { viewModel.userProfile ?? .defaultProfile }
 
     private var profileHeader: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             NavigationLink {
                 ProfileEditorView(viewModel: viewModel)
             } label: {
-                SettingsProfileAvatar(profile: profile, size: 88)
+                ProfileAvatarView(profile: profile, size: 88)
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "camera.fill")
-                            .font(.caption2.bold())
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.Colors.manentAccent)
-                            .frame(width: 26, height: 26)
-                            .background(.white, in: Circle())
+                            .frame(width: 30, height: 30)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: Circle())
+                            .shadow(color: Color.black.opacity(0.12), radius: 2, y: 1)
+                            .offset(x: 4, y: 4)
                     }
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Edit profile photo")
-            Text(profile.name).font(.title2.bold())
-            Text(profileSubtitle).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            HStack(spacing: 10) {
+            .padding(.top, 4)
+            Text(profile.name)
+                .font(.title.bold())
+                .multilineTextAlignment(.center)
+                .padding(.top, 6)
+            Text(profileSubtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            HStack(spacing: 8) {
                 SettingsStatTile(value: meetings.count.formatted(), label: "Meetings")
                 SettingsStatTile(value: recordedText, label: "Recorded")
-                SettingsStatTile(value: openActionCount.formatted(), label: "Open actions", tint: Theme.Colors.warmAmber)
+                SettingsStatTile(value: openActionCount.formatted(), label: "Open actions", tint: .orange)
             }
-            .padding(.top, 8)
+            .padding(.top, 10)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
     }
 
     private var profileSubtitle: String {
@@ -149,10 +145,12 @@ public struct SettingsView: View {
     private var youSection: some View {
         Section("You") {
             NavigationLink { NameAndTitleView(viewModel: viewModel) } label: {
-                SettingsRowLabel(title: "Name and Title", systemImage: "person.fill", color: .indigo, value: profile.role)
+                SettingsRowLabel(title: "Name and Title", systemImage: "person.fill",
+                                 color: Color(settingsHex: 0x5E5CE6), value: profile.role)
             }
             NavigationLink { SignatureSettingsView() } label: {
-                SettingsRowLabel(title: "Signature", systemImage: "signature", color: .purple,
+                SettingsRowLabel(title: "Signature", systemImage: "signature",
+                                 color: Color(settingsHex: 0x4F46E5),
                                  value: SignatureStore.shared.hasSignature ? "Added" : "Set Up")
             }
         }
@@ -160,44 +158,74 @@ public struct SettingsView: View {
 
     private var organizationSection: some View {
         Section("Organization and Minutes") {
+            NavigationLink { OrganizationDetailsView() } label: {
+                SettingsRowLabel(title: "Organization", systemImage: "briefcase.fill",
+                                 color: Color(settingsHex: 0x30B0C7), value: workspace)
+            }
             NavigationLink { LetterheadAndLogoView() } label: {
-                SettingsRowLabel(title: "Letterhead and Logo", systemImage: "doc.text.image", color: .teal,
-                                 value: studio.letterheads.isEmpty ? workspace : "Added")
+                SettingsRowLabel(title: "Letterhead and Logo", systemImage: "doc.text.fill",
+                                 color: Color(settingsHex: 0x5856D6),
+                                 value: studio.letterheads.isEmpty ? "Add" : "Added")
+            }
+            SettingsMenuRow(title: "MoM Format", systemImage: "list.bullet",
+                            color: Color(settingsHex: 0xFF9500), value: minutesFormatTitle) {
+                Picker("MoM Format", selection: $minutesFormatRaw) {
+                    Text("Automatic").tag("")
+                    ForEach(MinutesFormat.allCases) { format in
+                        Text(format.title).tag(format.rawValue)
+                    }
+                }
             }
             NavigationLink { MinutesLanguageView() } label: {
-                SettingsRowLabel(title: "Minutes Language", systemImage: "globe", color: .blue,
+                SettingsRowLabel(title: "Minutes Language", systemImage: "globe",
+                                 color: Color(settingsHex: 0x007AFF),
                                  value: (MinutesLanguage(rawValue: minutesLanguage) ?? .english).title)
             }
             NavigationLink { MinutesStudioSettingsView() } label: {
-                SettingsRowLabel(title: "Minutes Studio", systemImage: "doc.richtext", color: .pink)
+                SettingsRowLabel(title: "Minutes Studio", systemImage: "doc.richtext.fill",
+                                 color: Color(settingsHex: 0xFF2D55))
             }
         }
+    }
+
+    private var minutesFormatTitle: String {
+        MinutesFormat(rawValue: minutesFormatRaw)?.title ?? "Automatic"
     }
 
     private var recordingSection: some View {
         Section("Recording") {
             NavigationLink { LocalRecordingsView() } label: {
-                SettingsRowLabel(title: "Recordings on This iPhone", systemImage: "waveform", color: .indigo,
-                                 value: recordingsSizeText)
+                SettingsRowLabel(title: "Recordings on This iPhone", systemImage: "waveform",
+                                 color: Color(settingsHex: 0x4F46E5), value: recordingsSizeText)
             }
-            NavigationLink {
-                Form { SettingsAudioQualitySection(viewModel: viewModel) }
-                    .navigationTitle("Audio Quality")
-                    .navigationBarTitleDisplayMode(.inline)
-            } label: {
-                SettingsRowLabel(title: "Audio Quality", systemImage: "speaker.wave.2.fill", color: .pink,
-                                 value: viewModel.audioQuality == .high ? "High" : "Standard")
+            SettingsMenuRow(title: "Audio Quality", systemImage: "speaker.wave.2.fill",
+                            color: Color(settingsHex: 0xFF2D55),
+                            value: viewModel.audioQuality == .high ? "High" : "Standard") {
+                Picker("Audio Quality", selection: Binding(
+                    get: { viewModel.audioQuality },
+                    set: { viewModel.setAudioQuality($0) }
+                )) {
+                    Text("High (128 kbps)").tag(AudioQuality.high)
+                    Text("Standard (64 kbps)").tag(AudioQuality.standard)
+                }
+                Toggle("Background Noise Suppression", isOn: Binding(
+                    get: { viewModel.isNoiseSuppressionEnabled },
+                    set: { viewModel.isNoiseSuppressionEnabled = $0 }
+                ))
             }
+            .disabled(viewModel.isAudioSettingsLocked)
             NavigationLink { TestMicrophoneView() } label: {
-                SettingsRowLabel(title: "Test Microphone", systemImage: "mic.fill", color: .red)
+                SettingsRowLabel(title: "Test Microphone", systemImage: "mic.fill",
+                                 color: Color(settingsHex: 0xFF3B30))
             }
         }
     }
 
     private var vidurSection: some View {
-        Section("Vidur") {
+        Section("Vidur and Speakers") {
             NavigationLink { VidurSettingsView() } label: {
-                SettingsRowLabel(title: "Vidur", systemImage: "sparkles", color: Theme.Colors.manentAccent, value: "On this iPhone")
+                SettingsRowLabel(title: "Vidur", systemImage: "sparkles",
+                                 color: Color(settingsHex: 0x4F46E5), value: "On this iPhone")
             }
         }
     }
@@ -205,14 +233,17 @@ public struct SettingsView: View {
     private var connectionsSection: some View {
         Section("Connections") {
             NavigationLink { AppleCalendarAccessView() } label: {
-                SettingsRowLabel(title: "Apple Calendar", systemImage: "calendar", color: .red, value: calendarAccess)
+                SettingsRowLabel(title: "Apple Calendar", systemImage: "calendar",
+                                 color: Color(settingsHex: 0xFF3B30), value: calendarAccess)
             }
             NavigationLink { ContactsDirectoryView() } label: {
-                SettingsRowLabel(title: "Contacts", systemImage: "person.crop.circle.fill", color: .gray,
+                SettingsRowLabel(title: "Contacts", systemImage: "person.fill",
+                                 color: Color(settingsHex: 0x8E8E93),
                                  value: ContactsDirectory.people(from: speakers, query: "").count.formatted())
             }
             NavigationLink { NotificationsInboxView() } label: {
-                SettingsRowLabel(title: "Notifications", systemImage: "bell.fill", color: .red, value: notificationsStatus)
+                SettingsRowLabel(title: "Notifications", systemImage: "bell.fill",
+                                 color: Color(settingsHex: 0xFF3B30), value: notificationsStatus)
             }
         }
     }
@@ -220,18 +251,66 @@ public struct SettingsView: View {
     private var privacySection: some View {
         Section("Privacy and Data") {
             NavigationLink { ExportAllMinutesView() } label: {
-                SettingsRowLabel(title: "Export All Minutes", systemImage: "square.and.arrow.up", color: .blue)
+                SettingsRowLabel(title: "Export All Minutes", systemImage: "square.and.arrow.up",
+                                 color: Color(settingsHex: 0x007AFF))
             }
             Button(role: .destructive) {
                 showsEraseAlert = true
             } label: {
                 HStack(spacing: 12) {
-                    SettingsIconTile(systemImage: "trash.fill", color: .red)
-                    Text("Delete All Data").font(.subheadline).foregroundStyle(.red)
+                    SettingsIconTile(systemImage: "trash.fill", color: Color(settingsHex: 0xFF3B30))
+                    Text("Delete All Data").font(.body).foregroundStyle(.red)
                     Spacer()
                 }
+                .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 42 }
             }
             .disabled(isErasing)
+        }
+    }
+
+    /// Pages that are not in the Figma list but must stay reachable.
+    private var appSection: some View {
+        Section {
+            NavigationLink {
+                Form { SettingsThemeAndAppearanceSection(viewModel: viewModel) }
+                    .navigationTitle("Appearance")
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                SettingsRowLabel(title: "Appearance", systemImage: "circle.lefthalf.filled",
+                                 color: Color(settingsHex: 0x5856D6))
+            }
+            NavigationLink { OfflineAnalysisModelsView() } label: {
+                SettingsRowLabel(title: "Offline Analysis Models", systemImage: "cpu",
+                                 color: Color(settingsHex: 0x4F46E5))
+            }
+            NavigationLink {
+                Form { SettingsStorageAndCacheSection(viewModel: viewModel) }
+                    .navigationTitle("Storage and Cache")
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                SettingsRowLabel(title: "Storage and Cache", systemImage: "internaldrive.fill",
+                                 color: Color(settingsHex: 0x8E8E93))
+            }
+            NavigationLink { AboutAndLicensesView() } label: {
+                SettingsRowLabel(title: "About and Licences", systemImage: "info.circle.fill",
+                                 color: Color(settingsHex: 0x8E8E93))
+            }
+            #if DEBUG
+            NavigationLink {
+                Form {
+                    NavigationLink("Offline model benchmarks") { OfflineBenchmarkView() }
+                    SettingsAboutAndDiagnosticsSection(viewModel: viewModel)
+                }
+                .navigationTitle("Diagnostics")
+            } label: {
+                SettingsRowLabel(title: "Diagnostics (debug builds only)", systemImage: "wrench.and.screwdriver.fill",
+                                 color: Color(settingsHex: 0x8E8E93))
+            }
+            #endif
+        } footer: {
+            Text("Manent \(appVersion) \u{00B7} Recordings and minutes stay on this iPhone.")
+                .frame(maxWidth: .infinity, alignment: .center)
+                .multilineTextAlignment(.center)
         }
     }
 
@@ -251,9 +330,9 @@ public struct SettingsView: View {
 
     private var calendarAccess: String {
         switch EKEventStore.authorizationStatus(for: .event) {
-        case .fullAccess: return "Allowed"
+        case .fullAccess: return "Connected"
         case .writeOnly: return "Add Only"
-        default: return "Not Allowed"
+        default: return "Not Connected"
         }
     }
 
@@ -284,6 +363,36 @@ public struct SettingsView: View {
         }
     }
 }
+/// Organization name and registered details printed on minutes. Same local stores as the
+/// Letterhead page; nothing leaves this iPhone.
+struct OrganizationDetailsView: View {
+    @AppStorage(OrganizationProfileStore.nameKey) private var organizationName = "iOS Center"
+    @State private var details = OrganizationProfileStore().load()
+    private let detailsStore = OrganizationProfileStore()
+
+    var body: some View {
+        Form {
+            Section("Organization") {
+                TextField("Company Name", text: $organizationName)
+                TextField("Registered Address", text: $details.address, axis: .vertical)
+            }
+            Section("Registration") {
+                TextField("CIN", text: $details.cin).textInputAutocapitalization(.characters)
+                TextField("GSTIN", text: $details.gstin).textInputAutocapitalization(.characters)
+            }
+            Section("Contact") {
+                TextField("Phone", text: $details.phone).keyboardType(.phonePad)
+                TextField("Email", text: $details.email)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+            }
+        }
+        .navigationTitle("Organization")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: details) { _, value in detailsStore.save(value) }
+    }
+}
+
 /// Local-only profile editing: the image is retained in the app's preferences
 /// and never enables an account or cloud sync.
 struct ProfileEditorView: View {
@@ -319,7 +428,8 @@ struct ProfileEditorView: View {
                 TextField("Email (optional)", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress)
             }
         }
-        .navigationTitle("Profile")
+        .navigationTitle("Edit Profile")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { save(); dismiss() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -382,7 +492,7 @@ struct OfflineAnalysisModelsView: View {
             Section {
                 Text("Meeting audio, transcripts, and analysis stay on this iPhone. Internet is needed only to download public model files. Keep the app open during downloads and meeting analysis.")
                     .font(.footnote).foregroundStyle(.secondary)
-                Text("Hindi–English accuracy is still being evaluated. Review generated tasks and source quotes before accepting them.")
+                Text("Hindiâ€“English accuracy is still being evaluated. Review generated tasks and source quotes before accepting them.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if !message.isEmpty { Text(message) }
                 if busy {

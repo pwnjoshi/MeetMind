@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0052CEE000100000001 /* VidurLatencyProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0062CEE000100000001 /* VidurLatencyProbe.swift */; };
+		1A00C0072CEE000100000001 /* VidurChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0082CEE000100000001 /* VidurChatModels.swift */; };
 		1A00C0012CEE000100000001 /* Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0022CEE000100000001 /* Cards.swift */; };
 		1A00C0032CEE000100000001 /* AboutAndLicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0042CEE000100000001 /* AboutAndLicensesView.swift */; };
 		1A00C0B62CEE000100000001 /* SpeakerVoiceNaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B72CEE000100000001 /* SpeakerVoiceNaming.swift */; };
@@ -342,6 +344,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0062CEE000100000001 /* VidurLatencyProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurLatencyProbe.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0082CEE000100000001 /* VidurChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Vidur/VidurChatModels.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0022CEE000100000001 /* Cards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/DesignSystem/Components/Cards/Cards.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0042CEE000100000001 /* AboutAndLicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Settings/AboutAndLicensesView.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0B72CEE000100000001 /* SpeakerVoiceNaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Speakers/SpeakerVoiceNaming.swift"; sourceTree = SOURCE_ROOT; };
@@ -700,6 +704,8 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0062CEE000100000001 /* VidurLatencyProbe.swift */,
+				1B00C0082CEE000100000001 /* VidurChatModels.swift */,
 				1B00C0022CEE000100000001 /* Cards.swift */,
 				1B00C0042CEE000100000001 /* AboutAndLicensesView.swift */,
 				1B00C0B72CEE000100000001 /* SpeakerVoiceNaming.swift */,
@@ -1334,6 +1340,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0052CEE000100000001 /* VidurLatencyProbe.swift in Sources */,
+				1A00C0072CEE000100000001 /* VidurChatModels.swift in Sources */,
 				1A00C0012CEE000100000001 /* Cards.swift in Sources */,
 				1A00C0032CEE000100000001 /* AboutAndLicensesView.swift in Sources */,
 				1A00C0B62CEE000100000001 /* SpeakerVoiceNaming.swift in Sources */,

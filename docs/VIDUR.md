@@ -165,6 +165,25 @@ through word by word. The card shows "Writing from your meetings…".
 These are calculated from the measured per-token speeds, not measured end to end. Measure on the device with
 `Scripts/device_benchmark.py` before relying on them.
 
+## Chat experience
+
+* Layout: the user's words in an accent bubble on the right, Vidur's answer on the left as plain text. An answer gets a
+  card only when it has sources. Lists of decisions or open issues become native rows (VidurAnswerLayout), actions
+  show owner, due date and a circle that marks the action done after a confirmation dialog. Source chips
+  ("Design review · 12:10") play the recording at that moment or open the other meeting. Follow-up chips wrap under the answer.
+* Empty state (G3): greeting by time of day and name (VidurGreeting), one line about what needs attention
+  (VidurInsight, for example "2 actions are due today."), up to four suggestions from real data
+  (VidurProactive.smartSuggestions), recent questions.
+* Composer: multiline field, send button, and the scope pill (This meeting, Meeting + series, All meetings) inside it.
+  Conversations are kept for the app session per scope (VidurSessionStore); "New chat" in the menu clears the current one.
+* Answer length: VidurAnswerShape puts one rule in the system prompt. A fact gets one short sentence, an overview or
+  "how did it go" gets 3 to 4. The prompt also tells the model to resolve "it" and "that" from the earlier chat.
+* Honest misses: VidurFallback.notFound keeps the not-found sentence and adds up to two questions to try, in English or Hinglish.
+* Latency: every answer writes one content-free line, Vidur answer tier=generated first_token_ms=3120 total_ms=5480
+  (OSLog subsystem com.meetmind.app, category Vidur). Filter Console for "Vidur answer" on a connected device.
+  irst_token_ms is the first visible text, including a quick answer shown before the model starts.
+* Tests: VidurExperienceTests (greeting, insight, suggestions, length rule, follow-up resolution, fallback wording, rows, log line).
+
 ## Removed: voice mode
 
 Deleted `VidurVoice.swift` and `VidurWakeWordListener.swift` (dictation, `AVSpeechSynthesizer` replies, "Hey Vidur"

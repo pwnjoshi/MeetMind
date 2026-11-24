@@ -10,8 +10,10 @@ struct VidurPromptBubble: View {
             .font(.body)
             .foregroundStyle(.white)
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(Theme.Colors.manentAccent, in: RoundedRectangle(cornerRadius: 23, style: .continuous))
+            .background(Theme.Colors.manentAccent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.leading, 48)
             .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityLabel("You: " + text)
     }
 }
 
@@ -55,7 +57,7 @@ struct VidurActionCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(VidurFigma.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 
