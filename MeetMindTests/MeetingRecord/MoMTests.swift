@@ -190,6 +190,6 @@ final class MoMTests: XCTestCase {
         XCTAssertFalse(shared.title.contains("Sent"))
         let mail = try XCTUnwrap(MinutesSentState.make(outcome: .mailSent, recipients: []))
         XCTAssertEqual(mail.title, "Minutes Sent")
-        XCTAssertTrue(mail.message.contains("cannot see whether they arrived"))
+        XCTAssertTrue(mail.message.contains("action items"))
     }
 }

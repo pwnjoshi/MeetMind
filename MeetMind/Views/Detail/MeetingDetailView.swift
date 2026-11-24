@@ -300,13 +300,10 @@ public struct MeetingDetailView: View {
 
     // MARK: - Meeting options
 
-    /// The More menu: details, follow-up, transcript, edit, formal minutes, then delete.
+    /// The More menu: details, transcript, edit, formal minutes, then delete.
     private var optionsMenu: some View {
         Menu {
             Button("Meeting Details", systemImage: "info.circle") { showDetails = true }
-            if let meeting = viewModel.meeting, meeting.status == .completed {
-                Button("Schedule Follow-Up", systemImage: "calendar.badge.plus") { beginFollowUp(for: meeting) }
-            }
             Button("Show Transcript", systemImage: "doc.text") { showsTranscriptPage = true }
             if hasMinutes {
                 Button("Edit Minutes", systemImage: "pencil") { showClassicEditor = true }

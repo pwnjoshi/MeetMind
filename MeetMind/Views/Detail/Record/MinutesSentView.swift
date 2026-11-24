@@ -1,30 +1,30 @@
 import SwiftUI
 
-/// Animated post-share screen (Figma 161:1912 "Delivery status" to 1925:12 "Minutes Sent settled").
-/// It is only shown after Mail reported `.sent` or a share activity completed, and it never claims that a
-/// recipient received or opened the minutes. With Reduce Motion it appears in its settled state.
+/// Post-send screen (Figma B9 animating into B10 "Minutes Sent"). It is only shown after Mail reported `.sent`
+/// or a share activity completed. With Reduce Motion it appears in its settled state.
+/// Sequence: halo fades in, the green disc springs in, the check draws on with a soft haptic, the recipient
+/// bubbles pop out one after another, then the text and buttons appear.
 struct MinutesSentView: View {
     let state: MinutesSentState
-    let entry: SharedMinutesEntry?
     let meeting: Meeting?
     let onBackToMeetings: () -> Void
     var startsSettled: Bool = false
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var phase: MinutesSentPhase = .handoff
+    @State private var stage: MinutesSentStage = .initial
     @State private var followUpDraft: MeetingSetupViewModel?
     @State private var showFollowUp = false
     @State private var scheduledTitle: String?
-    @State private var openedEntry: SharedMinutesEntry?
 
-    private var animated: Bool { !reduceMotion }
-    private var headline: String { phase == .handoff ? state.handoffText : state.title }
+    private var animated: Bool { !reduceMotion && !startsSettled }
+    private var textVisible: Bool { stage >= .check }
+    private var actionsVisible: Bool { stage >= .done }
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            MinutesCelebrationView(recipients: state.recipients, phase: phase, animated: animated)
+            MinutesCelebrationView(recipients: state.recipients, stage: stage, animated: animated)
             textBlock
             Spacer(minLength: 0)
             actions
@@ -33,7 +33,7 @@ struct MinutesSentView: View {
         .padding(.bottom, 8)
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationBarBackButtonHidden()
-        .sensoryFeedback(.success, trigger: phase) { old, new in old == .handoff && new != .handoff }
+        .sensoryFeedback(.success, trigger: stage) { _, new in new == .check && animated }
         .sensoryFeedback(.success, trigger: scheduledTitle) { _, new in new != nil }
         .task { @MainActor in await runTimeline() }
         .sheet(isPresented: $showFollowUp, onDismiss: { followUpDraft = nil }) {
@@ -44,39 +44,26 @@ struct MinutesSentView: View {
                 .presentationDragIndicator(.visible)
             }
         }
-        .navigationDestination(item: $openedEntry) { shared in
-            SharedMinutesView(entry: shared)
-        }
     }
 
     // MARK: - Text
 
     private var textBlock: some View {
         VStack(spacing: 8) {
-            Text(headline)
+            Text(state.title)
                 .font(.title2.bold())
                 .multilineTextAlignment(.center)
-                .id(headline)
-                .transition(.opacity)
-            if phase.isDone {
-                statusChip.transition(.opacity.combined(with: .scale(scale: 0.9)))
-                Text(state.message)
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 30)
-                    .transition(.opacity.combined(with: .offset(y: 8)))
-            }
+            Text(state.message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 30)
         }
-        .animation(animated ? .easeOut(duration: 0.3) : .easeInOut(duration: 0.2), value: phase)
+        .opacity(textVisible ? 1 : 0)
+        .offset(y: textVisible || !animated ? 0 : 8)
+        .animation(animated ? .easeOut(duration: 0.35) : nil, value: textVisible)
         .accessibilityElement(children: .combine)
-    }
-
-    private var statusChip: some View {
-        Label(state.settledText, systemImage: state.settledSymbol)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(Theme.Colors.manentAccent)
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(Theme.Colors.manentAccent.opacity(0.12), in: Capsule())
+        .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: - Actions
@@ -84,30 +71,15 @@ struct MinutesSentView: View {
     private var actions: some View {
         VStack(spacing: 10) {
             primaryAction
-            if let entry {
-                Button { openedEntry = entry } label: {
-                    HStack {
-                        Label("View Shared Minutes", systemImage: "doc.text")
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.secondary)
-                    }
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 50)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                }
-                .buttonStyle(.plain)
-            }
             Button("Back to Meetings", action: onBackToMeetings)
                 .font(.body)
                 .frame(minHeight: 44)
                 .foregroundStyle(Theme.Colors.manentAccent)
         }
-        .opacity(phase.isDone ? 1 : 0)
-        .offset(y: phase.isDone || !animated ? 0 : 24)
-        .animation(animated ? .easeOut(duration: 0.3).delay(0.25) : nil, value: phase.isDone)
-        .allowsHitTesting(phase.isDone)
+        .opacity(actionsVisible ? 1 : 0)
+        .offset(y: actionsVisible || !animated ? 0 : 24)
+        .animation(animated ? .easeOut(duration: 0.3) : nil, value: actionsVisible)
+        .allowsHitTesting(actionsVisible)
     }
 
     @ViewBuilder
@@ -133,22 +105,23 @@ struct MinutesSentView: View {
 
     // MARK: - Behaviour
 
-    /// Figma: hand-off beat, then the check lands with the burst, then everything is settled at 2.9 s.
     private func runTimeline() async {
-        if startsSettled || reduceMotion {
-            phase = .settled
+        if !animated {
+            stage = .done
             announce()
             return
         }
-        try? await Task.sleep(for: .milliseconds(900))
-        phase = .celebrating
+        let steps: [(MinutesSentStage, Int)] = [(.halo, 60), (.disc, 280), (.check, 380), (.avatars, 450), (.done, 450)]
+        for step in steps {
+            try? await Task.sleep(for: .milliseconds(step.1))
+            if Task.isCancelled { return }
+            stage = step.0
+        }
         announce()
-        try? await Task.sleep(for: .milliseconds(2000))
-        phase = .settled
     }
 
     private func announce() {
-        AccessibilityNotification.Announcement("\(state.title). \(state.settledText).").post()
+        AccessibilityNotification.Announcement("\(state.title). \(state.message)").post()
     }
 
     private func planNextMeeting() {
@@ -156,7 +129,6 @@ struct MinutesSentView: View {
         showFollowUp = true
     }
 }
-
 enum MeetingRecordInitials {
     /// Two-letter initials of a person's name, skipping titles such as "Dr.".
     static func initials(_ name: String) -> String {

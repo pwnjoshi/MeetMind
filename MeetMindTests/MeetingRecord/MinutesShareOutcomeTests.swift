@@ -42,28 +42,80 @@ final class MinutesShareOutcomeTests: XCTestCase {
 
         let mail = MinutesSentState.make(outcome: .mailSent, recipients: people)
         XCTAssertEqual(mail?.title, "Minutes Sent")
-        XCTAssertEqual(mail?.settledText, "Sent from Mail")
         XCTAssertEqual(mail?.recipients.count, 2)
-        XCTAssertTrue(mail?.message.contains("Pawan and Garima") ?? false)
+        XCTAssertEqual(mail?.message, "Pawan and Garima have the minutes and their action items.")
 
         let shared = MinutesSentState.make(outcome: .shared, recipients: people)
         XCTAssertEqual(shared?.title, "Minutes Shared")
-        XCTAssertEqual(shared?.settledText, "Shared")
         XCTAssertEqual(shared?.recipients.count, 0, "A generic activity never names recipients")
     }
 
-    func testCopyNeverClaimsReceiptOrReading() {
-        let states = [MinutesSentState.make(outcome: .mailSent, recipients: people),
-                      MinutesSentState.make(outcome: .shared, recipients: [])].compactMap { $0 }
-        XCTAssertEqual(states.count, 2)
-        for state in states {
-            let text = [state.title, state.handoffText, state.settledText, state.message].joined(separator: " ").lowercased()
-            XCTAssertFalse(text.contains("delivered"))
-            XCTAssertFalse(text.contains("have the minutes"))
-            XCTAssertFalse(text.contains("read by"))
-        }
+    func testSuccessCopyJoinsNamesNaturally() {
+        XCTAssertEqual(MinutesSentState.sentMessage(firstNames: ["Maya", "Arjun", "Pawan", "Garima"]),
+                       "Maya, Arjun, Pawan and Garima have the minutes and their action items.")
+        XCTAssertEqual(MinutesSentState.sentMessage(firstNames: ["Maya", "Arjun"]),
+                       "Maya and Arjun have the minutes and their action items.")
+        XCTAssertEqual(MinutesSentState.sentMessage(firstNames: ["Maya"]),
+                       "Maya has the minutes and the action items.")
+        XCTAssertEqual(MinutesSentState.sentMessage(firstNames: ["A", "B", "C", "D", "E", "F"]),
+                       "A, B, C and 3 others have the minutes and their action items.")
+        XCTAssertEqual(MinutesSentState.sentMessage(firstNames: []),
+                       "The minutes and their action items are on their way.")
     }
 
+    func testSharedCopyDoesNotClaimDeliveryToAnyone() {
+        let shared = MinutesSentState.make(outcome: .shared, recipients: [])
+        let text = [shared?.title, shared?.message].compactMap { $0 }.joined(separator: " ").lowercased()
+        XCTAssertFalse(text.contains("sent"))
+        XCTAssertFalse(text.contains("delivered"))
+        XCTAssertFalse(text.contains("have the minutes"))
+    }
+
+    func testNonSentMailResultsStayInTheSheetWithAnHonestNote() {
+        XCTAssertNil(MinutesShareOutcome.fromMail(.saved, error: nil).recordedChannel)
+        XCTAssertNil(MinutesShareOutcome.fromMail(.cancelled, error: nil).recordedChannel)
+        XCTAssertNil(MinutesShareOutcome.fromMail(.failed, error: nil).recordedChannel)
+        XCTAssertEqual(MinutesShareOutcome.mailSaved.sendSheetNotice(viaMail: true),
+                       "Saved as a draft in Mail. The minutes have not been sent.")
+        XCTAssertEqual(MinutesShareOutcome.cancelled.sendSheetNotice(viaMail: true), "Not sent. Tap Send to try again.")
+        XCTAssertNil(MinutesShareOutcome.cancelled.sendSheetNotice(viaMail: false))
+        XCTAssertTrue(MinutesShareOutcome.failed("Mail could not send the minutes.")
+            .sendSheetNotice(viaMail: true)?.hasSuffix("Nothing was sent.") ?? false)
+        XCTAssertNil(MinutesShareOutcome.mailSent.sendSheetNotice(viaMail: true))
+    }
+
+    func testSendButtonLabelAndState() {
+        XCTAssertEqual(MinutesSendPlan.buttonTitle(count: 4), "Send to 4 People")
+        XCTAssertEqual(MinutesSendPlan.buttonTitle(count: 1), "Send to 1 Person")
+        XCTAssertEqual(MinutesSendPlan.buttonTitle(count: 0), "Send Minutes")
+        XCTAssertEqual(MinutesSendPlan.buttonTitle(count: 3, mailAvailable: false), "Share PDF")
+        XCTAssertEqual(MinutesSendPlan.accessibilityLabel(count: 4), "Send to 4 people")
+        XCTAssertEqual(MinutesSendPlan.accessibilityLabel(count: 1), "Send to 1 person")
+
+        XCTAssertNil(MinutesSendPlan.disabledReason(candidateCount: 4, selectedCount: 4, isPreparing: false))
+        XCTAssertNotNil(MinutesSendPlan.disabledReason(candidateCount: 0, selectedCount: 0, isPreparing: false))
+        XCTAssertEqual(MinutesSendPlan.disabledReason(candidateCount: 4, selectedCount: 0, isPreparing: false),
+                       "Select at least one person.")
+        XCTAssertNotNil(MinutesSendPlan.disabledReason(candidateCount: 4, selectedCount: 4, isPreparing: true))
+        XCTAssertNil(MinutesSendPlan.disabledReason(candidateCount: 0, selectedCount: 0, isPreparing: false,
+                                                    mailAvailable: false))
+    }
+
+    func testRecipientsDefaultToEveryAttendeeWithAnEmail() throws {
+        let container = try ModelContainerFactory.createInMemoryContainer()
+        let me = Speaker(name: "Me User", email: "me@studio.example")
+        let maya = Speaker(name: "Maya Rao", email: "maya@studio.example")
+        let duplicate = Speaker(name: "Maya R", email: " MAYA@studio.example ")
+        let noEmail = Speaker(name: "Arjun Mehta", email: nil)
+        let blank = Speaker(name: "Pawan Joshi", email: "  ")
+        let garima = Speaker(name: "Garima Pant", email: "garima@studio.example")
+        for person in [me, maya, duplicate, noEmail, blank, garima] { container.mainContext.insert(person) }
+
+        let result = MinutesSendPlan.candidates(from: [me, maya, duplicate, noEmail, blank, garima], userName: "Me User")
+        XCTAssertEqual(result.map(\.name), ["Maya Rao", "Garima Pant"])
+        XCTAssertEqual(MinutesSendPlan.defaultSelection(result), Set(result.map(\.id)))
+        XCTAssertTrue(MinutesSendPlan.defaultSelection([]).isEmpty)
+    }
     func testFollowUpDraftIsPrefilledFromMeeting() throws {
         let container = try ModelContainerFactory.createInMemoryContainer()
         let context = container.mainContext

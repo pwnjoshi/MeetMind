@@ -35,12 +35,9 @@ struct MinutesSentFixtureView: View {
     var body: some View {
         let container = Self.prepare()
         let state = MinutesSentState.make(outcome: .mailSent, recipients: Self.recipients)
-        let entry = SharedMinutesEntry(
-            channel: .mail, recipients: Self.recipients, subject: "October planning",
-            bodyText: "Summary:\nLaunch timing and budget\n\nDecisions:\nBudget approval awaits the Finance estimate.")
         return NavigationStack {
             if let state {
-                MinutesSentView(state: state, entry: entry, meeting: Self.meeting, onBackToMeetings: {})
+                MinutesSentView(state: state, meeting: Self.meeting, onBackToMeetings: {}, startsSettled: true)
             }
         }
         .modelContainer(container)
