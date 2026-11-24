@@ -309,6 +309,13 @@ final class LocalLanguageModel {
             try decode([token], offset: tokens.count + index)
         }
         logRun(outputBudget, completed: false)
+        // Keep every item that was finished before the limit instead of discarding the whole chunk.
+        if let partial = PartialAnalysisSalvage.salvage(output) {
+            let result = PromptNormalizer.restoringQuotes(in: partial, original: turns).sanitized(against: turns)
+            Self.log.notice("LLM chunk salvaged items=\(result.discussion.count + result.decisions.count + result.tasks.count, privacy: .public)")
+            remember(result, forKey: cacheKey)
+            return result
+        }
         throw OfflineError.unavailable("Analysis reached its output limit. Shorten the input and retry.")
     }
 

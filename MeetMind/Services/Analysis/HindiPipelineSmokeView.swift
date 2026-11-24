@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import AVFoundation
 import OfflineEngineKit
+import OSLog
 
 /// One line of the public scripted Hindi dialogue. `speaker` 0 is Neha, 1 is Pawan.
 struct HindiScriptLine {
@@ -114,6 +115,9 @@ struct HindiPipelineSmokeView: View {
 enum HindiSmokeReport {
     private static func line(_ text: String) {
         print("MEETMIND_HINDI " + text)
+        // The USB console stream can drop at the end of a long run; the system log keeps the
+        // report. It only contains the scripted synthetic dialogue, never a user's meeting.
+        Logger(subsystem: "com.meetmind.app", category: "HindiSmoke").notice("MEETMIND_HINDI \(text, privacy: .public)")
     }
 
     private static func hasDevanagari(_ text: String) -> Bool {
