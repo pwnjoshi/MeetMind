@@ -116,7 +116,12 @@ public enum VidurRagRetriever {
         let lexical = VidurBM25.rank(queryTokens: queryKeys, documents: candidates.map(\.keys), limit: candidates.count)
 
         // 4. Metadata ranking.
-        let wantedKinds = kinds(for: parsed.intents)
+        var wantedKinds = kinds(for: parsed.intents)
+        // "Who said ...?" asks for the spoken words. A word like "decided" in the quote must not pull in
+        // every decision of every meeting ahead of the transcript line that actually says it.
+        if asksWhoSaid(question) {
+            wantedKinds = [.transcript]
+        }
         var prior = [Double](repeating: 0, count: candidates.count)
         for position in candidates.indices {
             let chunk = candidates[position]
@@ -182,6 +187,14 @@ public enum VidurRagRetriever {
     }
 
     // MARK: Helpers
+
+    /// English and Hinglish "who said / who mentioned" questions.
+    static func asksWhoSaid(_ question: String) -> Bool {
+        let lower = question.lowercased()
+        let cues = ["who said", "who mentioned", "who told", "who raised", "who talked about", "who spoke about",
+                    "kisne kaha", "kisne bola", "kaun bola", "\u{0915}\u{093F}\u{0938}\u{0928}\u{0947} \u{0915}\u{0939}\u{093E}"]
+        return cues.contains { lower.contains($0) }
+    }
 
     private static func factsBlocks(for meetingIDs: [UUID], index: VidurRagIndex) -> [VidurRagChunk] {
         Array(meetingIDs.prefix(2).compactMap { index.facts(for: $0) })
