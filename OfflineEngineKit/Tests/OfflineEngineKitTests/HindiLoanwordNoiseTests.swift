@@ -126,9 +126,12 @@ final class HindiLoanwordNoiseTests: XCTestCase {
 
         // Every quote stays an exact substring of the turn it cites.
         let sources = Dictionary(uniqueKeysWithValues: turns.map { ($0.id, $0.text) })
-        let evidence = reduced.tasks.flatMap(\.evidence) + reduced.decisions.flatMap(\.evidence)
-            + reduced.openIssues.flatMap(\.evidence) + reduced.discussion.flatMap(\.evidence)
-            + reduced.minutes.actions.flatMap(\.evidence) + reduced.minutes.resolutions.flatMap(\.evidence)
+        var evidence: [SourceEvidence] = reduced.tasks.flatMap(\.evidence)
+        evidence += reduced.decisions.flatMap(\.evidence)
+        evidence += reduced.openIssues.flatMap(\.evidence)
+        evidence += reduced.discussion.flatMap(\.evidence)
+        evidence += reduced.minutes.actions.flatMap(\.evidence)
+        evidence += reduced.minutes.resolutions.flatMap(\.evidence)
         for item in evidence {
             XCTAssertTrue(sources[item.turnID]?.contains(item.quote) == true, "Ungrounded quote: \(item.quote)",
                           file: file, line: line)
