@@ -201,7 +201,10 @@ final class HindiLoanwordNoiseTests: XCTestCase {
             SuggestedTask(title: "Discuss budget for marketing", category: "Follow-up", owner: "Pawan",
                           deadlineText: "Friday", priority: nil, evidence: [budgetQuestion, budgetOpen]),
             SuggestedTask(title: "Send the launch presentation to the client", category: "Follow-up", owner: "Neha",
-                          deadlineText: "by tomorrow", priority: nil, evidence: [presentationPromise])
+                          deadlineText: "by tomorrow", priority: nil, evidence: [presentationPromise]),
+            // Seen on the iPhone 15: a concrete task invented about the still-undecided design change.
+            SuggestedTask(title: "Send the design change launch proposal", category: "Follow-up", owner: "Pawan",
+                          deadlineText: nil, priority: nil, evidence: [designOpen])
         ]
         return LocalAnalysisResult(discussion: discussion, decisions: decisions, tasks: tasks)
     }

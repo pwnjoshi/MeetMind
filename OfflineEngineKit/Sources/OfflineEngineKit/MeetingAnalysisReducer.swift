@@ -926,8 +926,31 @@ public enum MeetingAnalysisReducer {
             return false
         }
         guard !parts.object.isEmpty else { return false }
-        guard parts.verb.isEmpty || outcomeVerbs.contains(parts.verb) else { return false }
-        for matter in matters where parts.object.isSubset(of: matter) { return true }
+        if parts.verb.isEmpty || outcomeVerbs.contains(parts.verb) {
+            for matter in matters where parts.object.isSubset(of: matter) { return true }
+            return false
+        }
+        // A concrete task about a matter the meeting left open ("send the design change proposal" when the
+        // design change is undecided) needs someone to be asked or to promise it in the cited sentences.
+        let touchesOpenMatter = matters.contains { !$0.isDisjoint(with: parts.object) }
+        guard touchesOpenMatter else { return false }
+        let cited = grounding.sentences(for: task.evidence)
+        return !hasExplicitRequest(cited) && !hasHindiRequestOrPromise(cited)
+    }
+
+    /// Hindi and Hinglish requests and promises ("kya tum ... kar sakte ho", "main bhej dunga", "bhej do").
+    private static func hasHindiRequestOrPromise(_ sentences: [String]) -> Bool {
+        let cues = ["\u{0938}\u{0915}\u{0924}\u{0947} \u{0939}\u{094B}", "\u{0938}\u{0915}\u{0924}\u{0940} \u{0939}\u{094B}",
+                    "\u{0926}\u{094B}\u{0917}\u{0947}", "\u{0926}\u{094B}\u{0917}\u{0940}",
+                    "\u{0926}\u{0942}\u{0902}\u{0917}\u{093E}", "\u{0926}\u{0942}\u{0902}\u{0917}\u{0940}",
+                    "\u{0926}\u{0942}\u{0901}\u{0917}\u{093E}", "\u{0926}\u{0942}\u{0901}\u{0917}\u{0940}",
+                    "\u{0915}\u{0930}\u{094B}\u{0917}\u{0947}", "\u{0915}\u{0930}\u{094B}\u{0917}\u{0940}",
+                    "\u{092D}\u{0947}\u{091C} \u{0926}\u{094B}",
+                    "sakte ho", "sakti ho", "doge", "dogi", "dunga", "dungi", "karoge", "karogi", "bhej do", "kar do"]
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            if cues.contains(where: { lower.contains($0) }) { return true }
+        }
         return false
     }
 
