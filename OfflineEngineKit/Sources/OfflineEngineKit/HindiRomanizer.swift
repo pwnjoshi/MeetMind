@@ -51,7 +51,8 @@ public enum HindiRomanizer {
             }
         }
         flush()
-        return output
+        // Whisper spells "let's" as two Devanagari words, which romanize to "let es".
+        return output.replacingOccurrences(of: #"\b([Ll])et es\b"#, with: "$1et's", options: .regularExpression)
     }
 
     // MARK: - Words
@@ -78,7 +79,8 @@ public enum HindiRomanizer {
         var view = String.UnicodeScalarView()
         view.append(contentsOf: run)
         let word = String(view)
-        if let known = HindiText.lexicon[HindiText.normalized(word)] { return known }
+        if let known = HindiText.lookup(HindiText.normalized(word)) { return known }
+        if let split = HindiText.fusedSplit(word) { return split.first + " " + split.second }
 
         let scalars = Array(word.decomposedStringWithCanonicalMapping.unicodeScalars).filter {
             $0.value != 0x200C && $0.value != 0x200D

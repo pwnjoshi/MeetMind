@@ -30,7 +30,11 @@ public struct ActionItemsConsoleView: View {
     public var body: some View {
         @Bindable var vm = viewModel
         let sections = viewModel.actionSections
-        Group {
+        VStack(spacing: 0) {
+            pageHeader
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
             if sections.isEmpty {
                 emptyStateView
             } else {
@@ -55,21 +59,21 @@ public struct ActionItemsConsoleView: View {
                 }
             }
         }
-        .overlay(alignment: .bottomTrailing) { newActionButton }        .background(Color(uiColor: .systemGroupedBackground))
+        .overlay(alignment: .bottomTrailing) { newActionButton }
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Actions")
+        .navigationBarTitleDisplayMode(.inline)
+        // The large title and buttons are drawn by pageHeader (Figma F1); the navigation title stays for back labels.
+        .toolbar(.hidden, for: .navigationBar)
         .tint(Theme.Colors.manentAccent)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { filterMenu }
-            ToolbarItem(placement: .topBarTrailing) { vidurButton }
-            ToolbarItem(placement: .topBarTrailing) { ProfileToolbarButton(tab: .actionItems) }
-        }
         .sheet(isPresented: $showsVidur) {
             if let meeting = allMeetings.first {
                 NavigationStack {
                     RootAskAISheet(meetingId: meeting.id, modelContext: modelContext) { showsVidur = false }
                 }
             }
-        }        .navigationDestination(item: $selectedTaskID) { id in
+        }
+        .navigationDestination(item: $selectedTaskID) { id in
             taskDetail(for: id)
         }
         .sheet(isPresented: $vm.isShowingActionItemSheet) {
@@ -149,14 +153,30 @@ public struct ActionItemsConsoleView: View {
             .disabled(viewModel.isSyncingReminders)
         } label: {
             Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.primary)
+                .headerCircle()
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Filter and sort")
+    }
+
+    private var pageHeader: some View {
+        ManentPageHeader(title: "Actions") {
+            filterMenu
+            vidurButton
+            ProfileHeaderButton(tab: .actionItems)
+        }
     }
 
     private var vidurButton: some View {
         Button { showsVidur = true } label: {
-            Image(systemName: "sparkles").foregroundStyle(Theme.Colors.manentAccent)
+            Image(systemName: "sparkles")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.Colors.manentAccent)
+                .headerCircle()
         }
+        .buttonStyle(.plain)
         .disabled(allMeetings.isEmpty)
         .accessibilityLabel("Ask Vidur")
     }

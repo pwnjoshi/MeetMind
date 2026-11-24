@@ -100,7 +100,8 @@ public struct LocalAnalysisResult: Codable, Sendable {
         let lower = text.lowercased()
         if lower.contains("pune vendor") || lower.contains("pune venue") {
             let source = spoken.lowercased()
-            return !(source.contains("pune") || source.contains("\u{092A}\u{0941}\u{0923}\u{0947}"))
+            return !(source.contains("pune") || source.contains("\u{092A}\u{0941}\u{0923}\u{0947}")
+                || source.contains("\u{092A}\u{0941}\u{0928}\u{0947}") || source.contains("\u{092A}\u{0942}\u{0928}\u{093E}"))
         }
         return false
     }

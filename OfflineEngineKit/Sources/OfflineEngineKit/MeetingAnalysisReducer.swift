@@ -55,7 +55,7 @@ public enum MeetingAnalysisReducer {
                 // A "decision" whose only support is an assignment sentence is a task.
                 continue
             } else {
-                decisionCandidates.append(point)
+                decisionCandidates.append(englishPoint(point))
             }
         }
         var discussionCandidates: [SupportedPoint] = []
@@ -64,7 +64,12 @@ public enum MeetingAnalysisReducer {
         }
 
         var decisions = deduplicatePoints(decisionCandidates)
-        decisions = mergePoints(decisions, with: explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi))
+        let deterministicDecisions = explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi)
+        // In a Devanagari transcript the model's decision and the grammar's decision about the same subject are
+        // one decision, written with the grammar's wording.
+        decisions = hindi.hasDevanagari
+            ? mergeBySubject(model: decisions, deterministic: deterministicDecisions)
+            : mergePoints(decisions, with: deterministicDecisions)
         decisions.removeAll { isContentlessDecision($0.text) }
 
         var openIssues = deduplicateOpenIssues(openCandidates + unresolvedOutcomes(in: checkpoint.turns, hindi: hindi) + hindiOpenPoints(hindi), grounding)
@@ -82,12 +87,19 @@ public enum MeetingAnalysisReducer {
         openIssues = Array(openIssues.prefix(12))
 
         let speakerLabels = Set(checkpoint.turns.compactMap(\.speaker).map { normalize($0) })
+        var turnOrder: [String: Int] = [:]
+        for (index, turn) in checkpoint.turns.enumerated() where turnOrder[turn.id] == nil { turnOrder[turn.id] = index }
+        // A sentence that settles or defers a matter is a decision or an open issue, never also a task.
+        let settledSentences: Set<String> = hindi.hasDevanagari
+            ? sentenceKeys(decisions.flatMap { $0.evidence } + openIssues.flatMap { $0.evidence }, grounding)
+            : []
         var tasks = deduplicateTasks(generatedTasks.compactMap(cleanedTask).map {
             withResolvedOwner($0, speakerLabels: speakerLabels, speakerNames: speakerNames)
         }.filter {
             isGroundedCommitment($0, grounding) && !ActionExtractor.isRefusedRequest(evidence: $0.evidence, in: checkpoint.turns)
-        })
-        tasks = mergeTasks(tasks, with: floorTasks)
+                && !overlapsSettled($0, settledSentences, grounding)
+        }.map(englishTask), order: turnOrder)
+        tasks = mergeTasks(tasks, with: floorTasks, order: turnOrder)
         tasks = Array(tasks.prefix(24))
 
         var executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
@@ -220,8 +232,56 @@ public enum MeetingAnalysisReducer {
         let title = polishedTask(task.title)
         guard isSubstantive(title), !task.evidence.isEmpty else { return nil }
         return SuggestedTask(title: title, category: task.category, owner: cleanedOptional(task.owner),
-                             deadlineText: cleanedOptional(task.deadlineText), priority: task.priority,
+                             deadlineText: cleanedOptional(plausibleDeadline(task.deadlineText)), priority: task.priority,
                              evidence: uniqueEvidence(task.evidence))
+    }
+
+    /// A small model sometimes copies Devanagari words into an English title. Loanwords are restored to
+    /// English and any other word is spelled in Latin letters.
+    private static func englishTask(_ task: SuggestedTask) -> SuggestedTask {
+        guard HindiText.containsDevanagari(task.title) else { return task }
+        return SuggestedTask(title: polishedTask(HindiText.englishPhrase(task.title)), category: task.category,
+                             owner: task.owner, deadlineText: task.deadlineText, priority: task.priority,
+                             evidence: task.evidence)
+    }
+
+    private static func englishPoint(_ point: SupportedPoint) -> SupportedPoint {
+        guard HindiText.containsDevanagari(point.text) else { return point }
+        return SupportedPoint(text: HindiText.englishPhrase(point.text), evidence: point.evidence)
+    }
+
+    /// A deadline is a time expression. Words a model copied from an undecided or negated sentence
+    /// ("abhi tay nahi hua") are not one and are dropped.
+    static func plausibleDeadline(_ value: String?) -> String? {
+        guard let value = value else { return nil }
+        let keys = HindiText.tokenize(value).map { $0.key }
+        guard !keys.isEmpty else { return nil }
+        let timeWords: Set<String> = [
+            "kal", "parso", "aaj", "tak", "hafte", "mahine", "subah", "shaam", "raat", "tomorrow", "today", "tonight",
+            "eod", "eow", "cob", "noon", "week", "month", "day", "days", "hour", "hours", "minutes", "morning",
+            "evening", "afternoon", "weekend", "next", "end", "by", "before", "within", "after", "this"
+        ]
+        let statementWords: Set<String> = [
+            "nahi", "nahin", "hua", "hui", "hai", "hain", "tha", "gaya", "tay", "decide", "decided", "pending", "not",
+            "yet", "hoga", "karna"
+        ]
+        let hasTime = value.rangeOfCharacter(from: .decimalDigits) != nil
+            || keys.contains { timeWords.contains($0) || HindiText.weekdays.contains($0) || HindiText.months.contains($0) }
+        if hasTime { return value }
+        return keys.contains { statementWords.contains($0) } ? nil : value
+    }
+
+    private static func sentenceKeys(_ evidence: [SourceEvidence], _ grounding: Grounding) -> Set<String> {
+        var keys = Set<String>()
+        for item in evidence {
+            for sentence in grounding.sentences(for: [item]) { keys.insert(item.turnID + "\u{0}" + normalize(sentence)) }
+        }
+        return keys
+    }
+
+    private static func overlapsSettled(_ task: SuggestedTask, _ settled: Set<String>, _ grounding: Grounding) -> Bool {
+        guard !settled.isEmpty else { return false }
+        return !sentenceKeys(task.evidence, grounding).isDisjoint(with: settled)
     }
 
     private static func composeExecutiveSummary(discussion: [SupportedPoint], decisions: [SupportedPoint]) -> String {
@@ -253,10 +313,12 @@ public enum MeetingAnalysisReducer {
         deduplicatePoints(lhs + rhs)
     }
 
-    private static func deduplicateTasks(_ values: [SuggestedTask]) -> [SuggestedTask] {
+    private static func deduplicateTasks(_ values: [SuggestedTask], modelCount: Int = Int.max,
+                                         order: [String: Int] = [:]) -> [SuggestedTask] {
         var result: [SuggestedTask] = []
-        for task in values {
-            if let index = result.firstIndex(where: { sameTask($0, task) }) {
+        var overridden = Set<Int>()
+        for (offset, task) in values.enumerated() {
+            if let index = result.firstIndex(where: { sameTask($0, task, order: order) }) {
                 let current = result[index]
                 // Keep the version that carries more actionable detail (owner,
                 // deadline); fill any remaining gaps from the other.
@@ -264,8 +326,17 @@ public enum MeetingAnalysisReducer {
                 let primary = preferNew ? task : current
                 let secondary = preferNew ? current : task
                 let equal = completeness(task) == completeness(current)
+                var title = equal && secondary.title.count > primary.title.count ? secondary.title : primary.title
+                let other = title == primary.title ? secondary.title : primary.title
+                // An English title beats one that still holds Devanagari, and the deterministic title beats
+                // the model's when both describe the same Hindi sentence.
+                if HindiText.containsDevanagari(title), !HindiText.containsDevanagari(other) { title = other }
+                if offset >= modelCount, index < modelCount, !overridden.contains(index), isHindiGrounded(task) {
+                    title = task.title
+                    overridden.insert(index)
+                }
                 result[index] = SuggestedTask(
-                    title: equal && secondary.title.count > primary.title.count ? secondary.title : primary.title,
+                    title: title,
                     category: primary.category == "Other" ? secondary.category : primary.category,
                     owner: primary.owner ?? secondary.owner,
                     deadlineText: primary.deadlineText ?? secondary.deadlineText,
@@ -279,8 +350,13 @@ public enum MeetingAnalysisReducer {
         return result
     }
 
-    private static func mergeTasks(_ lhs: [SuggestedTask], with rhs: [SuggestedTask]) -> [SuggestedTask] {
-        deduplicateTasks(lhs + rhs)
+    private static func isHindiGrounded(_ task: SuggestedTask) -> Bool {
+        task.evidence.contains { HindiText.containsDevanagari($0.quote) }
+    }
+
+    private static func mergeTasks(_ lhs: [SuggestedTask], with rhs: [SuggestedTask],
+                                   order: [String: Int] = [:]) -> [SuggestedTask] {
+        deduplicateTasks(lhs + rhs, modelCount: lhs.count, order: order)
     }
 
     /// Settled outcomes only: see `DecisionExtractor` for the accepted markers and the
@@ -372,11 +448,12 @@ public enum MeetingAnalysisReducer {
             || (min(left.count, right.count) >= 4 && (left.isSubset(of: right) || right.isSubset(of: left)))
     }
 
-    private static func sameTask(_ lhs: SuggestedTask, _ rhs: SuggestedTask) -> Bool {
+    private static func sameTask(_ lhs: SuggestedTask, _ rhs: SuggestedTask, order: [String: Int] = [:]) -> Bool {
         let ownersMatch = normalize(lhs.owner ?? "") == normalize(rhs.owner ?? "")
             || lhs.owner == nil || rhs.owner == nil
         guard ownersMatch else { return false }
         if nearDuplicate(lhs.title, rhs.title) { return true }
+        if sameObjectNearby(lhs, rhs, order: order) { return true }
         // Tasks that cite the same transcript turn and share their action words
         // are one commitment phrased twice, even when the titles differ.
         let shared = sharedEvidence(lhs.evidence, rhs.evidence)
@@ -387,6 +464,124 @@ public enum MeetingAnalysisReducer {
         if shared.sameQuote { return true }
         let smaller = min(left.count, right.count)
         return common >= 2 || Double(common) / Double(max(1, smaller)) >= 0.67
+    }
+
+    private static let verbClasses: [String: String] = [
+        "prepare": "make", "create": "make", "make": "make", "draft": "make", "write": "make", "build": "make",
+        "compile": "make", "send": "send", "share": "send", "forward": "send", "email": "send", "mail": "send",
+        "submit": "send", "deliver": "send", "circulate": "send", "provide": "send", "give": "send",
+        "review": "review", "check": "review", "verify": "review", "look": "review"
+    ]
+    private static let objectFiller: Set<String> = [
+        "the", "a", "an", "to", "for", "of", "on", "by", "with", "and", "our", "this", "that", "your", "my", "their"
+    ]
+
+    /// Verb class and object words of a task title: "Send the presentation to the client" is
+    /// ("send", {presentation, client}).
+    private static func verbAndObject(_ title: String) -> (verb: String, object: Set<String>) {
+        var words: [String] = []
+        for piece in HindiText.englishPhrase(title).split(whereSeparator: { $0.isWhitespace }) {
+            let word = String(piece).lowercased().trimmingCharacters(in: CharacterSet.punctuationCharacters)
+            if !word.isEmpty { words.append(word) }
+        }
+        guard let first = words.first else { return ("", []) }
+        var verb = ""
+        if let known = verbClasses[first] {
+            verb = known
+        } else if ActionExtractor.isVerbWord(first) {
+            verb = first
+        }
+        let rest = verb.isEmpty ? words : Array(words.dropFirst())
+        let object = Set(rest.filter { !objectFiller.contains($0) }.map(stem))
+        return (verb, object)
+    }
+
+    private static func deadlineKey(_ value: String) -> String {
+        MinutesComposer.englishDeadline(value).lowercased().replacingOccurrences(of: "by ", with: "")
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func turnsNearby(_ lhs: [SourceEvidence], _ rhs: [SourceEvidence], _ order: [String: Int]) -> Bool {
+        for left in lhs {
+            for right in rhs {
+                if left.turnID == right.turnID { return true }
+                if let a = order[left.turnID], let b = order[right.turnID], abs(a - b) <= 1 { return true }
+            }
+        }
+        return false
+    }
+
+    /// One commitment phrased twice: the same kind of verb, one object contained in the other, compatible
+    /// deadlines, and evidence in the same or adjacent turns (a request in one turn, the promise in the next).
+    private static func sameObjectNearby(_ lhs: SuggestedTask, _ rhs: SuggestedTask, order: [String: Int]) -> Bool {
+        let left = verbAndObject(lhs.title)
+        let right = verbAndObject(rhs.title)
+        guard !left.object.isEmpty, !right.object.isEmpty else { return false }
+        guard left.verb.isEmpty || right.verb.isEmpty || left.verb == right.verb else { return false }
+        guard left.object.isSubset(of: right.object) || right.object.isSubset(of: left.object) else { return false }
+        if let a = lhs.deadlineText, let b = rhs.deadlineText, deadlineKey(a) != deadlineKey(b) { return false }
+        return turnsNearby(lhs.evidence, rhs.evidence, order)
+    }
+
+    private static let decisionFiller: Set<String> = [
+        "the", "a", "an", "that", "this", "be", "is", "are", "was", "were", "it", "we", "will", "to", "of", "for", "on",
+        "at", "in", "by", "with", "and", "as", "held", "set", "fixed", "finalize", "finalized", "finalise", "finalised",
+        "go", "going", "adopted", "engaged", "selected", "chosen", "decided", "agreed", "resolved", "approved",
+        "confirmed", "date", "proceed", "use", "team", "meeting"
+    ]
+
+    private static func decisionTokens(_ text: String) -> Set<String> {
+        var tokens = Set<String>()
+        for piece in normalize(text).split(separator: " ") {
+            var word = String(piece)
+            for suffix in ["st", "nd", "rd", "th"] where word.count > 2 && word.hasSuffix(suffix) {
+                let digits = String(word.dropLast(2))
+                if digits.allSatisfy({ $0.isNumber }) { word = digits }
+            }
+            if word.count > 1, !decisionFiller.contains(word) { tokens.insert(word) }
+        }
+        return tokens
+    }
+
+    /// Two decision texts about the same subject: they share at least two words, one of them more than a date,
+    /// and the shared words cover most of the shorter text ("Launch on 20 November" and
+    /// "That the launch be held on November 20th").
+    private static func sameDecisionSubject(_ lhs: String, _ rhs: String) -> Bool {
+        let left = decisionTokens(lhs)
+        let right = decisionTokens(rhs)
+        guard !left.isEmpty, !right.isEmpty else { return false }
+        let shared = left.intersection(right)
+        let content = shared.filter { token in
+            !HindiText.months.contains(token) && !token.allSatisfy { $0.isNumber }
+        }
+        guard shared.count >= 2, !content.isEmpty else { return false }
+        return Double(shared.count) / Double(min(left.count, right.count)) >= 0.6
+    }
+
+    /// Merges the model's decisions into the deterministic ones. A model decision about the same subject only
+    /// contributes its evidence; the deterministic wording is kept.
+    private static func mergeBySubject(model: [SupportedPoint], deterministic: [SupportedPoint]) -> [SupportedPoint] {
+        func same(_ lhs: SupportedPoint, _ rhs: SupportedPoint) -> Bool {
+            nearDuplicate(lhs.text, rhs.text) || sameDecisionSubject(lhs.text, rhs.text)
+        }
+        var result: [SupportedPoint] = []
+        for point in deterministic {
+            if let index = result.firstIndex(where: { same($0, point) }) {
+                let preferred = point.text.count > result[index].text.count ? point.text : result[index].text
+                result[index] = SupportedPoint(text: preferred, evidence: uniqueEvidence(result[index].evidence + point.evidence))
+            } else {
+                result.append(point)
+            }
+        }
+        for point in model {
+            if let index = result.firstIndex(where: { same($0, point) }) {
+                result[index] = SupportedPoint(text: result[index].text,
+                                               evidence: uniqueEvidence(result[index].evidence + point.evidence))
+            } else {
+                result.append(point)
+            }
+        }
+        return result
     }
 
     private static func completeness(_ task: SuggestedTask) -> Int {

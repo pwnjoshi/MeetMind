@@ -92,7 +92,7 @@ enum HindiText {
     और=aur
     या=ya
     तो=to
-    अब=ab
+    अब,अग=ab
     फिर=phir
     पहले=pehle
     बाद=baad
@@ -130,7 +130,7 @@ enum HindiText {
     ना=na
     सही=sahi
     ओके,ओके.=ok
-    हाय=hello
+    हाय,हाई=hello
     हैलो,हेलो,हलो=hello
     नमस्ते=namaste
     धन्यवाद,शुक्रिया=thanks
@@ -232,7 +232,7 @@ enum HindiText {
     शुरू=shuru
     खत्म=khatam
     पूरा=poora
-    तय=tay
+    तय,अभीते,अभिते=tay
     फैसला=faisla
     फाइनल,फाईनल,फ़ाइनल=final
     डिसाइड,डिसाईड=decide
@@ -314,7 +314,7 @@ enum HindiText {
     लेट्स,लेटस=lets
     गो=go
     विद=with
-    द=the
+    द,दि=the
     लिस्ट=list
     स्टेटस=status
     फीडबैक=feedback
@@ -335,7 +335,7 @@ enum HindiText {
     शीट=sheet
     कोट=quote
     ड्राफ्ट=draft
-    पुणे=Pune
+    पुणे,पुने,पूना,पुना=Pune
     मुंबई=Mumbai
     दिल्ली=Delhi
     बेंगलुरु,बैंगलोर,बंगलौर=Bengaluru
@@ -345,6 +345,11 @@ enum HindiText {
     अहमदाबाद=Ahmedabad
     जयपुर=Jaipur
     नोएडा=Noida
+    लंच=lunch
+    लिंक=link
+    लोन=loan
+    प्रेस=press
+    दोस्त=dost
     """
 
     static let lexicon: [String: String] = {
@@ -362,7 +367,224 @@ enum HindiText {
     }()
 
     static func isKnownWord(_ word: String) -> Bool {
-        lexicon[normalized(word)] != nil
+        lookup(normalized(word)) != nil
+    }
+
+    // MARK: - Loanwords
+
+    /// English values the fuzzy matcher may restore. Whisper spells English words in Devanagari by ear
+    /// ("लोंच", "बज़त", "वेंदर"), so an unknown word whose consonant skeleton and vowel pattern are close to
+    /// a listed spelling is read as that English word. Hindi function words and short words never take part.
+    private static let loanTargets: Set<String> = [
+        "launch", "budget", "agenda", "presentation", "vendor", "client", "design", "change", "decide", "final",
+        "pending", "meeting", "marketing", "report", "proposal", "timeline", "deadline", "document", "invoice",
+        "contract", "project", "product", "November", "December", "September", "October"
+    ]
+
+    private struct LoanSignature {
+        let consonants: [Character]
+        let vowels: [Character]
+    }
+
+    private struct LoanEntry {
+        let value: String
+        let signature: LoanSignature
+    }
+
+    private final class LoanCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: String] = [:]
+
+        func get(_ key: String) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return values[key]
+        }
+
+        func set(_ key: String, _ value: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            if values.count > 20_000 { values.removeAll() }
+            values[key] = value
+        }
+    }
+
+    private static let loanCache = LoanCache()
+
+    /// Consonants grouped by sound: voicing, aspiration and the nasals fold together.
+    private static func consonantClass(_ code: UInt32) -> Character? {
+        switch code {
+        case 0x0915...0x0919: return "k"
+        case 0x091A...0x091E: return "c"
+        case 0x091F...0x0922, 0x0924...0x0927: return "t"
+        case 0x0923, 0x0928, 0x092E: return "n"
+        case 0x092A...0x092D: return "p"
+        case 0x092F: return "y"
+        case 0x0930, 0x0931: return "r"
+        case 0x0932, 0x0933: return "l"
+        case 0x0935: return "v"
+        case 0x0936...0x0938: return "s"
+        case 0x0939: return "h"
+        default: return nil
+        }
+    }
+
+    private static func matraClass(_ code: UInt32) -> Character? {
+        switch code {
+        case 0x093E: return "a"
+        case 0x093F, 0x0940, 0x0943: return "i"
+        case 0x0941, 0x0942: return "u"
+        case 0x0945...0x0948: return "e"
+        case 0x0949...0x094C: return "o"
+        default: return nil
+        }
+    }
+
+    private static func standaloneVowelClass(_ code: UInt32) -> Character? {
+        switch code {
+        case 0x0905, 0x0906: return "a"
+        case 0x0907, 0x0908, 0x090B: return "i"
+        case 0x0909, 0x090A: return "u"
+        case 0x090D...0x0910: return "e"
+        case 0x0911...0x0914: return "o"
+        default: return nil
+        }
+    }
+
+    /// Consonant classes and vowel classes of a folded Devanagari word, or nil when it holds anything else.
+    /// The inherent vowel counts as "a" except on the last consonant, where Hindi drops it.
+    private static func loanSignature(_ folded: String) -> LoanSignature? {
+        let scalars = Array(folded.unicodeScalars)
+        var consonants: [Character] = []
+        var vowels: [Character] = []
+        var index = 0
+        while index < scalars.count {
+            let code = scalars[index].value
+            if let letter = consonantClass(code) {
+                consonants.append(letter)
+                let next: UInt32 = index + 1 < scalars.count ? scalars[index + 1].value : 0
+                if next == 0x094D {
+                    index += 2
+                } else if let vowel = matraClass(next) {
+                    vowels.append(vowel)
+                    index += 2
+                } else {
+                    if index + 1 < scalars.count { vowels.append("a") }
+                    index += 1
+                }
+            } else if let vowel = standaloneVowelClass(code) {
+                vowels.append(vowel)
+                index += 1
+            } else if code == 0x0902 {
+                consonants.append("n")
+                index += 1
+            } else {
+                return nil
+            }
+        }
+        return LoanSignature(consonants: consonants, vowels: vowels)
+    }
+
+    private static let loanEntries: [LoanEntry] = {
+        var entries: [LoanEntry] = []
+        var seen = Set<String>()
+        for (spelling, value) in lexicon where loanTargets.contains(value) {
+            guard let signature = loanSignature(spelling) else { continue }
+            let id = value + "|" + String(signature.consonants) + "|" + String(signature.vowels)
+            if seen.insert(id).inserted { entries.append(LoanEntry(value: value, signature: signature)) }
+        }
+        return entries
+    }()
+
+    /// The English word an unknown Devanagari spelling most likely stands for, or nil when nothing is close
+    /// enough or two different words are equally close.
+    private static func fuzzyLoanword(_ folded: String) -> String? {
+        guard let word = loanSignature(folded), word.consonants.count >= 3 else { return nil }
+        var best: String?
+        var bestScore = Int.max
+        var tied = false
+        for entry in loanEntries {
+            let target = entry.signature
+            let consonantLimit = target.consonants.count >= 5 ? 1 : 0
+            guard abs(target.consonants.count - word.consonants.count) <= consonantLimit else { continue }
+            let consonantDistance = editDistance(word.consonants, target.consonants)
+            guard consonantDistance <= consonantLimit else { continue }
+            let vowelLimit = max(target.consonants.count, word.consonants.count) >= 5 ? 2 : 1
+            let vowelDistance = editDistance(word.vowels, target.vowels)
+            guard vowelDistance <= vowelLimit else { continue }
+            let score = consonantDistance * 10 + vowelDistance
+            if score < bestScore {
+                bestScore = score
+                best = entry.value
+                tied = false
+            } else if score == bestScore, best != entry.value {
+                tied = true
+            }
+        }
+        return tied ? nil : best
+    }
+
+    /// Display value of a folded (see `normalized`) Devanagari word: the lexicon entry, else the English
+    /// loanword it is a phonetic spelling of.
+    static func lookup(_ folded: String) -> String? {
+        if let value = lexicon[folded] { return value }
+        guard !folded.isEmpty, containsDevanagari(folded) else { return nil }
+        if let cached = loanCache.get(folded) { return cached.isEmpty ? nil : cached }
+        let found = fuzzyLoanword(folded)
+        loanCache.set(folded, found ?? "")
+        return found
+    }
+
+    /// Words Whisper runs together: "दिपुने" (the Pune) and "पुनेवाला" (the one from Pune).
+    private static let fusedPrefixes: [String] = ["\u{0926}\u{093F}"]
+    private static let fusedSuffixes: [String] = [
+        "\u{0935}\u{093E}\u{0932}\u{093E}", "\u{0935}\u{093E}\u{0932}\u{0947}", "\u{0935}\u{093E}\u{0932}\u{0940}"
+    ]
+
+    /// Splits a fused word into two known words. `offset` counts the characters of the first part.
+    static func fusedSplit(_ word: String) -> (offset: Int, first: String, second: String)? {
+        let characters = Array(word)
+        for suffix in fusedSuffixes {
+            let length = suffix.count
+            guard characters.count > length + 1, word.hasSuffix(suffix) else { continue }
+            let stem = String(characters[0..<(characters.count - length)])
+            if let value = lookup(normalized(stem)), let tail = lexicon[normalized(suffix)] {
+                return (characters.count - length, value, tail)
+            }
+        }
+        for prefix in fusedPrefixes {
+            let length = prefix.count
+            guard characters.count > length + 1, word.hasPrefix(prefix) else { continue }
+            let stem = String(characters[length...])
+            if let value = lookup(normalized(stem)), let head = lexicon[normalized(prefix)] {
+                return (length, head, value)
+            }
+        }
+        return nil
+    }
+
+    /// English reading of text that may hold Devanagari: loanwords become the English word, other
+    /// Devanagari words are spelled in Latin letters. Text without Devanagari is returned unchanged.
+    static func englishPhrase(_ text: String) -> String {
+        guard containsDevanagari(text) else { return text }
+        var words: [String] = []
+        for chunk in text.split(whereSeparator: { $0.isWhitespace }) {
+            let word = String(chunk)
+            guard containsDevanagari(word) else { words.append(word); continue }
+            let core = word.trimmingCharacters(in: CharacterSet.punctuationCharacters.union(.symbols))
+            guard !core.isEmpty, containsDevanagari(core) else { words.append(word); continue }
+            var english: String
+            if let value = lookup(normalized(core)) {
+                english = value
+            } else if let split = fusedSplit(core) {
+                english = split.first + " " + split.second
+            } else {
+                english = transliterate(core)
+            }
+            if let range = word.range(of: core) { english = word.replacingCharacters(in: range, with: english) }
+            words.append(english)
+        }
+        return words.joined(separator: " ")
     }
 
     static let weekdays: Set<String> = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -400,10 +622,20 @@ enum HindiText {
             var known = false
             if hasDevanagari {
                 let folded = normalized(word)
-                if let value = lexicon[folded] {
+                if let value = lookup(folded) {
                     key = value.lowercased()
                     display = value
                     known = true
+                } else if let split = fusedSplit(word) {
+                    let middle = text.index(low, offsetBy: split.offset)
+                    tokens.append(HindiToken(raw: String(text[low..<middle]), key: split.first.lowercased(),
+                                             display: split.first, isDevanagari: true, isKnown: true,
+                                             commaAfter: false, start: low, end: middle, chunkEnd: middle))
+                    tokens.append(HindiToken(raw: String(text[middle..<high]), key: split.second.lowercased(),
+                                             display: split.second, isDevanagari: true, isKnown: true,
+                                             commaAfter: trailing.contains(","), start: middle, end: high,
+                                             chunkEnd: chunkEnd))
+                    continue
                 } else {
                     key = folded
                     display = word
@@ -412,6 +644,10 @@ enum HindiText {
                 key = word.lowercased().replacingOccurrences(of: "\u{2019}", with: "").replacingOccurrences(of: "'", with: "")
                 if let alias = romanAliases[key] { key = alias }
                 display = word
+                if let loan = latinLoanAliases[key] {
+                    key = loan
+                    display = loan
+                }
             }
             if key.isEmpty { key = word }
             if display.isEmpty { display = word }
@@ -419,8 +655,39 @@ enum HindiText {
                                      isKnown: known, commaAfter: trailing.contains(","),
                                      start: low, end: high, chunkEnd: chunkEnd))
         }
-        return tokens
+        return mergeLets(tokens, in: text)
     }
+
+    /// "लेट एस" is Whisper's spelling of "let's".
+    private static func mergeLets(_ tokens: [HindiToken], in text: String) -> [HindiToken] {
+        guard tokens.count >= 2 else { return tokens }
+        let letWord = normalized("\u{0932}\u{0947}\u{091F}")
+        let esWord = normalized("\u{090F}\u{0938}")
+        var result: [HindiToken] = []
+        var position = 0
+        while position < tokens.count {
+            let token = tokens[position]
+            if position + 1 < tokens.count, token.isDevanagari, !token.isKnown, normalized(token.raw) == letWord {
+                let next = tokens[position + 1]
+                if next.isDevanagari, !next.isKnown, normalized(next.raw) == esWord {
+                    result.append(HindiToken(raw: String(text[token.start..<next.end]), key: "lets", display: "let's",
+                                             isDevanagari: true, isKnown: true, commaAfter: next.commaAfter,
+                                             start: token.start, end: next.end, chunkEnd: next.chunkEnd))
+                    position += 2
+                    continue
+                }
+            }
+            result.append(token)
+            position += 1
+        }
+        return result
+    }
+
+    /// Latin misspellings of English loanwords that Whisper produces in Hinglish speech.
+    static let latinLoanAliases: [String: String] = [
+        "wendor": "vendor", "wender": "vendor", "vender": "vendor", "vandor": "vendor", "wandor": "vendor",
+        "lonch": "launch"
+    ]
 
     /// Exact source text covered by tokens (including trailing punctuation of the last token).
     static func text(of tokens: [HindiToken], in source: String) -> String {

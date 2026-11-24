@@ -513,7 +513,9 @@ enum MinutesBuilder {
             }
             let title = contextualTitle(baseTitle, contextWord: contextWord, nextMentioned: nextMentioned)
             let topic = topicIndex(related: task.title).map { drafts[$0].title }
-            return MinutesAction(title: title, owner: owner, deadlineText: deadline, dueDate: due, topic: topic,
+            // The minutes are written in English, so a Devanagari deadline ("फ्राइडे तक") reads "by Friday".
+            let shownDeadline = deadline.map { HindiText.containsDevanagari($0) ? MinutesComposer.englishDeadline($0) : $0 }
+            return MinutesAction(title: title, owner: owner, deadlineText: shownDeadline, dueDate: due, topic: topic,
                                  evidence: task.evidence, timestamp: turn?.start, speaker: speakerName(turn))
         }
 

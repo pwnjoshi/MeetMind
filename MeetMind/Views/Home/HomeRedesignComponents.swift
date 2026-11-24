@@ -159,7 +159,7 @@ struct WeekMeetingCard: View {
     }
 
     private var accentColor: Color {
-        let palette = [Theme.Colors.warmAmber, Theme.Colors.mintGreen, Theme.Colors.aiPurple]
+        let palette = [Theme.Colors.warmAmber, Theme.Colors.mintGreen]
         let index = meeting.title.unicodeScalars.reduce(0) { $0 + Int($1.value) } % palette.count
         return palette[index]
     }

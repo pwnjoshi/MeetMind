@@ -95,10 +95,10 @@ public enum RecentMeetingPresenter {
             return StatusPart(text: "Finalized", tone: .normal, allowsActions: true)
         }
         if reviewStatus == "Draft" || reviewStatus == "Ready to finalize" || meeting.minutesNeedFinalization == true {
-            return StatusPart(text: "Draft minutes", tone: .attention, allowsActions: true)
+            return StatusPart(text: "Draft minutes", tone: .normal, allowsActions: true)
         }
         if meeting.summary == nil, meeting.audioFileURL != nil {
-            return StatusPart(text: "Minutes pending", tone: .attention, allowsActions: true)
+            return StatusPart(text: "Minutes pending", tone: .normal, allowsActions: true)
         }
         if meeting.summary == nil {
             return StatusPart(text: "Saved", tone: .normal, allowsActions: true)

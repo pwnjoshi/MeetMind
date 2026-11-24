@@ -134,6 +134,8 @@ final class HomeRecentMeetingsTests: XCTestCase {
         let draft = Meeting(title: "Draft", duration: 3_600, status: .completed)
         draft.minutesNeedFinalization = true
         XCTAssertEqual(RecentMeetingPresenter.line(for: draft, reviewStatus: nil).text, "Draft minutes \u{00B7} 1h")
+        // Draft minutes are routine, so the row stays grey; only states that need the user turn orange.
+        XCTAssertEqual(RecentMeetingPresenter.line(for: draft, reviewStatus: nil).tone, .normal)
 
         let finalized = Meeting(title: "Final", status: .completed)
         XCTAssertEqual(RecentMeetingPresenter.line(for: finalized, reviewStatus: "Finalized").text, "Finalized")

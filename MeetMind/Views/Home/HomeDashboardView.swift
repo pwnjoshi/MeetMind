@@ -29,6 +29,11 @@ public struct HomeDashboardView: View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    ManentPageHeader(title: "Meetings") {
+                        vidurButton
+                        profileButton
+                    }
+                    .padding(.horizontal, 4)
                     if let loadingError = viewModel.loadingErrorMessage {
                         ContentUnavailableView {
                             Label("Meetings Unavailable", systemImage: "calendar.badge.exclamationmark")
@@ -63,11 +68,9 @@ public struct HomeDashboardView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Meetings")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { vidurButton }
-            ToolbarItem(placement: .topBarTrailing) { profileButton }
-        }
+        .navigationBarTitleDisplayMode(.inline)
+        // The large title and buttons are drawn by ManentPageHeader (Figma A2); the navigation title stays for back labels.
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showsSeries) {
             if let id = selectedSeriesID {
                 NavigationStack { LocalSeriesTimeline(seriesID: id) }
@@ -112,8 +115,11 @@ public struct HomeDashboardView: View {
     private var vidurButton: some View {
         Button { showsVidur = true } label: {
             Image(systemName: "sparkles")
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Theme.Colors.manentAccent)
+                .headerCircle()
         }
+        .buttonStyle(.plain)
         .disabled(vidurMeeting == nil)
         .accessibilityLabel("Ask Vidur")
         .accessibilityHint(vidurMeeting == nil ? "Available after a meeting has been saved" : "Ask about your latest meeting")
@@ -232,34 +238,7 @@ public struct HomeDashboardView: View {
     }
 
     private var profileButton: some View {
-        Button {
-            router.navigate(to: .settings, in: .home)
-        } label: {
-            profileAvatar
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Profile and settings")
-    }
-
-    @ViewBuilder
-    private var profileAvatar: some View {
-        if let data = settings.userProfile?.avatarImageData, let image = UIImage(data: data) {
-            Image(uiImage: image).resizable().scaledToFill().frame(width: 36, height: 36).clipShape(Circle())
-        } else if ToolbarGlass.isSystemProvided {
-            // iOS 26 draws the glass circle around the toolbar item, so no circle glyph inside it.
-            Image(systemName: "person.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 36, height: 36)
-        } else {
-            Image(systemName: "person.crop.circle.fill")
-                .resizable()
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(Color(uiColor: .systemBackground), Color(uiColor: .systemGray))
-                .frame(width: 36, height: 36)
-        }
+        ProfileHeaderButton(tab: .home)
     }
 
     // Sheet-based creation does not always trigger the underlying view's onAppear.
@@ -369,7 +348,7 @@ public struct HomeDashboardView: View {
     private func recentStatusColor(_ meeting: Meeting) -> Color {
         switch recentLine(meeting).tone {
         case .failure: return Theme.Colors.coralRed
-        case .attention: return Theme.Colors.warmAmber
+        case .attention: return Theme.Colors.warmAmber // only for states that need the user (speaker review, paused)
         case .active: return Theme.Colors.manentAccent
         case .normal: return .secondary
         }
