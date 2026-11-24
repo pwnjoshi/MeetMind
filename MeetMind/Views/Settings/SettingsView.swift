@@ -25,6 +25,7 @@ public struct SettingsView: View {
     @State private var showsEraseAlert = false
     @State private var eraseError: String?
     @State private var isErasing = false
+    @State private var showsProfileEditor = false
     private let fixtureStatistics: ProfileStatistics?
 
     private var viewModel: SettingsViewModel {
@@ -72,13 +73,14 @@ public struct SettingsView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    ProfileEditorView(viewModel: viewModel)
-                } label: {
+                Button { showsProfileEditor = true } label: {
                     Image(systemName: "square.and.pencil")
                 }
                 .accessibilityLabel("Edit profile")
             }
+        }
+        .navigationDestination(isPresented: $showsProfileEditor) {
+            ProfileEditorView(viewModel: viewModel)
         }
         .tint(ProfilePalette.accent)
         .task { await refreshNotificationStatus() }
@@ -103,9 +105,7 @@ public struct SettingsView: View {
 
     private var profileHeader: some View {
         VStack(spacing: 5) {
-            NavigationLink {
-                ProfileEditorView(viewModel: viewModel)
-            } label: {
+            Button { showsProfileEditor = true } label: {
                 SettingsProfileAvatar(profile: profile, size: 76)
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "camera.fill")
