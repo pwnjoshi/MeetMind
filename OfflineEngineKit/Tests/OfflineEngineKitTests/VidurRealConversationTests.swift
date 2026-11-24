@@ -129,7 +129,46 @@ final class VidurRealConversationTests: XCTestCase {
         XCTAssertTrue(answer.text.contains("Pawan asked Neha to send the presentation"), answer.text)
         XCTAssertTrue(answer.text.contains("22 Nov"), answer.text)
         XCTAssertEqual(answer.sources.first?.speaker, "Pawan")
+        // A request found in the transcript is a deterministic owner answer, so the model is never asked.
+        XCTAssertEqual(answer.intent, .tasks)
+        XCTAssertEqual(answer.confidence, .complete)
         assertClean(answer)
+    }
+
+    func testOwnerQuestionsAreRecognisedIncludingFollowUps() {
+        let owner = ["And who owns the presentation?", "who is responsible for the presentation?",
+                     "Who\u{2019}s responsible for it?", "Whose task is the agenda?", "who will do the quote?",
+                     "Who has to send the deck?", "and who has to do it", "Who owned the budget?"]
+        for question in owner { XCTAssertTrue(VidurRagRouting.isOwnerQuestion(question), question) }
+        let other = ["How did the budget discussion go?", "What did we decide?", "Who attended?", "Which tasks are open?",
+                     "Who said the budget is pending?"]
+        for question in other { XCTAssertFalse(VidurRagRouting.isOwnerQuestion(question), question) }
+    }
+
+    func testEveryOwnerPhrasingFindsThePersonWhoWasAsked() {
+        let questions = ["Who is responsible for the presentation?", "Whose task is the presentation?",
+                         "Who will do the presentation?", "Who has to do the presentation?", "and who owns the presentation"]
+        for question in questions {
+            let answer = ask(question, in: everything)
+            XCTAssertTrue(answer.text.contains("Pawan asked Neha to send the presentation"), "\(question) -> \(answer.text)")
+            XCTAssertEqual(answer.intent, .tasks, question)
+            XCTAssertEqual(answer.confidence, .complete, question)
+            assertClean(answer)
+        }
+    }
+
+    func testRequestDetectionToleratesSpeechNoise() {
+        let index = VidurPersonIndex(names: ["Pawan", "Neha"])
+        let keys = Set(VidurScript.keys(forWord: "presentation"))
+        let noisy = VidurGist.request(in: presentationLine, topicKeys: keys, speaker: "Pawan", index: index)
+        XCTAssertEqual(noisy?.person.canonical, "Neha")
+        XCTAssertEqual(noisy?.phrase, "send the presentation")
+        let after = VidurGist.request(in: "please send the presentation to neha today", topicKeys: keys, speaker: "Pawan", index: index)
+        XCTAssertEqual(after?.person.canonical, "Neha")
+        XCTAssertEqual(after?.phrase, "send the presentation")
+        let far = "neha is on leave and the weather is nice today and he said send the presentation"
+        XCTAssertNil(VidurGist.request(in: far, topicKeys: keys, speaker: "Pawan", index: index))
+        XCTAssertNil(VidurGist.request(in: "pawan will send the presentation", topicKeys: keys, speaker: "Pawan", index: index))
     }
 
     func testWhoOwnsWithATypoStillFindsThePerson() {

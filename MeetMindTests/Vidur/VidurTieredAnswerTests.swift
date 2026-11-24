@@ -433,6 +433,25 @@ final class VidurTieredFlowTests: XCTestCase {
         XCTAssertTrue(updates.last?.answer?.text.contains("Present (2)") == true)
     }
 
+    /// The real iPhone conversation: after a budget question, "And who owns the presentation?" went to the model, which
+    /// said the blocks did not state an owner. The transcript request answers it, and the model is never asked.
+    func testOwnerQuestionIsAnsweredFromTheTranscriptRequestWithoutTheModel() async {
+        let counter = CallCounter()
+        let box = UpdateBox()
+        let history = [VidurChatTurn(question: "How did the budget discussion go?", answer: "The budget is an open issue.")]
+        let request = VidurTieredRequest(question: "And who owns the presentation?", sources: [quickSource],
+                                         facts: quickFacts, length: .standard, history: history)
+        await VidurTieredAnswerService.run(request, hooks: hooks(counter: counter)) { box.add($0) }
+        let updates = box.updates
+        XCTAssertEqual(counter.count, 0, "A found owner never goes to the model")
+        XCTAssertEqual(updates.map(\.stage), [.final])
+        XCTAssertEqual(updates.last?.tier, .structured)
+        let text = updates.last?.answer?.text ?? ""
+        XCTAssertTrue(text.contains("Pawan asked Neha to send the presentation"), text)
+        XCTAssertFalse(text.lowercased().contains("block"), text)
+        XCTAssertEqual(updates.last?.answer?.citations.first?.speaker, "Pawan")
+    }
+
     func testScopeNoteIsLeftOutOfChatHistory() {
         let text = VidurScopeNote.prefixed("Pawan has 1 open task.", note: VidurScopeNote.notHappened)
         XCTAssertEqual(VidurScopeNote.strip(text), "Pawan has 1 open task.")

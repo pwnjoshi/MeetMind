@@ -15,6 +15,38 @@ public enum VidurQuickAnswerer {
                               history: [VidurChatTurn] = [], selfNames: [String] = [],
                               now: Date = Date(), calendar: Calendar = .current,
                               currentMeetingID: UUID? = nil) -> VidurQuickAnswer {
+        let found = resolve(question: rawQuestion, records: records, history: history, selfNames: selfNames,
+                            now: now, calendar: calendar, currentMeetingID: currentMeetingID)
+        return naturalized(found, calendar: calendar)
+    }
+
+    /// ISO timestamps never reach the screen: "2026-11-23T12:59:41Z" is shown as "Mon 23 Nov at 12:59 PM".
+    private static func naturalized(_ answer: VidurQuickAnswer, calendar: Calendar) -> VidurQuickAnswer {
+        func natural(_ text: String) -> String { VidurNaturalDates.rewrite(text, calendar: calendar) }
+        var copy = answer
+        let text = natural(answer.text)
+        let changedSources = answer.sources.contains { natural($0.quote) != $0.quote }
+        let changedTasks = answer.tasks.contains { natural($0.title) != $0.title }
+        guard text != answer.text || changedSources || changedTasks else { return answer }
+        let sources = answer.sources.map { source in
+            VidurQuickSource(meetingID: source.meetingID, meetingTitle: source.meetingTitle, meetingDate: source.meetingDate,
+                             label: source.label, timestamp: source.timestamp, quote: natural(source.quote),
+                             speaker: source.speaker)
+        }
+        let tasks = answer.tasks.map { task in
+            VidurQuickTask(title: natural(task.title), owner: task.owner, dueDate: task.dueDate, dueText: task.dueText,
+                           isCompleted: task.isCompleted, meetingID: task.meetingID, meetingTitle: task.meetingTitle)
+        }
+        copy = VidurQuickAnswer(text: text, sources: sources, people: answer.people, tasks: tasks,
+                                confidence: answer.confidence, intent: answer.intent, suggestions: answer.suggestions,
+                                meetingTitles: answer.meetingTitles, wantsReasoning: answer.wantsReasoning,
+                                foundNothing: answer.foundNothing)
+        return copy
+    }
+
+    private static func resolve(question rawQuestion: String, records: [VidurMeetingRecord],
+                                history: [VidurChatTurn], selfNames: [String], now: Date, calendar: Calendar,
+                                currentMeetingID: UUID?) -> VidurQuickAnswer {
         let question = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         let first = answerOnce(question: question, records: records, history: history, selfNames: selfNames,
                                now: now, calendar: calendar, currentMeetingID: currentMeetingID)

@@ -52,6 +52,9 @@ public struct VidurRagRetrieval: Sendable, Equatable {
     public let filters: VidurRagFilters
     /// Search keys of the question, used to pick the best lines inside a transcript chunk.
     let queryKeys: [String]
+    /// Set when a "how did X go" question was answered from the one meeting that discusses X most, so facts of
+    /// different meetings are not blended. `scopedMeetings` then holds only this meeting.
+    public var focusedMeeting: VidurRagMeeting? = nil
 
     public static let empty = VidurRagRetrieval(facts: [], hits: [], scopedMeetings: [], filters: VidurRagFilters(), queryKeys: [])
 
@@ -159,6 +162,16 @@ public enum VidurRagRetriever {
             order = candidates.indices.filter { candidates[$0].meetingID == last.id && overview.contains(candidates[$0].kind) }
         }
 
+        // "How did the budget discussion go?" is one meeting's story. Keep the meeting that discusses the topic
+        // most, unless the question asks about several meetings.
+        var focused: VidurRagMeeting?
+        if scoped.count > 1, !parsed.residual.isEmpty, VidurRagRouting.isOutcomeQuestion(question),
+           !VidurRagRouting.asksAcrossMeetings(question),
+           let best = bestMeeting(order: order, fused: fused, candidates: candidates) {
+            order = order.filter { candidates[$0].meetingID == best }
+            focused = scoped.first { $0.id == best }
+        }
+
         // 6. Diversify by meeting and drop overlapping transcript windows.
         let cap = scoped.count <= 1 ? query.limit : max(2, (query.limit + 1) / 2)
         var chosen: [Int] = []
@@ -182,11 +195,36 @@ public enum VidurRagRetriever {
         var factMeetings: [UUID] = []
         for hit in hits where !factMeetings.contains(hit.meetingID) { factMeetings.append(hit.meetingID) }
         if factMeetings.isEmpty, let last = scoped.last { factMeetings = [last.id] }
-        return VidurRagRetrieval(facts: factsBlocks(for: factMeetings, index: index), hits: hits, scopedMeetings: scoped,
-                                 filters: filters, queryKeys: queryKeys)
+        var result = VidurRagRetrieval(facts: factsBlocks(for: factMeetings, index: index), hits: hits,
+                                       scopedMeetings: focused.map { [$0] } ?? scoped, filters: filters, queryKeys: queryKeys)
+        result.focusedMeeting = focused
+        return result
     }
 
     // MARK: Helpers
+
+    /// The meeting whose two best chunks score highest after fusion. A tie goes to the newer meeting.
+    private static func bestMeeting(order: [Int], fused: [Double], candidates: [VidurRagChunk]) -> UUID? {
+        var perMeeting: [UUID: [Double]] = [:]
+        var dates: [UUID: Date] = [:]
+        for position in order {
+            let chunk = candidates[position]
+            perMeeting[chunk.meetingID, default: []].append(fused[position])
+            dates[chunk.meetingID] = chunk.meetingDate
+        }
+        var best: UUID?
+        var bestScore = 0.0
+        for meetingID in perMeeting.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
+            let scores = perMeeting[meetingID] ?? []
+            let score = scores.sorted(by: >).prefix(2).reduce(0, +)
+            let newer = (dates[meetingID] ?? .distantPast) > (best.flatMap { dates[$0] } ?? .distantPast)
+            if score > bestScore + 1e-12 || (abs(score - bestScore) <= 1e-12 && newer) {
+                best = meetingID
+                bestScore = score
+            }
+        }
+        return best
+    }
 
     /// English and Hinglish "who said / who mentioned" questions.
     static func asksWhoSaid(_ question: String) -> Bool {

@@ -92,7 +92,10 @@ public struct VidurMeetingRecord: Sendable, Equatable, Identifiable {
         self.agenda = agenda
         self.summary = summary
         self.discussion = discussion
-        self.decisions = decisions
+        // "Resolved: Resolved: The app ..." is shown as "The app ...". The label is added by the answer, never twice.
+        self.decisions = decisions.map {
+            VidurMeetingLine(text: VidurDecisionText.clean($0.text), timestamp: $0.timestamp, quote: $0.quote, speaker: $0.speaker)
+        }
         self.openIssues = openIssues
         self.tasks = tasks
         self.turns = turns

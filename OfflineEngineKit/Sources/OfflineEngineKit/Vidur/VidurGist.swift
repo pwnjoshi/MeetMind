@@ -163,16 +163,38 @@ enum VidurGist {
 
     // MARK: Requests
 
+    /// Positions of the words that name the topic. Request verbs ("send") are skipped when a noun matches too.
+    private static func topicHits(in words: [String], topicKeys: Set<String>) -> [Int] {
+        var nouns: [Int] = []
+        var verbs: [Int] = []
+        for (offset, token) in words.enumerated() {
+            let key = bare(token)
+            let keys = VidurScript.keys(forWord: key)
+            guard keys.contains(where: { topicKeys.contains($0) }) else { continue }
+            if requestVerbs.contains(key) { verbs.append(offset) } else { nouns.append(offset) }
+        }
+        return nouns.isEmpty ? verbs : nouns
+    }
+
     /// "send the neha you send the presentation please" said by Pawan gives (Neha, "send the presentation").
+    /// Speech recognition puts stray words between the verb, the name and the topic, so the name only has to stand
+    /// within a few words of the request verb or the topic word.
     static func request(in text: String, topicKeys: Set<String>, speaker: String?,
                         index: VidurPersonIndex) -> (person: VidurPerson, phrase: String)? {
-        guard text.unicodeScalars.allSatisfy({ $0.isASCII }) else { return nil }
+        guard !topicKeys.isEmpty, text.unicodeScalars.allSatisfy({ $0.isASCII }) else { return nil }
         let words = cleanWords(text)
-        guard let hit = firstHit(in: words, topicKeys: topicKeys), hit > 0 else { return nil }
+        for hit in topicHits(in: words, topicKeys: topicKeys) {
+            if let found = request(words: words, hit: hit, speaker: speaker, index: index) { return found }
+        }
+        return nil
+    }
 
+    private static func request(words: [String], hit: Int, speaker: String?,
+                                index: VidurPersonIndex) -> (person: VidurPerson, phrase: String)? {
+        guard hit > 0 else { return nil }
         var verb: Int?
         var cursor = hit - 1
-        let lowest = max(0, hit - 5)
+        let lowest = max(0, hit - 6)
         while cursor >= lowest {
             if requestVerbs.contains(bare(words[cursor])) {
                 verb = cursor
@@ -183,23 +205,31 @@ enum VidurGist {
         guard let verbIndex = verb else { return nil }
 
         var person: VidurPerson?
-        var personWord = ""
-        for token in words {
-            let key = bare(token)
-            guard key.count >= 3, !VidurTokenizer.stopWords.contains(key),
-                  !VidurQuestionParser.vocabulary.contains(key), !requestVerbs.contains(key),
-                  let found = index.person(forWord: key) else { continue }
-            if let speaker, index.matches(speaker, found) { continue }
-            person = found
-            personWord = key
-            break
+        var personPosition = -1
+        var bestDistance = Int.max
+        let first = max(0, verbIndex - 4)
+        let last = min(words.count - 1, hit + 4)
+        if first <= last {
+            for position in first...last where position != hit {
+                let key = bare(words[position])
+                guard key.count >= 3, !VidurTokenizer.stopWords.contains(key),
+                      !VidurQuestionParser.vocabulary.contains(key), !requestVerbs.contains(key),
+                      let found = index.person(forWord: key) else { continue }
+                if let speaker, index.matches(speaker, found) { continue }
+                let distance = abs(position - verbIndex)
+                if distance < bestDistance {
+                    bestDistance = distance
+                    person = found
+                    personPosition = position
+                }
+            }
         }
         guard let addressee = person else { return nil }
 
         var phrase: [String] = []
         for position in verbIndex...hit {
             let key = bare(words[position])
-            if key.isEmpty || key == personWord || key == "you" { continue }
+            if key.isEmpty || position == personPosition || key == "you" { continue }
             phrase.append(key)
         }
         guard phrase.count >= 2 else { return nil }
@@ -210,7 +240,7 @@ enum VidurGist {
 /// Cleans model replies: speaker labels become "someone", and an undecided matter is an "open issue", never a
 /// "task", unless a saved action was among the sources.
 public enum VidurAnswerPolish {
-    public static func polish(_ text: String, allowTask: Bool) -> String {
+    public static func polish(_ text: String, allowTask: Bool, calendar: Calendar = .current) -> String {
         var value = text
         value = VidurRx.replacing(#"\bspeaker[ _-]?\d+\b"#, in: value, with: "someone")
         if !allowTask {
@@ -222,6 +252,8 @@ public enum VidurAnswerPolish {
             value = VidurRx.replacing("\\btask\\b", in: value, with: "issue")
             value = VidurRx.replacing("\\ba\\s+(open\\s+)?issue\\b", in: value, with: "an $1issue")
         }
+        value = VidurLeakFilter.scrub(value)
+        value = VidurNaturalDates.rewrite(value, calendar: calendar)
         value = VidurRx.replacing(#"(^|[.!?]\s+)someone\b"#, in: value, with: "$1Someone")
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }

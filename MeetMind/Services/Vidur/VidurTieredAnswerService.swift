@@ -243,8 +243,11 @@ public enum VidurTieredAnswerService {
         // quick answer already is a short sentence written from the transcript, never a pasted quote.
         let openEnded = VidurRagRouting.isOpenEnded(question)
         let transcriptMatch = found && quick.intent == .topic
-        let needsDeepAnswer = quick.confidence == .notFound || (quick.confidence == .partial && quick.wantsReasoning)
-            || openEnded || transcriptMatch
+        // "Who owns the presentation?" is answered from a saved action or from the request found in the transcript
+        // ("Pawan asked Neha to send it"). The model never second-guesses a found owner.
+        let ownerAnswered = found && quick.intent == .tasks && VidurRagRouting.isOwnerQuestion(question)
+        let needsDeepAnswer = !ownerAnswered && (quick.confidence == .notFound
+            || (quick.confidence == .partial && quick.wantsReasoning) || openEnded || transcriptMatch)
         guard needsDeepAnswer else {
             if found, request.allowRefinement, VidurRagRouting.canRephrase(quick.text), await hooks.rephraseAvailable() {
                 output(.init(stage: .refining, tier: quickTier, answer: quickAnswer))
@@ -479,8 +482,19 @@ public enum VidurTieredAnswerService {
         if !VidurRagGuard.isFaithful(answer: result.answer, evidence: [result.prompt.user] + input.selfNames) {
             notices.append("Check the sources: a detail may not match your meetings.")
         }
-        let polished = VidurAnswerPolish.polish(result.answer, allowTask: allowTask)
-        return VidurAnswer(text: polished, citations: citations, kind: .generated,
+        var polished = VidurAnswerPolish.polish(result.answer, allowTask: allowTask)
+        var shown = citations
+        // A reply that says both "not approved" and "approve" about one subject is replaced by the saved decision or
+        // open issue for that subject.
+        if let fix = VidurContradictionGuard.fix(answer: polished, retrieval: retrieval) {
+            polished = fix.text
+            let chunk = fix.chunk
+            shown = [VidurCitation(meetingID: chunk.meetingID, meetingTitle: chunk.meetingTitle,
+                                   timestamp: chunk.timestamp ?? 0, quote: chunk.minutesText,
+                                   speaker: VidurAnswerPolish.chipSpeaker(chunk.speaker),
+                                   sourceLabel: chunk.kind.sourceLabel, hasTimestamp: chunk.timestamp != nil)]
+        }
+        return VidurAnswer(text: polished, citations: shown, kind: .generated,
                            notice: notices.isEmpty ? nil : notices.joined(separator: " "))
     }
 
@@ -524,7 +538,7 @@ public enum VidurTieredAnswerService {
         let citations = (preferred.isEmpty ? shown : preferred).prefix(2).map {
             VidurGroundedAnswerBuilder.citation(from: $0, question: question)
         }
-        return VidurAnswer(text: reply, citations: citations, kind: .generated,
+        return VidurAnswer(text: VidurAnswerPolish.polish(reply, allowTask: true), citations: citations, kind: .generated,
                            notice: "Written by Apple Intelligence on this iPhone from the sources below.")
     }
 }

@@ -181,6 +181,8 @@ enum VidurQuickSections {
         for record in context.records {
             for line in (isDecision ? record.decisions : record.openIssues) { rows.append((line, record)) }
         }
+        // A listed decision needs a verb and something it acts on ("Let her come." is not one). The minutes stay as saved.
+        if isDecision { rows = rows.filter { VidurDecisionText.isSubstantial($0.line.text) } }
         if !parsed.people.isEmpty {
             rows = rows.filter { row in
                 parsed.people.contains { person in

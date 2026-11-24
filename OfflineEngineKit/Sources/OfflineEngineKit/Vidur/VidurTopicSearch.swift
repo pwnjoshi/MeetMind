@@ -156,7 +156,8 @@ enum VidurTopicSearch {
             let day = context.day(doc.record.date)
             let who = context.speakerWord(doc.speaker)
             if let clause = VidurGist.clause(from: doc.text, topicKeys: queryKeys, names: names) {
-                return "On \(day), \(who) said that \(clause)."
+                let wording = VidurSpokenDates.prefer(clause, record: doc.record)
+                return "On \(day), \(who) said that \(wording)."
             }
             return "On \(day), \(who) talked about \(topicText)."
         }
@@ -171,11 +172,13 @@ enum VidurTopicSearch {
         let ownerAsked = original.intents.contains(.tasks) && original.asksOwner
         var lead: Hit?
         var isSaved = true
+        var answersOwner = false
         let text: String
         if ownerAsked, let found = ownerSentence(hits: hits, context: context, keys: queryKeys, topic: topicText) {
             text = found.text
             lead = found.hit
             isSaved = false
+            answersOwner = true
         } else if decisionAsked, top.doc.label == nil, let sentence = spoken(top) {
             text = "There\u{2019}s no recorded decision about \(topicText), but " + lowercasedFirst(sentence)
             isSaved = false
@@ -216,6 +219,11 @@ enum VidurTopicSearch {
                !speakers.contains(name), speakers.count < 3 {
                 speakers.append(name)
             }
+        }
+        // A request found in the transcript ("Pawan asked Neha to send it") is a deterministic owner answer, the same
+        // kind as a saved action, so it is complete and no model has to read it again.
+        if answersOwner {
+            return VidurSection(text: text, sources: sources, people: speakers, isComplete: true, intent: .tasks)
         }
         let complete = top.coverage >= 1.0 && !original.wantsReasoning && isSaved
         return VidurSection(text: text, sources: sources, people: speakers, isComplete: complete, intent: .topic)

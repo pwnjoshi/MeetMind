@@ -179,7 +179,8 @@ enum VidurQuestionParser {
         let hasDueWord = has(dueWords) || phrase(["kab tak", "by when", "by"])
         var isTask = has(taskWords) || has(dueWords)
             || phrase(["follow up", "to do", "kya karna", "kya karna hai", "kab tak", "by when", "who will",
-                       "who is going to", "who should", "kisko kya", "what do i need", "what should i do"])
+                       "who is going to", "who should", "kisko kya", "what do i need", "what should i do",
+                       "who has to", "who have to", "who needs to", "who need to", "who is in charge", "who responsible"])
         if !parsed.people.isEmpty, has(personTaskVerbs) || phrase(["working on", "taking on", "karna hai", "kya karega", "kya karegi"]) {
             isTask = true
         }
@@ -223,7 +224,9 @@ enum VidurQuestionParser {
         parsed.whoSaid = has(["who", "kaun", "kisne"]) && has(speechVerbs) || phrase(["kisne kaha", "kisne bola", "who said"])
         parsed.asksOwner = phrase([
             "who owns", "who own", "who is responsible", "who is handling", "who handles", "who is taking care",
-            "who has to", "who needs to", "who will", "who is going to", "who should", "whose task", "whose job",
+            "who has to", "who have to", "who needs to", "who need to", "who will", "who is going to", "who should",
+            "whose task", "whose job", "whose responsibility", "whose action", "who owned", "who responsible",
+            "who is in charge", "who is incharge", "who is accountable",
             "kaun karega", "kaun karegi", "kiski zimmedari", "kiski jimmedari"
         ])
         parsed.wantsReasoning = has(reasoningWords) || phrase(["how come", "how did", "how do", "how can", "how should"])
