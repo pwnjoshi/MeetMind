@@ -39,12 +39,13 @@ enum NameMentions {
         "dear", "gentlemen", "ladies", "listen", "look", "see", "hold", "stop", "exactly", "absolutely",
         "definitely", "certainly", "alright", "cheers", "regards", "personally", "generally", "technically",
         "ideally", "hopefully", "unfortunately", "fortunately", "obviously", "clearly", "simply", "seriously",
-        "frankly", "likewise", "besides", "still", "thankyou", "wow", "hmm", "oops", "pune", "mumbai", "delhi",
+        "frankly", "likewise", "besides", "still", "thankyou", "thank", "thanks", "thaink", "thainks", "thenk", "thenks", "shukriya", "dhanyavad", "dhanyawad", "wow", "hmm", "oops", "pune", "mumbai", "delhi",
         "bengaluru", "bangalore", "chennai", "hyderabad", "kolkata", "india", "stripe"
     ]
 
     private static let devanagariNotNames: Set<String> = {
         let words: [String] = [
+            "\u{0925}\u{0948}\u{0902}\u{0915}", "\u{0925}\u{0948}\u{0902}\u{0915}\u{094D}\u{0938}", "\u{0936}\u{0941}\u{0915}\u{094D}\u{0930}\u{093F}\u{092F}\u{093E}",
             "\u{0928}\u{092E}\u{0938}\u{094D}\u{0915}\u{093E}\u{0930}", "\u{092A}\u{094D}\u{0930}\u{0923}\u{093E}\u{092E}",
             "\u{092D}\u{0948}\u{092F}\u{093E}", "\u{0926}\u{0940}\u{0926}\u{0940}", "\u{0938}\u{0930}",
             "\u{092E}\u{0948}\u{0921}\u{092E}", "\u{0926}\u{094B}\u{0938}\u{094D}\u{0924}\u{094B}\u{0902}",

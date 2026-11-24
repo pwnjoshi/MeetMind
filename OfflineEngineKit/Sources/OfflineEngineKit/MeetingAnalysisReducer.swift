@@ -878,8 +878,18 @@ public enum MeetingAnalysisReducer {
         if requireClaim, !assertsOutcome(point.text) { return false }
         let claim = subjectStems(point.text)
         for matter in matters where sameMatter(claim, matter) { return true }
+        // A model decision only needs to touch the open matter ("the current design be adopted" while the
+        // design change is pending). The wording differs from the open issue, so subset matching misses it.
+        if !requireClaim {
+            for matter in matters where !claim.intersection(matter).subtracting(genericMatterStems).isEmpty { return true }
+        }
         return false
     }
+
+    /// Stems too common to tie a decision to one open matter.
+    private static let genericMatterStems: Set<String> = [
+        "meeting", "next", "today", "tomorrow", "week", "plan", "team", "work", "item", "point", "issue", "time"
+    ]
 
     private static let discussionVerbs: Set<String> = [
         "discuss", "decide", "determine", "deliberate", "debate", "brainstorm", "consider", "settle"

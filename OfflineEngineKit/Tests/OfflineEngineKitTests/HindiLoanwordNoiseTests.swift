@@ -188,7 +188,9 @@ final class HindiLoanwordNoiseTests: XCTestCase {
         let decisions: [SupportedPoint] = [
             SupportedPoint(text: "That the launch be held on 20 November.", evidence: [launchFinal]),
             SupportedPoint(text: "That the Pune vendor be engaged for the launch (preferred for lower price).", evidence: [puneChoice]),
-            SupportedPoint(text: "That the design change be adopted.", evidence: [designOpen, designPending])
+            SupportedPoint(text: "That the design change be adopted.", evidence: [designOpen, designPending]),
+            // Seen on the iPhone 15: different wording for the same pending matter.
+            SupportedPoint(text: "That the current design for today be adopted.", evidence: [designPending])
         ]
         let discussion: [SupportedPoint] = [
             SupportedPoint(text: "It was agreed to go with the design change.", evidence: [designOpen, designPending])
@@ -237,6 +239,11 @@ final class HindiLoanwordNoiseTests: XCTestCase {
         XCTAssertEqual(summary.components(separatedBy: "by tomorrow").count - 1, 1, debug)
         XCTAssertFalse(summary.contains("agenda Friday"), debug)
         XCTAssertFalse(summary.lowercased().contains("budget for marketing"), debug)
+        XCTAssertFalse(summary.lowercased().contains("current design"), debug)
+
+        // "???? ?? ???" is a thank-you, not a person called "Thaink".
+        let suggested = reduced.minutes.suggestedAttendees.map { $0.name.lowercased() }
+        XCTAssertFalse(suggested.contains { $0.hasPrefix("tha") || $0.hasPrefix("than") }, "\(suggested)")
     }
 
     func testDiscussionTasksAreNotActions() {
