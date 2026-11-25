@@ -115,6 +115,7 @@ public struct EvaluationResult: Codable, Sendable {
         public let cpuChunks: Int
         public let backgroundRetries: Int
         public let fallbackChunks: Int
+        public let thermalWaitMs: Int?
     }
 
     public struct StageMark: Codable, Sendable {
@@ -160,7 +161,8 @@ public enum MeetingEvaluation {
     /// the host scorer needs. The checkpoint folder is created and removed inside `scratchRoot`.
     public static func run(id: String, audio: URL, participants: [String], agenda: String?,
                            languageCode: String?, commit: String, device: String,
-                           scratchRoot: URL) async throws -> EvaluationResult {
+                           scratchRoot: URL,
+                           thermalStatus: @Sendable (Bool) async -> Void = { _ in }) async throws -> EvaluationResult {
         let fileManager = FileManager.default
         let meetingID = UUID()
         let root = scratchRoot.appendingPathComponent("eval-" + meetingID.uuidString, isDirectory: true)
@@ -176,20 +178,51 @@ public enum MeetingEvaluation {
         let sampler = EvaluationPeakSampler()
         sampler.start()
         let started = Date()
-        let checkpoint: MeetingAnalysisCheckpoint
+        var attempts: [AnalysisStageTimings] = []
+        var fallbackChunks = 0
+        var thermalWaitMs = 0
+        let thermalBudgetMs = 600_000
+        var result: MeetingAnalysisCheckpoint?
         do {
-            checkpoint = try await pipeline.run(
-                meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: zone.identifier,
-                languageCode: languageCode, model: model, participants: participants, agenda: agenda,
-                progress: { stage in stages.mark(stage) })
+            while true {
+                if ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue {
+                    let clock = ContinuousClock()
+                    let waitStarted = clock.now
+                    let deadline = waitStarted + .milliseconds(thermalBudgetMs - thermalWaitMs)
+                    await thermalStatus(true)
+                    while ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue {
+                        guard clock.now < deadline else { throw OfflineError.thermalPause }
+                        try await Task.sleep(for: .seconds(2))
+                    }
+                    let elapsed = waitStarted.duration(to: clock.now).components
+                    thermalWaitMs += Int(elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000)
+                    await thermalStatus(false)
+                }
+                do {
+                    result = try await pipeline.run(
+                        meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: zone.identifier,
+                        languageCode: languageCode, model: model, participants: participants, agenda: agenda,
+                        progress: { stage in stages.mark(stage) })
+                    attempts.append(await pipeline.lastStageTimings)
+                    fallbackChunks += await pipeline.lastAnalysisFallbackChunks
+                    break
+                } catch OfflineError.thermalPause {
+                    attempts.append(await pipeline.lastStageTimings)
+                    fallbackChunks += await pipeline.lastAnalysisFallbackChunks
+                    try Task.checkCancellation()
+                }
+            }
         } catch {
             _ = sampler.stop()
             throw error
         }
         let totalMs = Int(Date().timeIntervalSince(started) * 1_000)
         let peakBytes = sampler.stop()
-        let timings = await pipeline.lastStageTimings
-        let fallbackChunks = await pipeline.lastAnalysisFallbackChunks
+        guard let checkpoint = result else { throw CancellationError() }
+        let chunkTimes = attempts.flatMap(\.chunkMs)
+        func sum(_ key: KeyPath<AnalysisStageTimings, Int>) -> Int {
+            attempts.reduce(0) { $0 + $1[keyPath: key] }
+        }
         let warning = await pipeline.lastSpeakerWarning
 
         let reduced = MeetingAnalysisReducer.reduce(checkpoint, participants: participants,
@@ -209,7 +242,7 @@ public enum MeetingEvaluation {
         let issueTexts = minutes.openIssues.map { $0.text }
         let openIssues = issueTexts.isEmpty ? reduced.openIssues.map { $0.text } : issueTexts
         let overview = minutes.executiveSummary.isEmpty ? reduced.executiveSummary : minutes.executiveSummary
-        let chunkAverage = timings.chunkMs.isEmpty ? 0 : timings.chunkMs.reduce(0, +) / timings.chunkMs.count
+        let chunkAverage = chunkTimes.isEmpty ? 0 : chunkTimes.reduce(0, +) / chunkTimes.count
         return EvaluationResult(
             schema: 1, id: id, commit: commit, device: device,
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
@@ -218,11 +251,11 @@ public enum MeetingEvaluation {
             turns: turns, tasks: actions, rawTasks: rawTasks, decisions: decisions, openIssues: openIssues,
             summary: overview, speakerWarning: warning,
             timings: EvaluationResult.Timings(
-                totalMs: totalMs, transcribeMs: timings.transcriptionMs, speakersMs: timings.speakersMs,
-                minutesMs: timings.minutesMs, modelLoadMs: timings.modelLoadMs, modelLoads: timings.modelLoads,
-                chunks: timings.chunkMs.count, chunkAvgMs: chunkAverage, chunkMaxMs: timings.chunkMs.max() ?? 0,
-                cpuChunks: timings.cpuChunks, backgroundRetries: timings.backgroundRetries,
-                fallbackChunks: fallbackChunks),
+                totalMs: totalMs, transcribeMs: sum(\.transcriptionMs), speakersMs: sum(\.speakersMs),
+                minutesMs: sum(\.minutesMs), modelLoadMs: sum(\.modelLoadMs), modelLoads: sum(\.modelLoads),
+                chunks: chunkTimes.count, chunkAvgMs: chunkAverage, chunkMaxMs: chunkTimes.max() ?? 0,
+                cpuChunks: sum(\.cpuChunks), backgroundRetries: sum(\.backgroundRetries),
+                fallbackChunks: fallbackChunks, thermalWaitMs: thermalWaitMs),
             stageMarks: stages.snapshot(), peakFootprintMB: Int(peakBytes / 1_048_576),
             thermalStateEnd: ProcessInfo.processInfo.thermalState.rawValue)
     }

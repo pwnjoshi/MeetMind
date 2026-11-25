@@ -879,6 +879,8 @@ public actor MeetingAnalysisPipeline {
                     lastAnalysisReuse.analyzed += 1
                 } catch is CancellationError {
                     throw CancellationError()
+                } catch OfflineError.thermalPause {
+                    throw OfflineError.thermalPause
                 } catch OfflineError.memoryBudget(let required, let budget) {
                     throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
                 } catch {
@@ -981,7 +983,7 @@ public actor MeetingAnalysisPipeline {
     private func checkConditions() throws {
         try Task.checkCancellation()
         guard ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue else {
-            throw OfflineError.unavailable("iPhone is too warm. Let it cool down, then resume analysis.")
+            throw OfflineError.thermalPause
         }
     }
 

@@ -126,7 +126,7 @@ enum EvaluationRunner {
     }
 
     /// Returns true when every selected recording produced a result.
-    static func runAll(options: Options, status: (String) -> Void) async -> Bool {
+    static func runAll(options: Options, status: @escaping @MainActor @Sendable (String) -> Void) async -> Bool {
         let root = evaluationRoot()
         let fileManager = FileManager.default
         let names = ((try? fileManager.contentsOfDirectory(atPath: root.path)) ?? []).sorted()
@@ -158,14 +158,20 @@ enum EvaluationRunner {
             do {
                 let result = try await MeetingEvaluation.run(
                     id: name, audio: audio, participants: context.participants, agenda: context.agenda,
-                    languageCode: options.language, commit: commit, device: device, scratchRoot: scratch)
+                    languageCode: options.language, commit: commit, device: device, scratchRoot: scratch,
+                    thermalStatus: { cooling in
+                        await MainActor.run {
+                            status(cooling ? "Paused while iPhone cools" : "Evaluating \(name)")
+                            line("meeting id=\(name) state=\(cooling ? "cooling" : "resuming")")
+                        }
+                    })
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 let data = try encoder.encode(result)
                 try data.write(to: folder.appendingPathComponent("result.json"), options: .atomic)
                 completed += 1
                 let t = result.timings
-                line("meeting id=\(name) state=done audio_s=\(Int(result.audioSeconds)) turns=\(result.turns.count) total_ms=\(t.totalMs) transcribe_ms=\(t.transcribeMs) speakers_ms=\(t.speakersMs) minutes_ms=\(t.minutesMs) peak_mb=\(result.peakFootprintMB)")
+                line("meeting id=\(name) state=done audio_s=\(Int(result.audioSeconds)) turns=\(result.turns.count) total_ms=\(t.totalMs) transcribe_ms=\(t.transcribeMs) speakers_ms=\(t.speakersMs) minutes_ms=\(t.minutesMs) peak_mb=\(result.peakFootprintMB) thermal_wait_ms=\(t.thermalWaitMs ?? 0)")
             } catch is CancellationError {
                 line("cancelled")
                 try? fileManager.removeItem(at: scratch)

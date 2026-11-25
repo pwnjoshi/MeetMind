@@ -253,7 +253,7 @@ final class LocalLanguageModel {
             try Task.checkCancellation()
             try ModelMemoryAdmission.checkCurrentFootprint()
             guard ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue else {
-                throw OfflineError.unavailable("iPhone is too warm. Let it cool down and retry.")
+                throw OfflineError.thermalPause
             }
             llama_batch_ext_clear(batch)
             for (i, token) in input.enumerated() {
@@ -402,7 +402,7 @@ final class LocalLanguageModel {
             try Task.checkCancellation()
             try ModelMemoryAdmission.checkCurrentFootprint()
             guard ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue else {
-                throw OfflineError.unavailable("iPhone is too warm. Let it cool down and retry.")
+                throw OfflineError.thermalPause
             }
             llama_batch_ext_clear(batch)
             for (i, token) in input.enumerated() {

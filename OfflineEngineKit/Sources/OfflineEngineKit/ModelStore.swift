@@ -44,10 +44,12 @@ public enum ModelReadiness: Codable, Sendable, Equatable {
 }
 
 public enum OfflineError: LocalizedError {
+    case thermalPause
     case unavailable(String)
     case memoryBudget(requiredEstimate: UInt64, budget: UInt64)
     public var errorDescription: String? {
         switch self {
+        case .thermalPause: return "iPhone is too warm. Let it cool down, then resume analysis."
         case .unavailable(let message): return message
         case .memoryBudget(let required, let available):
             if required > ModelMemoryAdmission.maximumBudget {
