@@ -49,6 +49,22 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertTrue(reduced.openIssues[0].text.contains("not decided"))
     }
 
+    func testMeetingReviewKeepsNamedFollowUpsAndDropsOpeningChatterFromOverview() {
+        let opening = "Okay, so you all have been working on the project."
+        let turns = [
+            AnalysisTurn(id: "t1", text: opening, start: 0, end: 3, speaker: nil),
+            AnalysisTurn(id: "t2", text: "Rahul, you can continue focusing on model accuracy.", start: 30, end: 34, speaker: nil),
+            AnalysisTurn(id: "t3", text: "And Maya, you continue with POC, right?", start: 35, end: 38, speaker: nil)
+        ]
+        let discussion = SupportedPoint(text: opening, evidence: [SourceEvidence(turnID: "t1", quote: opening)])
+        let result = LocalAnalysisResult(discussion: [discussion], decisions: [], tasks: [])
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: [result]),
+                                                    participants: ["Rahul", "Maya"])
+        XCTAssertEqual(reduced.tasks.compactMap(\.owner), ["Rahul", "Maya"])
+        XCTAssertFalse(reduced.executiveSummary.contains(opening))
+        XCTAssertTrue(reduced.decisions.isEmpty)
+    }
+
     func testFutureDecisionIsNotAResolution() {
         let turn = AnalysisTurn(id: "t1", text: "He will make the final decision.", start: 0, end: 3, speaker: nil)
         let point = SupportedPoint(text: "The decision is final.",

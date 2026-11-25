@@ -326,6 +326,7 @@ public enum MeetingAnalysisReducer {
     }
 
     private static func composeExecutiveSummary(discussion: [SupportedPoint], decisions: [SupportedPoint]) -> String {
+        let discussion = discussion.filter { isSummaryContext($0.text) }
         var sentences: [String] = []
         if let first = discussion.first { sentences.append(first.text) }
         if decisions.isEmpty {
@@ -334,6 +335,14 @@ public enum MeetingAnalysisReducer {
             sentences.append(contentsOf: decisions.prefix(2).map(\.text))
         }
         return sentences.isEmpty ? "No substantive meeting outcomes were identified." : sentences.joined(separator: " ")
+    }
+
+    static func isSummaryContext(_ text: String) -> Bool {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.hasSuffix("?") else { return false }
+        let key = clauseKey(cleaned)
+        let opening = [" okay so ", " can i get a quick ", " let's get started ", " let's call it a day "]
+        return !opening.contains { key.hasPrefix($0) }
     }
 
     private static func deduplicatePoints(_ values: [SupportedPoint]) -> [SupportedPoint] {

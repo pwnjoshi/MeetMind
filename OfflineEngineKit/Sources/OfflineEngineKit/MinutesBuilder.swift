@@ -541,14 +541,18 @@ enum MinutesBuilder {
                 phrases.append(MinutesBuilder.shortPhrase(decision.text))
             }
             var subjects: [String] = []
-            for issue in issues where !HindiText.looksHindi(issue.subject) && issue.subject.count <= 60 {
+            for issue in issues where issue.topic != nil && !HindiText.looksHindi(issue.subject) && issue.subject.count <= 60 {
                 subjects.append(issue.subject)
             }
-            let overview = MinutesComposer.executiveSummary(names: summaryNames(), topics: Array(titles),
+            var overview = MinutesComposer.executiveSummary(names: summaryNames(), topics: Array(titles),
                 decisionPhrases: phrases, tasks: input.tasks, openSubjects: subjects)
+            if issues.contains(where: { $0.topic == nil }) {
+                if !overview.isEmpty { overview += " " }
+                overview += "Review the open questions for details that still need clarification."
+            }
             guard titles.isEmpty else { return overview }
             let context = input.discussion.filter {
-                !HindiText.looksHindi($0.text) && !$0.evidence.isEmpty
+                !HindiText.looksHindi($0.text) && !$0.evidence.isEmpty && MeetingAnalysisReducer.isSummaryContext($0.text)
             }.prefix(2).map { point in
                 let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 return text.last.map { ".!?".contains($0) } == true ? text : text + "."
