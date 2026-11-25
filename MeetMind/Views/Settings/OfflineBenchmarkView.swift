@@ -26,6 +26,7 @@ struct OfflineBenchmarkView: View {
     @AppStorage("NemotronCaptionLabModelPath") private var nemotronModelPath = ""
     @State private var nemotronTranscript: String?
     @State private var appleTranscript: String?
+    @State private var referenceTranscript = ""
     @State private var appleFirstCaption: Double?
     @State private var nemotronFirstCaption: Double?
     private let runner = OfflineBenchmarkRunner()
@@ -97,6 +98,10 @@ struct OfflineBenchmarkView: View {
                     }
                 }
                 .disabled(nemotronModelPath.isEmpty)
+                TextField("Verified reference transcript or excerpt", text: $referenceTranscript, axis: .vertical)
+                    .lineLimit(2...5)
+                Text("Enter the verified words for the selected recording. For an excerpt, replay the matching audio clip. Scoring supports up to 1,000 words per transcript.")
+                    .font(.caption).foregroundStyle(.secondary)
                 if let appleTranscript {
                     replayResult("Apple Speech", transcript: appleTranscript, delay: appleFirstCaption)
                 }
@@ -182,6 +187,7 @@ struct OfflineBenchmarkView: View {
         .onChange(of: audio) { _, _ in
             appleTranscript = nil
             nemotronTranscript = nil
+            referenceTranscript = ""
         }
         .onDisappear { operation?.cancel() }
         .onChange(of: scenePhase) { _, phase in
@@ -195,6 +201,12 @@ struct OfflineBenchmarkView: View {
             if let delay {
                 Text("First caption after \(delay.formatted(.number.precision(.fractionLength(2)))) seconds.")
                     .font(.caption)
+            }
+            if let score = CaptionReplayScore.compare(reference: referenceTranscript, transcript: transcript) {
+                Text("Word error rate \(score.rate.formatted(.percent.precision(.fractionLength(1))))")
+                    .font(.caption)
+                Text("\(score.substitutions) substitutions · \(score.deletions) omissions · \(score.insertions) additions")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Text(transcript.isEmpty ? "No finalized speech recognized." : transcript).textSelection(.enabled)
         }
@@ -413,5 +425,50 @@ private struct OfflineBenchmarkResultsView: View {
     private func time(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0, seconds <= 86_400 else { return "—" }
         return String(format: "%02d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+
+private struct CaptionReplayScore {
+    var substitutions = 0
+    var deletions = 0
+    var insertions = 0
+    var referenceCount = 1
+    var errors: Int { substitutions + deletions + insertions }
+    var rate: Double { Double(errors) / Double(referenceCount) }
+
+    static func compare(reference: String, transcript: String) -> Self? {
+        func words(_ text: String) -> [Substring] {
+            text.precomposedStringWithCanonicalMapping.lowercased().split { character in
+                !character.isLetter && !character.isNumber
+            }
+        }
+        let expected = words(reference)
+        let actual = words(transcript)
+        guard !expected.isEmpty, expected.count <= 1_000, actual.count <= 1_000 else { return nil }
+        var previous = (0...actual.count).map { Self(insertions: $0) }
+        var current = previous
+        for (row, word) in expected.enumerated() {
+            current[0] = Self(deletions: row + 1)
+            for (column, spoken) in actual.enumerated() {
+                if word == spoken {
+                    current[column + 1] = previous[column]
+                    continue
+                }
+                var best = previous[column]
+                best.substitutions += 1
+                var deletion = previous[column + 1]
+                deletion.deletions += 1
+                if deletion.errors < best.errors { best = deletion }
+                var insertion = current[column]
+                insertion.insertions += 1
+                if insertion.errors < best.errors { best = insertion }
+                current[column + 1] = best
+            }
+            swap(&previous, &current)
+        }
+        var result = previous[actual.count]
+        result.referenceCount = expected.count
+        return result
     }
 }
