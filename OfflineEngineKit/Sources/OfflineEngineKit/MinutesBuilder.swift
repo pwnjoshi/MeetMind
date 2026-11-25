@@ -228,7 +228,8 @@ enum MinutesBuilder {
     }
 
     private static func wordsForRationale(_ text: String) -> Set<String> {
-        MinutesComposer.words(text).subtracting(["go", "with", "choose", "select", "adopt", "use", "the"])
+        let normalized = HindiText.tokenize(text).map(\.display).joined(separator: " ")
+        return MinutesComposer.words(normalized).subtracting(["go", "with", "choose", "select", "adopt", "use", "the"])
     }
 
     // MARK: - Assembler
