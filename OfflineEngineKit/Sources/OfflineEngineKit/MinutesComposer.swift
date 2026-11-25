@@ -85,6 +85,19 @@ enum MinutesComposer {
 
     /// "Pawan will prepare the agenda by Friday". A deadline written inside the title is moved out of it, so the
     /// deadline is said once.
+    static func actionTitle(_ title: String) -> String {
+        var text = MinutesRegex.replace(#"(?i),\s*(?:right|okay|you know)\s*(?=,|$)"#, in: title)
+        text = MinutesRegex.replace(#"(?i)^continue\s+focusing\s+more\s+on\s+the\s+models,\s*which\s+is\s+more\s+suitable\s+and\s+accurate$"#,
+                                    in: text, with: "Continue evaluating models for suitability and accuracy")
+        text = MinutesRegex.replace(#"(?i)\bcontinue\s+your\s+research\b"#,
+                                    in: text, with: "Continue researching")
+        text = MinutesRegex.replace(#"(?i)\bresearching\s+and\s+narrow\s+down\s+your\s+user\s+segment\b"#,
+                                    in: text, with: "researching and narrow down the target user segment")
+        text = MinutesRegex.replace(#"(?i)\s+and\s+make\s+sure\s+you\s+look\s+for\s+user\s+segment\s+that\s+very\s+closely\s+requires\s+the\s+need\s+of\s+"#,
+                                    in: text, with: ", focusing on users who need ")
+        return text
+    }
+
     static func taskLine(_ task: SuggestedTask) -> String {
         let split = ActionExtractor.splitDeadline(task.title)
         var base = task.title
@@ -97,7 +110,7 @@ enum MinutesComposer {
                 if spoken == nil { spoken = found }
             }
         }
-        let title = HindiText.lowercaseFirst(base)
+        let title = HindiText.lowercaseFirst(actionTitle(base))
         var line: String
         if let owner = task.owner { line = owner + " will " + title } else { line = "To do: " + title }
         if let deadline = spoken {

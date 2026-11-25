@@ -106,6 +106,15 @@ final class MinutesDocumentTests: XCTestCase {
         }
     }
 
+    func testActionTitlesRemoveSpokenFillerAndKeepSelectionCriteria() {
+        XCTAssertEqual(
+            MinutesComposer.actionTitle("Continue focusing more on the models, right, which is more suitable and accurate"),
+            "Continue evaluating models for suitability and accuracy")
+        XCTAssertEqual(
+            MinutesComposer.actionTitle("Continue your research and narrow down your user segment and make sure you look for user segment that very closely requires the need of physical media"),
+            "Continue researching and narrow down the target user segment, focusing on users who need physical media")
+    }
+
     func testOverviewKeepsCitedBlockerWhenRankingIsUnavailable() {
         let agenda = AnalysisTurn(id: "agenda", text: "First, the rollout.", start: 0, end: 1, speaker: nil)
         let blocker = AnalysisTurn(id: "blocker", text: "The rollout is blocked by the vendor audit.",

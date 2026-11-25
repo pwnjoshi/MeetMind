@@ -72,8 +72,6 @@ struct EditSavedMinutesSheet: View {
                         .frame(minHeight: 44)
                 } header: {
                     Text("Discussion")
-                } footer: {
-                    Text("Points that say something is pending or undecided appear under Open Issues in the minutes.")
                 }
                 Section {
                     ForEach($decisions) { $line in

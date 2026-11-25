@@ -17,7 +17,7 @@ extension View {
 }
 
 /// "Minutes" segment: one white card with Summary, Agenda, Present / Absent, Discussion, Decisions,
-/// Open issues and Next meeting. Empty sections are left out. Every section is derived from `MeetingMinutesContent`,
+/// Next meeting. Empty sections are left out. Every section is derived from `MeetingMinutesContent`,
 /// so edits made in the other tabs, the People sheet or Edit Minutes appear here at once.
 /// A dotted underline marks a point that has a quote in the recording; tapping it shows the quote and can play it.
 @MainActor
@@ -41,7 +41,6 @@ struct MeetingMinutesView: View {
         let names = MeetingSpeakerNames(meeting: meeting, record: record)
         let isEmpty = content.summary.isEmpty && content.agenda.isEmpty && content.present.isEmpty
             && content.absent.isEmpty && content.discussion.isEmpty && content.decisions.isEmpty
-            && content.openIssues.isEmpty
         VStack(alignment: .leading, spacing: 22) {
             if analysis?.transcriptCorrections?.contains(where: { $0.replacement == nil }) == true {
                 VStack(alignment: .leading, spacing: 6) {
@@ -67,7 +66,6 @@ struct MeetingMinutesView: View {
                 peopleSection(content)
                 discussionSection(content, analysis: analysis, names: names)
                 decisionsSection(content, analysis: analysis, names: names)
-                openIssuesSection(content, analysis: analysis, names: names)
                 nextMeetingSection(analysis)
             }
         }
@@ -162,20 +160,6 @@ struct MeetingMinutesView: View {
                 ForEach(content.decisions) { decision in
                     let evidence = MeetingEvidence.decision(decision.text, in: analysis)
                     pointRow(key: "x|\(decision.text)", text: decision.text, marker: .check,
-                             moments: quotes(evidence, analysis, names))
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func openIssuesSection(_ content: MeetingMinutesContent, analysis: MeetingAnalysisCheckpoint?,
-                                   names: MeetingSpeakerNames) -> some View {
-        if !content.openIssues.isEmpty {
-            section("Open issues") {
-                ForEach(Array(content.openIssues.enumerated()), id: \.offset) { entry in
-                    let evidence = MeetingEvidence.openIssue(entry.element, in: analysis)
-                    pointRow(key: "o|\(entry.element)", text: entry.element, marker: .orange,
                              moments: quotes(evidence, analysis, names))
                 }
             }

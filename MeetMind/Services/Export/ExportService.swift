@@ -30,7 +30,7 @@ public struct DocumentSnapshot: Equatable, Sendable {
     public let status: String
     public let sections: [Section]
     public let actions: [Action]
-    /// Sections printed after the action items (open issues).
+    /// Sections printed after the action items.
     public let closingSections: [Section]
     public let transcript: [TranscriptLine]
 
@@ -54,7 +54,6 @@ public struct DocumentSnapshot: Equatable, Sendable {
             Section(heading: "Key Decisions", lines: content.decisions.map { content.decisionLine($0) })
         ]
         let sections = candidates.filter { !$0.lines.isEmpty }
-        let closing = [Section(heading: "Open Issues", lines: content.openIssues)].filter { !$0.lines.isEmpty }
         let actions = content.actions.map { line in
             Action(title: line.title, assignee: line.ownerName, dueDate: line.dueText,
                    priority: line.priorityName, isCompleted: line.isCompleted)
@@ -70,7 +69,7 @@ public struct DocumentSnapshot: Equatable, Sendable {
             status: meeting.status.displayName,
             sections: sections,
             actions: actions,
-            closingSections: closing,
+            closingSections: [],
             transcript: transcript
         )
     }

@@ -493,7 +493,7 @@ enum MinutesBuilder {
             let topic = topicIndex(related: task.title).map { drafts[$0].title }
             // The minutes are written in English, so a Devanagari deadline ("फ्राइडे तक") reads "by Friday".
             let shownDeadline = deadline.map { HindiText.containsDevanagari($0) ? MinutesComposer.englishDeadline($0) : $0 }
-            return MinutesAction(title: baseTitle, owner: owner, deadlineText: shownDeadline, dueDate: due, topic: topic,
+            return MinutesAction(title: MinutesComposer.actionTitle(baseTitle), owner: owner, deadlineText: shownDeadline, dueDate: due, topic: topic,
                                  evidence: task.evidence, timestamp: turn?.start, speaker: speakerName(turn))
         }
 
@@ -590,11 +590,6 @@ enum MinutesBuilder {
             }
             append(MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [], tasks: [],
                 openSubjects: namedIssues.map(\.subject)), evidence: namedIssues.flatMap(\.evidence))
-            let unplacedIssues = issues.filter { $0.topic == nil && !$0.evidence.isEmpty }
-            if !unplacedIssues.isEmpty {
-                append("Review the open questions for details that still need clarification.",
-                       evidence: unplacedIssues.flatMap(\.evidence))
-            }
             return statements
         }
     }
