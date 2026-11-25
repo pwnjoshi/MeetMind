@@ -123,7 +123,7 @@ final class LocalLanguageModel {
         let input = try encoded(PromptNormalizer.romanized(turns))
         var system = """
         Minutes for an in-person Hindi-English meeting; Hindi may be in Roman letters. JSON only: discussion[{text,evidence[{turnID,quote}]}], decisions[same], tasks[{title,category,owner,deadlineText,priority,evidence}].
-        discussion: up to 3 rephrased points. Name the subject and concrete update, blocker or reason. Omit greetings. Include unresolved matters here.
+        discussion: up to 3 rephrased points. Name the subject and concrete update, blocker or reason. Omit greetings. Include unresolved matters here, never in decisions.
         decisions: formal English resolutions for settled choices ("let's go with", "final hai", "tay hua"). Cite agreement. Give reasons only if stated. Omit proposals, requests and future decisions.
         tasks: verb plus deliverable for each concrete request or promise. Cite the assignment itself. "Sure"/"haan" accepts a request. "I will"/"main ... dunga" refers to the speaker. Omit refused, conditional, cancelled ("rehne do") or finished work.
         owner: explicitly assigned person only, otherwise null. Participants and agenda are hints, never evidence.
