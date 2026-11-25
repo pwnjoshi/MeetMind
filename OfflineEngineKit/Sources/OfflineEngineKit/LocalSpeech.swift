@@ -676,8 +676,8 @@ public enum NemotronCaptionReplay {
             return words(result.timings)
         }
 
-        private func words(_ timings: [FluidAudio.TokenTiming]) -> [AnalysisTurn] {
-            FluidAudio.buildWordTimings(from: timings).enumerated().map { index, word in
+        private func words(_ timings: [TokenTiming]) -> [AnalysisTurn] {
+            buildWordTimings(from: timings).enumerated().map { index, word in
                 AnalysisTurn(id: String(index), text: word.word, start: word.startTime,
                              end: word.endTime, speaker: nil)
             }

@@ -361,6 +361,11 @@ final class LocalLanguageModel {
         try selectEvidence(contexts, instruction: "Select only transcript comparisons where surrounding speech clearly favors the alternative over the original. Omit ambiguous cases. An empty audio retry means no confirmation. Do not invent a third reading.")
     }
 
+    private struct EvidenceSelection: Decodable {
+        let citations: [String]
+        let found: Bool
+    }
+
     private func selectEvidence<T: Encodable>(_ items: T, instruction: String) throws -> [Int]? {
         let payload = try JSONEncoder().encode(items)
         let data = String(decoding: payload, as: UTF8.self)
@@ -375,8 +380,7 @@ final class LocalLanguageModel {
 
         """
         let result = try runConstrained(prompt: prompt, grammarResource: "answer", maxTokens: 64)
-        struct Selection: Decodable { let citations: [String]; let found: Bool }
-        guard result.completed, let parsed = try? JSONDecoder().decode(Selection.self, from: result.text) else { return nil }
+        guard result.completed, let parsed = try? JSONDecoder().decode(EvidenceSelection.self, from: result.text) else { return nil }
         return parsed.found ? parsed.citations.compactMap { Int($0.dropFirst()).map { $0 - 1 } } : []
     }
 
