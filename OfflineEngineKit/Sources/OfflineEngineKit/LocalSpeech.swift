@@ -641,3 +641,44 @@ enum LocalSpeech {
         return SpeakerEmbeddingMath.normalized(sum)
     }
 }
+
+
+/// Experimental local-file replay for the caption engine qualification lab.
+public enum NemotronCaptionReplay {
+    public static func download(progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        let folder = try OfflineModelStore.privateDirectory("NemotronCaptionLab")
+        return try await StreamingNemotronMultilingualAsrManager.downloadVariant(
+            languageCode: "auto", chunkMs: 1120, to: folder
+        ) { progress($0.fractionCompleted) }
+    }
+
+    public static func run(audio: URL, model: URL) async throws -> (text: String, firstPartialSeconds: Double?) {
+        guard audio.isFileURL, model.isFileURL else { throw OfflineError.unavailable("Select local audio and model files.") }
+        let manager = StreamingNemotronMultilingualAsrManager()
+        try await manager.loadModels(from: model)
+        await manager.setLanguage("auto")
+        let file = try AVAudioFile(forReading: audio)
+        let format = file.processingFormat
+        let frameCount = AVAudioFrameCount(max(1, format.sampleRate / 10))
+        let clock = ContinuousClock()
+        let started = clock.now
+        var firstPartialSeconds: Double?
+        while file.framePosition < file.length {
+            try Task.checkCancellation()
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+                throw OfflineError.unavailable("Unable to allocate a replay buffer.")
+            }
+            try file.read(into: buffer)
+            guard buffer.frameLength > 0 else { break }
+            let mediaSeconds = Double(file.framePosition) / format.sampleRate
+            try await clock.sleep(until: started.advanced(by: .seconds(mediaSeconds)))
+            _ = try await manager.process(audioBuffer: buffer)
+            if firstPartialSeconds == nil, !(await manager.getPartialTranscript()).isEmpty {
+                let elapsed = (clock.now - started).components
+                firstPartialSeconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+            }
+        }
+        let text = try await manager.finish()
+        return (text, firstPartialSeconds)
+    }
+}

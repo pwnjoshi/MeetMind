@@ -21,6 +21,8 @@ struct OfflineBenchmarkView: View {
     @State private var turns = OfflineBenchmarkRunner.syntheticTurns
     @State private var output = ""
     @State private var lastResult: BenchmarkResult?
+    @AppStorage("NemotronCaptionLabModelPath") private var nemotronModelPath = ""
+    @State private var nemotronTranscript: String?
     private let runner = OfflineBenchmarkRunner()
 
     var body: some View {
@@ -63,6 +65,40 @@ struct OfflineBenchmarkView: View {
                     }.padding(.vertical, 4)
                 }
             }
+            Section("Nemotron live caption replay") {
+                Text("Experimental. Replays the selected local recording at recording speed.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button("Download Nemotron") {
+                    begin {
+                        status = "Downloading Nemotron…"
+                        let folder = try await NemotronCaptionReplay.download { value in
+                            Task { @MainActor in progress = value }
+                        }
+                        nemotronModelPath = folder.path
+                        status = "Nemotron is ready for replay."
+                    }
+                }
+                Button("Replay with Nemotron") {
+                    begin {
+                        nemotronTranscript = nil
+                        status = "Replaying with Nemotron…"
+                        let result = try await NemotronCaptionReplay.run(
+                            audio: audio, model: URL(fileURLWithPath: nemotronModelPath))
+                        nemotronTranscript = result.text
+                        if let delay = result.firstPartialSeconds {
+                            status = "Nemotron finished. First caption after \(delay.formatted(.number.precision(.fractionLength(2)))) seconds."
+                        } else {
+                            status = "Nemotron finished without a partial caption."
+                        }
+                    }
+                }
+                .disabled(nemotronModelPath.isEmpty)
+                if let nemotronTranscript {
+                    Text(nemotronTranscript.isEmpty ? "No speech recognized." : nemotronTranscript)
+                        .textSelection(.enabled)
+                }
+            }
+            .disabled(busy)
             Section("Local input") {
                 if !savedMeetings.filter({ $0.audioFileURL != nil }).isEmpty {
                     Menu("Use a saved MeetMind recording") {
