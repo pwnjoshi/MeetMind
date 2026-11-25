@@ -303,17 +303,6 @@ public final class LiveRecordingViewModel {
         self.chunkPreprocessor = chunkPreprocessor
     }
     
-    /// The final analysis pass resolves relative dates against this day and time
-    /// zone, so results prepared during recording are reusable only when they match.
-    /// Without a persisted meeting there is nothing to match, so pre-analysis stays off.
-    private func recordingPreAnalysisContext() -> RecordingPreAnalysisContext? {
-        guard let meeting else { return nil }
-        return RecordingPreAnalysisContext(
-            meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
-            timezone: meeting.analysisTimezone ?? TimeZone.current.identifier
-        )
-    }
-
     public func startSession() {
         guard recordingState == .idle || recordingState == .stopped || recordingState == .saved else { return }
         errorMessage = nil
@@ -352,8 +341,7 @@ public final class LiveRecordingViewModel {
                         meetingID: meetingId,
                         languageCode: offlineLanguageCode,
                         preprocessor: chunkPreprocessor,
-                        metrics: metricsCollector,
-                        preAnalysis: recordingPreAnalysisContext()
+                        metrics: metricsCollector
                     )
                     chunkPump = pump
                     preprocessingWorker = worker
@@ -957,6 +945,11 @@ public final class LiveRecordingViewModel {
 
     private func persistStoppedRecording(_ url: URL) throws {
         guard let meeting else { return }
+        let evidence = liveTranscriptChunks.flatMap(\.segments).filter {
+            $0.startTime.isFinite && $0.duration.isFinite &&
+                $0.startTime >= 0 && $0.duration > 0 && $0.endTime <= elapsedDuration
+        }
+        meeting.liveCaptionEvidenceData = evidence.isEmpty ? nil : try? JSONEncoder().encode(evidence)
         meeting.setAudioFileURL(url)
         meeting.duration = elapsedDuration
         meeting.status = .processing

@@ -67,8 +67,11 @@ public struct MeetingTranscriptScreen: View {
             audioAvailable = false
         }
         .onReceive(ticker) { _ in refreshProcessing() }
-        .onChange(of: meeting?.transcriptSegments.count) { _, _ in rebuildCards() }
-        .onChange(of: meeting?.offlineAnalysisData?.count) { _, _ in rebuildCards() }
+        .onChange(of: meeting?.orderedTranscriptSegments.map {
+            TranscriptRevision(id: $0.id, text: $0.text, start: $0.startTime,
+                               end: $0.endTime, speaker: $0.speaker?.name)
+        }) { _, _ in rebuildCards() }
+        .onChange(of: meeting?.offlineAnalysisData) { _, _ in rebuildCards() }
         .onChange(of: revision) { _, _ in rebuildCards() }
         .onChange(of: isProcessing) { _, _ in rebuildCards() }
         .onChange(of: meeting?.audioFileURL) { _, _ in loadAudio() }
@@ -312,6 +315,14 @@ public struct MeetingTranscriptScreen: View {
     }
 
     // MARK: Data
+
+    private struct TranscriptRevision: Equatable {
+        let id: UUID
+        let text: String
+        let start: TimeInterval
+        let end: TimeInterval
+        let speaker: String?
+    }
 
     private func rebuildCards() {
         guard let meeting else {

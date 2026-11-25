@@ -31,7 +31,7 @@ public struct MeetingDetailView: View {
     @State private var followUpDraft: MeetingSetupViewModel?
     @State private var showFollowUp = false
     @State private var recordSection = "Minutes"
-    @State private var showsTranscriptPage = false
+    @State private var transcriptRoute: TranscriptRoute?
     @State private var showsStudio = false
     @State private var showsApproval = false
     @State private var showsSeriesComparison = false
@@ -158,8 +158,8 @@ public struct MeetingDetailView: View {
         .navigationDestination(isPresented: $showsReviewChecklist) {
             if let meeting = viewModel.meeting { MinutesReviewChecklistView(meeting: meeting) }
         }
-        .navigationDestination(isPresented: $showsTranscriptPage) {
-            if let id = viewModel.meeting?.id { MeetingTranscriptScreen(meetingId: id) }
+        .fullScreenCover(item: $transcriptRoute) { route in
+            MeetingTranscriptScreen(meetingId: route.id)
         }
         .navigationDestination(isPresented: $showsPDFPreview) {
             if let document = momDocument() {
@@ -304,7 +304,7 @@ public struct MeetingDetailView: View {
     private var optionsMenu: some View {
         Menu {
             Button("Meeting Details", systemImage: "info.circle") { showDetails = true }
-            Button("Show Transcript", systemImage: "doc.text") { showsTranscriptPage = true }
+            Button("Show Transcript", systemImage: "doc.text") { openTranscript() }
             if hasMinutes {
                 Button("Edit Minutes", systemImage: "pencil") { showClassicEditor = true }
                 Button("Formal Minutes (MoM)", systemImage: "doc.richtext") { showsMoM = true }
@@ -333,6 +333,16 @@ public struct MeetingDetailView: View {
     }
 
     /// Every Share entry point (footer, toolbar, PDF preview, Export) opens the recipients sheet over the meeting record.
+    private struct TranscriptRoute: Identifiable {
+        let id: UUID
+    }
+
+    private func openTranscript() {
+        guard let id = viewModel.meeting?.id else { return }
+        viewModel.stopPlayback()
+        transcriptRoute = TranscriptRoute(id: id)
+    }
+
     private func requestShare() {
         startSharing = true
     }
@@ -450,7 +460,7 @@ public struct MeetingDetailView: View {
                 )
                 if recordSection == "Minutes", let meeting = viewModel.meeting,
                    viewModel.summary == nil, meeting.resolvedAudioFileURL != nil || !meeting.transcriptSegments.isEmpty {
-                    Button { showsTranscriptPage = true } label: {
+                    Button { openTranscript() } label: {
                         HStack {
                             Text("Transcript and audio").font(.headline)
                             Spacer()
