@@ -1,4 +1,6 @@
 import SwiftUI
+import AVFoundation
+import Speech
 import UniformTypeIdentifiers
 import OfflineEngineKit
 import Darwin
@@ -23,6 +25,9 @@ struct OfflineBenchmarkView: View {
     @State private var lastResult: BenchmarkResult?
     @AppStorage("NemotronCaptionLabModelPath") private var nemotronModelPath = ""
     @State private var nemotronTranscript: String?
+    @State private var appleTranscript: String?
+    @State private var appleFirstCaption: Double?
+    @State private var nemotronFirstCaption: Double?
     private let runner = OfflineBenchmarkRunner()
 
     var body: some View {
@@ -65,7 +70,7 @@ struct OfflineBenchmarkView: View {
                     }.padding(.vertical, 4)
                 }
             }
-            Section("Nemotron live caption replay") {
+            Section("Live caption comparison") {
                 Text("Experimental. Replays the selected local recording at recording speed.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Download Nemotron") {
@@ -78,24 +83,25 @@ struct OfflineBenchmarkView: View {
                         status = "Nemotron is ready for replay."
                     }
                 }
+                Button("Replay with Apple Speech") {
+                    begin { try await runAppleReplay() }
+                }
                 Button("Replay with Nemotron") {
+                    begin { try await runNemotronReplay() }
+                }
+                .disabled(nemotronModelPath.isEmpty)
+                Button("Compare both engines") {
                     begin {
-                        nemotronTranscript = nil
-                        status = "Replaying with Nemotron…"
-                        let result = try await NemotronCaptionReplay.run(
-                            audio: audio, model: URL(fileURLWithPath: nemotronModelPath))
-                        nemotronTranscript = result.text
-                        if let delay = result.firstPartialSeconds {
-                            status = "Nemotron finished. First caption after \(delay.formatted(.number.precision(.fractionLength(2)))) seconds."
-                        } else {
-                            status = "Nemotron finished without a partial caption."
-                        }
+                        try await runAppleReplay()
+                        try await runNemotronReplay()
                     }
                 }
                 .disabled(nemotronModelPath.isEmpty)
+                if let appleTranscript {
+                    replayResult("Apple Speech", transcript: appleTranscript, delay: appleFirstCaption)
+                }
                 if let nemotronTranscript {
-                    Text(nemotronTranscript.isEmpty ? "No speech recognized." : nemotronTranscript)
-                        .textSelection(.enabled)
+                    replayResult("Nemotron", transcript: nemotronTranscript, delay: nemotronFirstCaption)
                 }
             }
             .disabled(busy)
@@ -173,10 +179,89 @@ struct OfflineBenchmarkView: View {
                 }
             } catch { status = error.localizedDescription }
         }
+        .onChange(of: audio) { _, _ in
+            appleTranscript = nil
+            nemotronTranscript = nil
+        }
         .onDisappear { operation?.cancel() }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && busy { operation?.cancel() }
         }
+    }
+
+    private func replayResult(_ engine: String, transcript: String, delay: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(engine).font(.headline)
+            if let delay {
+                Text("First caption after \(delay.formatted(.number.precision(.fractionLength(2)))) seconds.")
+                    .font(.caption)
+            }
+            Text(transcript.isEmpty ? "No finalized speech recognized." : transcript).textSelection(.enabled)
+        }
+    }
+
+    private func runNemotronReplay() async throws {
+        nemotronTranscript = nil
+        status = "Replaying with Nemotron…"
+        let result = try await NemotronCaptionReplay.run(
+            audio: audio, model: URL(fileURLWithPath: nemotronModelPath))
+        nemotronTranscript = result.text
+        nemotronFirstCaption = result.firstPartialSeconds
+        status = "Nemotron replay finished."
+    }
+
+    private func runAppleReplay() async throws {
+        appleTranscript = nil
+        appleFirstCaption = nil
+        status = "Replaying with Apple Speech…"
+        let service = SpeechTranscriptionService()
+        guard await service.requestAuthorization() == .authorized else {
+            throw SpeechTranscriptionError.authorizationDenied
+        }
+        let input = audio
+        let clock = ContinuousClock()
+        let (stream, feed) = AsyncStream<AVAudioPCMBuffer>.makeStream(bufferingPolicy: .bufferingOldest(20))
+        let captions = service.startLiveTranscription(audioBufferStream: stream)
+        let started = clock.now
+        let producer = Task.detached {
+            defer { feed.finish() }
+            let file = try AVAudioFile(forReading: input)
+            let format = file.processingFormat
+            let frames = AVAudioFrameCount(max(1, format.sampleRate / 10))
+            while file.framePosition < file.length {
+                try Task.checkCancellation()
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
+                    throw OfflineError.unavailable("Unable to allocate a replay buffer.")
+                }
+                try file.read(into: buffer)
+                guard buffer.frameLength > 0 else { break }
+                let seconds = Double(file.framePosition) / format.sampleRate
+                try await clock.sleep(until: started.advanced(by: .seconds(seconds)))
+                switch feed.yield(buffer) {
+                case .enqueued: break
+                case .dropped: throw OfflineError.unavailable("Apple Speech fell behind the replay.")
+                case .terminated: throw CancellationError()
+                @unknown default: throw OfflineError.unavailable("Unable to feed Apple Speech.")
+                }
+            }
+        }
+        defer {
+            producer.cancel()
+            service.stopLiveTranscription()
+        }
+        var finalized: [String] = []
+        for try await caption in captions where !caption.text.isEmpty {
+            try Task.checkCancellation()
+            if appleFirstCaption == nil {
+                let elapsed = (clock.now - started).components
+                appleFirstCaption = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+            }
+            if caption.isFinal { finalized.append(caption.text) }
+        }
+        try await producer.value
+        try Task.checkCancellation()
+        appleTranscript = finalized.joined(separator: " ")
+        status = "Apple Speech replay finished."
     }
 
     private func refresh() async {
