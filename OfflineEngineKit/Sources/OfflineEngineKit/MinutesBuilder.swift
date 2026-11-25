@@ -10,6 +10,7 @@ enum MinutesBuilder {
         let hindi: HindiAnalysis
         let decisions: [SupportedPoint]
         let discussion: [SupportedPoint]
+        let rankedDiscussion: [SupportedPoint]
         let openIssues: [SupportedPoint]
         let tasks: [SuggestedTask]
         let participants: [String]
@@ -550,9 +551,15 @@ enum MinutesBuilder {
                 if !overview.isEmpty { overview += " " }
                 overview += "Review the open questions for details that still need clarification."
             }
-            guard titles.isEmpty else { return overview }
-            let context = input.discussion.filter {
-                !HindiText.looksHindi($0.text) && !$0.evidence.isEmpty && MeetingAnalysisReducer.isSummaryContext($0.text)
+            guard titles.isEmpty || !input.rankedDiscussion.isEmpty else { return overview }
+            let outcomeTurns = Set((input.decisions.flatMap(\.evidence) + input.openIssues.flatMap(\.evidence)
+                + input.tasks.flatMap(\.evidence)).map(\.turnID))
+            var selectedText = Set<String>()
+            let context = (input.rankedDiscussion + input.discussion).filter { point in
+                !HindiText.looksHindi(point.text) && !point.evidence.isEmpty
+                    && MeetingAnalysisReducer.isSummaryContext(point.text)
+                    && point.evidence.contains { !outcomeTurns.contains($0.turnID) }
+                    && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted
             }.prefix(2).map { point in
                 let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 return text.last.map { ".!?".contains($0) } == true ? text : text + "."

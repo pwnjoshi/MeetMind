@@ -160,7 +160,8 @@ public enum MeetingAnalysisReducer {
         let overviewDiscussion = ranked.isEmpty ? discussion : ranked
         var executiveSummary = composeExecutiveSummary(discussion: overviewDiscussion, decisions: decisions)
         let minutes = MinutesBuilder.build(MinutesBuilder.Input(
-            turns: checkpoint.turns, hindi: hindi, decisions: decisions, discussion: overviewDiscussion, openIssues: openIssues, tasks: tasks,
+            turns: checkpoint.turns, hindi: hindi, decisions: decisions, discussion: discussion, rankedDiscussion: ranked,
+            openIssues: openIssues, tasks: tasks,
             participants: participants, speakerNames: speakerNames, meetingDate: meetingDate, timeZone: timeZone))
         if !minutes.executiveSummary.isEmpty { executiveSummary = minutes.executiveSummary }
         // The deterministic path is primary whenever it found structure, for any script. Model discussion

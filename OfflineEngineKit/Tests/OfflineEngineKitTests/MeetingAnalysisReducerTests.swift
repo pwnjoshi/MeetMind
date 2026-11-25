@@ -94,6 +94,19 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(result.discussion.count, 2)
     }
 
+    func testRankedDiscussionAddsContextAlongsideStructuredDecisions() {
+        let lines = ["The prototype now opens offline.", "We agreed to retain the existing audit log."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let fact = SupportedPoint(text: lines[0], evidence: [SourceEvidence(turnID: turns[0].id, quote: lines[0])])
+        var saved = checkpoint(turns: turns, analysis: [LocalAnalysisResult(discussion: [fact], decisions: [], tasks: [])])
+        saved.rankedOverviewFacts = [fact, fact]
+        let result = MeetingAnalysisReducer.reduce(saved)
+        XCTAssertEqual(result.executiveSummary.components(separatedBy: lines[0]).count, 2)
+        XCTAssertTrue(result.executiveSummary.contains("retain the existing audit log"))
+    }
+
     func testFutureDecisionIsNotAResolution() {
         let turn = AnalysisTurn(id: "t1", text: "He will make the final decision.", start: 0, end: 3, speaker: nil)
         let point = SupportedPoint(text: "The decision is final.",
