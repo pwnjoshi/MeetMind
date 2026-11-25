@@ -27,6 +27,8 @@ struct OfflineBenchmarkView: View {
     @AppStorage("UseNemotronLiveCaptions") private var useNemotronLiveCaptions = false
     @State private var nemotronTranscript: String?
     @State private var appleTranscript: String?
+    @State private var appleMeasurement: ReplayMeasurement?
+    @State private var nemotronMeasurement: ReplayMeasurement?
     @State private var referenceTranscript = ""
     @State private var appleFirstCaption: Double?
     @State private var nemotronFirstCaption: Double?
@@ -106,10 +108,10 @@ struct OfflineBenchmarkView: View {
                 Text("Enter the verified words for the selected recording. For an excerpt, replay the matching audio clip. Scoring supports up to 1,000 words per transcript.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let appleTranscript {
-                    replayResult("Apple Speech", transcript: appleTranscript, delay: appleFirstCaption)
+                    replayResult("Apple Speech", transcript: appleTranscript, delay: appleFirstCaption, measurement: appleMeasurement)
                 }
                 if let nemotronTranscript {
-                    replayResult("Nemotron", transcript: nemotronTranscript, delay: nemotronFirstCaption)
+                    replayResult("Nemotron", transcript: nemotronTranscript, delay: nemotronFirstCaption, measurement: nemotronMeasurement)
                 }
             }
             .disabled(busy)
@@ -198,12 +200,17 @@ struct OfflineBenchmarkView: View {
         }
     }
 
-    private func replayResult(_ engine: String, transcript: String, delay: Double?) -> some View {
+    private func replayResult(_ engine: String, transcript: String, delay: Double?,
+                              measurement: ReplayMeasurement?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(engine).font(.headline)
             if let delay {
                 Text("First caption after \(delay.formatted(.number.precision(.fractionLength(2)))) seconds.")
                     .font(.caption)
+            }
+            if let measurement {
+                Text("Total \(measurement.elapsed.formatted(.number.precision(.fractionLength(1)))) seconds · Peak \(measurement.memoryText) · Thermal \(measurement.thermal)")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             if let score = CaptionReplayScore.compare(reference: referenceTranscript, transcript: transcript) {
                 Text("Word error rate \(score.rate.formatted(.percent.precision(.fractionLength(1))))")
@@ -216,6 +223,11 @@ struct OfflineBenchmarkView: View {
     }
 
     private func runNemotronReplay() async throws {
+        nemotronMeasurement = nil
+        nemotronMeasurement = try await measureReplay { try await replayNemotron() }
+    }
+
+    private func replayNemotron() async throws {
         nemotronTranscript = nil
         status = "Replaying with Nemotron…"
         let result = try await NemotronCaptionReplay.run(
@@ -226,6 +238,11 @@ struct OfflineBenchmarkView: View {
     }
 
     private func runAppleReplay() async throws {
+        appleMeasurement = nil
+        appleMeasurement = try await measureReplay { try await replayApple() }
+    }
+
+    private func replayApple() async throws {
         appleTranscript = nil
         appleFirstCaption = nil
         status = "Replaying with Apple Speech…"
@@ -278,6 +295,44 @@ struct OfflineBenchmarkView: View {
         try Task.checkCancellation()
         appleTranscript = finalized.joined(separator: " ")
         status = "Apple Speech replay finished."
+    }
+
+    private struct ReplayMeasurement {
+        let elapsed: Double
+        let peakBytes: UInt64
+        let thermal: String
+
+        var memoryText: String {
+            guard peakBytes > 0 else { return "unavailable" }
+            return ByteCountFormatter.string(fromByteCount: Int64(clamping: peakBytes), countStyle: .memory)
+        }
+    }
+
+    private func measureReplay(_ run: () async throws -> Void) async throws -> ReplayMeasurement {
+        let started = Date()
+        let sampler = Task.detached(priority: .utility) {
+            var peak = OfflineBenchmarkRunner.currentFootprintBytes()
+            while !Task.isCancelled {
+                peak = max(peak, OfflineBenchmarkRunner.currentFootprintBytes())
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            return peak
+        }
+        defer { sampler.cancel() }
+        try await run()
+        sampler.cancel()
+        let sampled = await sampler.value
+        let thermal: String
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: thermal = "nominal"
+        case .fair: thermal = "fair"
+        case .serious: thermal = "serious"
+        case .critical: thermal = "critical"
+        @unknown default: thermal = "unknown"
+        }
+        return ReplayMeasurement(elapsed: Date().timeIntervalSince(started),
+                                 peakBytes: max(sampled, OfflineBenchmarkRunner.currentFootprintBytes()),
+                                 thermal: thermal)
     }
 
     private func refresh() async {
