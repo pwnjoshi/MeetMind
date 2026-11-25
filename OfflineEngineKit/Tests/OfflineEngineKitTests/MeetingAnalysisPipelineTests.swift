@@ -23,6 +23,15 @@ final class MeetingAnalysisPipelineTests: XCTestCase {
         } catch { XCTAssertTrue(error.localizedDescription.contains("short question")) }
     }
 
+    func testCaptionDisagreementRecognizesLocalOmissionsAndAdditions() {
+        let words = ["we", "approved", "the", "proposal", "today"]
+        let alternate = ["we", "did", "not", "approve", "the", "proposal", "today"]
+        XCTAssertTrue(MeetingAnalysisPipeline.isCaptionDisagreement(words, alternate))
+        XCTAssertTrue(MeetingAnalysisPipeline.isCaptionDisagreement(alternate, words))
+        XCTAssertFalse(MeetingAnalysisPipeline.isCaptionDisagreement(words, words))
+        XCTAssertFalse(MeetingAnalysisPipeline.isCaptionDisagreement(words, ["we", "sent", "it", "today"]))
+    }
+
     func testOverlappingSpeakersAreNotGuessed() {
         let turn = AnalysisTurn(id: "t1", text: "Mixed speech", start: 0, end: 10, speaker: nil)
         let spans = [SpeakerSpan(speaker: "A", start: 0, end: 8),

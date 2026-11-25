@@ -119,7 +119,7 @@ public actor MeetingAnalysisPipeline {
     private var preAnalyzing = false
     public static let analysisModelID = "qwen-1.7b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
-    public static let checkpointFormatVersion = "asr-caption-review-v5"
+    public static let checkpointFormatVersion = "asr-caption-review-v6"
     private static let modelConfiguration = LocalModelConfiguration.compact
     static let analysisChunkBytes = 1800
 
@@ -302,7 +302,18 @@ public actor MeetingAnalysisPipeline {
         return turns
     }
 
-    /// Recheck a small number of tightly aligned, single-word disagreements.
+    /// Match a localized edit using unchanged words from both recognition results.
+    static func isCaptionDisagreement(_ original: [String], _ alternate: [String]) -> Bool {
+        guard original != alternate, min(original.count, alternate.count) >= 3 else { return false }
+        let prefix = zip(original, alternate).prefix(while: { $0.0 == $0.1 }).count
+        let suffix = zip(original.dropFirst(prefix).reversed(), alternate.dropFirst(prefix).reversed())
+            .prefix(while: { $0.0 == $0.1 }).count
+        let shared = prefix + suffix
+        let changed = max(original.count, alternate.count) - shared
+        return shared >= 3 && changed <= 3 && shared >= changed
+    }
+
+    /// Recheck a small number of tightly aligned, localized disagreements.
     /// Only the saved audio retry can confirm the alternate wording.
     private func retryCaptionDisagreements(
         turns: [AnalysisTurn], live: [AnalysisTurn], audio: URL, duration: TimeInterval, profile: ModelProfile
@@ -318,12 +329,11 @@ public actor MeetingAnalysisPipeline {
         for (index, turn) in turns.enumerated() where attempts < 4 {
             try Task.checkCancellation()
             let original = words(turn.text)
-            guard original.count >= 4, turn.end > turn.start, turn.end - turn.start <= 6 else { continue }
+            guard original.count >= 3, turn.end > turn.start, turn.end - turn.start <= 6 else { continue }
             let matching = live.filter { abs($0.start - turn.start) <= 0.75 && abs($0.end - turn.end) <= 0.75 }
             guard matching.count == 1, let alternate = matching.first else { continue }
             let alternateWords = words(alternate.text)
-            guard original.count == alternateWords.count,
-                  zip(original, alternateWords).filter({ $0.0 != $0.1 }).count == 1 else { continue }
+            guard Self.isCaptionDisagreement(original, alternateWords) else { continue }
 
             attempts += 1
             var replacement: String?
