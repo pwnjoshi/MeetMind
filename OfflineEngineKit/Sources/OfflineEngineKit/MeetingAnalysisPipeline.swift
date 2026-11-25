@@ -119,7 +119,7 @@ public actor MeetingAnalysisPipeline {
     private var preAnalyzing = false
     public static let analysisModelID = "qwen-1.7b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
-    public static let checkpointFormatVersion = "asr-caption-review-v6"
+    public static let checkpointFormatVersion = "asr-caption-review-v7"
     private static let modelConfiguration = LocalModelConfiguration.compact
     static let analysisChunkBytes = 1800
 
@@ -313,6 +313,12 @@ public actor MeetingAnalysisPipeline {
         return shared >= 3 && changed <= 3 && shared >= changed
     }
 
+    static func isUncoveredCaption(_ caption: AnalysisTurn, in turns: [AnalysisTurn], duration: Double) -> Bool {
+        guard caption.start >= 0, caption.end <= duration, caption.end > caption.start,
+              caption.end - caption.start <= 6 else { return false }
+        return !turns.contains { $0.end > caption.start && $0.start < caption.end }
+    }
+
     /// Recheck a small number of tightly aligned, localized disagreements.
     /// Only the saved audio retry can confirm the alternate wording.
     private func retryCaptionDisagreements(
@@ -326,14 +332,47 @@ public actor MeetingAnalysisPipeline {
         var revised = turns
         var corrections: [TranscriptCorrection] = []
         var attempts = 0
+        func confirm(_ alternate: AnalysisTurn, start: Double, end: Double) async throws -> String? {
+            let clipStart = max(0, start - 1)
+            let clipEnd = min(duration, end + 1)
+            do {
+                let clip = try RecordingReuse.extractAudio(from: audio, start: clipStart, end: clipEnd)
+                defer { RecordingReuse.removeClip(clip) }
+                let folder = try await backend.verifiedFolder(profile)
+                let retry = try await backend.transcribe(audio: clip, folder: folder,
+                    request: SpeechRequest(languageCode: nil, vocabulary: nil, memory: nil))
+                let expected = words(alternate.text)
+                return retry.first {
+                    abs($0.start + clipStart - start) <= 0.75 && abs($0.end + clipStart - end) <= 0.75
+                        && words($0.text) == expected
+                }?.text
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+                return nil
+            }
+        }
+
+        // Reserve up to two attempts for phrases entirely absent from the saved transcript.
+        var recovered: [AnalysisTurn] = []
+        for (index, caption) in live.enumerated() where attempts < 2 {
+            try Task.checkCancellation()
+            guard Self.isUncoveredCaption(caption, in: revised + recovered, duration: duration),
+                  words(caption.text).count >= 3 else { continue }
+            attempts += 1
+            if let text = try await confirm(caption, start: caption.start, end: caption.end) {
+                recovered.append(AnalysisTurn(id: "recovered-live-caption-\(index)", text: text,
+                    start: caption.start, end: caption.end, speaker: nil))
+            }
+        }
         for (index, turn) in turns.enumerated() where attempts < 4 {
             try Task.checkCancellation()
             let original = words(turn.text)
             guard original.count >= 3, turn.end > turn.start, turn.end - turn.start <= 6 else { continue }
             let matching = live.filter { abs($0.start - turn.start) <= 0.75 && abs($0.end - turn.end) <= 0.75 }
             guard matching.count == 1, let alternate = matching.first else { continue }
-            let alternateWords = words(alternate.text)
-            guard Self.isCaptionDisagreement(original, alternateWords) else { continue }
+            guard Self.isCaptionDisagreement(original, words(alternate.text)) else { continue }
 
             attempts += 1
             var replacement: String?
@@ -341,27 +380,13 @@ public actor MeetingAnalysisPipeline {
                 corrections.append(TranscriptCorrection(original: turn.text, alternative: alternate.text,
                     replacement: replacement, start: turn.start, end: turn.end))
             }
-            let start = max(0, turn.start - 1)
-            let end = min(duration, turn.end + 1)
-            do {
-                let clip = try RecordingReuse.extractAudio(from: audio, start: start, end: end)
-                defer { RecordingReuse.removeClip(clip) }
-                let folder = try await backend.verifiedFolder(profile)
-                let retry = try await backend.transcribe(audio: clip, folder: folder, request: SpeechRequest(languageCode: nil, vocabulary: nil, memory: nil))
-                guard let confirmed = retry.first(where: {
-                    abs($0.start + start - turn.start) <= 0.75 && abs($0.end + start - turn.end) <= 0.75
-                        && words($0.text) == alternateWords
-                }) else { continue }
-                replacement = confirmed.text
-                revised[index] = AnalysisTurn(id: turn.id, text: confirmed.text,
+            if let confirmed = try await confirm(alternate, start: turn.start, end: turn.end) {
+                replacement = confirmed
+                revised[index] = AnalysisTurn(id: turn.id, text: confirmed,
                     start: turn.start, end: turn.end, speaker: turn.speaker)
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                try Task.checkCancellation()
             }
         }
-        return (revised, corrections)
+        return (recovered.isEmpty ? revised : (revised + recovered).sorted { $0.start < $1.start }, corrections)
     }
 
     /// Analyzes finalized transcript chunks while recording continues, so the

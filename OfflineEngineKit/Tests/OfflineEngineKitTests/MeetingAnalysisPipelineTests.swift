@@ -32,6 +32,14 @@ final class MeetingAnalysisPipelineTests: XCTestCase {
         XCTAssertFalse(MeetingAnalysisPipeline.isCaptionDisagreement(words, ["we", "sent", "it", "today"]))
     }
 
+    func testCaptionRecoveryRequiresUncoveredAudioInsideTheRecording() {
+        let caption = AnalysisTurn(id: "live", text: "Review the draft", start: 4, end: 7, speaker: nil)
+        let existing = AnalysisTurn(id: "saved", text: "Review", start: 3, end: 5, speaker: nil)
+        XCTAssertTrue(MeetingAnalysisPipeline.isUncoveredCaption(caption, in: [], duration: 8))
+        XCTAssertFalse(MeetingAnalysisPipeline.isUncoveredCaption(caption, in: [existing], duration: 8))
+        XCTAssertFalse(MeetingAnalysisPipeline.isUncoveredCaption(caption, in: [], duration: 6))
+    }
+
     func testOverlappingSpeakersAreNotGuessed() {
         let turn = AnalysisTurn(id: "t1", text: "Mixed speech", start: 0, end: 10, speaker: nil)
         let spans = [SpeakerSpan(speaker: "A", start: 0, end: 8),
