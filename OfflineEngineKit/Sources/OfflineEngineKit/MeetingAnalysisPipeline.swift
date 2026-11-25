@@ -40,6 +40,7 @@ public struct TranscriptCorrection: Codable, Sendable {
     public let replacement: String?
     public let start: Double
     public let end: Double
+    public var contextFavorsAlternative: Bool? = nil
 }
 
 public struct MeetingAnalysisCheckpoint: Codable, Sendable {
@@ -799,7 +800,34 @@ public actor MeetingAnalysisPipeline {
                 checkpoint.analyzedChunks = index + 1
                 try save()
             }
-            if let session, !ComputeEnvironment.needsReload(session.placement) {
+            if let session, !ComputeEnvironment.needsReload(session.placement),
+           var comparisons = checkpoint.transcriptCorrections, !comparisons.isEmpty {
+            let contexts = comparisons.map { comparison in
+                let before = checkpoint.turns.filter { $0.end <= comparison.start }.suffix(2).map(\.text)
+                let after = checkpoint.turns.filter { $0.start >= comparison.end }.prefix(2).map(\.text)
+                return [
+                    "before": before.map { String($0.prefix(90)) }.joined(separator: " "),
+                    "original": String(comparison.original.prefix(180)),
+                    "alternative": String(comparison.alternative.prefix(180)),
+                    "audio retry": String((comparison.replacement ?? "").prefix(180)),
+                    "after": after.map { String($0.prefix(90)) }.joined(separator: " ")
+                ]
+            }
+            do {
+                if let selected = try session.reviewCaptionContext(contexts) {
+                    let valid = Set(selected.filter { comparisons.indices.contains($0) })
+                    for index in comparisons.indices {
+                        comparisons[index].contextFavorsAlternative = valid.contains(index) ? true : nil
+                    }
+                    checkpoint.transcriptCorrections = comparisons
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+            }
+        }
+        if let session, !ComputeEnvironment.needsReload(session.placement) {
             let reduced = MeetingAnalysisReducer.reduce(checkpoint, participants: participants,
                 meetingDate: meetingDate, timeZone: TimeZone(identifier: timezone) ?? .current)
             let facts = Array(reduced.discussion.filter {

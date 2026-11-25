@@ -103,7 +103,10 @@ public struct MeetingTranscriptScreen: View {
                 if let replacement = correction.replacement {
                     Text("Original: \(correction.original)\nAudio retry: \(replacement)")
                 } else {
-                    Text("The audio retry did not confirm the alternate wording.\nLive caption: \(correction.alternative)")
+                    let note = correction.contextFavorsAlternative == true
+                        ? "The surrounding conversation favors the live caption. Listen back to confirm."
+                        : "The audio retry did not confirm the alternate wording."
+                    Text("\(note)\nLive caption: \(correction.alternative)")
                 }
             }
         }
