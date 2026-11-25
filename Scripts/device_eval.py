@@ -7,7 +7,7 @@ Run with the build/device-tools virtualenv's Python (it has pymobiledevice3):
 Steps: push each golden folder (audio + labels.json) into the app's Documents/Evaluation over
 HouseArrest, launch MeetMind with --offline-evaluation (the app analyses only those folders, in
 an isolated checkpoint folder, and never touches saved meetings), wait for the MEETMIND_EVAL
-completion line, pull result.json for each meeting, then call Scripts/eval_score.py.
+completion line, pull result.json for each meeting, then call Scripts/eval_score.py. Use --capture-only for unlabelled local recordings.
 
 Golden audio is private. --clean-device removes Documents/Evaluation from the phone afterwards.
 The pulled results contain transcripts, so build/eval is git-ignored territory: do not commit it.
@@ -164,6 +164,8 @@ def main(argv=None):
     parser.add_argument("--skip-push", action="store_true", help="files are already on the device")
     parser.add_argument("--skip-run", action="store_true", help="only pull results and score")
     parser.add_argument("--clean-device", action="store_true", help="delete Documents/Evaluation afterwards")
+    parser.add_argument("--capture-only", action="store_true",
+                        help="save replay results without scoring recordings against reference labels")
     parser.add_argument("--task-source", choices=("tasks", "rawTasks"), default="tasks")
     args = parser.parse_args(argv)
     only = [x.strip() for x in args.only.split(",") if x.strip()] if args.only else None
@@ -189,6 +191,9 @@ def main(argv=None):
         if not got:
             print("No results were produced.", file=sys.stderr)
             return 1
+        if args.capture_only:
+            print(f"Captured {len(got)}/{len(names)} replay results in {staging}.")
+            return 0 if ok and len(got) == len(names) else 2
         if not ok:
             print("Some meetings failed; scoring the ones that finished.", file=sys.stderr)
         code = eval_score.main(["--golden", args.golden, "--results", staging, "--out", args.out,
