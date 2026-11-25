@@ -32,6 +32,8 @@ struct OfflineBenchmarkView: View {
     @State private var referenceTranscript = ""
     @State private var appleFirstCaption: Double?
     @State private var nemotronFirstCaption: Double?
+    @AppStorage("PinnedCaptionBenchmarkRecording") private var pinnedRecording = ""
+    @State private var selectedRecording: Meeting?
     private let runner = OfflineBenchmarkRunner()
 
     var body: some View {
@@ -119,21 +121,26 @@ struct OfflineBenchmarkView: View {
                 if !savedMeetings.filter({ $0.audioFileURL != nil }).isEmpty {
                     Menu("Use a saved MeetMind recording") {
                         ForEach(savedMeetings.filter { $0.audioFileURL != nil }) { meeting in
-                            Button(meeting.title) {
-                                guard let recording = meeting.resolvedAudioFileURL,
-                                      FileManager.default.fileExists(atPath: recording.path) else {
-                                    status = "This recording file is unavailable."
-                                    return
-                                }
-                                audio = recording
-                                isSyntheticAudio = false
-                                turns = []
-                                output = ""
-                                lastResult = nil
-                                status = "Saved recording selected. Run a speech benchmark before task analysis."
-                            }
+                            Button(meeting.title) { selectRecording(meeting) }
                         }
                     }.disabled(busy)
+                }
+                if !pinnedRecording.isEmpty {
+                    Button("Use pinned recording") {
+                        if let meeting = savedMeetings.first(where: { recordingKey($0) == pinnedRecording }) {
+                            selectRecording(meeting)
+                        } else {
+                            status = "The pinned audio is unavailable. Select and pin another recording."
+                        }
+                    }
+                    .disabled(busy)
+                }
+                if let selectedRecording, let key = recordingKey(selectedRecording), key != pinnedRecording {
+                    Button("Pin \(selectedRecording.title) for replay") {
+                        pinnedRecording = key
+                        status = "Pinned \(selectedRecording.title) for future replays."
+                    }
+                    .disabled(busy)
                 }
                 Button("Choose audio file") { importAudio = true }.disabled(busy)
                 Text(isSyntheticAudio ? "Uses a short synthetic English audio clip and synthetic Hinglish text for smoke testing. This does not measure real meeting quality." : "A local recording is selected. Analysis uses its transcript after a speech benchmark.")
@@ -168,6 +175,7 @@ struct OfflineBenchmarkView: View {
                 try FileManager.default.copyItem(at: source, to: destination)
                 try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
                 audio = destination
+                selectedRecording = nil
                 isSyntheticAudio = false
                 turns = []
                 output = ""
@@ -198,6 +206,26 @@ struct OfflineBenchmarkView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && busy { operation?.cancel() }
         }
+    }
+
+    private func recordingKey(_ meeting: Meeting) -> String? {
+        guard let file = meeting.resolvedAudioFileURL else { return nil }
+        return meeting.id.uuidString + "/" + file.lastPathComponent
+    }
+
+    private func selectRecording(_ meeting: Meeting) {
+        guard let recording = meeting.resolvedAudioFileURL,
+              FileManager.default.fileExists(atPath: recording.path) else {
+            status = "This recording file is unavailable."
+            return
+        }
+        audio = recording
+        selectedRecording = meeting
+        isSyntheticAudio = false
+        turns = []
+        output = ""
+        lastResult = nil
+        status = "Selected \(meeting.title)."
     }
 
     private func replayResult(_ engine: String, transcript: String, delay: Double?,
