@@ -104,14 +104,15 @@ final class MeetingRecordSyncTests: XCTestCase {
         XCTAssertNil(OpenIssueDetector.explicitOpenIssues(from: nil))
     }
 
-    func testContentDerivesOpenIssuesFromDiscussionAndExportsThemSeparately() throws {
+    func testContentDerivesOpenIssuesAndOmitsThemFromMinutesExport() throws {
         let fixture = try makeFixture(keyPoints: ["Launch is Friday", "Vendor choice is not decided yet"])
         let record = content(fixture.meeting)
         XCTAssertEqual(record.discussion, ["Launch is Friday"])
         XCTAssertEqual(record.openIssues, ["Vendor choice is not decided yet"])
 
         let text = plainText(fixture.meeting)
-        XCTAssertTrue(text.contains("OPEN ISSUES:\n\u{2022} Vendor choice is not decided yet"))
+        XCTAssertFalse(text.contains("OPEN ISSUES"))
+        XCTAssertFalse(text.contains("Vendor choice is not decided yet"))
         XCTAssertTrue(text.contains("DISCUSSION:\n\u{2022} Launch is Friday"))
         XCTAssertFalse(text.contains("DISCUSSION:\n\u{2022} Launch is Friday\n\u{2022} Vendor"))
     }
