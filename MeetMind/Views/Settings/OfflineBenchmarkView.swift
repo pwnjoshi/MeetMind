@@ -283,8 +283,14 @@ struct OfflineBenchmarkView: View {
             service.stopLiveTranscription()
         }
         var finalized: [String] = []
+        var notice: String?
         for try await caption in captions where !caption.text.isEmpty {
             try Task.checkCancellation()
+            // Engine notices use the same stream but carry no timed speech.
+            guard !caption.segments.isEmpty else {
+                if !caption.isFinal { notice = caption.text }
+                continue
+            }
             if appleFirstCaption == nil {
                 let elapsed = (clock.now - started).components
                 appleFirstCaption = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
@@ -293,6 +299,9 @@ struct OfflineBenchmarkView: View {
         }
         try await producer.value
         try Task.checkCancellation()
+        if finalized.isEmpty, let notice {
+            throw SpeechTranscriptionError.recognitionRequestFailed(notice)
+        }
         appleTranscript = finalized.joined(separator: " ")
         status = "Apple Speech replay finished."
     }
