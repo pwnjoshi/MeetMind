@@ -215,6 +215,24 @@ enum SpeechRegionPlanner {
         return pad(capped, by: parameters.padding, duration: duration)
     }
 
+    /// Finds substantial untranscribed intervals inside a speech region that
+    /// already yielded some words. Empty regions are retried separately.
+    static func missingIntervals(in region: SpeechRegion, covered: [SpeechRegion]) -> [SpeechRegion] {
+        let coverage = covered.filter { $0.end > $0.start && $0.end > region.start && $0.start < region.end }
+            .sorted { $0.start < $1.start }
+        guard !coverage.isEmpty else { return [] }
+        let minimumGap = 4.0
+        var cursor = region.start
+        var result: [SpeechRegion] = []
+        for span in coverage {
+            let start = max(region.start, span.start)
+            if start - cursor >= minimumGap { result.append(SpeechRegion(start: cursor, end: start)) }
+            cursor = max(cursor, min(region.end, span.end))
+        }
+        if region.end - cursor >= minimumGap { result.append(SpeechRegion(start: cursor, end: region.end)) }
+        return result
+    }
+
     // MARK: - Timestamps
 
     /// Moves a segment time range from region-relative to file-relative seconds. Times are first clamped to

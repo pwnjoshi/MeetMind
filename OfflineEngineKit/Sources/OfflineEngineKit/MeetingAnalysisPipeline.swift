@@ -108,7 +108,7 @@ public actor MeetingAnalysisPipeline {
     private var preAnalyzing = false
     public static let analysisModelID = "qwen-1.7b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
-    public static let checkpointFormatVersion = "asr-phrase-timing-v3"
+    public static let checkpointFormatVersion = "asr-speech-gap-retry-v4"
     private static let modelConfiguration = LocalModelConfiguration.compact
     static let analysisChunkBytes = 1800
 

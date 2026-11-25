@@ -333,13 +333,48 @@ enum LocalSpeech {
             }
         }
 
+        // A decoder can return the first sentence and silently omit the rest.
+        // Retry only uncovered audio inside detected speech, with a per-file cap.
+        let missing = passes.enumerated().flatMap { index, pass in
+            let relative = SpeechRegion(start: 0, end: pass.region.duration)
+            let coverage = pass.turns.map { SpeechRegion(start: $0.start, end: $0.end) }
+            return SpeechRegionPlanner.missingIntervals(in: relative, covered: coverage).map { (index, $0) }
+        }.sorted { $0.1.duration > $1.1.duration }
+        for (index, gap) in missing.prefix(4) {
+            try Task.checkCancellation()
+            let offset = passes[index].region.start
+            let started = Date()
+            let retry: RegionDecode
+            do {
+                let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, startTime: offset + gap.start,
+                                                                       endTime: offset + gap.end)
+                guard samples.count >= minimumRegionSamples else { continue }
+                retry = try await decodeRegion(engine: engine, samples: samples, language: nil, prompt: automaticPrompt)
+            } catch {
+                try Task.checkCancellation()
+                if error is CancellationError { throw error }
+                continue
+            }
+            stats.decodeSeconds += Date().timeIntervalSince(started)
+            stats.redecodes += 1
+            guard let language = retry.language, ["hi", "en"].contains(language),
+                  (retry.confidence ?? 0) >= 0.50 else { continue }
+            for turn in retry.turns {
+                let moved = SpeechRegionPlanner.shifted(start: turn.start, end: turn.end,
+                    by: gap.start, limit: gap.duration)
+                guard moved.end > moved.start else { continue }
+                passes[index].turns.append(AnalysisTurn(id: turn.id, text: turn.text,
+                    start: moved.start, end: moved.end, speaker: nil))
+            }
+        }
+
         var lastLanguage: String?
         for (language, pass) in zip(languages, passes) where !pass.turns.isEmpty { lastLanguage = language }
         if let lastLanguage = lastLanguage { memory?.remember(lastLanguage) }
 
         var turns: [AnalysisTurn] = []
         for pass in passes {
-            for turn in pass.turns {
+            for turn in pass.turns.sorted(by: { $0.start < $1.start }) {
                 let moved = SpeechRegionPlanner.shifted(start: turn.start, end: turn.end, by: pass.region.start,
                                                         limit: pass.region.duration)
                 guard moved.end > moved.start else { continue }
