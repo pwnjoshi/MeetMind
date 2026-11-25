@@ -123,9 +123,9 @@ final class LocalLanguageModel {
         let input = try encoded(PromptNormalizer.romanized(turns))
         var system = """
         Minutes for an in-person Hindi-English meeting; Hindi may be in Roman letters. JSON only: discussion[{text,evidence[{turnID,quote}]}], decisions[same], tasks[{title,category,owner,deadlineText,priority,evidence}].
-        discussion: up to 3 concise, standalone points. Name the subject and the concrete update, finding, blocker, or reason. Omit greetings and vague recaps. Undecided or deferred matters go here, never in decisions.
-        decisions: only settled outcomes ("let's go with", approved, "final hai", "tay hua"), name the selected option or approved change and include a reason only if stated. Cite the words that show agreement or approval. Omit proposals, assignments, future decisions, questions and unresolved points.
-        tasks: one item per concrete request or promise. Keep the deliverable and any stated deadline with the same task. Cite the assignment or commitment itself. A request to someone else ("[Name], can you...", "[Name] ko ... bhejna hai") is that person's task; "sure"/"haan" confirms it; "I will"/"main ... dunga" is the speaker's own. Refused, negated, hypothetical, cancelled ("rehne do") or finished items are not tasks. Title starts with a verb and names the deliverable. Use a second quote only if needed to identify the owner, deliverable, or deadline.
+        discussion: up to 3 rephrased points. Name the subject and concrete update, blocker or reason. Omit greetings. Include unresolved matters here.
+        decisions: formal English resolutions for settled choices ("let's go with", "final hai", "tay hua"). Cite agreement. Give reasons only if stated. Omit proposals, requests and future decisions.
+        tasks: verb plus deliverable for each concrete request or promise. Cite the assignment itself. "Sure"/"haan" accepts a request. "I will"/"main ... dunga" refers to the speaker. Omit refused, conditional, cancelled ("rehne do") or finished work.
         owner: explicitly assigned person only, otherwise null. Participants and agenda are hints, never evidence.
         deadlineText: exact words ("by Friday", "kal tak", EOD) else null; priority null unless stated; category one of Follow-up, Research, Create/Update, Review/Approve, Coordination, Other.
         Quote = shortest exact transcript substring + turn ID. Write text and titles in English even for Hindi speech; quotes stay as spoken. Empty arrays are fine. Never invent.
