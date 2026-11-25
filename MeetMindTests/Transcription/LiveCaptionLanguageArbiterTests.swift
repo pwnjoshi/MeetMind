@@ -239,7 +239,10 @@ final class LiveCaptionLanguageArbiterTests: XCTestCase {
 
     func testAlignedEnglishClauseCanReplaceWordsInsideAHindiPhrase() {
         let hindi = words("मैं प्लीज सेंड प्रोजेक्ट रिपोर्ट फिर", confidence: 0.92, start: 0, end: 6)
-        let english = words("please send project report", confidence: 0.94, start: 1, end: 5)
+        // Phrase splitting weights by grapheme count. Use the actual clause
+        // bounds so the two candidates describe the same interval.
+        let english = words("please send project report", confidence: 0.94,
+                            start: hindi[1].start, end: hindi[4].end)
         let mixed = CaptionLanguageHub.mixedClause(english: english, hindi: hindi)
         XCTAssertEqual(mixed?.map(\.text), ["मैं", "please", "send", "project", "report", "फिर"])
 
