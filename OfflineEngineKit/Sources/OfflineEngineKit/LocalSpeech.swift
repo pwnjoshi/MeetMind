@@ -470,7 +470,7 @@ enum LocalSpeech {
               words.map(\.word).joined().split(whereSeparator: \.isWhitespace)
                 == original.split(whereSeparator: \.isWhitespace) else { return fallback }
         var result: [AnalysisTurn] = []
-        var group: [WordTiming] = []
+        var group = Array(words.prefix(0))
         func flush() {
             guard let first = group.first, let last = group.last else { return }
             let text = group.map(\.word).joined().trimmingCharacters(in: .whitespacesAndNewlines)
