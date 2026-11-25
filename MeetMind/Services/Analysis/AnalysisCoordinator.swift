@@ -439,7 +439,8 @@ public final class AnalysisCoordinator {
         }?.minutes?.agendaText
         let hasGeneratedAgenda = previousGeneratedAgenda?.isEmpty == false
             && previousGeneratedAgenda == previousAgenda
-        let replaceAgenda = hasGeneratedAgenda || isPlaceholderAgenda(previousAgenda ?? "")
+        let agendaText = (previousAgenda ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let replaceAgenda = hasGeneratedAgenda || agendaText.isEmpty || isPlaceholderAgenda(agendaText)
         guard meeting.status == .completed, !turns.isEmpty else {
             throw OfflineError.unavailable("A saved transcript is required to reprocess minutes.")
         }
