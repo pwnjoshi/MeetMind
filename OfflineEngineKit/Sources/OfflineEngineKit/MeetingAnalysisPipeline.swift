@@ -291,6 +291,51 @@ public actor MeetingAnalysisPipeline {
         return turns
     }
 
+    /// Recheck a small number of tightly aligned, single-word disagreements.
+    /// Only the saved audio retry can confirm the alternate wording.
+    private func retryCaptionDisagreements(
+        turns: [AnalysisTurn], live: [AnalysisTurn], audio: URL, duration: TimeInterval, profile: ModelProfile
+    ) async throws -> [AnalysisTurn] {
+        func words(_ text: String) -> [String] {
+            text.lowercased().split(whereSeparator: \.isWhitespace).map {
+                $0.trimmingCharacters(in: .punctuationCharacters)
+            }
+        }
+        var revised = turns
+        var attempts = 0
+        for (index, turn) in turns.enumerated() where attempts < 4 {
+            try Task.checkCancellation()
+            let original = words(turn.text)
+            guard original.count >= 4, turn.end > turn.start, turn.end - turn.start <= 6 else { continue }
+            let matching = live.filter { abs($0.start - turn.start) <= 0.75 && abs($0.end - turn.end) <= 0.75 }
+            guard matching.count == 1, let alternate = matching.first else { continue }
+            let alternateWords = words(alternate.text)
+            guard original.count == alternateWords.count,
+                  zip(original, alternateWords).filter({ $0.0 != $0.1 }).count == 1 else { continue }
+
+            attempts += 1
+            let start = max(0, turn.start - 1)
+            let end = min(duration, turn.end + 1)
+            do {
+                let clip = try RecordingReuse.extractAudio(from: audio, start: start, end: end)
+                defer { RecordingReuse.removeClip(clip) }
+                let folder = try await backend.verifiedFolder(profile)
+                let retry = try await backend.transcribe(audio: clip, folder: folder, request: SpeechRequest(languageCode: nil, vocabulary: nil, memory: nil))
+                guard let confirmed = retry.first(where: {
+                    abs($0.start + start - turn.start) <= 0.75 && abs($0.end + start - turn.end) <= 0.75
+                        && words($0.text) == alternateWords
+                }) else { continue }
+                revised[index] = AnalysisTurn(id: turn.id, text: confirmed.text,
+                    start: turn.start, end: turn.end, speaker: turn.speaker)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+            }
+        }
+        return revised
+    }
+
     /// Analyzes finalized transcript chunks while recording continues, so the
     /// post-recording pass can reuse them. Everything here is optional work:
     /// it does nothing unless the device is cool, not in Low Power Mode, the
@@ -512,6 +557,19 @@ public actor MeetingAnalysisPipeline {
                     reviewedTurns: [AnalysisTurn] = [],
                     participants: [String] = [], agenda: String? = nil,
                     progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
+        try await run(meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: timezone,
+                      languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
+                      reviewedTurns: reviewedTurns, participants: participants, agenda: agenda,
+                      liveCaptionEvidence: [], progress: progress)
+    }
+
+    public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String? = nil,
+                    model: VidurModel = .fast,
+                    stopAfterSpeakers: Bool = false,
+                    reviewedTurns: [AnalysisTurn] = [],
+                    participants: [String] = [], agenda: String? = nil,
+                    liveCaptionEvidence: [AnalysisTurn],
+                    progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
         guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Pause it before starting this one.") }
         running = true
         activeMeetingID = meetingID
@@ -535,6 +593,11 @@ public actor MeetingAnalysisPipeline {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
             signature += "|reviewed:\(SHA256.hash(data: try encoder.encode(reviewedTurns)))"
+        }
+        if !liveCaptionEvidence.isEmpty {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            signature += "|live-evidence:\(SHA256.hash(data: try encoder.encode(liveCaptionEvidence)))"
         }
         let checkpointURL = try self.checkpointURL(meetingID)
         var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature,
@@ -560,6 +623,11 @@ public actor MeetingAnalysisPipeline {
             checkpoint.turns = Self.splitTurns(try await transcribeReusingPreparedWindows(
                 meetingID: meetingID, audio: audio, duration: duration, profile: profiles[0],
                 languageCode: languageCode, participants: participants, agenda: agenda))
+            if !liveCaptionEvidence.isEmpty {
+                checkpoint.turns = try await retryCaptionDisagreements(
+                    turns: checkpoint.turns, live: liveCaptionEvidence, audio: audio,
+                    duration: duration, profile: profiles[0])
+            }
             lastStageTimings.transcriptionMs = elapsedMs(started)
             await backend.releaseSpeechEngine()
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }

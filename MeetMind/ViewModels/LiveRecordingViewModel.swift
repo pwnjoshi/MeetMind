@@ -945,9 +945,12 @@ public final class LiveRecordingViewModel {
 
     private func persistStoppedRecording(_ url: URL) throws {
         guard let meeting else { return }
-        let evidence = liveTranscriptChunks.flatMap(\.segments).filter {
-            $0.startTime.isFinite && $0.duration.isFinite &&
-                $0.startTime >= 0 && $0.duration > 0 && $0.endTime <= elapsedDuration
+        let evidence = liveTranscriptChunks.compactMap { chunk -> LiveTranscriptSegment? in
+            guard chunk.isFinal, let first = chunk.segments.first, let last = chunk.segments.last,
+                  first.startTime.isFinite, last.endTime.isFinite,
+                  first.startTime >= 0, last.endTime > first.startTime, last.endTime <= elapsedDuration else { return nil }
+            return LiveTranscriptSegment(text: chunk.text, startTime: first.startTime,
+                                         duration: last.endTime - first.startTime)
         }
         meeting.liveCaptionEvidenceData = evidence.isEmpty ? nil : try? JSONEncoder().encode(evidence)
         meeting.setAudioFileURL(url)

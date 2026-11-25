@@ -19,6 +19,10 @@ public protocol AnalysisPipelineRunning: Sendable {
              model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
              participants: [String], agenda: String?,
              progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint
+    func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String?,
+             model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
+             participants: [String], agenda: String?, liveCaptionEvidence: [AnalysisTurn],
+             progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint
     func savedCheckpoint(meetingID: UUID) async -> MeetingAnalysisCheckpoint?
     func speakerWarning() async -> String?
     func analysisReuseCounts() async -> (reused: Int, analyzed: Int)
@@ -30,6 +34,15 @@ extension AnalysisPipelineRunning {
     public func stageTimings() async -> AnalysisStageTimings { AnalysisStageTimings() }
     public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { (0, 0) }
     public func analysisFallbackSummary() async -> (chunks: Int, reason: String?) { (0, nil) }
+
+    public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String?,
+                    model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
+                    participants: [String], agenda: String?, liveCaptionEvidence: [AnalysisTurn],
+                    progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
+        try await run(meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: timezone,
+                      languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
+                      reviewedTurns: reviewedTurns, participants: participants, agenda: agenda, progress: progress)
+    }
 
     /// Conformers that predate participant/agenda context still work; the
     /// extra context only improves owner resolution in the real pipeline.
@@ -216,6 +229,12 @@ public final class AnalysisCoordinator {
             AnalysisTurn(id: $0.id.uuidString, text: $0.text, start: $0.startTime,
                          end: $0.endTime, speaker: $0.speaker?.recordingVoiceLabel ?? $0.speaker?.name)
         } : []
+        let liveEvidence = meeting.liveCaptionEvidenceData
+            .flatMap { try? JSONDecoder().decode([LiveTranscriptSegment].self, from: $0) } ?? []
+        let liveCaptionEvidence = liveEvidence.enumerated().map { index, phrase in
+            AnalysisTurn(id: "live-caption-\(index)", text: phrase.text,
+                         start: phrase.startTime, end: phrase.endTime, speaker: nil)
+        }
         do {
             let runStarted = Date()
             OfflineProcessingGate.begin()
@@ -226,7 +245,7 @@ public final class AnalysisCoordinator {
                 languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
                 reviewedTurns: reviewedTurns,
                 participants: meeting.namedAttendees.map(\.name),
-                agenda: meeting.agendaText) { [weak self] stage in
+                agenda: meeting.agendaText, liveCaptionEvidence: liveCaptionEvidence) { [weak self] stage in
                     await self?.reached(stage, meetingID: meetingID, lease: lease, progress: progress)
                 }
             try Task.checkCancellation()
