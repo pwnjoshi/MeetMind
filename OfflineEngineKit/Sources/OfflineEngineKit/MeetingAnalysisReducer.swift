@@ -349,7 +349,8 @@ public enum MeetingAnalysisReducer {
 
     static func isSummaryContext(_ text: String) -> Bool {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.hasSuffix("?") else { return false }
+        guard !cleaned.isEmpty, !cleaned.hasSuffix("?"), !cleaned.hasSuffix("..."),
+              !cleaned.hasSuffix("…") else { return false }
         let key = clauseKey(cleaned)
         let opening = [" okay so ", " can i get a quick ", " let's get started ", " let's call it a day "]
         return !opening.contains { key.hasPrefix($0) }
