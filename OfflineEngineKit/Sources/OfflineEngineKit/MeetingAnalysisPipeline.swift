@@ -45,6 +45,7 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     /// Document-grade minutes (topics, resolutions, contextual actions, suggested attendees).
     /// Written by the reducer; absent in checkpoints saved by older versions.
     public var minutes: MinutesContent? = nil
+    public var rankedOverviewFacts: [SupportedPoint]? = nil
     /// L2-normalised voice embedding per speaker label, from the diarization clustering. Used only to
     /// recognise known voices on this device. Absent in checkpoints saved by older versions.
     public var speakerEmbeddings: [String: [Float]]? = nil
@@ -780,7 +781,27 @@ public actor MeetingAnalysisPipeline {
                 checkpoint.analyzedChunks = index + 1
                 try save()
             }
-            checkpoint.stage = .completed
+            if let session, !ComputeEnvironment.needsReload(session.placement) {
+            let reduced = MeetingAnalysisReducer.reduce(checkpoint, participants: participants,
+                meetingDate: meetingDate, timeZone: TimeZone(identifier: timezone) ?? .current)
+            let facts = Array(reduced.discussion.filter {
+                MeetingAnalysisReducer.isSummaryContext($0.text) && !HindiText.looksHindi($0.text)
+                    && !$0.evidence.isEmpty && $0.text.utf8.count <= 240
+            }.prefix(10))
+            if facts.count >= 3 {
+                do {
+                    let ranked = try session.rankOverviewFacts(facts.map(\.text))
+                    var seen = Set<Int>()
+                    let selected = ranked.filter { facts.indices.contains($0) && seen.insert($0).inserted }
+                    checkpoint.rankedOverviewFacts = selected.isEmpty ? nil : selected.prefix(3).map { facts[$0] }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    try Task.checkCancellation()
+                }
+            }
+        }
+        checkpoint.stage = .completed
             try save()
             removePreAnalysis(meetingID: meetingID)
         }

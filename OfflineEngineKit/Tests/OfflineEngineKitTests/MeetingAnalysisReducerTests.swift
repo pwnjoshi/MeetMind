@@ -80,6 +80,20 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(Set(reduced.tasks.first?.evidence.map(\.turnID) ?? []), ["t1", "t3"])
     }
 
+    func testOverviewRankingOnlyUsesCurrentGroundedDiscussion() {
+        let lines = ["The mobile prototype now opens offline.", "The budget report shows rising costs."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let points = turns.map { SupportedPoint(text: $0.text, evidence: [SourceEvidence(turnID: $0.id, quote: $0.text)]) }
+        var saved = checkpoint(turns: turns, analysis: [LocalAnalysisResult(discussion: points, decisions: [], tasks: [])])
+        saved.rankedOverviewFacts = [SupportedPoint(text: "The budget was approved.", evidence: points[1].evidence), points[1]]
+        let result = MeetingAnalysisReducer.reduce(saved)
+        XCTAssertTrue(result.executiveSummary.hasPrefix(lines[1]))
+        XCTAssertFalse(result.executiveSummary.contains("approved"))
+        XCTAssertEqual(result.discussion.count, 2)
+    }
+
     func testFutureDecisionIsNotAResolution() {
         let turn = AnalysisTurn(id: "t1", text: "He will make the final decision.", start: 0, end: 3, speaker: nil)
         let point = SupportedPoint(text: "The decision is final.",

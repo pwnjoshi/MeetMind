@@ -7,6 +7,7 @@ protocol MeetingAnalysisSession {
     /// Where this session runs. The pipeline reloads a GPU session on the CPU when the
     /// app moves to the background, and back on the GPU when it returns.
     var placement: ComputePlacement { get }
+    func rankOverviewFacts(_ facts: [String]) throws -> [Int]
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult
     /// Participant names and the agenda are untrusted prompt context. Conformers that
@@ -18,6 +19,8 @@ protocol MeetingAnalysisSession {
 }
 
 extension MeetingAnalysisSession {
+    func rankOverviewFacts(_ facts: [String]) throws -> [Int] { [] }
+
     var placement: ComputePlacement { .independent }
 
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?,

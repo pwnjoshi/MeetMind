@@ -152,9 +152,15 @@ public enum MeetingAnalysisReducer {
         tasks = mergeTasks(tasks, with: floorTasks, order: turnOrder)
         tasks = Array(reconcileExplicitTransfers(tasks, order: turnOrder).prefix(24))
 
-        var executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
+        let ranked = (checkpoint.rankedOverviewFacts ?? []).filter { fact in
+            discussion.contains { candidate in
+                candidate.text == fact.text && candidate.evidence.elementsEqual(fact.evidence) { $0.turnID == $1.turnID && $0.quote == $1.quote }
+            }
+        }
+        let overviewDiscussion = ranked.isEmpty ? discussion : ranked
+        var executiveSummary = composeExecutiveSummary(discussion: overviewDiscussion, decisions: decisions)
         let minutes = MinutesBuilder.build(MinutesBuilder.Input(
-            turns: checkpoint.turns, hindi: hindi, decisions: decisions, discussion: discussion, openIssues: openIssues, tasks: tasks,
+            turns: checkpoint.turns, hindi: hindi, decisions: decisions, discussion: overviewDiscussion, openIssues: openIssues, tasks: tasks,
             participants: participants, speakerNames: speakerNames, meetingDate: meetingDate, timeZone: timeZone))
         if !minutes.executiveSummary.isEmpty { executiveSummary = minutes.executiveSummary }
         // The deterministic path is primary whenever it found structure, for any script. Model discussion
