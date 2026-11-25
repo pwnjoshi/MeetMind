@@ -63,6 +63,16 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     /// revisions are not comparable.
     public var speakerEmbeddingModel: String? = nil
 
+    func excludingUnresolvedCaptions(from turns: [AnalysisTurn]) -> [AnalysisTurn] {
+        let unresolved = (transcriptCorrections ?? []).filter { $0.replacement == nil }
+        return turns.map { turn in
+            guard unresolved.contains(where: {
+                $0.start == turn.start && $0.end == turn.end && $0.original.contains(turn.text)
+            }) else { return turn }
+            return AnalysisTurn(id: turn.id, text: "", start: turn.start, end: turn.end, speaker: turn.speaker)
+        }
+    }
+
     public init(sourceSignature: String, stage: MeetingAnalysisStage, turns: [AnalysisTurn],
                 speakers: [SpeakerSpan], analysis: [LocalAnalysisResult], analyzedChunks: Int,
                 chunkTurnIDs: [[String]]? = nil, minutes: MinutesContent? = nil,
@@ -119,7 +129,7 @@ public actor MeetingAnalysisPipeline {
     private var preAnalyzing = false
     public static let analysisModelID = "qwen-1.7b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
-    public static let checkpointFormatVersion = "asr-caption-review-v7"
+    public static let checkpointFormatVersion = "asr-caption-review-v8"
     private static let modelConfiguration = LocalModelConfiguration.compact
     static let analysisChunkBytes = 1800
 
@@ -851,18 +861,21 @@ public actor MeetingAnalysisPipeline {
         for index in checkpoint.analyzedChunks..<chunks.count {
             try checkConditions()
             if discardActiveCheckpoint { throw CancellationError() }
+            let chunk = checkpoint.excludingUnresolvedCaptions(from: chunks[index])
             let result: LocalAnalysisResult
-            if let cached = preAnalyzed[RecordingReuse.chunkKey(chunks[index])],
-               (try? cached.validate(against: chunks[index])) != nil {
+            if chunk.allSatisfy({ $0.text.isEmpty }) {
+                result = LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
+            } else if let cached = preAnalyzed[RecordingReuse.chunkKey(chunk)],
+               (try? cached.validate(against: chunk)) != nil {
                 // Identical turn IDs and texts were analyzed during recording.
-                result = cached.sanitized(against: chunks[index])
+                result = cached.sanitized(against: chunk)
                 lastAnalysisReuse.reused += 1
             } else {
                 do {
                     let chunkStarted = Date()
-                    let raw = try analyzeChunk(chunks[index])
+                    let raw = try analyzeChunk(chunk)
                     lastStageTimings.chunkMs.append(elapsedMs(chunkStarted))
-                    result = raw.sanitized(against: chunks[index])
+                    result = raw.sanitized(against: chunk)
                     lastAnalysisReuse.analyzed += 1
                 } catch is CancellationError {
                     throw CancellationError()

@@ -30,14 +30,7 @@ public enum MeetingAnalysisReducer {
     public static func reduce(_ checkpoint: MeetingAnalysisCheckpoint, participants: [String] = [],
                               speakerNames: [String: String] = [:], meetingDate: Date? = nil,
                               timeZone: TimeZone = TimeZone.current) -> ReducedMeetingAnalysis {
-        let unresolved = (checkpoint.transcriptCorrections ?? []).filter { $0.replacement == nil }
-        let verifiedTurns = checkpoint.turns.map { turn in
-            guard unresolved.contains(where: {
-                $0.original == turn.text && $0.start == turn.start && $0.end == turn.end
-            }) else { return turn }
-            // Keep the chronological position without exposing disputed words to extraction.
-            return AnalysisTurn(id: turn.id, text: "", start: turn.start, end: turn.end, speaker: turn.speaker)
-        }
+        let verifiedTurns = checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns)
         // A vocative ("Pawan, ...") names the next voice; a self-introduction names the current one.
         let speakerNames = SpeakerNameInference.infer(turns: verifiedTurns, participants: participants,
                                                       speakerNames: speakerNames)

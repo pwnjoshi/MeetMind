@@ -151,6 +151,9 @@ final class MeetingAnalysisReducerTests: XCTestCase {
             analysis: [LocalAnalysisResult(discussion: [point], decisions: [point], tasks: [])])
         saved.transcriptCorrections = [TranscriptCorrection(original: original,
             alternative: "We did not agree to publish the report today.", replacement: nil, start: 0, end: 3)]
+        let input = saved.excludingUnresolvedCaptions(from: saved.turns)
+        XCTAssertEqual(input.map(\.text), ["", next.text])
+        XCTAssertEqual(input.map(\.id), saved.turns.map(\.id))
         let result = MeetingAnalysisReducer.reduce(saved, participants: ["Maya"])
         XCTAssertTrue(result.decisions.isEmpty)
         XCTAssertFalse(result.executiveSummary.contains("publish"))
