@@ -235,11 +235,13 @@ public final class AnalysisCoordinator {
             AnalysisTurn(id: "live-caption-\(index)", text: phrase.text,
                          start: phrase.startTime, end: phrase.endTime, speaker: nil)
         }
+        let pendingCorrections = reviewedTurns.isEmpty ? nil : Self.unreviewedCorrections(
+            from: meeting.offlineAnalysisData, segments: existing)
         do {
             let runStarted = Date()
             OfflineProcessingGate.begin()
             defer { OfflineProcessingGate.end() }
-            let result = try await pipeline.run(meetingID: meetingID, audio: audio,
+            var result = try await pipeline.run(meetingID: meetingID, audio: audio,
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
                 timezone: meeting.analysisTimezone ?? TimeZone.current.identifier,
                 languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
@@ -249,6 +251,9 @@ public final class AnalysisCoordinator {
                     await self?.reached(stage, meetingID: meetingID, lease: lease, progress: progress)
                 }
             try Task.checkCancellation()
+            if !reviewedTurns.isEmpty {
+                result.transcriptCorrections = pendingCorrections
+            }
             if reviewedTurns.isEmpty {
                 // Known voices are named before the transcript is rebuilt, so the names carry through.
                 await SpeakerVoiceNaming.apply(result, to: meeting, context: context)
@@ -256,6 +261,9 @@ public final class AnalysisCoordinator {
             }
             let warning = await pipeline.speakerWarning()
             if stopAfterSpeakers {
+                if result.transcriptCorrections?.isEmpty == false {
+                    meeting.offlineAnalysisData = try JSONEncoder().encode(result.withoutVoiceEmbeddings())
+                }
                 meeting.analysisState = "speakerReview"
                 try context.save()
                 try await jobs.transition(lease, state: .speakerReview, stage: .speakers, warning: warning)
@@ -386,6 +394,16 @@ public final class AnalysisCoordinator {
     }
 
     /// The minutes text derived from a completed checkpoint, shared by the final pass and repairs.
+    private static func unreviewedCorrections(from data: Data?, segments: [TranscriptSegment]) -> [TranscriptCorrection]? {
+        let edited = segments.filter(\.isEdited)
+        let checkpoint = data.flatMap { try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: $0) }
+        return checkpoint?.transcriptCorrections?.filter { correction in
+                !edited.contains {
+                    abs($0.startTime - correction.start) < 0.01 && abs($0.endTime - correction.end) < 0.01
+                }
+            }
+    }
+
     private func minutesFields(_ result: MeetingAnalysisCheckpoint, for meeting: Meeting)
         -> (reduced: ReducedMeetingAnalysis, overview: String, points: [String], decisions: [String], topicAgenda: String) {
         let speakerNames = MeetingSpeakerNames(meeting: meeting, store: MeetingRecordStore.shared).assignedLabels
