@@ -284,12 +284,45 @@ final class CaptionLanguageHub: @unchecked Sendable {
         return result
     }
 
-    private func emit(_ unit: Unit) {
-        let alternatives = candidates(for: unit)
-        let english = (unit.taken[.english] ?? []).isEmpty ? [] : alternatives[.english] ?? []
-        let hindi = (unit.taken[.hindi] ?? []).isEmpty ? [] : alternatives[.hindi] ?? []
-        let decision = arbiter.decide(english: english, hindi: hindi)
-        let winner = decision.language == .english ? english : hindi.map { word in
+    /// Replace a consecutive Hindi-script rendering of an English clause only
+    /// when timestamps and multiple neighboring word matches support the swap.
+    static func mixedClause(english: [CaptionWord], hindi: [CaptionWord]) -> [CaptionWord]? {
+        let boundaries = hindi.indices.filter { LiveCaptionLexicon.hindiFunctionWords.contains(hindi[$0].comparisonKey) }
+        guard boundaries.count >= 2, english.count >= 3 else { return nil }
+        var result: [CaptionWord] = []
+        var cursor = 0
+        var switched = false
+        for (left, right) in zip(boundaries, boundaries.dropFirst()) where right - left >= 4 {
+            let span = (left + 1)..<right
+            let original = Array(hindi[span])
+            guard let first = original.first, let last = original.last else { continue }
+            let replacement = english.filter {
+                let midpoint = ($0.start + $0.end) / 2
+                return midpoint >= first.start && midpoint <= last.end && $0.confidence >= 0.75
+            }
+            guard replacement.count >= 3,
+                  let englishStart = replacement.first?.start, let englishEnd = replacement.last?.end,
+                  abs(englishStart - first.start) <= 0.35, abs(englishEnd - last.end) <= 0.35 else { continue }
+            let englishKeys = replacement.map(\.comparisonKey)
+            let englishEvidence = LiveCaptionLanguageArbiter.evidence(english: replacement, hindi: [])
+            guard englishEvidence.englishProbability >= 0.65 else { continue }
+            let anchored = original.filter { word in
+                let skeleton = LiveCaptionLexicon.devanagariSkeleton(word.comparisonKey)
+                return skeleton.count >= 2 && englishKeys.contains { LiveCaptionLexicon.englishSkeleton($0) == skeleton }
+            }
+            guard anchored.count >= 2, anchored.count * 2 >= original.count else { continue }
+            result.append(contentsOf: restoreLoanwords(english: english, hindi: Array(hindi[cursor..<span.lowerBound])))
+            result.append(contentsOf: replacement)
+            cursor = span.upperBound
+            switched = true
+        }
+        guard switched else { return nil }
+        result.append(contentsOf: restoreLoanwords(english: english, hindi: Array(hindi[cursor...])))
+        return result
+    }
+
+    private static func restoreLoanwords(english: [CaptionWord], hindi: [CaptionWord]) -> [CaptionWord] {
+        return hindi.map { word in
             // Keep the Hindi syntax and use the concurrent English spelling
             // only for the same recognized loanword at the same audio time.
             guard LiveCaptionLexicon.englishLoanwords.contains(word.comparisonKey) else { return word }
@@ -306,6 +339,15 @@ final class CaptionLanguageHub: @unchecked Sendable {
             mixed.text.append(contentsOf: word.text.reversed().prefix(while: { $0.isPunctuation }).reversed())
             return mixed
         }
+    }
+
+    private func emit(_ unit: Unit) {
+        let alternatives = candidates(for: unit)
+        let english = (unit.taken[.english] ?? []).isEmpty ? [] : alternatives[.english] ?? []
+        let hindi = (unit.taken[.hindi] ?? []).isEmpty ? [] : alternatives[.hindi] ?? []
+        let decision = arbiter.decide(english: english, hindi: hindi)
+        let mixed = Self.mixedClause(english: english, hindi: hindi)
+        let winner = mixed ?? (decision.language == .english ? english : Self.restoreLoanwords(english: english, hindi: hindi))
         let pending = pendingDecision
         if !winner.isEmpty {
             downstream.commit(winner)

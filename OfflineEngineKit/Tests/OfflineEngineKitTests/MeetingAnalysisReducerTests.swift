@@ -65,6 +65,21 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertTrue(reduced.decisions.isEmpty)
     }
 
+    func testExplicitLaterHandoffKeepsOnlyTheNewOwner() {
+        let turns = [
+            AnalysisTurn(id: "t1", text: "Maya, please send the partner deck by Friday.", start: 0, end: 3, speaker: nil),
+            AnalysisTurn(id: "t2", text: "The launch can wait.", start: 10, end: 12, speaker: nil),
+            AnalysisTurn(id: "t3", text: "Rahul will send the partner deck instead.", start: 19, end: 22, speaker: nil)
+        ]
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []),
+                                                    participants: ["Maya", "Rahul"])
+        XCTAssertEqual(reduced.tasks.count, 1)
+        XCTAssertEqual(reduced.tasks.first?.owner, "Rahul")
+        XCTAssertEqual(reduced.tasks.first?.title, "Send the partner deck")
+        XCTAssertNil(reduced.tasks.first?.deadlineText)
+        XCTAssertEqual(Set(reduced.tasks.first?.evidence.map(\.turnID) ?? []), ["t1", "t3"])
+    }
+
     func testFutureDecisionIsNotAResolution() {
         let turn = AnalysisTurn(id: "t1", text: "He will make the final decision.", start: 0, end: 3, speaker: nil)
         let point = SupportedPoint(text: "The decision is final.",

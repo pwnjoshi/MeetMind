@@ -150,7 +150,7 @@ public enum MeetingAnalysisReducer {
         }
         var tasks = deduplicateTasks(modelTasks, order: turnOrder)
         tasks = mergeTasks(tasks, with: floorTasks, order: turnOrder)
-        tasks = Array(tasks.prefix(24))
+        tasks = Array(reconcileExplicitTransfers(tasks, order: turnOrder).prefix(24))
 
         var executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
         let minutes = MinutesBuilder.build(MinutesBuilder.Input(
@@ -401,6 +401,46 @@ public enum MeetingAnalysisReducer {
             } else {
                 result.append(task)
             }
+        }
+        return result
+    }
+
+    /// Resolve an explicit later handoff when exactly one earlier action has
+    /// the same verb and deliverable. Keep both quotes for review.
+    private static func reconcileExplicitTransfers(
+        _ tasks: [SuggestedTask], order: [String: Int]
+    ) -> [SuggestedTask] {
+        func position(_ task: SuggestedTask) -> Int {
+            task.evidence.compactMap { order[$0.turnID] }.min() ?? Int.max
+        }
+        let chronological = tasks.enumerated().sorted { lhs, rhs in
+            let left = position(lhs.element), right = position(rhs.element)
+            return left == right ? lhs.offset < rhs.offset : left < right
+        }
+        var result: [SuggestedTask] = []
+        for (_, task) in chronological {
+            let explicitTransfer = task.evidence.contains { clauseKey($0.quote).hasSuffix(" instead ") }
+            guard explicitTransfer, let owner = task.owner else {
+                result.append(task)
+                continue
+            }
+            let title = task.title.replacingOccurrences(of: #"(?i)[,\s]+instead[.!?]*$"#, with: "", options: .regularExpression)
+            let deliverable = verbAndObject(title)
+            let related = result.indices.filter { index in
+                let earlier = result[index]
+                guard let previousOwner = earlier.owner, normalize(previousOwner) != normalize(owner),
+                      position(earlier) < position(task) else { return false }
+                let previous = verbAndObject(earlier.title)
+                return !deliverable.verb.isEmpty && !deliverable.object.isEmpty
+                    && previous.verb == deliverable.verb && previous.object == deliverable.object
+            }
+            guard related.count == 1, let index = related.first else {
+                result.append(task)
+                continue
+            }
+            result[index] = SuggestedTask(title: title, category: task.category, owner: owner,
+                deadlineText: task.deadlineText, priority: task.priority,
+                evidence: uniqueEvidence(task.evidence + result[index].evidence))
         }
         return result
     }

@@ -237,6 +237,16 @@ final class LiveCaptionLanguageArbiterTests: XCTestCase {
         XCTAssertEqual(sink.commits.count, 1)
     }
 
+    func testAlignedEnglishClauseCanReplaceWordsInsideAHindiPhrase() {
+        let hindi = words("मैं प्लीज सेंड प्रोजेक्ट रिपोर्ट फिर", confidence: 0.92, start: 0, end: 6)
+        let english = words("please send project report", confidence: 0.94, start: 1, end: 5)
+        let mixed = CaptionLanguageHub.mixedClause(english: english, hindi: hindi)
+        XCTAssertEqual(mixed?.map(\.text), ["मैं", "please", "send", "project", "report", "फिर"])
+
+        let shifted = english.map { $0.shifted(by: 0.8) }
+        XCTAssertNil(CaptionLanguageHub.mixedClause(english: shifted, hindi: hindi))
+    }
+
     func test_hubUsesStrongerHindiFinalWhenEnglishFinishesFirst() {
         let sink = RecordingSink()
         let hub = CaptionLanguageHub(downstream: sink)
