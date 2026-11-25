@@ -275,9 +275,9 @@ enum LocalSpeech {
         }
         var languages = SpeechLanguageResolver.resolve(evidence, previous: memory?.code)
 
-        for index in passes.indices where !passes[index].turns.isEmpty {
+        for index in passes.indices {
             var target = languages[index]
-            var redo = SpeechLanguageResolver.needsRedecode(used: passes[index].used, chosen: target)
+            var redo = passes[index].turns.isEmpty || SpeechLanguageResolver.needsRedecode(used: passes[index].used, chosen: target)
             if !redo {
                 let text = passes[index].turns.map { $0.text }.joined(separator: " ")
                 if SpeechLanguageResolver.scriptContradicts(language: target, text: text) {
@@ -289,16 +289,47 @@ enum LocalSpeech {
             guard redo else { continue }
             try Task.checkCancellation()
             let region = passes[index].region
-            let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, startTime: region.start,
-                                                                   endTime: region.end)
+            let original = passes[index]
             let started = Date()
-            let again = try await decodeRegion(engine: engine, samples: samples, language: target,
-                prompt: promptTokens(engine: engine, vocabulary: vocabulary, languageCode: target))
+            let prompt = promptTokens(engine: engine, vocabulary: vocabulary, languageCode: target)
+            let ranges: [SpeechRegion]
+            if original.turns.isEmpty, region.duration > 10 {
+                // A region that returned nothing may contain several quiet or
+                // code-switched phrases. Decode shorter windows before dropping it.
+                let count = Int(ceil(region.duration / 8))
+                let length = region.duration / Double(count)
+                ranges = (0..<count).map { offset in
+                    SpeechRegion(start: region.start + Double(offset) * length,
+                                 end: region.start + Double(offset + 1) * length)
+                }
+            } else {
+                ranges = [region]
+            }
+            var recovered: [AnalysisTurn] = []
+            var confidence: Float?
+            for range in ranges {
+                try Task.checkCancellation()
+                let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, startTime: range.start,
+                                                                       endTime: range.end)
+                guard samples.count >= minimumRegionSamples else { continue }
+                let retry = try await decodeRegion(engine: engine, samples: samples, language: target, prompt: prompt)
+                confidence = retry.confidence
+                stats.redecodes += 1
+                for turn in retry.turns {
+                    let moved = SpeechRegionPlanner.shifted(start: turn.start, end: turn.end,
+                        by: range.start - region.start, limit: range.duration)
+                    guard moved.end > moved.start else { continue }
+                    recovered.append(AnalysisTurn(id: turn.id, text: turn.text, start: moved.start,
+                                                  end: moved.end, speaker: nil))
+                }
+            }
             stats.decodeSeconds += Date().timeIntervalSince(started)
-            stats.redecodes += 1
-            if !again.turns.isEmpty {
-                passes[index].turns = again.turns
+            if !recovered.isEmpty,
+               original.turns.isEmpty || (confidence ?? 0) >= (original.confidence ?? 0) - 0.05 {
+                passes[index].turns = recovered
                 passes[index].used = target
+            } else {
+                languages[index] = original.used ?? target
             }
         }
 
@@ -311,6 +342,7 @@ enum LocalSpeech {
             for turn in pass.turns {
                 let moved = SpeechRegionPlanner.shifted(start: turn.start, end: turn.end, by: pass.region.start,
                                                         limit: pass.region.duration)
+                guard moved.end > moved.start else { continue }
                 turns.append(AnalysisTurn(id: "t\(turns.count + 1)", text: turn.text,
                                           start: moved.start, end: moved.end, speaker: nil))
             }
@@ -365,8 +397,7 @@ enum LocalSpeech {
         for segment in results.flatMap(\.segments) {
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
-            turns.append(AnalysisTurn(id: "r\(turns.count + 1)", text: segment.text,
-                                      start: Double(segment.start), end: Double(segment.end), speaker: nil))
+            turns.append(contentsOf: phraseTurns(segment, firstIndex: turns.count))
             logprobs.append((Double(segment.avgLogprob), Double(segment.end - segment.start)))
         }
         let detected = turns.isEmpty ? nil : results.first?.language
@@ -422,11 +453,43 @@ enum LocalSpeech {
             callback: { _ in !Task.isCancelled })
         var turns: [AnalysisTurn] = []
         for segment in results.flatMap(\.segments) {
-            turns.append(AnalysisTurn(id: "t\(turns.count + 1)", text: segment.text,
-                start: Double(segment.start), end: Double(segment.end), speaker: nil))
+            turns.append(contentsOf: phraseTurns(segment, firstIndex: turns.count))
         }
         return (turns, results.first?.language)
     }
+    /// Keep short replies and pauses independently timestamped for speaker matching.
+    /// Fall back to the original segment if alignment omits or changes any words.
+    private static func phraseTurns(_ segment: TranscriptionSegment, firstIndex: Int) -> [AnalysisTurn] {
+        func turn(_ text: String, start: Float, end: Float, offset: Int) -> AnalysisTurn {
+            AnalysisTurn(id: "t\(firstIndex + offset + 1)", text: text,
+                         start: Double(start), end: Double(end), speaker: nil)
+        }
+        let original = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = [turn(original, start: segment.start, end: segment.end, offset: 0)]
+        guard let words = segment.words, words.count > 1,
+              words.map(\.word).joined().split(whereSeparator: \.isWhitespace)
+                == original.split(whereSeparator: \.isWhitespace) else { return fallback }
+        var result: [AnalysisTurn] = []
+        var group: [WordTiming] = []
+        func flush() {
+            guard let first = group.first, let last = group.last else { return }
+            let text = group.map(\.word).joined().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                result.append(turn(text, start: first.start, end: last.end, offset: result.count))
+            }
+            group.removeAll(keepingCapacity: true)
+        }
+        for word in words {
+            if let previous = group.last,
+               word.start - previous.end >= 0.3 || previous.word.last.map({ ".?!।".contains($0) }) == true {
+                flush()
+            }
+            group.append(word)
+        }
+        flush()
+        return result.isEmpty ? fallback : result
+    }
+
     static func diarize(audio: URL, folder: URL, expectedSpeakers: Int? = nil) async throws -> [SpeakerSpan] {
         try await diarizeWithEmbeddings(audio: audio, folder: folder, expectedSpeakers: expectedSpeakers).spans
     }

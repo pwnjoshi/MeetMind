@@ -36,30 +36,37 @@ public enum MeetingAnalysisReducer {
         let context = ExtractionContext(participants: participants, speakerNames: speakerNames)
         let grounding = Grounding(turns: checkpoint.turns)
         let hindi = HindiMeetingExtractor.analyze(checkpoint.turns, context: context)
-        let generatedDiscussion = checkpoint.analysis.flatMap(\.discussion)
-        let generatedDecisions = checkpoint.analysis.flatMap(\.decisions)
-        let generatedOpenIssues = checkpoint.analysis.flatMap(\.openIssues)
-        let generatedTasks = checkpoint.analysis.flatMap(\.tasks)
+        let verifiedAnalysis = checkpoint.analysis.map { $0.sanitized(against: checkpoint.turns) }
+        let generatedDiscussion = verifiedAnalysis.flatMap(\.discussion)
+        let generatedDecisions = verifiedAnalysis.flatMap(\.decisions)
+        let generatedOpenIssues = verifiedAnalysis.flatMap(\.openIssues)
+        let generatedTasks = verifiedAnalysis.flatMap(\.tasks)
 
-        // A sentence that says something is undecided can never support a
-        // decision. Model output grounded only in such a sentence is demoted.
-        var openCandidates = generatedOpenIssues.compactMap(cleanedPoint)
+        // A decision needs evidence of an actual resolution. Prefer the
+        // transcript extractor's wording when it found the same decision.
+        var openCandidates = generatedOpenIssues.compactMap(cleanedPoint).filter {
+            hasRelevantEvidence($0, grounding) && isUndecidedPoint($0, grounding)
+        }
+        let deterministicDecisions = explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi)
+        let decisionSources = sentenceKeys(deterministicDecisions.flatMap(\.evidence), grounding)
         // Deterministic requests and commitments found in the transcript itself.
         let floorTasks = ActionExtractor.tasks(in: checkpoint.turns, context: context, hindi: hindi)
         let requestSentences = Set(floorTasks.compactMap { $0.evidence.first }.map { normalize($0.quote) })
         var decisionCandidates: [SupportedPoint] = []
         for point in generatedDecisions.compactMap(cleanedPoint) {
-            if isUndecidedPoint(point, grounding) {
-                openCandidates.append(point)
-            } else if isRequestOnly(point, grounding, requestSentences) {
-                // A "decision" whose only support is an assignment sentence is a task.
+            if isUndecidedPoint(point, grounding) || isRequestOnly(point, grounding, requestSentences) {
                 continue
-            } else {
+            } else if focusKeys(point, grounding).isDisjoint(with: decisionSources),
+                      focus(for: point.text, evidence: point.evidence, grounding).sentences.contains(where: DecisionExtractor.isDecision),
+                      hasRelevantEvidence(point, grounding) {
                 decisionCandidates.append(englishPoint(point))
             }
         }
         var discussionCandidates: [SupportedPoint] = []
         for point in generatedDiscussion.compactMap(cleanedPoint) {
+            guard hasRelevantEvidence(point, grounding) else { continue }
+            let cited = focus(for: point.text, evidence: point.evidence, grounding).sentences
+            if DecisionExtractor.isDecision(point.text), !cited.contains(where: DecisionExtractor.isDecision) { continue }
             if isUndecidedPoint(point, grounding) { openCandidates.append(point) } else { discussionCandidates.append(point) }
         }
         // An explicit "not decided" or "pending" wins over a model claim that the same matter was settled.
@@ -70,7 +77,6 @@ public enum MeetingAnalysisReducer {
         discussionCandidates = discussionCandidates.filter { !claimsOpenMatterSettled($0, openSubjects, requireClaim: true) }
 
         var decisions = deduplicatePoints(decisionCandidates)
-        let deterministicDecisions = explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi)
         // In a Devanagari transcript the model's decision and the grammar's decision about the same subject are
         // one decision, written with the grammar's wording.
         decisions = hindi.hasDevanagari
@@ -92,27 +98,40 @@ public enum MeetingAnalysisReducer {
         decisions = Array(decisions.prefix(12))
         openIssues = Array(openIssues.prefix(12))
 
-        let speakerLabels = Set(checkpoint.turns.compactMap(\.speaker).map { normalize($0) })
         var turnOrder: [String: Int] = [:]
         for (index, turn) in checkpoint.turns.enumerated() where turnOrder[turn.id] == nil { turnOrder[turn.id] = index }
         // A sentence that settles or defers a matter is a decision or an open issue, never also a task.
         let settledSentences: Set<String> = hindi.hasDevanagari
             ? sentenceKeys(decisions.flatMap { $0.evidence } + openIssues.flatMap { $0.evidence }, grounding)
             : []
-        let taskSource = TaskGrounding.source(turns: checkpoint.turns, participants: participants, speakerNames: speakerNames)
         let openMatters = openSubjectSets(openIssues)
         var modelTasks: [SuggestedTask] = []
         for generated in generatedTasks {
             guard let cleaned = cleanedTask(generated) else { continue }
-            let resolved = withResolvedOwner(cleaned, speakerLabels: speakerLabels, speakerNames: speakerNames)
-            // The owner and the deadline must come from the turns the task cites, not from a neighbouring task.
-            let anchored = TaskGrounding.anchored(resolved, taskSource)
-            guard isGroundedCommitment(anchored, grounding) else { continue }
-            guard !ActionExtractor.isRefusedRequest(evidence: anchored.evidence, in: checkpoint.turns) else { continue }
-            guard !overlapsSettled(anchored, settledSentences, grounding) else { continue }
-            guard !isNonActionTask(anchored, grounding, openMatters) else { continue }
-            guard !contradictsFloor(anchored, floorTasks, taskSource, turnOrder) else { continue }
-            modelTasks.append(englishTask(anchored))
+            let focused = focus(for: cleaned.title, evidence: cleaned.evidence, grounding)
+            let citedIDs = Set(cleaned.evidence.map(\.turnID))
+            let sourceKeys = Set(focused.sentences.map(normalize))
+            let extracted = floorTasks.filter { task in
+                let shared = task.evidence.filter { citedIDs.contains($0.turnID) }
+                return !sourceKeys.isDisjoint(with: sentenceKeys(shared, grounding))
+            }
+            let citedWords = Set(focused.sentences.flatMap { stems(HindiText.englishPhrase($0)) })
+            let actionObjects = Set(verbAndObject(cleaned.title).object.map(stem))
+            // The transcript extractor supplies assignments when it identifies the
+            // actual assignee, including reviewed speakers and accepted requests.
+            let deadline = TaskGrounding.verifiedDeadline(cleaned.deadlineText, in: focused.sentences)
+            let candidate = SuggestedTask(title: cleaned.title, category: cleaned.category, owner: nil,
+                                         deadlineText: deadline, priority: cleaned.priority, evidence: cleaned.evidence)
+            guard focused.matched, !actionObjects.isDisjoint(with: citedWords),
+                  TaskGrounding.claimDetailsMatch(cleaned.title, cited: focused.sentences),
+                  !extracted.contains(where: { sameTask(candidate, $0, order: turnOrder) }),
+                  !extracted.isEmpty || hasExplicitRequest(focused.sentences) || hasHindiRequestOrPromise(focused.sentences)
+            else { continue }
+            guard isGroundedCommitment(candidate, grounding) else { continue }
+            guard !ActionExtractor.isRefusedRequest(evidence: candidate.evidence, in: checkpoint.turns) else { continue }
+            guard !overlapsSettled(candidate, settledSentences, grounding) else { continue }
+            guard !isNonActionTask(candidate, grounding, openMatters) else { continue }
+            modelTasks.append(englishTask(candidate))
         }
         var tasks = deduplicateTasks(modelTasks, order: turnOrder)
         tasks = mergeTasks(tasks, with: floorTasks, order: turnOrder)
@@ -120,15 +139,14 @@ public enum MeetingAnalysisReducer {
 
         var executiveSummary = composeExecutiveSummary(discussion: discussion, decisions: decisions)
         let minutes = MinutesBuilder.build(MinutesBuilder.Input(
-            turns: checkpoint.turns, hindi: hindi, decisions: decisions, openIssues: openIssues, tasks: tasks,
+            turns: checkpoint.turns, hindi: hindi, decisions: decisions, discussion: discussion, openIssues: openIssues, tasks: tasks,
             participants: participants, speakerNames: speakerNames, meetingDate: meetingDate, timeZone: timeZone))
+        if !minutes.executiveSummary.isEmpty { executiveSummary = minutes.executiveSummary }
         // The deterministic path is primary whenever it found structure, for any script. Model discussion
         // that copies the transcript, or is not English, never reaches Discussion or the summary.
         if hindi.isActive {
             let composed = composeMinutes(hindi, minutes: minutes)
-            if !minutes.executiveSummary.isEmpty {
-                executiveSummary = minutes.executiveSummary
-            } else if HindiText.looksHindi(executiveSummary) {
+            if HindiText.looksHindi(executiveSummary) {
                 executiveSummary = hindiFallbackSummary
             }
             var merged = composed
@@ -234,14 +252,6 @@ public enum MeetingAnalysisReducer {
         return compact.range(of: #"^(s|speaker|spk|speaker_)?\d+$"#, options: .regularExpression) != nil
             || compact.range(of: #"^speaker_?\d+$"#, options: .regularExpression) != nil
             || compact.range(of: #"^s\d+$"#, options: .regularExpression) != nil
-    }
-
-    private static func withResolvedOwner(_ task: SuggestedTask, speakerLabels: Set<String>,
-                                          speakerNames: [String: String]) -> SuggestedTask {
-        guard let owner = task.owner, isSpeakerLabel(owner, knownLabels: speakerLabels) else { return task }
-        let mapped = speakerNames.first { normalize($0.key) == normalize(owner) }?.value
-        return SuggestedTask(title: task.title, category: task.category, owner: mapped,
-                             deadlineText: task.deadlineText, priority: task.priority, evidence: task.evidence)
     }
 
     private static func cleanedTask(_ task: SuggestedTask) -> SuggestedTask? {
@@ -756,12 +766,17 @@ public enum MeetingAnalysisReducer {
     private static func focus(for text: String, evidence: [SourceEvidence], _ grounding: Grounding) -> Focus {
         let target = stems(text)
         let all = grounding.sentences(for: evidence)
-        let scores: [Int] = all.map { target.intersection(stems($0)).count }
+        let scores = all.map { target.intersection(stems($0).union(stems(HindiText.englishPhrase($0)))).count }
         let best = scores.max() ?? 0
         guard best > 0 else { return Focus(sentences: all, matched: false, all: all) }
         var supporting: [String] = []
         for (index, sentence) in all.enumerated() where scores[index] == best { supporting.append(sentence) }
         return Focus(sentences: supporting, matched: true, all: all)
+    }
+
+    private static func hasRelevantEvidence(_ point: SupportedPoint, _ grounding: Grounding) -> Bool {
+        let found = focus(for: point.text, evidence: point.evidence, grounding)
+        return found.matched && TaskGrounding.claimDetailsMatch(point.text, cited: found.sentences)
     }
 
     private static func isUndecidedPoint(_ point: SupportedPoint, _ grounding: Grounding) -> Bool {
@@ -960,21 +975,6 @@ public enum MeetingAnalysisReducer {
         for sentence in sentences {
             let lower = sentence.lowercased()
             if cues.contains(where: { lower.contains($0) }) { return true }
-        }
-        return false
-    }
-
-    /// A model task whose owner differs from the owner of the deterministic task for the same object
-    /// in the same or an adjacent turn, and whose owner the cited turns never name, is the model's mistake.
-    private static func contradictsFloor(_ task: SuggestedTask, _ floor: [SuggestedTask],
-                                         _ source: TaskGrounding.Source, _ order: [String: Int]) -> Bool {
-        guard let owner = task.owner else { return false }
-        for other in floor {
-            guard let otherOwner = other.owner else { continue }
-            if TaskGrounding.samePerson(owner, otherOwner) { continue }
-            guard sameObjectNearby(task, other, order: order) else { continue }
-            let text = TaskGrounding.citedText(task.evidence, source)
-            if !TaskGrounding.mentions(owner, in: text) { return true }
         }
         return false
     }

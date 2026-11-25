@@ -32,9 +32,6 @@ final class CaptionLanguageHub: @unchecked Sendable {
         var start: TimeInterval
         var end: TimeInterval
         let language: CaptionSpeechLanguage
-        /// Snapshot of the winning candidate when the first final froze this decision.
-        let words: [CaptionWord]
-        let switched: Bool
         let firstFinalArrival: Date
     }
 
@@ -219,8 +216,8 @@ final class CaptionLanguageHub: @unchecked Sendable {
         return unit
     }
 
-    /// The first final freezes the displayed/committed language for this audio unit. The other
-    /// recognizer's overlapping partial is valid evidence, but later results cannot flip it.
+    /// Hold the preview steady while the alternate recognizer finishes. Choose the
+    /// committed text after the grace window, using both final candidates if available.
     private func lockDecision(for unit: Unit) {
         if let pending = pendingDecision,
            rangesOverlap(pending.start, pending.end, unit.start, unit.end) {
@@ -230,11 +227,9 @@ final class CaptionLanguageHub: @unchecked Sendable {
         }
 
         let candidates = candidates(for: unit)
-        let decision = arbiter.decide(english: candidates[.english] ?? [], hindi: candidates[.hindi] ?? [])
-        let lockedWords = candidates[decision.language] ?? []
+        let language = arbiter.preview(english: candidates[.english] ?? [], hindi: candidates[.hindi] ?? [])
         let arrival = firstArrival(in: unit) ?? Date()
-        pendingDecision = PendingDecision(start: unit.start, end: unit.end, language: decision.language,
-                                          words: lockedWords, switched: decision.switched,
+        pendingDecision = PendingDecision(start: unit.start, end: unit.end, language: language,
                                           firstFinalArrival: arrival)
         // A final is pending, so its previous partial must no longer remain mutable in the UI.
         clearPublishedOpen()
@@ -290,20 +285,33 @@ final class CaptionLanguageHub: @unchecked Sendable {
     }
 
     private func emit(_ unit: Unit) {
-        let candidates = candidates(for: unit)
-        let lock = pendingDecision
-        let preferred = lock?.language ?? .english
-        var winner = candidates[preferred] ?? []
-        if winner.isEmpty {
-            // Do not change languages after the first final. The locked snapshot is safer than
-            // committing a later alternate recognizer's rewrite.
-            winner = lock?.words ?? []
+        let alternatives = candidates(for: unit)
+        let english = (unit.taken[.english] ?? []).isEmpty ? [] : alternatives[.english] ?? []
+        let hindi = (unit.taken[.hindi] ?? []).isEmpty ? [] : alternatives[.hindi] ?? []
+        let decision = arbiter.decide(english: english, hindi: hindi)
+        let winner = decision.language == .english ? english : hindi.map { word in
+            // Keep the Hindi syntax and use the concurrent English spelling
+            // only for the same recognized loanword at the same audio time.
+            guard LiveCaptionLexicon.englishLoanwords.contains(word.comparisonKey) else { return word }
+            let skeleton = LiveCaptionLexicon.devanagariSkeleton(word.comparisonKey)
+            guard skeleton.count >= 3 else { return word }
+            let midpoint = (word.start + word.end) / 2
+            let matches = english.filter {
+                $0.confidence >= 0.75 && $0.start <= midpoint && $0.end >= midpoint
+                    && LiveCaptionLexicon.englishSkeleton($0.comparisonKey) == skeleton
+            }
+            guard matches.count == 1, let match = matches.first else { return word }
+            var mixed = word
+            mixed.text = match.text.trimmingCharacters(in: .punctuationCharacters)
+            mixed.text.append(contentsOf: word.text.reversed().prefix(while: { $0.isPunctuation }).reversed())
+            return mixed
         }
+        let pending = pendingDecision
         if !winner.isEmpty {
             downstream.commit(winner)
             committedPhraseCount += 1
-            if lock?.switched == true { languageSwitchCount += 1 }
-            if let arrival = lock?.firstFinalArrival {
+            if decision.switched { languageSwitchCount += 1 }
+            if let arrival = pending?.firstFinalArrival {
                 totalDecisionDelay += max(0, Date().timeIntervalSince(arrival))
             }
         }

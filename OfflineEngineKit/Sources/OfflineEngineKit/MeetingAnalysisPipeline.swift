@@ -78,6 +78,7 @@ struct PreparedRecordingChunk: Codable, Sendable {
     let contentStartTime: TimeInterval
     let endTime: TimeInterval
     let turns: [AnalysisTurn]
+    var decodeVersion: String? = nil
 }
 
 /// Production orchestration. Downloads are an explicit setup action, never an
@@ -107,7 +108,7 @@ public actor MeetingAnalysisPipeline {
     private var preAnalyzing = false
     public static let analysisModelID = "qwen-1.7b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
-    public static let checkpointFormatVersion = "asr-prefill-v2"
+    public static let checkpointFormatVersion = "asr-phrase-timing-v3"
     private static let modelConfiguration = LocalModelConfiguration.compact
     static let analysisChunkBytes = 1800
 
@@ -205,7 +206,7 @@ public actor MeetingAnalysisPipeline {
         guard !turns.isEmpty else { return false }
         if discardedPreparationMeetingIDs.contains(meetingID) { throw CancellationError() }
         let checkpoint = PreparedRecordingChunk(sequence: sequence, contentStartTime: contentStartTime,
-                                                endTime: endTime, turns: turns)
+                                                endTime: endTime, turns: turns, decodeVersion: Self.checkpointFormatVersion)
         let url = try preparationURL(meetingID: meetingID, sequence: sequence)
         try JSONEncoder().encode(checkpoint).write(to: url,
             options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -235,7 +236,8 @@ public actor MeetingAnalysisPipeline {
         for file in files {
             // A window that cannot be decoded is simply a gap that gets retranscribed.
             if let data = try? Data(contentsOf: file),
-               let window = try? JSONDecoder().decode(PreparedRecordingChunk.self, from: data) { windows.append(window) }
+               let window = try? JSONDecoder().decode(PreparedRecordingChunk.self, from: data),
+               window.decodeVersion == Self.checkpointFormatVersion { windows.append(window) }
         }
         return windows.sorted { $0.sequence < $1.sequence }
     }
@@ -574,10 +576,9 @@ public actor MeetingAnalysisPipeline {
             var voiceEmbeddings: [String: [Float]] = [:]
             do {
                 let folder = try await backend.verifiedFolder(profiles[1])
-                let named = participants.filter { !$0.lowercased().hasPrefix("speaker") && !$0.isEmpty }
-                let expectedVoices: Int? = named.count >= 2 ? named.count : nil
-                let found = try await backend.diarizeWithEmbeddings(audio: audio, folder: folder, expectedSpeakers: expectedVoices)
-                rawSpans = SpeakerClusterMerge.mergeExcess(found.spans, expected: expectedVoices)
+                // An attendee list does not tell us how many voices are audible.
+                let found = try await backend.diarizeWithEmbeddings(audio: audio, folder: folder, expectedSpeakers: nil)
+                rawSpans = found.spans
                 voiceEmbeddings = found.embeddings
             } catch is CancellationError {
                 throw CancellationError()
@@ -585,7 +586,10 @@ public actor MeetingAnalysisPipeline {
                 rawSpans = []
                 lastSpeakerWarning = "Voices could not be separated. Minutes will continue with unnamed speakers."
             }
-            checkpoint.speakers = Self.stabilizeSpeakerSpans(rawSpans)
+            checkpoint.speakers = rawSpans.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
+            if checkpoint.speakers.isEmpty {
+                lastSpeakerWarning = "Voices could not be separated. Review the transcript against the recording."
+            }
             // Keep embeddings only for voices still present after merging and smoothing.
             let presentLabels = Set(checkpoint.speakers.map(\.speaker))
             let keptEmbeddings = voiceEmbeddings.filter { presentLabels.contains($0.key) }
@@ -771,35 +775,6 @@ public actor MeetingAnalysisPipeline {
                 && (ranked.dropFirst().first?.value ?? 0) < duration * 0.2 ? winner?.key : nil
             return AnalysisTurn(id: turn.id, text: turn.text, start: turn.start, end: turn.end, speaker: label)
         }
-    }
-
-    /// Keep a transient clustering glitch from presenting one person as several
-    /// named speakers. We only smooth extremely short label flips and collapse a
-    /// clearly dominant voice; ambiguous multi-person recordings remain reviewable.
-    static func stabilizeSpeakerSpans(_ spans: [SpeakerSpan]) -> [SpeakerSpan] {
-        let ordered = spans.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
-        guard !ordered.isEmpty else { return [] }
-        var stabilized = ordered
-        if stabilized.count >= 3 {
-            for index in 1..<(stabilized.count - 1) {
-                let previous = stabilized[index - 1]
-                let current = stabilized[index]
-                let next = stabilized[index + 1]
-                if current.end - current.start < 1.5, previous.speaker == next.speaker,
-                   previous.end <= current.start + 0.5, current.end <= next.start + 0.5 {
-                    stabilized[index] = SpeakerSpan(speaker: previous.speaker, start: current.start, end: current.end)
-                }
-            }
-        }
-        let totals = stabilized.reduce(into: [String: Double]()) { result, span in
-            result[span.speaker, default: 0] += span.end - span.start
-        }
-        let totalSpeech = totals.values.reduce(0, +)
-        guard totalSpeech > 0, let dominant = totals.max(by: { $0.value < $1.value }) else { return stabilized }
-        // A label covering at least 88% of speech is safer to render as one voice
-        // than to expose short false-positive labels from overlap/noise.
-        guard dominant.value / totalSpeech >= 0.88 else { return stabilized }
-        return stabilized.map { SpeakerSpan(speaker: dominant.key, start: $0.start, end: $0.end) }
     }
 
     /// Bounded Unicode-safe fragments keep even a long uninterrupted speaker

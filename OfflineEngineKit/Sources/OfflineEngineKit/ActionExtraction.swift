@@ -659,7 +659,7 @@ enum DecisionExtractor {
         "let's go with", "lets go with", "we'll go with", "we will go with", "we're going with", "we are going with",
         "i'm going with", "going with", "go ahead with", "going ahead with", "we'll go ahead", "we will go ahead",
         "we decided", "we've decided", "we have decided", "i've decided", "it's decided", "it is decided", "its decided",
-        "it's been decided", "has been decided", "is decided", "decided to", "decided on", "final decision",
+        "it's been decided", "has been decided", "is decided", "decided to", "decided on",
         "is finalized", "is finalised", "was finalized", "was finalised", "we finalized", "we finalised",
         "have finalized", "have finalised", "has been finalized", "has been finalised", "finally decided",
         "finally agreed", "it's final", "it is final", "is final", "are final",

@@ -237,6 +237,15 @@ final class LiveCaptionLanguageArbiterTests: XCTestCase {
         XCTAssertEqual(sink.commits.count, 1)
     }
 
+    func test_hubUsesStrongerHindiFinalWhenEnglishFinishesFirst() {
+        let sink = RecordingSink()
+        let hub = CaptionLanguageHub(downstream: sink)
+        hub.sink(for: .english).commit(words("may call her go", confidence: 0.2, start: 0, end: 2))
+        hub.sink(for: .hindi).commit(words("मैं कल घर जाऊंगा", confidence: 0.95, start: 0, end: 2))
+
+        XCTAssertEqual(sink.commits.map(text), ["मैं कल घर जाऊंगा"])
+    }
+
     func test_hubShowsHindiWhenHindiWasSpoken() {
         let sink = RecordingSink()
         let hub = CaptionLanguageHub(downstream: sink)

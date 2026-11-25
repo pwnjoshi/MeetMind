@@ -378,7 +378,12 @@ public final class AnalysisCoordinator {
         let minutes = reduced.minutes
         var pointSource: [String] = []
         for topic in minutes.topics { pointSource.append(contentsOf: topic.discussion) }
-        if pointSource.isEmpty { pointSource = reduced.discussion.map(\.text) }
+        let structuredEvidence = minutes.topics.flatMap(\.evidence)
+        pointSource.append(contentsOf: reduced.discussion.filter { point in
+            !point.evidence.contains { item in
+                structuredEvidence.contains { $0.turnID == item.turnID && $0.quote == item.quote }
+            }
+        }.map(\.text))
         var decisionSource = minutes.resolutions.map(\.text)
         if decisionSource.isEmpty { decisionSource = reduced.decisions.map(\.text) }
         let overview = minutes.topics.isEmpty || minutes.executiveSummary.isEmpty

@@ -9,6 +9,7 @@ enum MinutesBuilder {
         let turns: [AnalysisTurn]
         let hindi: HindiAnalysis
         let decisions: [SupportedPoint]
+        let discussion: [SupportedPoint]
         let openIssues: [SupportedPoint]
         let tasks: [SuggestedTask]
         let participants: [String]
@@ -200,23 +201,34 @@ enum MinutesBuilder {
     }
 
     static func findRationale(decisionText: String, evidence: [SourceEvidence], turns: [AnalysisTurn],
-                              indexByID: [String: Int], pieces: [[String]]) -> String? {
-        let subject = MinutesComposer.words(decisionText)
+                              indexByID: [String: Int], pieces: [[String]]) -> (text: String, source: SourceEvidence)? {
+        let subject = wordsForRationale(decisionText)
         guard !subject.isEmpty else { return nil }
-        let indices = evidence.compactMap { indexByID[$0.turnID] }
-        guard let low = indices.min(), let high = indices.max() else { return nil }
-        var index = max(0, low - 4)
-        while index <= high && index < turns.count {
-            for piece in pieces[index] {
-                let tokens = HindiText.tokenize(piece)
-                let keys = tokens.map { $0.key }
-                guard !Set(keys).isDisjoint(with: subject) else { continue }
-                if let reason = priceReason(keys) { return reason }
-                if let reason = becauseReason(tokens) { return reason }
+
+        // Prefer a reason actually stated in the decision's own sentence.
+        for item in evidence {
+            let tokens = HindiText.tokenize(item.quote)
+            if let reason = priceReason(tokens.map(\.key)) ?? becauseReason(tokens) {
+                return (reason, item)
             }
-            index += 1
+        }
+
+        // A prior comparison can explain a preference if it names the same
+        // subject. Preserve its quote so readers can distinguish the source.
+        guard let first = evidence.compactMap({ indexByID[$0.turnID] }).min(), first > 0 else { return nil }
+        for index in stride(from: first - 1, through: max(0, first - 4), by: -1) {
+            for piece in pieces[index] {
+                guard turns[index].text.contains(piece),
+                      subject.isSubset(of: wordsForRationale(piece)),
+                      let preference = priceReason(HindiText.tokenize(piece).map(\.key)) else { continue }
+                return (preference, SourceEvidence(turnID: turns[index].id, quote: piece))
+            }
         }
         return nil
+    }
+
+    private static func wordsForRationale(_ text: String) -> Set<String> {
+        MinutesComposer.words(text).subtracting(["go", "with", "choose", "select", "adopt", "use", "the"])
     }
 
     // MARK: - Assembler
@@ -279,15 +291,6 @@ enum MinutesBuilder {
             return drafts.count - 1
         }
 
-        func isNextMeetingMentioned() -> Bool {
-            for turnPieces in pieces {
-                for piece in turnPieces where NextMeetingFinder.isNextMeetingReference(HindiText.tokenize(piece).map { $0.key }) {
-                    return true
-                }
-            }
-            return false
-        }
-
         /// A next-meeting deferral in the same turn after the evidence sentence, or in the first sentence of the next turn.
         func hasDeferral(_ evidence: [SourceEvidence]) -> Bool {
             for item in evidence {
@@ -319,14 +322,12 @@ enum MinutesBuilder {
             let resolutions = buildResolutions()
             let issues = buildOpenIssues()
             addOpinionBullets()
-            let contextWord = launchContextWord()
-            let nextMentioned = isNextMeetingMentioned()
-            let actions = input.tasks.map { buildAction($0, contextWord: contextWord, nextMentioned: nextMentioned) }
+            let actions = input.tasks.map { buildAction($0) }
             let topics = finalizeTopics()
             let attendees = AttendeeSuggester.suggest(turns: input.turns, tasks: input.tasks,
                                                      participants: input.participants, speakerNames: input.speakerNames)
             let next = NextMeetingFinder.find(turns: input.turns, meetingDate: input.meetingDate, timeZone: input.timeZone)
-            let summary = buildSummary(topics: topics, resolutions: resolutions, issues: issues)
+            let summary = buildSummary(topics: topics, issues: issues)
             return MinutesContent(executiveSummary: summary, topics: topics, resolutions: resolutions, actions: actions,
                                   openIssues: issues, suggestedAttendees: attendees, nextMeeting: next)
         }
@@ -335,8 +336,6 @@ enum MinutesBuilder {
 
         func buildResolutions() -> [MinutesResolution] {
             var result: [MinutesResolution] = []
-            let launchContext = drafts.contains { $0.title.lowercased().contains("launch") }
-                || input.decisions.contains { $0.text.lowercased().contains("launch") }
             for decision in input.decisions {
                 let turn = firstTurn(decision.evidence)
                 let hasScript = HindiText.containsDevanagari(decision.text) || HindiText.looksRomanizedHindi(decision.text)
@@ -348,19 +347,22 @@ enum MinutesBuilder {
                 let spoken = MinutesBuilder.shortPhrase(decision.text)
                 let split = MinutesBuilder.splitReason(spoken)
                 let short = split.head
-                let rationale = MinutesBuilder.findRationale(decisionText: short, evidence: decision.evidence,
-                    turns: input.turns, indexByID: indexByID, pieces: pieces) ?? split.reason
+                let explanation = MinutesBuilder.findRationale(decisionText: short, evidence: decision.evidence,
+                    turns: input.turns, indexByID: indexByID, pieces: pieces)
+                let rationale = explanation?.text
+                let evidence = MinutesComposer.unique(decision.evidence + [explanation?.source].compactMap { $0 })
+                let mentionsLaunch = decision.evidence.contains { MinutesComposer.words($0.quote).contains("launch") }
                 let formal = MinutesBuilder.formalResolution(short: short, original: decision.text, rationale: rationale,
-                                                             hasLaunchContext: launchContext)
+                                                             hasLaunchContext: mentionsLaunch)
                 let topic = ensureTopic(text: short, title: MinutesBuilder.topicTitle(fromShort: short), evidence: decision.evidence)
                 drafts[topic].otherTurns.append(contentsOf: turnIndices(decision.evidence))
                 if drafts[topic].outcome == nil {
                     drafts[topic].outcome = MinutesOutcome.resolved(MinutesBuilder.resolvedClause(formal))
-                    drafts[topic].outcomeEvidence = decision.evidence
+                    drafts[topic].outcomeEvidence = evidence
                 }
                 addDecisionBullets(topic: topic, short: short, formal: formal, rationale: rationale, decision: decision)
                 result.append(MinutesResolution(text: formal, rationale: rationale, topic: drafts[topic].title,
-                                                evidence: decision.evidence, timestamp: turn?.start, speaker: speakerName(turn)))
+                                                evidence: evidence, timestamp: turn?.start, speaker: speakerName(turn)))
             }
             return result
         }
@@ -456,30 +458,6 @@ enum MinutesBuilder {
 
         // MARK: Actions
 
-        static let contextWords: Set<String> = ["launch", "release", "rollout", "campaign", "event", "project", "product", "demo", "sprint"]
-        static let contextNouns: [String] = ["presentation", "deck", "slides", "proposal", "plan", "timeline"]
-
-        func launchContextWord() -> String? {
-            for draft in drafts {
-                let first = draft.title.split(separator: " ").first.map { String($0).lowercased() } ?? ""
-                if Assembler.contextWords.contains(first) { return first }
-            }
-            return nil
-        }
-
-        func contextualTitle(_ title: String, contextWord: String?, nextMentioned: Bool) -> String {
-            let lower = title.lowercased()
-            if nextMentioned, lower.contains("agenda"), !lower.contains(" for ") {
-                return title + " for the next meeting"
-            }
-            guard let context = contextWord, !lower.contains(context) else { return title }
-            for noun in Assembler.contextNouns {
-                guard let range = title.range(of: noun, options: .caseInsensitive) else { continue }
-                return String(title[..<range.lowerBound]) + context + " " + String(title[range.lowerBound...])
-            }
-            return title
-        }
-
         func canonicalOwner(_ owner: String?) -> String? {
             guard var name = owner?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
             if SpeakerNameInference.isGenericLabel(name) { return nil }
@@ -488,14 +466,9 @@ enum MinutesBuilder {
             return HindiText.matchParticipant(name, participants: people) ?? name
         }
 
-        func buildAction(_ task: SuggestedTask, contextWord: String?, nextMentioned: Bool) -> MinutesAction {
+        func buildAction(_ task: SuggestedTask) -> MinutesAction {
             let turn = firstTurn(task.evidence)
-            var owner = canonicalOwner(task.owner)
-            if owner == nil, let quote = task.evidence.first?.quote {
-                let keys = HindiText.tokenize(quote).map { $0.key }
-                let firstPerson = keys.contains("main") || keys.contains("mai") || keys.contains("ill") || keys.contains("i")
-                if firstPerson { owner = canonicalOwner(speakerName(turn)) }
-            }
+            let owner = canonicalOwner(task.owner)
             var deadline = task.deadlineText
             var baseTitle = task.title
             // A deadline phrase left inside a model-written title belongs in the deadline, not the title.
@@ -504,18 +477,19 @@ enum MinutesBuilder {
                 let cleaned = MeetingAnalysisReducer.polishedTask(split.text)
                 if MeetingAnalysisReducer.isSubstantive(cleaned) {
                     baseTitle = cleaned
-                    if deadline == nil { deadline = found }
+                    if deadline == nil {
+                        deadline = TaskGrounding.verifiedDeadline(found, in: task.evidence.map(\.quote))
+                    }
                 }
             }
             var due: String?
             if let deadline = deadline {
                 due = DueDateResolver.resolve(deadline, meetingDate: input.meetingDate, timeZone: input.timeZone)
             }
-            let title = contextualTitle(baseTitle, contextWord: contextWord, nextMentioned: nextMentioned)
             let topic = topicIndex(related: task.title).map { drafts[$0].title }
             // The minutes are written in English, so a Devanagari deadline ("फ्राइडे तक") reads "by Friday".
             let shownDeadline = deadline.map { HindiText.containsDevanagari($0) ? MinutesComposer.englishDeadline($0) : $0 }
-            return MinutesAction(title: title, owner: owner, deadlineText: shownDeadline, dueDate: due, topic: topic,
+            return MinutesAction(title: baseTitle, owner: owner, deadlineText: shownDeadline, dueDate: due, topic: topic,
                                  evidence: task.evidence, timestamp: turn?.start, speaker: speakerName(turn))
         }
 
@@ -559,7 +533,7 @@ enum MinutesBuilder {
             return names
         }
 
-        func buildSummary(topics: [MinutesTopic], resolutions: [MinutesResolution], issues: [MinutesOpenIssue]) -> String {
+        func buildSummary(topics: [MinutesTopic], issues: [MinutesOpenIssue]) -> String {
             let titles = topics.prefix(5).map { $0.title }
             var phrases: [String] = []
             for decision in input.decisions where !HindiText.looksHindi(decision.text) {
@@ -569,8 +543,16 @@ enum MinutesBuilder {
             for issue in issues where !HindiText.looksHindi(issue.subject) && issue.subject.count <= 60 {
                 subjects.append(issue.subject)
             }
-            return MinutesComposer.executiveSummary(names: summaryNames(), topics: Array(titles), decisionPhrases: phrases,
-                                                    tasks: input.tasks, openSubjects: subjects)
+            let overview = MinutesComposer.executiveSummary(names: summaryNames(), topics: Array(titles),
+                decisionPhrases: phrases, tasks: input.tasks, openSubjects: subjects)
+            guard titles.isEmpty else { return overview }
+            let context = input.discussion.filter {
+                !HindiText.looksHindi($0.text) && !$0.evidence.isEmpty
+            }.prefix(2).map { point in
+                let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                return text.last.map { ".!?".contains($0) } == true ? text : text + "."
+            }
+            return (Array(context) + [overview]).filter { !$0.isEmpty }.joined(separator: " ")
         }
     }
 }

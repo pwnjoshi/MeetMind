@@ -575,7 +575,8 @@ var words: [String] = []
         func handleDecision(_ rest: [HindiToken], keys: [String], chalo: Bool, evidence: SourceEvidence,
                             turnIndex: Int) -> Bool {
             // "let's go with X"
-            if let go = keys.firstIndex(of: "go"), go + 2 < keys.count, keys[go + 1] == "with" {
+            if DecisionExtractor.isDecision(evidence.quote),
+               let go = keys.firstIndex(of: "go"), go + 2 < keys.count, keys[go + 1] == "with" {
                 let object = Array(rest[(go + 2)...]).filter { !HindiMeetingExtractor.phraseNoise.contains($0.key) || $0.key == "the" }
                 guard !object.isEmpty else { return false }
                 let words = object.map { $0.display }.joined(separator: " ")
@@ -594,7 +595,7 @@ var words: [String] = []
             }
             // "... final hai / final karte hain / tay hua"
             let allowedTail: Set<String> = ["hai", "hain", "ho", "gaya", "gayi", "hua", "karte", "kar", "dete", "lete",
-                                            "karenge", "kiya", "diya", "liya", "hi", "bhi", "to", "chuke", "rahega"]
+                                            "kiya", "diya", "liya", "hi", "bhi", "to", "chuke"]
             let trigger: Set<String> = ["final", "tay", "decide", "decided"]
             for index in 0..<keys.count where trigger.contains(keys[index]) {
                 if keys.contains("nahi") || keys.contains("agar") { return false }
