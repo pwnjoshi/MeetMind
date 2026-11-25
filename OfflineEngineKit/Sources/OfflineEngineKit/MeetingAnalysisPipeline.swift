@@ -34,6 +34,14 @@ public enum MeetingAnalysisStage: String, Codable, Sendable {
     case transcription, speakers, analysis, completed
 }
 
+public struct TranscriptCorrection: Codable, Sendable {
+    public let original: String
+    public let alternative: String
+    public let replacement: String?
+    public let start: Double
+    public let end: Double
+}
+
 public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public let sourceSignature: String
     public var stage: MeetingAnalysisStage
@@ -45,6 +53,7 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     /// Document-grade minutes (topics, resolutions, contextual actions, suggested attendees).
     /// Written by the reducer; absent in checkpoints saved by older versions.
     public var minutes: MinutesContent? = nil
+    public var transcriptCorrections: [TranscriptCorrection]? = nil
     public var rankedOverviewFacts: [SupportedPoint]? = nil
     /// L2-normalised voice embedding per speaker label, from the diarization clustering. Used only to
     /// recognise known voices on this device. Absent in checkpoints saved by older versions.
@@ -109,7 +118,7 @@ public actor MeetingAnalysisPipeline {
     private var preAnalyzing = false
     public static let analysisModelID = "qwen-1.7b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
-    public static let checkpointFormatVersion = "asr-speech-gap-retry-v4"
+    public static let checkpointFormatVersion = "asr-caption-review-v5"
     private static let modelConfiguration = LocalModelConfiguration.compact
     static let analysisChunkBytes = 1800
 
@@ -296,13 +305,14 @@ public actor MeetingAnalysisPipeline {
     /// Only the saved audio retry can confirm the alternate wording.
     private func retryCaptionDisagreements(
         turns: [AnalysisTurn], live: [AnalysisTurn], audio: URL, duration: TimeInterval, profile: ModelProfile
-    ) async throws -> [AnalysisTurn] {
+    ) async throws -> (turns: [AnalysisTurn], corrections: [TranscriptCorrection]) {
         func words(_ text: String) -> [String] {
             text.lowercased().split(whereSeparator: \.isWhitespace).map {
                 $0.trimmingCharacters(in: .punctuationCharacters)
             }
         }
         var revised = turns
+        var corrections: [TranscriptCorrection] = []
         var attempts = 0
         for (index, turn) in turns.enumerated() where attempts < 4 {
             try Task.checkCancellation()
@@ -315,6 +325,11 @@ public actor MeetingAnalysisPipeline {
                   zip(original, alternateWords).filter({ $0.0 != $0.1 }).count == 1 else { continue }
 
             attempts += 1
+            var replacement: String?
+            defer {
+                corrections.append(TranscriptCorrection(original: turn.text, alternative: alternate.text,
+                    replacement: replacement, start: turn.start, end: turn.end))
+            }
             let start = max(0, turn.start - 1)
             let end = min(duration, turn.end + 1)
             do {
@@ -326,6 +341,7 @@ public actor MeetingAnalysisPipeline {
                     abs($0.start + start - turn.start) <= 0.75 && abs($0.end + start - turn.end) <= 0.75
                         && words($0.text) == alternateWords
                 }) else { continue }
+                replacement = confirmed.text
                 revised[index] = AnalysisTurn(id: turn.id, text: confirmed.text,
                     start: turn.start, end: turn.end, speaker: turn.speaker)
             } catch is CancellationError {
@@ -334,7 +350,7 @@ public actor MeetingAnalysisPipeline {
                 try Task.checkCancellation()
             }
         }
-        return revised
+        return (revised, corrections)
     }
 
     /// Analyzes finalized transcript chunks while recording continues, so the
@@ -625,9 +641,11 @@ public actor MeetingAnalysisPipeline {
                 meetingID: meetingID, audio: audio, duration: duration, profile: profiles[0],
                 languageCode: languageCode, participants: participants, agenda: agenda))
             if !liveCaptionEvidence.isEmpty {
-                checkpoint.turns = try await retryCaptionDisagreements(
+                let checked = try await retryCaptionDisagreements(
                     turns: checkpoint.turns, live: liveCaptionEvidence, audio: audio,
                     duration: duration, profile: profiles[0])
+                checkpoint.turns = checked.turns
+                checkpoint.transcriptCorrections = checked.corrections
             }
             lastStageTimings.transcriptionMs = elapsedMs(started)
             await backend.releaseSpeechEngine()

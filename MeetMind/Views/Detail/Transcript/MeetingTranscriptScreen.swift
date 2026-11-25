@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import OfflineEngineKit
 
 /// Transcript and audio page ("B6e · Transcript"). Works pushed in a NavigationStack or in a sheet.
 public struct MeetingTranscriptScreen: View {
@@ -13,6 +14,7 @@ public struct MeetingTranscriptScreen: View {
     @AppStorage(HindiScriptPreference.key) private var hindiScript = HindiScriptStyle.devanagari.rawValue
 
     @State private var audio = TranscriptAudioController()
+    @State private var corrections: [TranscriptCorrection] = []
     @State private var cards: [TranscriptCard] = []
     @State private var activeCardID: UUID?
     @State private var audioAvailable = false
@@ -21,6 +23,7 @@ public struct MeetingTranscriptScreen: View {
     @State private var query = ""
     @State private var revision = 0
     @State private var scrollHoldUntil = Date.distantPast
+    @State private var reviewingCorrection: TranscriptCorrection?
     @State private var editingCard: TranscriptCard?
     @State private var reassigningCard: TranscriptCard?
     @State private var errorMessage: String?
@@ -89,6 +92,20 @@ public struct MeetingTranscriptScreen: View {
                 },
                 onDismiss: { reassigningCard = nil }
             )
+        }
+        .alert("Transcript comparison", isPresented: Binding(
+            get: { reviewingCorrection != nil },
+            set: { if !$0 { reviewingCorrection = nil } }
+        )) {
+            Button("OK", role: .cancel) { reviewingCorrection = nil }
+        } message: {
+            if let correction = reviewingCorrection {
+                if let replacement = correction.replacement {
+                    Text("Original: \(correction.original)\nAudio retry: \(replacement)")
+                } else {
+                    Text("The audio retry did not confirm the alternate wording.\nLive caption: \(correction.alternative)")
+                }
+            }
         }
         .alert("Couldn't save", isPresented: Binding(
             get: { errorMessage != nil },
@@ -242,6 +259,17 @@ public struct MeetingTranscriptScreen: View {
         .accessibilityAction(named: "Edit text") { if !isProcessing { editingCard = card } }
         .accessibilityAction(named: "Change speaker") { if !isProcessing { reassigningCard = card } }
         .contextMenu {
+            if let (line, correction) = correction(for: card) {
+                if correction.replacement != nil {
+                    Button("Restore original text", systemImage: "arrow.uturn.backward") {
+                        saveEdits([line.id: correction.original])
+                    }
+                    .disabled(isProcessing)
+                }
+                Button("Review transcript comparison", systemImage: "text.bubble") {
+                    reviewingCorrection = correction
+                }
+            }
             Button { editingCard = card } label: { Label("Edit text", systemImage: "pencil") }
                 .disabled(isProcessing)
             Button { reassigningCard = card } label: { Label("Change speaker", systemImage: "person.2") }
@@ -327,8 +355,12 @@ public struct MeetingTranscriptScreen: View {
     private func rebuildCards() {
         guard let meeting else {
             cards = []
+            corrections = []
             return
         }
+        corrections = meeting.offlineAnalysisData.flatMap {
+            try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: $0)
+        }?.transcriptCorrections ?? []
         let ordered = meeting.orderedTranscriptSegments
         let refs = ordered.map {
             TranscriptSegmentRef(id: $0.id, sequenceIndex: $0.sequenceIndex, start: $0.startTime)
@@ -375,6 +407,18 @@ public struct MeetingTranscriptScreen: View {
             result.append(speaker)
         }
         return result
+    }
+
+    private func correction(for card: TranscriptCard) -> (TranscriptCardLine, TranscriptCorrection)? {
+        for line in card.lines where !line.isEdited {
+            if let match = corrections.first(where: {
+                abs($0.start - line.start) < 0.01 && abs($0.end - line.end) < 0.01
+                    && ($0.replacement ?? $0.original) == line.text
+            }) {
+                return (line, match)
+            }
+        }
+        return nil
     }
 
     private func saveEdits(_ edits: [UUID: String]) {
