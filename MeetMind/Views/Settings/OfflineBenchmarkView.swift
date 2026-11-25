@@ -24,6 +24,7 @@ struct OfflineBenchmarkView: View {
     @State private var output = ""
     @State private var lastResult: BenchmarkResult?
     @AppStorage("NemotronCaptionLabModelPath") private var nemotronModelPath = ""
+    @AppStorage("UseNemotronLiveCaptions") private var useNemotronLiveCaptions = false
     @State private var nemotronTranscript: String?
     @State private var appleTranscript: String?
     @State private var referenceTranscript = ""
@@ -84,6 +85,8 @@ struct OfflineBenchmarkView: View {
                         status = "Nemotron is ready for replay."
                     }
                 }
+                Toggle("Use Nemotron for mixed-language recording captions", isOn: $useNemotronLiveCaptions)
+                    .disabled(nemotronModelPath.isEmpty)
                 Button("Replay with Apple Speech") {
                     begin { try await runAppleReplay() }
                 }
@@ -227,6 +230,7 @@ struct OfflineBenchmarkView: View {
         appleFirstCaption = nil
         status = "Replaying with Apple Speech…"
         let service = SpeechTranscriptionService()
+        service.usesExperimentalCaptionEngine = false
         guard await service.requestAuthorization() == .authorized else {
             throw SpeechTranscriptionError.authorizationDenied
         }

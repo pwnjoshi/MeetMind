@@ -652,6 +652,38 @@ public enum NemotronCaptionReplay {
         ) { progress($0.fractionCompleted) }
     }
 
+    public static func openLiveModel(at folder: URL) async throws -> LiveModel {
+        let model = LiveModel()
+        try await model.load(folder)
+        return model
+    }
+
+    public actor LiveModel {
+        private let manager = StreamingNemotronMultilingualAsrManager()
+
+        fileprivate func load(_ folder: URL) async throws {
+            try await manager.loadModels(from: folder)
+            await manager.setLanguage("auto")
+        }
+
+        public func process(_ buffer: sending AVAudioPCMBuffer) async throws -> [AnalysisTurn] {
+            _ = try await manager.process(audioBuffer: buffer)
+            return words(await manager.getTokenTimings())
+        }
+
+        public func finish() async throws -> [AnalysisTurn] {
+            let result = try await manager.finishWithTokenTimings()
+            return words(result.timings)
+        }
+
+        private func words(_ timings: [FluidAudio.TokenTiming]) -> [AnalysisTurn] {
+            FluidAudio.buildWordTimings(from: timings).enumerated().map { index, word in
+                AnalysisTurn(id: String(index), text: word.word, start: word.startTime,
+                             end: word.endTime, speaker: nil)
+            }
+        }
+    }
+
     public static func run(audio: URL, model: URL) async throws -> (text: String, firstPartialSeconds: Double?) {
         guard audio.isFileURL, model.isFileURL else { throw OfflineError.unavailable("Select local audio and model files.") }
         let manager = StreamingNemotronMultilingualAsrManager()

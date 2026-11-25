@@ -1,6 +1,7 @@
 import Foundation
 import Speech
 import AVFoundation
+import OfflineEngineKit
 
 /// Live captions and file transcription, always on-device.
 ///
@@ -79,11 +80,17 @@ public final class SpeechTranscriptionService: SpeechTranscriptionServiceProtoco
         }
     }
 
+    // Replay explicitly selects its engine, independently of the recording preference.
+    var usesExperimentalCaptionEngine = true
+
     public func startLiveTranscription(audioBufferStream: AsyncStream<AVAudioPCMBuffer>) -> AsyncThrowingStream<LiveTranscriptChunk, Error> {
         let configuration = LiveCaptionSession.Configuration(
             language: LiveCaptionLanguage.stored(in: userDefaults),
             preferredLocaleIdentifier: preferredLocaleIdentifier,
-            contextualStrings: contextualStrings
+            contextualStrings: contextualStrings,
+            nemotronModelPath: usesExperimentalCaptionEngine &&
+                userDefaults.bool(forKey: "UseNemotronLiveCaptions")
+                ? userDefaults.string(forKey: "NemotronCaptionLabModelPath") : nil
         )
         let source = CaptionAudioSource(stream: audioBufferStream)
 
@@ -193,6 +200,7 @@ final class LiveCaptionSession: @unchecked Sendable {
         let language: LiveCaptionLanguage
         let preferredLocaleIdentifier: String
         let contextualStrings: [String]
+        let nemotronModelPath: String?
     }
 
     private let configuration: Configuration
@@ -244,6 +252,30 @@ final class LiveCaptionSession: @unchecked Sendable {
         defer {
             pump.cancel()
             router.finish()
+        }
+
+        if let path = configuration.nemotronModelPath, !path.isEmpty,
+           configuration.language == .hinglish || configuration.language == .automatic {
+            do {
+                let model = try await NemotronCaptionReplay.openLiveModel(at: URL(fileURLWithPath: path))
+                let (audio, offset) = router.attach()
+                assembler.setAutoCommit(.captions)
+                func captionWords(_ turns: [AnalysisTurn]) -> [CaptionWord] {
+                    turns.map { CaptionWord(text: $0.text, start: $0.start + offset, end: $0.end + offset) }
+                }
+                for await buffer in audio {
+                    try Task.checkCancellation()
+                    assembler.updateOpen(captionWords(try await model.process(buffer)))
+                }
+                try Task.checkCancellation()
+                assembler.commit(captionWords(try await model.finish()))
+                return
+            } catch is CancellationError {
+                return
+            } catch {
+                assembler.setAutoCommit(nil)
+                assembler.notice("Nemotron unavailable. Switching to Apple Speech.")
+            }
         }
 
         // Hinglish and Automatic: an English and a Hindi recognizer hear the same audio and the
