@@ -551,20 +551,27 @@ enum MinutesBuilder {
                 statements.append(MinutesSummaryStatement(text: text, evidence: MinutesComposer.unique(evidence)))
             }
 
-            if coveredTopics.isEmpty || !input.rankedDiscussion.isEmpty {
-                let outcomeTurns = Set((input.decisions.flatMap(\.evidence) + input.openIssues.flatMap(\.evidence)
-                    + input.tasks.flatMap(\.evidence)).map(\.turnID))
-                var selectedText = Set<String>()
-                let context = (input.rankedDiscussion + input.discussion).filter { point in
-                    !HindiText.looksHindi(point.text) && !point.evidence.isEmpty
-                        && MeetingAnalysisReducer.isSummaryContext(point.text)
-                        && point.evidence.contains { !outcomeTurns.contains($0.turnID) }
-                        && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted
-                }.prefix(2)
-                for point in context {
-                    let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)
-                }
+            let outcomeTurns = Set((decisions.flatMap(\.evidence) + issues.flatMap(\.evidence)
+                + tasks.flatMap(\.evidence)).map(\.turnID))
+            // Preserve important status and rationale even when model ranking is unavailable
+            // or misses them. A topic label alone does not communicate these facts.
+            let priorityContext = input.discussion.filter { point in
+                MinutesRegex.firstMatch(
+                    #"(?i)\b(?:blocked|blocker|at risk|behind schedule|waiting (?:on|for)|because|due to)\b"#,
+                    in: point.text) != nil
+            }
+            let candidates = priorityContext + input.rankedDiscussion
+                + (coveredTopics.isEmpty || !input.rankedDiscussion.isEmpty ? input.discussion : [])
+            var selectedText = Set<String>()
+            let context = candidates.filter { point in
+                !HindiText.looksHindi(point.text) && !point.evidence.isEmpty
+                    && MeetingAnalysisReducer.isSummaryContext(point.text)
+                    && point.evidence.contains { !outcomeTurns.contains($0.turnID) }
+                    && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted
+            }.prefix(2)
+            for point in context {
+                let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)
             }
 
             let names = summaryNames()

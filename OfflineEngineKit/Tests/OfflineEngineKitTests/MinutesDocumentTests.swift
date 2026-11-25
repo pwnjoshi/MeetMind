@@ -106,6 +106,25 @@ final class MinutesDocumentTests: XCTestCase {
         }
     }
 
+    func testOverviewKeepsCitedBlockerWhenRankingIsUnavailable() {
+        let agenda = AnalysisTurn(id: "agenda", text: "First, the rollout.", start: 0, end: 1, speaker: nil)
+        let blocker = AnalysisTurn(id: "blocker", text: "The rollout is blocked by the vendor audit.",
+                                   start: 2, end: 4, speaker: nil)
+        let agendaSource = SourceEvidence(turnID: agenda.id, quote: agenda.text)
+        let blockerSource = SourceEvidence(turnID: blocker.id, quote: blocker.text)
+        let point = SupportedPoint(text: blocker.text, evidence: [blockerSource])
+        var hindi = HindiAnalysis()
+        hindi.topics = [HindiTopic(title: "Rollout", evidence: agendaSource)]
+
+        let minutes = MinutesBuilder.build(.init(turns: [agenda, blocker], hindi: hindi, decisions: [],
+            discussion: [point, point], rankedDiscussion: [], openIssues: [], tasks: [], participants: [],
+            speakerNames: [:], meetingDate: nil, timeZone: utc))
+
+        let statements = minutes.summaryStatements.filter { $0.text == blocker.text }
+        XCTAssertEqual(statements.count, 1)
+        XCTAssertEqual(statements.first?.evidence.map(\.turnID), [blocker.id])
+    }
+
     func testDevanagariPunctuatedTranscript() {
         assertDocument(MinutesFixtures.devanagari, budgetSubject: "Marketing budget", name: "devanagari")
     }
