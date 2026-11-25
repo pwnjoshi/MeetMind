@@ -575,8 +575,10 @@ var words: [String] = []
         func handleDecision(_ rest: [HindiToken], keys: [String], chalo: Bool, evidence: SourceEvidence,
                             turnIndex: Int) -> Bool {
             // "let's go with X"
-            if DecisionExtractor.isDecision(evidence.quote),
-               let go = keys.firstIndex(of: "go"), go + 2 < keys.count, keys[go + 1] == "with" {
+            if let go = keys.firstIndex(of: "go"), go + 2 < keys.count, keys[go + 1] == "with",
+               DecisionExtractor.isDecision(evidence.quote)
+                || (go > 0 && keys[go - 1] == "lets" && !evidence.quote.hasSuffix("?")
+                    && Set(keys).isDisjoint(with: ["agar", "if", "nahi", "not", "should", "kya"])) {
                 let object = Array(rest[(go + 2)...]).filter { !HindiMeetingExtractor.phraseNoise.contains($0.key) || $0.key == "the" }
                 guard !object.isEmpty else { return false }
                 let words = object.map { $0.display }.joined(separator: " ")

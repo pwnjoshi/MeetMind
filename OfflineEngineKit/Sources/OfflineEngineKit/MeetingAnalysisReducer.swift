@@ -48,7 +48,7 @@ public enum MeetingAnalysisReducer {
             hasRelevantEvidence($0, grounding) && isUndecidedPoint($0, grounding)
         }
         let deterministicDecisions = explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi)
-        let decisionSources = sentenceKeys(deterministicDecisions.flatMap(\.evidence), grounding)
+        let decisionSources = deterministicDecisions.flatMap(\.evidence)
         // Deterministic requests and commitments found in the transcript itself.
         let floorTasks = ActionExtractor.tasks(in: checkpoint.turns, context: context, hindi: hindi)
         let requestSentences = Set(floorTasks.compactMap { $0.evidence.first }.map { normalize($0.quote) })
@@ -56,7 +56,12 @@ public enum MeetingAnalysisReducer {
         for point in generatedDecisions.compactMap(cleanedPoint) {
             if isUndecidedPoint(point, grounding) || isRequestOnly(point, grounding, requestSentences) {
                 continue
-            } else if focusKeys(point, grounding).isDisjoint(with: decisionSources),
+            } else if !point.evidence.contains(where: { citation in
+                          decisionSources.contains { source in
+                              source.turnID == citation.turnID &&
+                                  !sentenceKeys([source], grounding).isDisjoint(with: sentenceKeys([citation], grounding))
+                          }
+                      }),
                       focus(for: point.text, evidence: point.evidence, grounding).sentences.contains(where: DecisionExtractor.isDecision),
                       hasRelevantEvidence(point, grounding) {
                 decisionCandidates.append(englishPoint(point))
@@ -67,6 +72,9 @@ public enum MeetingAnalysisReducer {
             guard hasRelevantEvidence(point, grounding) else { continue }
             let cited = focus(for: point.text, evidence: point.evidence, grounding).sentences
             if DecisionExtractor.isDecision(point.text), !cited.contains(where: DecisionExtractor.isDecision) { continue }
+            let clauses = point.text.components(separatedBy: " and ")
+            let sourceWords = Set(cited.flatMap { stems($0).union(stems(HindiText.englishPhrase($0))) })
+            guard clauses.allSatisfy({ !stems($0).isDisjoint(with: sourceWords) }) else { continue }
             if isUndecidedPoint(point, grounding) { openCandidates.append(point) } else { discussionCandidates.append(point) }
         }
         // An explicit "not decided" or "pending" wins over a model claim that the same matter was settled.
@@ -83,6 +91,13 @@ public enum MeetingAnalysisReducer {
             ? mergeBySubject(model: decisions, deterministic: deterministicDecisions)
             : mergePoints(decisions, with: deterministicDecisions)
         decisions.removeAll { isContentlessDecision($0.text) }
+        var seenDecisionQuotes = Set<String>()
+        decisions = decisions.filter { point in
+            let quotes = Set(point.evidence.map { $0.turnID + "|" + normalize($0.quote) })
+            guard !quotes.isSubset(of: seenDecisionQuotes) else { return false }
+            seenDecisionQuotes.formUnion(quotes)
+            return true
+        }
 
         var openIssues = deduplicateOpenIssues(openPool, grounding)
         decisions.removeAll { decision in

@@ -588,7 +588,7 @@ public actor MeetingAnalysisPipeline {
             }
             checkpoint.speakers = rawSpans.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
             if checkpoint.speakers.isEmpty {
-                lastSpeakerWarning = "Voices could not be separated. Review the transcript against the recording."
+                lastSpeakerWarning = "Voices could not be separated. Minutes will continue with unnamed speakers."
             }
             // Keep embeddings only for voices still present after merging and smoothing.
             let presentLabels = Set(checkpoint.speakers.map(\.speaker))
