@@ -4,7 +4,7 @@ public enum OfflineAnalysisContract {
     public static let promptVersion = "meeting-analysis-v14"
 }
 
-public struct AnalysisTurn: Codable, Sendable, Identifiable {
+public struct AnalysisTurn: Codable, Sendable, Identifiable, Equatable {
     public let id: String
     public let text: String
     public let start: Double

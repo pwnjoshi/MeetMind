@@ -294,6 +294,7 @@ struct OfflineBenchmarkView: View {
     }
 
     private func replayNemotron() async throws {
+        guard let audio else { throw OfflineError.unavailable("Choose a local recording for replay.") }
         nemotronTranscript = nil
         status = "Replaying with Nemotron…"
         let result = try await NemotronCaptionReplay.run(
@@ -319,7 +320,7 @@ struct OfflineBenchmarkView: View {
         guard await service.requestAuthorization() == .authorized else {
             throw SpeechTranscriptionError.authorizationDenied
         }
-        let input = audio
+        guard let input = audio else { throw OfflineError.unavailable("Choose a local recording for replay.") }
         let clock = ContinuousClock()
         let (stream, feed) = AsyncStream<AVAudioPCMBuffer>.makeStream(bufferingPolicy: .bufferingOldest(20))
         let captions = service.startLiveTranscription(audioBufferStream: stream)
