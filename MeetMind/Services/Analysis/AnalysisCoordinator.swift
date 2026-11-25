@@ -433,6 +433,13 @@ public final class AnalysisCoordinator {
         let meeting = try fetchMeeting(meetingID)
         let turns = savedTurns(for: meeting)
         let previousAnalysis = meeting.offlineAnalysisData
+        let previousAgenda = meeting.agendaText
+        let previousGeneratedAgenda = previousAnalysis.flatMap {
+            try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: $0)
+        }?.minutes?.agendaText
+        let hasGeneratedAgenda = previousGeneratedAgenda?.isEmpty == false
+            && previousGeneratedAgenda == previousAgenda
+        let replaceAgenda = hasGeneratedAgenda || isPlaceholderAgenda(previousAgenda ?? "")
         guard meeting.status == .completed, !turns.isEmpty else {
             throw OfflineError.unavailable("A saved transcript is required to reprocess minutes.")
         }
@@ -446,12 +453,12 @@ public final class AnalysisCoordinator {
         let result = try await MeetingAnalysisPipeline.shared.reprocessTranscript(
             meetingID: meetingID, turns: turns, meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
             timezone: meeting.analysisTimezone ?? TimeZone.current.identifier, model: model,
-            participants: meeting.namedAttendees.map(\.name), agenda: meeting.agendaText,
+            participants: meeting.namedAttendees.map(\.name), agenda: replaceAgenda ? nil : previousAgenda,
             corrections: corrections)
         try Task.checkCancellation()
         let current = try fetchMeeting(meetingID)
         guard current.status == .completed, current.offlineAnalysisData == previousAnalysis,
-              savedTurns(for: current) == turns else {
+              current.agendaText == previousAgenda, savedTurns(for: current) == turns else {
             throw OfflineError.unavailable("The meeting changed while reprocessing. Open it again to retry.")
         }
         let fields = minutesFields(result, for: current)
@@ -467,6 +474,9 @@ public final class AnalysisCoordinator {
         if decidersChanged { try store.update(meetingID) { $0.deciderIDs = updatedRecord.deciderIDs } }
         applyMinutes(overview: fields.overview, points: fields.points, decisions: fields.decisions,
                      analysisData: analysisData, to: current)
+        if replaceAgenda {
+            current.agendaText = fields.topicAgenda.isEmpty ? nil : fields.topicAgenda
+        }
         do {
             try context.save()
         } catch {
