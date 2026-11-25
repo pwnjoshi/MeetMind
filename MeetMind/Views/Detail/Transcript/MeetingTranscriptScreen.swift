@@ -268,6 +268,11 @@ public struct MeetingTranscriptScreen: View {
                         saveEdits([line.id: correction.original])
                     }
                     .disabled(isProcessing)
+                } else {
+                    Button("Confirm displayed wording", systemImage: "checkmark") {
+                        saveEdits([line.id: line.text], confirmUnchanged: true)
+                    }
+                    .disabled(isProcessing)
                 }
                 Button("Review transcript comparison", systemImage: "text.bubble") {
                     reviewingCorrection = correction
@@ -424,13 +429,13 @@ public struct MeetingTranscriptScreen: View {
         return nil
     }
 
-    private func saveEdits(_ edits: [UUID: String]) {
+    private func saveEdits(_ edits: [UUID: String], confirmUnchanged: Bool = false) {
         guard let meeting, !isProcessing else { return }
         var changed = false
         for segment in meeting.transcriptSegments {
             guard let draft = edits[segment.id] else { continue }
             let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty, trimmed != segment.text {
+            if !trimmed.isEmpty, trimmed != segment.text || (confirmUnchanged && !segment.isEdited) {
                 segment.updateText(trimmed)
                 changed = true
             }
