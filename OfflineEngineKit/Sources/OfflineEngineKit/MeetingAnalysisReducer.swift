@@ -30,13 +30,21 @@ public enum MeetingAnalysisReducer {
     public static func reduce(_ checkpoint: MeetingAnalysisCheckpoint, participants: [String] = [],
                               speakerNames: [String: String] = [:], meetingDate: Date? = nil,
                               timeZone: TimeZone = TimeZone.current) -> ReducedMeetingAnalysis {
+        let unresolved = (checkpoint.transcriptCorrections ?? []).filter { $0.replacement == nil }
+        let verifiedTurns = checkpoint.turns.map { turn in
+            guard unresolved.contains(where: {
+                $0.original == turn.text && $0.start == turn.start && $0.end == turn.end
+            }) else { return turn }
+            // Keep the chronological position without exposing disputed words to extraction.
+            return AnalysisTurn(id: turn.id, text: "", start: turn.start, end: turn.end, speaker: turn.speaker)
+        }
         // A vocative ("Pawan, ...") names the next voice; a self-introduction names the current one.
-        let speakerNames = SpeakerNameInference.infer(turns: checkpoint.turns, participants: participants,
+        let speakerNames = SpeakerNameInference.infer(turns: verifiedTurns, participants: participants,
                                                       speakerNames: speakerNames)
         let context = ExtractionContext(participants: participants, speakerNames: speakerNames)
-        let grounding = Grounding(turns: checkpoint.turns)
-        let hindi = HindiMeetingExtractor.analyze(checkpoint.turns, context: context)
-        let verifiedAnalysis = checkpoint.analysis.map { $0.sanitized(against: checkpoint.turns) }
+        let grounding = Grounding(turns: verifiedTurns)
+        let hindi = HindiMeetingExtractor.analyze(verifiedTurns, context: context)
+        let verifiedAnalysis = checkpoint.analysis.map { $0.sanitized(against: verifiedTurns) }
         let generatedDiscussion = verifiedAnalysis.flatMap(\.discussion)
         let generatedDecisions = verifiedAnalysis.flatMap(\.decisions)
         let generatedOpenIssues = verifiedAnalysis.flatMap(\.openIssues)
@@ -47,10 +55,10 @@ public enum MeetingAnalysisReducer {
         var openCandidates = generatedOpenIssues.compactMap(cleanedPoint).filter {
             hasRelevantEvidence($0, grounding) && isUndecidedPoint($0, grounding)
         }
-        let deterministicDecisions = explicitDecisions(in: checkpoint.turns, hindi: hindi) + hindiDecisionPoints(hindi)
+        let deterministicDecisions = explicitDecisions(in: verifiedTurns, hindi: hindi) + hindiDecisionPoints(hindi)
         let decisionSources = deterministicDecisions.flatMap(\.evidence)
         // Deterministic requests and commitments found in the transcript itself.
-        let floorTasks = ActionExtractor.tasks(in: checkpoint.turns, context: context, hindi: hindi)
+        let floorTasks = ActionExtractor.tasks(in: verifiedTurns, context: context, hindi: hindi)
         let requestSentences = Set(floorTasks.compactMap { $0.evidence.first }.map { normalize($0.quote) })
         var decisionCandidates: [SupportedPoint] = []
         for point in generatedDecisions.compactMap(cleanedPoint) {
@@ -78,7 +86,7 @@ public enum MeetingAnalysisReducer {
             if isUndecidedPoint(point, grounding) { openCandidates.append(point) } else { discussionCandidates.append(point) }
         }
         // An explicit "not decided" or "pending" wins over a model claim that the same matter was settled.
-        let deterministicOpen = unresolvedOutcomes(in: checkpoint.turns, hindi: hindi) + hindiOpenPoints(hindi)
+        let deterministicOpen = unresolvedOutcomes(in: verifiedTurns, hindi: hindi) + hindiOpenPoints(hindi)
         let openPool = openCandidates + deterministicOpen
         let openSubjects = openSubjectSets(openPool)
         decisionCandidates = decisionCandidates.filter { !claimsOpenMatterSettled($0, openSubjects, requireClaim: false) }
@@ -99,7 +107,7 @@ public enum MeetingAnalysisReducer {
             return true
         }
 
-        decisions = removeRescindedDecisions(decisions, turns: checkpoint.turns)
+        decisions = removeRescindedDecisions(decisions, turns: verifiedTurns)
         var openIssues = deduplicateOpenIssues(openPool, grounding)
         decisions.removeAll { decision in
             openIssues.contains { nearDuplicate(decision.text, $0.text) || sharesFocus(decision, $0, grounding) }
@@ -115,7 +123,7 @@ public enum MeetingAnalysisReducer {
         openIssues = Array(openIssues.prefix(12))
 
         var turnOrder: [String: Int] = [:]
-        for (index, turn) in checkpoint.turns.enumerated() where turnOrder[turn.id] == nil { turnOrder[turn.id] = index }
+        for (index, turn) in verifiedTurns.enumerated() where turnOrder[turn.id] == nil { turnOrder[turn.id] = index }
         // A sentence that settles or defers a matter is a decision or an open issue, never also a task.
         let settledSentences: Set<String> = hindi.hasDevanagari
             ? sentenceKeys(decisions.flatMap { $0.evidence } + openIssues.flatMap { $0.evidence }, grounding)
@@ -144,7 +152,7 @@ public enum MeetingAnalysisReducer {
                   !extracted.isEmpty || hasExplicitRequest(focused.sentences) || hasHindiRequestOrPromise(focused.sentences)
             else { continue }
             guard isGroundedCommitment(candidate, grounding) else { continue }
-            guard !ActionExtractor.isRefusedRequest(evidence: candidate.evidence, in: checkpoint.turns) else { continue }
+            guard !ActionExtractor.isRefusedRequest(evidence: candidate.evidence, in: verifiedTurns) else { continue }
             guard !overlapsSettled(candidate, settledSentences, grounding) else { continue }
             guard !isNonActionTask(candidate, grounding, openMatters) else { continue }
             modelTasks.append(englishTask(candidate))
@@ -152,7 +160,7 @@ public enum MeetingAnalysisReducer {
         var tasks = deduplicateTasks(modelTasks, order: turnOrder)
         tasks = mergeTasks(tasks, with: floorTasks, order: turnOrder)
         tasks = Array(applyLaterTaskUpdates(reconcileExplicitTransfers(tasks, order: turnOrder),
-                                      turns: checkpoint.turns, order: turnOrder).prefix(24))
+                                      turns: verifiedTurns, order: turnOrder).prefix(24))
 
         let ranked = (checkpoint.rankedOverviewFacts ?? []).filter { fact in
             discussion.contains { candidate in
@@ -162,7 +170,7 @@ public enum MeetingAnalysisReducer {
         let overviewDiscussion = ranked.isEmpty ? discussion : ranked
         var executiveSummary = composeExecutiveSummary(discussion: overviewDiscussion, decisions: decisions)
         let minutes = MinutesBuilder.build(MinutesBuilder.Input(
-            turns: checkpoint.turns, hindi: hindi, decisions: decisions, discussion: discussion, rankedDiscussion: ranked,
+            turns: verifiedTurns, hindi: hindi, decisions: decisions, discussion: discussion, rankedDiscussion: ranked,
             openIssues: openIssues, tasks: tasks,
             participants: participants, speakerNames: speakerNames, meetingDate: meetingDate, timeZone: timeZone))
         if !minutes.executiveSummary.isEmpty { executiveSummary = minutes.executiveSummary }
@@ -174,7 +182,7 @@ public enum MeetingAnalysisReducer {
                 executiveSummary = hindiFallbackSummary
             }
             var merged = composed
-            for point in discussion where !isTranscriptCopy(point, turns: checkpoint.turns) {
+            for point in discussion where !isTranscriptCopy(point, turns: verifiedTurns) {
                 if !merged.contains(where: { nearDuplicate($0.text, point.text) }) { merged.append(point) }
             }
             discussion = Array(merged.prefix(16))

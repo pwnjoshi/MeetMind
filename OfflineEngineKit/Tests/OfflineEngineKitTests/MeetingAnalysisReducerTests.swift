@@ -142,6 +142,22 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertFalse(result.executiveSummary.contains("old audit log"))
     }
 
+    func testUnresolvedCaptionCannotSupplyMinutesEvidence() {
+        let original = "We agreed to publish the report today."
+        let disputed = AnalysisTurn(id: "t1", text: original, start: 0, end: 3, speaker: nil)
+        let next = AnalysisTurn(id: "t2", text: "Maya will send the spreadsheet.", start: 4, end: 7, speaker: nil)
+        let point = SupportedPoint(text: original, evidence: [SourceEvidence(turnID: disputed.id, quote: original)])
+        var saved = checkpoint(turns: [disputed, next],
+            analysis: [LocalAnalysisResult(discussion: [point], decisions: [point], tasks: [])])
+        saved.transcriptCorrections = [TranscriptCorrection(original: original,
+            alternative: "We did not agree to publish the report today.", replacement: nil, start: 0, end: 3)]
+        let result = MeetingAnalysisReducer.reduce(saved, participants: ["Maya"])
+        XCTAssertTrue(result.decisions.isEmpty)
+        XCTAssertFalse(result.executiveSummary.contains("publish"))
+        XCTAssertEqual(result.tasks.first?.owner, "Maya")
+        XCTAssertEqual(result.checkpoint.turns.first?.text, original)
+    }
+
     func testFutureDecisionIsNotAResolution() {
         let turn = AnalysisTurn(id: "t1", text: "He will make the final decision.", start: 0, end: 3, speaker: nil)
         let point = SupportedPoint(text: "The decision is final.",
