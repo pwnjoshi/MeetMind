@@ -990,7 +990,7 @@ public actor MeetingAnalysisPipeline {
     // Never equate a diarized voice label with a named attendee. Ambiguous or
     // overlapping speech remains unassigned rather than guessing an owner.
     static func assignSpeakers(turns: [AnalysisTurn], spans: [SpeakerSpan]) -> [AnalysisTurn] {
-        turns.map { turn in
+        let assigned = turns.map { turn in
             var overlap: [String: Double] = [:]
             for span in spans {
                 overlap[span.speaker, default: 0] += max(0, min(turn.end, span.end) - max(turn.start, span.start))
@@ -1001,6 +1001,20 @@ public actor MeetingAnalysisPipeline {
             let label = duration > 0 && (winner?.value ?? 0) >= duration * 0.6
                 && (ranked.dropFirst().first?.value ?? 0) < duration * 0.2 ? winner?.key : nil
             return AnalysisTurn(id: turn.id, text: turn.text, start: turn.start, end: turn.end, speaker: label)
+        }
+        return assigned.enumerated().map { index, turn in
+            guard index > 0, let label = turn.speaker else { return turn }
+            let question = assigned[index - 1]
+            let gap = turn.start - question.end
+            guard question.speaker == label, (-0.3...1.2).contains(gap),
+                  question.text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?"),
+                  MinutesRegex.firstMatch(#"^[\p{Lu}][\p{L}'-]+,\s*(?i:(?:can|could|would|will)\s+you\b)"#,
+                                          in: question.text) != nil,
+                  MinutesRegex.firstMatch(#"(?i)^\s*(?:yes|yeah|yep|sure|no|nope)\b"#, in: turn.text) != nil
+            else { return turn }
+            // An answer addressed to someone else may cross a diarization boundary.
+            // Leave it unnamed until there is evidence for a different voice.
+            return AnalysisTurn(id: turn.id, text: turn.text, start: turn.start, end: turn.end, speaker: nil)
         }
     }
 

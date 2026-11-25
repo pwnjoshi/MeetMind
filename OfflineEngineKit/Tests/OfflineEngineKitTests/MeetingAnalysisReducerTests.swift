@@ -23,6 +23,19 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(reduced.checkpoint.analysis.first?.tasks.count, 1)
     }
 
+    func testSplitRequestKeepsDeliverableWithoutInferringAcceptance() {
+        let lines = ["So what I want you to do is...", "Work on the prototype.", "Aditya, will you do that?", "Yes."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index * 2),
+                         end: Double(index * 2 + 1), speaker: index == 3 ? nil : "S1")
+        }
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []))
+        let request = reduced.tasks.first { $0.title == "Work on the prototype" }
+        XCTAssertNotNil(request)
+        XCTAssertNil(request?.owner)
+        XCTAssertEqual(request?.evidence.map(\.turnID), ["t0", "t1", "t2"])
+    }
+
     func testQuestionAboutAgendaDoesNotSupportCreatingOne() {
         let turn = AnalysisTurn(id: "t1", text: "Can you tell me what the app development agenda is?",
                                 start: 0, end: 4, speaker: "S1")

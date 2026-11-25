@@ -40,6 +40,31 @@ enum ActionExtractor {
                 keyed.append(HindiKeyedTask(turn: turnIndex, piece: sentenceIndex, task: task))
             }
         }
+        for index in turns.indices.dropFirst().dropLast() {
+            let cue = turns[index - 1]
+            let work = turns[index]
+            let question = turns[index + 1]
+            guard let requester = work.speaker, cue.speaker == requester, question.speaker == requester,
+                  work.start >= cue.start, question.start >= work.start,
+                  question.end - cue.start <= 15,
+                  pieces[index].count == 1,
+                  let cueText = pieces[index - 1].last, let questionText = pieces[index + 1].first,
+                  MinutesRegex.firstMatch(#"(?i)^(?:so\s+)?(?:what\s+)?(?:I|we)\s+(?:want|need)\s+you\s+to\s+do(?:\s+is)?$"#,
+                                          in: core(cueText)) != nil,
+                  MinutesRegex.firstMatch(#"^[\p{Lu}][\p{L}'-]+,\s*(?i:(?:can|could|would|will)\s+you\s+do\s+(?:it|that))$"#,
+                                          in: core(questionText)) != nil,
+                  !keyed.contains(where: { $0.turn == index }) else { continue }
+            let action = core(pieces[index][0])
+            guard startsWithVerb(action), !MeetingAnalysisReducer.isNonCommittalSentence(action) else { continue }
+            let evidence = [
+                SourceEvidence(turnID: cue.id, quote: cueText),
+                SourceEvidence(turnID: work.id, quote: pieces[index][0]),
+                SourceEvidence(turnID: question.id, quote: questionText)
+            ]
+            guard let task = makeTask(action: action, object: nil, owner: nil, evidence: evidence),
+                  !isRefusedRequest(evidence: Array(evidence.suffix(1)), in: turns) else { continue }
+            keyed.append(HindiKeyedTask(turn: index, piece: 0, task: task))
+        }
         var ordered: [(offset: Int, element: HindiKeyedTask)] = []
         for (offset, item) in keyed.enumerated() { ordered.append((offset, item)) }
         ordered.sort { lhs, rhs in
