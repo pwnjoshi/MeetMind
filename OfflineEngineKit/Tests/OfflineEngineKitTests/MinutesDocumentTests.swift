@@ -87,6 +87,10 @@ final class MinutesDocumentTests: XCTestCase {
             + "The \(marketing) and design change remain open."
         XCTAssertEqual(reduced.executiveSummary, expected, debug, file: file, line: line)
         XCTAssertEqual(minutes.executiveSummary, expected, debug, file: file, line: line)
+        let restored = try? JSONDecoder().decode(MinutesContent.self, from: JSONEncoder().encode(minutes))
+        let statements = restored?.summaryStatements ?? []
+        XCTAssertEqual(statements.map(\.text).joined(separator: " "), expected, debug, file: file, line: line)
+        XCTAssertTrue(statements.allSatisfy { !$0.evidence.isEmpty }, debug, file: file, line: line)
         XCTAssertFalse(HindiText.containsDevanagari(reduced.executiveSummary), debug, file: file, line: line)
 
         // Evidence quotes stay exact substrings of their cited turns.

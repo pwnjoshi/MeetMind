@@ -329,9 +329,11 @@ enum MinutesBuilder {
             let attendees = AttendeeSuggester.suggest(turns: input.turns, tasks: input.tasks,
                                                      participants: input.participants, speakerNames: input.speakerNames)
             let next = NextMeetingFinder.find(turns: input.turns, meetingDate: input.meetingDate, timeZone: input.timeZone)
-            let summary = buildSummary(topics: topics, issues: issues)
+            let statements = buildSummary(topics: topics, issues: issues)
+            let summary = statements.map(\.text).joined(separator: " ")
             return MinutesContent(executiveSummary: summary, topics: topics, resolutions: resolutions, actions: actions,
-                                  openIssues: issues, suggestedAttendees: attendees, nextMeeting: next)
+                                  openIssues: issues, suggestedAttendees: attendees, nextMeeting: next,
+                                  summaryStatements: statements)
         }
 
         // MARK: Resolutions
@@ -535,36 +537,58 @@ enum MinutesBuilder {
             return names
         }
 
-        func buildSummary(topics: [MinutesTopic], issues: [MinutesOpenIssue]) -> String {
-            let titles = topics.prefix(5).map { $0.title }
-            var phrases: [String] = []
-            for decision in input.decisions where !HindiText.looksHindi(decision.text) {
-                phrases.append(MinutesBuilder.shortPhrase(decision.text))
+        func buildSummary(topics: [MinutesTopic], issues: [MinutesOpenIssue]) -> [MinutesSummaryStatement] {
+            let coveredTopics = Array(topics.filter { !$0.evidence.isEmpty }.prefix(5))
+            let decisions = input.decisions.filter { !HindiText.looksHindi($0.text) && !$0.evidence.isEmpty }
+            let tasks = input.tasks.filter { !$0.evidence.isEmpty }
+            let namedIssues = issues.filter {
+                $0.topic != nil && !HindiText.looksHindi($0.subject) && $0.subject.count <= 60 && !$0.evidence.isEmpty
             }
-            var subjects: [String] = []
-            for issue in issues where issue.topic != nil && !HindiText.looksHindi(issue.subject) && issue.subject.count <= 60 {
-                subjects.append(issue.subject)
+
+            var statements: [MinutesSummaryStatement] = []
+            func append(_ text: String, evidence: [SourceEvidence]) {
+                guard !text.isEmpty else { return }
+                statements.append(MinutesSummaryStatement(text: text, evidence: MinutesComposer.unique(evidence)))
             }
-            var overview = MinutesComposer.executiveSummary(names: summaryNames(), topics: Array(titles),
-                decisionPhrases: phrases, tasks: input.tasks, openSubjects: subjects)
-            if issues.contains(where: { $0.topic == nil }) {
-                if !overview.isEmpty { overview += " " }
-                overview += "Review the open questions for details that still need clarification."
+
+            if coveredTopics.isEmpty || !input.rankedDiscussion.isEmpty {
+                let outcomeTurns = Set((input.decisions.flatMap(\.evidence) + input.openIssues.flatMap(\.evidence)
+                    + input.tasks.flatMap(\.evidence)).map(\.turnID))
+                var selectedText = Set<String>()
+                let context = (input.rankedDiscussion + input.discussion).filter { point in
+                    !HindiText.looksHindi(point.text) && !point.evidence.isEmpty
+                        && MeetingAnalysisReducer.isSummaryContext(point.text)
+                        && point.evidence.contains { !outcomeTurns.contains($0.turnID) }
+                        && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted
+                }.prefix(2)
+                for point in context {
+                    let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)
+                }
             }
-            guard titles.isEmpty || !input.rankedDiscussion.isEmpty else { return overview }
-            let outcomeTurns = Set((input.decisions.flatMap(\.evidence) + input.openIssues.flatMap(\.evidence)
-                + input.tasks.flatMap(\.evidence)).map(\.turnID))
-            var selectedText = Set<String>()
-            let context = (input.rankedDiscussion + input.discussion).filter { point in
-                !HindiText.looksHindi(point.text) && !point.evidence.isEmpty
-                    && MeetingAnalysisReducer.isSummaryContext(point.text)
-                    && point.evidence.contains { !outcomeTurns.contains($0.turnID) }
-                    && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted
-            }.prefix(2).map { point in
-                let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                return text.last.map { ".!?".contains($0) } == true ? text : text + "."
+
+            let names = summaryNames()
+            append(MinutesComposer.executiveSummary(names: names, topics: coveredTopics.map(\.title),
+                decisionPhrases: [], tasks: [], openSubjects: []), evidence: coveredTopics.flatMap(\.evidence))
+            append(MinutesComposer.executiveSummary(names: names, topics: [],
+                decisionPhrases: decisions.map { MinutesBuilder.shortPhrase($0.text) }, tasks: [], openSubjects: []),
+                evidence: decisions.flatMap(\.evidence))
+            for task in tasks.prefix(4) {
+                append(MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [],
+                    tasks: [task], openSubjects: []), evidence: task.evidence)
             }
-            return (Array(context) + [overview]).filter { !$0.isEmpty }.joined(separator: " ")
+            if tasks.count > 4 {
+                append("The action list contains \(tasks.count - 4) more items.",
+                       evidence: tasks.dropFirst(4).flatMap(\.evidence))
+            }
+            append(MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [], tasks: [],
+                openSubjects: namedIssues.map(\.subject)), evidence: namedIssues.flatMap(\.evidence))
+            let unplacedIssues = issues.filter { $0.topic == nil && !$0.evidence.isEmpty }
+            if !unplacedIssues.isEmpty {
+                append("Review the open questions for details that still need clarification.",
+                       evidence: unplacedIssues.flatMap(\.evidence))
+            }
+            return statements
         }
     }
 }

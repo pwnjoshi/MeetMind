@@ -112,7 +112,18 @@ public struct MinutesNextMeeting: Codable, Sendable {
 
 /// The MoM content model. JSON keys: executiveSummary, topics, resolutions, actions, openIssues,
 /// suggestedAttendees, nextMeeting.
+public struct MinutesSummaryStatement: Codable, Sendable {
+    public let text: String
+    public let evidence: [SourceEvidence]
+
+    public init(text: String, evidence: [SourceEvidence]) {
+        self.text = text
+        self.evidence = evidence
+    }
+}
+
 public struct MinutesContent: Codable, Sendable {
+    public let summaryStatements: [MinutesSummaryStatement]
     public let executiveSummary: String
     public let topics: [MinutesTopic]
     public let resolutions: [MinutesResolution]
@@ -123,7 +134,9 @@ public struct MinutesContent: Codable, Sendable {
 
     public init(executiveSummary: String, topics: [MinutesTopic], resolutions: [MinutesResolution],
                 actions: [MinutesAction], openIssues: [MinutesOpenIssue],
-                suggestedAttendees: [SuggestedAttendee], nextMeeting: MinutesNextMeeting?) {
+                suggestedAttendees: [SuggestedAttendee], nextMeeting: MinutesNextMeeting?,
+                summaryStatements: [MinutesSummaryStatement] = []) {
+        self.summaryStatements = summaryStatements
         self.executiveSummary = executiveSummary; self.topics = topics; self.resolutions = resolutions
         self.actions = actions; self.openIssues = openIssues
         self.suggestedAttendees = suggestedAttendees; self.nextMeeting = nextMeeting
@@ -133,11 +146,12 @@ public struct MinutesContent: Codable, Sendable {
                                              openIssues: [], suggestedAttendees: [], nextMeeting: nil)
 
     private enum CodingKeys: String, CodingKey {
-        case executiveSummary, topics, resolutions, actions, openIssues, suggestedAttendees, nextMeeting
+        case executiveSummary, topics, resolutions, actions, openIssues, suggestedAttendees, nextMeeting, summaryStatements
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        summaryStatements = try container.decodeIfPresent([MinutesSummaryStatement].self, forKey: .summaryStatements) ?? []
         executiveSummary = try container.decodeIfPresent(String.self, forKey: .executiveSummary) ?? ""
         topics = try container.decodeIfPresent([MinutesTopic].self, forKey: .topics) ?? []
         resolutions = try container.decodeIfPresent([MinutesResolution].self, forKey: .resolutions) ?? []
