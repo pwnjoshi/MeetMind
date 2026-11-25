@@ -525,7 +525,8 @@ public struct MeetingDetailView: View {
                     })
                 default:
                     if let meeting = viewModel.meeting {
-                        MeetingMinutesView(meeting: meeting, viewModel: viewModel, onOpenPeople: { showPeople = true })
+                        MeetingMinutesView(meeting: meeting, viewModel: viewModel,
+                                           onOpenPeople: { showPeople = true }, onOpenTranscript: openTranscript)
                     }
                 }
             }

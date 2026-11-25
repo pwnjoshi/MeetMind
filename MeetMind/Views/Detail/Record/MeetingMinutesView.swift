@@ -25,6 +25,7 @@ struct MeetingMinutesView: View {
     let meeting: Meeting
     var viewModel: MeetingDetailViewModel? = nil
     var onOpenPeople: () -> Void = {}
+    var onOpenTranscript: () -> Void = {}
     @State private var store = MeetingRecordStore.shared
     @State private var expanded: Set<String> = []
     @State private var playingTurnID: String?
@@ -42,6 +43,17 @@ struct MeetingMinutesView: View {
             && content.absent.isEmpty && content.discussion.isEmpty && content.decisions.isEmpty
             && content.openIssues.isEmpty
         VStack(alignment: .leading, spacing: 22) {
+            if analysis?.transcriptCorrections?.contains(where: { $0.replacement == nil }) == true {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Some wording needs review", systemImage: "text.bubble")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Disputed lines were left out of these minutes.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("Review transcript", action: onOpenTranscript)
+                        .font(.subheadline)
+                        .frame(minHeight: 44)
+                }
+            }
             if isEmpty {
                 Text("No minutes were found in this recording.")
                     .font(.body)
