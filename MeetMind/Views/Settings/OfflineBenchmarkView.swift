@@ -11,6 +11,7 @@ import SwiftData
 struct OfflineBenchmarkView: View {
     @Query(sort: \Meeting.createdAt, order: .reverse) private var savedMeetings: [Meeting]
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppState.self) private var appState: AppState?
     @State private var profiles: [ModelProfile] = []
     @State private var installed: Set<String> = []
     @State private var operation: Task<Void, Never>?
@@ -203,6 +204,9 @@ struct OfflineBenchmarkView: View {
             referenceTranscript = ""
         }
         .onDisappear { operation?.cancel() }
+        .onChange(of: appState?.isRecordingActive) { _, active in
+            if active == true { operation?.cancel() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && busy { operation?.cancel() }
         }
@@ -346,6 +350,12 @@ struct OfflineBenchmarkView: View {
     }
 
     private func measureReplay(_ run: () async throws -> Void) async throws -> ReplayMeasurement {
+        guard appState?.isRecordingActive != true, !OfflineProcessingGate.isProcessing else {
+            throw OfflineError.unavailable("Finish recording or meeting processing before replaying audio.")
+        }
+        OfflineProcessingGate.begin()
+        defer { OfflineProcessingGate.end() }
+
         let started = Date()
         let sampler = Task.detached(priority: .utility) {
             var peak = OfflineBenchmarkRunner.currentFootprintBytes()
