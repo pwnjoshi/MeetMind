@@ -28,6 +28,8 @@ struct OfflineBenchmarkView: View {
     @AppStorage("UseNemotronLiveCaptions") private var useNemotronLiveCaptions = false
     @State private var nemotronTranscript: String?
     @State private var appleTranscript: String?
+    @State private var appleReplayError: String?
+    @State private var nemotronReplayError: String?
     @State private var appleMeasurement: ReplayMeasurement?
     @State private var nemotronMeasurement: ReplayMeasurement?
     @State private var referenceTranscript = ""
@@ -100,16 +102,19 @@ struct OfflineBenchmarkView: View {
                 }
                 .disabled(nemotronModelPath.isEmpty)
                 Button("Compare both engines") {
-                    begin {
-                        try await runAppleReplay()
-                        try await runNemotronReplay()
-                    }
+                    begin { try await compareCaptionEngines() }
                 }
                 .disabled(nemotronModelPath.isEmpty)
                 TextField("Verified reference transcript or excerpt", text: $referenceTranscript, axis: .vertical)
                     .lineLimit(2...5)
                 Text("Enter the verified words for the selected recording. For an excerpt, replay the matching audio clip. Scoring supports up to 1,000 words per transcript.")
                     .font(.caption).foregroundStyle(.secondary)
+                if let appleReplayError {
+                    Text("Apple Speech: \(appleReplayError)").font(.caption)
+                }
+                if let nemotronReplayError {
+                    Text("Nemotron: \(nemotronReplayError)").font(.caption)
+                }
                 if let appleTranscript {
                     replayResult("Apple Speech", transcript: appleTranscript, delay: appleFirstCaption, measurement: appleMeasurement)
                 }
@@ -202,6 +207,8 @@ struct OfflineBenchmarkView: View {
             appleTranscript = nil
             nemotronTranscript = nil
             referenceTranscript = ""
+            appleReplayError = nil
+            nemotronReplayError = nil
         }
         .onDisappear { operation?.cancel() }
         .onChange(of: appState?.isRecordingActive) { _, active in
@@ -254,7 +261,34 @@ struct OfflineBenchmarkView: View {
         }
     }
 
+    private func compareCaptionEngines() async throws {
+        appleTranscript = nil
+        nemotronTranscript = nil
+        appleReplayError = nil
+        nemotronReplayError = nil
+        do {
+            try await runAppleReplay()
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError { throw error }
+            appleReplayError = error.localizedDescription
+        }
+        try Task.checkCancellation()
+        do {
+            try await runNemotronReplay()
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError { throw error }
+            nemotronReplayError = error.localizedDescription
+        }
+        status = appleReplayError == nil && nemotronReplayError == nil
+            ? "Both caption replays finished."
+            : "Comparison finished with an engine failure."
+    }
+
     private func runNemotronReplay() async throws {
+        nemotronReplayError = nil
+        nemotronTranscript = nil
         nemotronMeasurement = nil
         nemotronMeasurement = try await measureReplay { try await replayNemotron() }
     }
@@ -270,6 +304,8 @@ struct OfflineBenchmarkView: View {
     }
 
     private func runAppleReplay() async throws {
+        appleReplayError = nil
+        appleTranscript = nil
         appleMeasurement = nil
         appleMeasurement = try await measureReplay { try await replayApple() }
     }
