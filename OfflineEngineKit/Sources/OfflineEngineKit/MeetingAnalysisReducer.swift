@@ -99,6 +99,7 @@ public enum MeetingAnalysisReducer {
             return true
         }
 
+        decisions = removeRescindedDecisions(decisions, turns: checkpoint.turns)
         var openIssues = deduplicateOpenIssues(openPool, grounding)
         decisions.removeAll { decision in
             openIssues.contains { nearDuplicate(decision.text, $0.text) || sharesFocus(decision, $0, grounding) }
@@ -507,6 +508,28 @@ public enum MeetingAnalysisReducer {
     private static func mergeTasks(_ lhs: [SuggestedTask], with rhs: [SuggestedTask],
                                    order: [String: Int] = [:]) -> [SuggestedTask] {
         deduplicateTasks(lhs + rhs, modelCount: lhs.count, order: order)
+    }
+
+    /// A rescission invalidates the previous outcome without implying a replacement.
+    private static func removeRescindedDecisions(_ decisions: [SupportedPoint], turns: [AnalysisTurn]) -> [SupportedPoint] {
+        var latestRescission: [String: Int] = [:]
+        var turnIndex: [String: Int] = [:]
+        for (index, turn) in turns.enumerated() {
+            turnIndex[turn.id] = index
+            for sentence in sentences(in: turn.text) {
+                let text = ActionExtractor.core(sentence)
+                guard let subject = MinutesRegex.firstMatch(
+                    #"(?i)^we (?:rescinded|reversed|withdrew) (?:our|the) decision to (.+)$"#,
+                    in: text, group: 1) else { continue }
+                latestRescission[normalize(subject)] = index
+            }
+        }
+        return decisions.filter { decision in
+            let short = MinutesBuilder.splitReason(MinutesBuilder.shortPhrase(decision.text)).head
+            guard let rescinded = latestRescission[normalize(short)],
+                  let confirmed = decision.evidence.compactMap({ turnIndex[$0.turnID] }).max() else { return true }
+            return confirmed >= rescinded
+        }
     }
 
     /// Settled outcomes only: see `DecisionExtractor` for the accepted markers and the

@@ -130,6 +130,18 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(result.tasks.map(\.title), ["Review the partner deck"])
     }
 
+    func testRescindedDecisionDoesNotAppearAsCurrent() {
+        let lines = ["We agreed to retain the old audit log.", "We rescinded our decision to retain the old audit log.",
+                     "We agreed to keep the new audit log."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let result = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []))
+        XCTAssertEqual(result.decisions.count, 1)
+        XCTAssertTrue(result.decisions.first?.text.contains("new audit log") == true)
+        XCTAssertFalse(result.executiveSummary.contains("old audit log"))
+    }
+
     func testFutureDecisionIsNotAResolution() {
         let turn = AnalysisTurn(id: "t1", text: "He will make the final decision.", start: 0, end: 3, speaker: nil)
         let point = SupportedPoint(text: "The decision is final.",
