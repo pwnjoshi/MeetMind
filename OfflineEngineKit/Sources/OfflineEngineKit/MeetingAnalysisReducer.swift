@@ -150,7 +150,8 @@ public enum MeetingAnalysisReducer {
         }
         var tasks = deduplicateTasks(modelTasks, order: turnOrder)
         tasks = mergeTasks(tasks, with: floorTasks, order: turnOrder)
-        tasks = Array(reconcileExplicitTransfers(tasks, order: turnOrder).prefix(24))
+        tasks = Array(removeClosedTasks(reconcileExplicitTransfers(tasks, order: turnOrder),
+                                      turns: checkpoint.turns, order: turnOrder).prefix(24))
 
         let ranked = (checkpoint.rankedOverviewFacts ?? []).filter { fact in
             discussion.contains { candidate in
@@ -450,6 +451,38 @@ public enum MeetingAnalysisReducer {
                 evidence: uniqueEvidence(task.evidence + result[index].evidence))
         }
         return result
+    }
+
+    /// Close only an unambiguous named deliverable, after its latest assignment.
+    private static func removeClosedTasks(
+        _ tasks: [SuggestedTask], turns: [AnalysisTurn], order: [String: Int]
+    ) -> [SuggestedTask] {
+        var closed = Set<Int>()
+        let completionVerbs = ["sent": "send", "shared": "share", "submitted": "submit",
+                               "delivered": "deliver", "published": "publish", "booked": "book"]
+        for (turn, pieces) in zip(turns, ActionExtractor.sentencePieces(turns)) {
+            guard let position = order[turn.id] else { continue }
+            for sentence in pieces {
+                let text = ActionExtractor.core(sentence)
+                guard let subject = MinutesRegex.firstMatch(
+                    #"(?i)^(.+?) (?:has been|was|is) (?:already )?(?:cancelled|canceled|completed|sent|shared|submitted|delivered|published|booked)$"#,
+                    in: text, group: 1) else { continue }
+                let words = normalize(subject).split(separator: " ").map(String.init)
+                let object = Set(words.filter { !objectFiller.contains($0) }.map(stem))
+                guard !object.isEmpty else { continue }
+                let verb = normalize(text).split(separator: " ").last.flatMap { completionVerbs[String($0)] }
+                let requiredClass = verb.map { verbClasses[$0] ?? $0 }
+                let candidates = tasks.indices.filter { index in
+                    guard !closed.contains(index),
+                          let latest = tasks[index].evidence.compactMap({ order[$0.turnID] }).max(),
+                          latest < position else { return false }
+                    let task = verbAndObject(tasks[index].title)
+                    return task.object == object && (requiredClass == nil || requiredClass == task.verb)
+                }
+                if candidates.count == 1, let index = candidates.first { closed.insert(index) }
+            }
+        }
+        return tasks.enumerated().compactMap { closed.contains($0.offset) ? nil : $0.element }
     }
 
     private static func isHindiGrounded(_ task: SuggestedTask) -> Bool {

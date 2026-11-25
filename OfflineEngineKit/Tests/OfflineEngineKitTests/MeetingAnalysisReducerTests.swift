@@ -107,6 +107,17 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertTrue(result.executiveSummary.contains("retain the existing audit log"))
     }
 
+    func testLaterCompletionClosesOnlyTheMatchingAction() {
+        let lines = ["Maya will send the partner deck.", "Rahul will review the partner deck.",
+                     "The project remains on track.", "The partner deck has been sent."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let result = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []),
+                                                   participants: ["Maya", "Rahul"])
+        XCTAssertEqual(result.tasks.map(\.title), ["Review the partner deck"])
+    }
+
     func testFutureDecisionIsNotAResolution() {
         let turn = AnalysisTurn(id: "t1", text: "He will make the final decision.", start: 0, end: 3, speaker: nil)
         let point = SupportedPoint(text: "The decision is final.",
