@@ -133,7 +133,8 @@ public enum MeetingAnalysisReducer {
                 return !sourceKeys.isDisjoint(with: sentenceKeys(shared, grounding))
             }
             let citedWords = Set(focused.sentences.flatMap { stems(HindiText.englishPhrase($0)) })
-            let actionObjects = Set(verbAndObject(cleaned.title).object.map(stem))
+            let action = verbAndObject(cleaned.title)
+            let actionObjects = action.object
             // The transcript extractor supplies assignments when it identifies the
             // actual assignee, including reviewed speakers and accepted requests.
             let deadline = TaskGrounding.verifiedDeadline(cleaned.deadlineText, in: focused.sentences)
@@ -144,6 +145,17 @@ public enum MeetingAnalysisReducer {
                   !extracted.contains(where: { sameTask(candidate, $0, order: turnOrder) }),
                   !extracted.isEmpty || hasExplicitRequest(focused.sentences) || hasHindiRequestOrPromise(focused.sentences)
             else { continue }
+            // A matching object alone cannot turn a question about an agenda
+            // into work to create it. Require the action as well as the subject.
+            if !action.verb.isEmpty, !hasHindiRequestOrPromise(focused.sentences) {
+                let directMatch = citedWords.contains(stem(action.verb))
+                let synonymMatch = verbClasses.contains { word, kind in
+                    kind == action.verb && citedWords.contains(stem(word))
+                }
+                guard directMatch || synonymMatch
+                    || extracted.contains(where: { verbAndObject($0.title).verb == action.verb })
+                else { continue }
+            }
             guard isGroundedCommitment(candidate, grounding) else { continue }
             guard !ActionExtractor.isRefusedRequest(evidence: candidate.evidence, in: verifiedTurns) else { continue }
             guard !overlapsSettled(candidate, settledSentences, grounding) else { continue }
@@ -353,7 +365,8 @@ public enum MeetingAnalysisReducer {
               !cleaned.hasSuffix("…") else { return false }
         let key = clauseKey(cleaned)
         let opening = [" okay so ", " can i get a quick ", " let's get started ", " let's call it a day "]
-        return !opening.contains { key.hasPrefix($0) }
+        let acknowledgements: Set<String> = ["yes", "yes i have been", "okay", "sure", "oh yeah"]
+        return !opening.contains { key.hasPrefix($0) } && !acknowledgements.contains(normalize(cleaned))
     }
 
     private static func deduplicatePoints(_ values: [SupportedPoint]) -> [SupportedPoint] {

@@ -23,6 +23,18 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(reduced.checkpoint.analysis.first?.tasks.count, 1)
     }
 
+    func testQuestionAboutAgendaDoesNotSupportCreatingOne() {
+        let turn = AnalysisTurn(id: "t1", text: "Can you tell me what the app development agenda is?",
+                                start: 0, end: 4, speaker: "S1")
+        let evidence = [SourceEvidence(turnID: turn.id, quote: turn.text)]
+        let task = SuggestedTask(title: "Prepare the app development agenda", category: "general",
+                                 owner: nil, deadlineText: nil, priority: nil, evidence: evidence)
+        let analysis = LocalAnalysisResult(discussion: [], decisions: [], tasks: [task])
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: [turn], analysis: [analysis]))
+        XCTAssertFalse(reduced.tasks.contains { $0.title.lowercased().hasPrefix("prepare") })
+        XCTAssertFalse(MeetingAnalysisReducer.isSummaryContext("Yes, I have been."))
+    }
+
     func testNegatedOrCancelledCommitmentIsNeverSupplemented() {
         let turns = [
             AnalysisTurn(id: "t1", text: "Rahul will not send the estimate tomorrow.", start: 0, end: 2, speaker: "Rahul"),
