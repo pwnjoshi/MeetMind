@@ -150,7 +150,7 @@ public enum MeetingAnalysisReducer {
         }
         var tasks = deduplicateTasks(modelTasks, order: turnOrder)
         tasks = mergeTasks(tasks, with: floorTasks, order: turnOrder)
-        tasks = Array(removeClosedTasks(reconcileExplicitTransfers(tasks, order: turnOrder),
+        tasks = Array(applyLaterTaskUpdates(reconcileExplicitTransfers(tasks, order: turnOrder),
                                       turns: checkpoint.turns, order: turnOrder).prefix(24))
 
         let ranked = (checkpoint.rankedOverviewFacts ?? []).filter { fact in
@@ -453,36 +453,51 @@ public enum MeetingAnalysisReducer {
         return result
     }
 
-    /// Close only an unambiguous named deliverable, after its latest assignment.
-    private static func removeClosedTasks(
+    /// Apply updates to an unambiguous named deliverable after its latest assignment.
+    private static func applyLaterTaskUpdates(
         _ tasks: [SuggestedTask], turns: [AnalysisTurn], order: [String: Int]
     ) -> [SuggestedTask] {
+        var updated = tasks
         var closed = Set<Int>()
+        let deadlineChange = #"(?i)^(.+?) (?:is now due|has been moved to|is due instead on) (.+)$"#
         let completionVerbs = ["sent": "send", "shared": "share", "submitted": "submit",
                                "delivered": "deliver", "published": "publish", "booked": "book"]
         for (turn, pieces) in zip(turns, ActionExtractor.sentencePieces(turns)) {
             guard let position = order[turn.id] else { continue }
             for sentence in pieces {
                 let text = ActionExtractor.core(sentence)
-                guard let subject = MinutesRegex.firstMatch(
+                let changedSubject = MinutesRegex.firstMatch(deadlineChange, in: text, group: 1)
+                let deadline = MinutesRegex.firstMatch(deadlineChange, in: text, group: 2).flatMap {
+                    MinutesRegex.firstMatch(DueDateResolver.datePhrasePattern, in: $0) == $0 ? $0 : nil
+                }
+                let closingSubject = MinutesRegex.firstMatch(
                     #"(?i)^(.+?) (?:has been|was|is) (?:already )?(?:cancelled|canceled|completed|sent|shared|submitted|delivered|published|booked)$"#,
-                    in: text, group: 1) else { continue }
+                    in: text, group: 1)
+                guard let subject = deadline == nil ? closingSubject : changedSubject else { continue }
                 let words = normalize(subject).split(separator: " ").map(String.init)
                 let object = Set(words.filter { !objectFiller.contains($0) }.map(stem))
                 guard !object.isEmpty else { continue }
                 let verb = normalize(text).split(separator: " ").last.flatMap { completionVerbs[String($0)] }
                 let requiredClass = verb.map { verbClasses[$0] ?? $0 }
-                let candidates = tasks.indices.filter { index in
+                let candidates = updated.indices.filter { index in
                     guard !closed.contains(index),
-                          let latest = tasks[index].evidence.compactMap({ order[$0.turnID] }).max(),
+                          let latest = updated[index].evidence.compactMap({ order[$0.turnID] }).max(),
                           latest < position else { return false }
-                    let task = verbAndObject(tasks[index].title)
+                    let task = verbAndObject(updated[index].title)
                     return task.object == object && (requiredClass == nil || requiredClass == task.verb)
                 }
-                if candidates.count == 1, let index = candidates.first { closed.insert(index) }
+                guard candidates.count == 1, let index = candidates.first else { continue }
+                if let deadline {
+                    let task = updated[index]
+                    updated[index] = SuggestedTask(title: task.title, category: task.category, owner: task.owner,
+                        deadlineText: deadline, priority: task.priority,
+                        evidence: task.evidence + [SourceEvidence(turnID: turn.id, quote: sentence)])
+                } else {
+                    closed.insert(index)
+                }
             }
         }
-        return tasks.enumerated().compactMap { closed.contains($0.offset) ? nil : $0.element }
+        return updated.enumerated().compactMap { closed.contains($0.offset) ? nil : $0.element }
     }
 
     private static func isHindiGrounded(_ task: SuggestedTask) -> Bool {

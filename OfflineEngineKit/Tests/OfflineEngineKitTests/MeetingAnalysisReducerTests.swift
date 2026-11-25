@@ -107,6 +107,18 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertTrue(result.executiveSummary.contains("retain the existing audit log"))
     }
 
+    func testLaterDeadlineChangePreservesOwnerAndBothQuotes() {
+        let lines = ["Maya will send the partner deck by Friday.", "The partner deck is now due Monday."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let result = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []), participants: ["Maya"])
+        XCTAssertEqual(result.tasks.count, 1)
+        XCTAssertEqual(result.tasks.first?.owner, "Maya")
+        XCTAssertEqual(result.tasks.first?.deadlineText, "Monday")
+        XCTAssertEqual(result.tasks.first?.evidence.map(\.turnID), ["t0", "t1"])
+    }
+
     func testLaterCompletionClosesOnlyTheMatchingAction() {
         let lines = ["Maya will send the partner deck.", "Rahul will review the partner deck.",
                      "The project remains on track.", "The partner deck has been sent."]
