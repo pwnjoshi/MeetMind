@@ -429,26 +429,69 @@ public final class AnalysisCoordinator {
         return (reduced, overview, uniqueTexts(pointSource), uniqueTexts(decisionSource), topicAgenda)
     }
 
+    public func reprocessMinutes(meetingID: UUID, model: VidurModel) async throws {
+        let meeting = try fetchMeeting(meetingID)
+        let turns = savedTurns(for: meeting)
+        let previousAnalysis = meeting.offlineAnalysisData
+        guard meeting.status == .completed, !turns.isEmpty else {
+            throw OfflineError.unavailable("A saved transcript is required to reprocess minutes.")
+        }
+        let modelProfile = try requiredProfiles(model: model, speakersOnly: false)[2]
+        guard await models.readiness(modelProfile) == .ready else {
+            throw OfflineError.unavailable("Download or repair the Minutes & Vidur model in Settings, then try again.")
+        }
+        OfflineProcessingGate.begin()
+        defer { OfflineProcessingGate.end() }
+        let corrections = Self.unreviewedCorrections(from: previousAnalysis, segments: meeting.orderedTranscriptSegments)
+        let result = try await MeetingAnalysisPipeline.shared.reprocessTranscript(
+            meetingID: meetingID, turns: turns, meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
+            timezone: meeting.analysisTimezone ?? TimeZone.current.identifier, model: model,
+            participants: meeting.namedAttendees.map(\.name), agenda: meeting.agendaText,
+            corrections: corrections)
+        try Task.checkCancellation()
+        let current = try fetchMeeting(meetingID)
+        guard current.status == .completed, current.offlineAnalysisData == previousAnalysis,
+              savedTurns(for: current) == turns else {
+            throw OfflineError.unavailable("The meeting changed while reprocessing. Open it again to retry.")
+        }
+        let fields = minutesFields(result, for: current)
+        let analysisData = try JSONEncoder().encode(fields.reduced.checkpoint)
+        let store = MeetingRecordStore.shared
+        let previousRecord = store.record(for: meetingID)
+        var updatedRecord = previousRecord
+        if !previousRecord.deciderIDs.isEmpty {
+            updatedRecord.remapDeciders(oldDecisions: current.summary?.keyDecisions ?? [], newDecisions: fields.decisions)
+        }
+        let decidersChanged = updatedRecord.deciderIDs != previousRecord.deciderIDs
+        try context.save()
+        if decidersChanged { try store.update(meetingID) { $0.deciderIDs = updatedRecord.deciderIDs } }
+        applyMinutes(overview: fields.overview, points: fields.points, decisions: fields.decisions,
+                     analysisData: analysisData, to: current)
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            if decidersChanged { try? store.update(meetingID) { $0.deciderIDs = previousRecord.deciderIDs } }
+            throw error
+        }
+    }
+
+    private func savedTurns(for meeting: Meeting) -> [AnalysisTurn] {
+        return meeting.orderedTranscriptSegments.compactMap { segment -> AnalysisTurn? in
+            guard !segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return AnalysisTurn(id: segment.id.uuidString, text: segment.text, start: segment.startTime,
+                end: segment.endTime, speaker: segment.speaker?.recordingVoiceLabel ?? segment.speaker?.name)
+        }
+    }
+
     private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
         // Names the user gave attendees let the reducer attach an owner to requests
         // ("Pawan, can you ...") and to first-person promises. Generic labels never count.
         // Topic bullets are rephrased English; a model discussion point never replaces them.
         let fields = minutesFields(result, for: meeting)
-        let reduced = fields.reduced
-        // The existing summary is updated in place. Deleting it and attaching a new one in
-        // the same change tripped a SwiftData assertion on launch-time repairs.
-        if let summary = meeting.summary, !summary.isDeleted, summary.modelContext != nil {
-            summary.executiveSummary = fields.overview
-            summary.keyPoints = fields.points
-            summary.keyDecisions = fields.decisions
-            summary.generatedAt = Date()
-        } else {
-            meeting.summary = Summary(executiveSummary: fields.overview,
-                keyPoints: fields.points, keyDecisions: fields.decisions, meeting: meeting)
-        }
-        // Tasks stay review suggestions (never auto-accepted); owner and context are preassigned in the checkpoint.
-        // Suggested attendees live in `minutes.suggestedAttendees` and are never added automatically.
-        meeting.offlineAnalysisData = try JSONEncoder().encode(reduced.checkpoint)
+        let analysisData = try JSONEncoder().encode(fields.reduced.checkpoint)
+        applyMinutes(overview: fields.overview, points: fields.points, decisions: fields.decisions,
+                     analysisData: analysisData, to: meeting)
         // An empty or placeholder agenda is filled with the topics heard in the meeting; the user can edit it later.
         let currentAgenda = (meeting.agendaText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let topicAgenda = fields.topicAgenda
@@ -459,6 +502,24 @@ public final class AnalysisCoordinator {
         } else if copiedAgenda {
             meeting.agendaText = nil
         }
+    }
+
+    private func applyMinutes(overview: String, points: [String], decisions: [String],
+                              analysisData: Data, to meeting: Meeting) {
+        // The existing summary is updated in place. Deleting it and attaching a new one in
+        // the same change tripped a SwiftData assertion on launch-time repairs.
+        if let summary = meeting.summary, !summary.isDeleted, summary.modelContext != nil {
+            summary.executiveSummary = overview
+            summary.keyPoints = points
+            summary.keyDecisions = decisions
+            summary.generatedAt = Date()
+        } else {
+            meeting.summary = Summary(executiveSummary: overview,
+                keyPoints: points, keyDecisions: decisions, meeting: meeting)
+        }
+        // Tasks stay review suggestions (never auto-accepted); owner and context are preassigned in the checkpoint.
+        // Suggested attendees live in `minutes.suggestedAttendees` and are never added automatically.
+        meeting.offlineAnalysisData = analysisData
         meeting.status = .completed
         meeting.analysisState = "completed"
         meeting.minutesNeedFinalization = true

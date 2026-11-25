@@ -662,7 +662,7 @@ public actor MeetingAnalysisPipeline {
         // ASR and diarization run serially. Both engines have high transient
         // memory use, and concurrency is disabled until a separately tested
         // resource governor can admit it for a qualified device profile.
-        func save() throws {
+        func save(_ checkpoint: MeetingAnalysisCheckpoint) throws {
             if discardActiveCheckpoint { throw CancellationError() }
             try JSONEncoder().encode(checkpoint).write(to: checkpointURL,
                 options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -687,7 +687,7 @@ public actor MeetingAnalysisPipeline {
             await backend.releaseSpeechEngine()
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
-            try save()
+            try save(checkpoint)
         }
         if checkpoint.stage == .speakers {
             try checkConditions()
@@ -720,7 +720,7 @@ public actor MeetingAnalysisPipeline {
             checkpoint.speakerEmbeddingModel = keptEmbeddings.isEmpty ? nil : profiles[1].revision
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)
             checkpoint.stage = .analysis
-            try save()
+            try save(checkpoint)
         }
         if stopAfterSpeakers {
             try Task.checkCancellation()
@@ -730,112 +730,159 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .analysis {
             try checkConditions()
             await progress(.analysis)
-            let minutesStarted = Date()
-            defer { lastStageTimings.minutesMs = elapsedMs(minutesStarted) }
-            await backend.releaseSpeechEngine()
-            let folder = try await backend.verifiedFolder(profiles[2])
-            // Optional so the old model is freed before a replacement loads; two
-            // resident language models would exceed the memory budget.
-            var session: (any MeetingAnalysisSession)?
-            func currentSession() throws -> any MeetingAnalysisSession {
-                if let session, !ComputeEnvironment.needsReload(session.placement) { return session }
-                session = nil
-                let loadStarted = Date()
-                let loaded = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
-                lastStageTimings.modelLoadMs += elapsedMs(loadStarted)
-                lastStageTimings.modelLoads += 1
-                session = loaded
-                return loaded
-            }
-            func analyzeOnce(_ chunk: [AnalysisTurn], placement: inout ComputePlacement) throws -> LocalAnalysisResult {
-                let active = try currentSession()
-                placement = active.placement
-                return try active.analyze(turns: chunk, meetingDate: meetingDate, timezone: timezone,
-                    question: nil, participants: participants, agenda: agenda)
-            }
-            /// A chunk interrupted by the move to the background (iOS rejects the GPU
-            /// work) is analyzed again on the CPU instead of falling back to rules.
-            func analyzeChunk(_ chunk: [AnalysisTurn]) throws -> LocalAnalysisResult {
-                var placement = ComputePlacement.independent
-                do {
-                    let result = try analyzeOnce(chunk, placement: &placement)
-                    if placement == .cpu { lastStageTimings.cpuChunks += 1 }
-                    return result
-                } catch {
-                    guard !(error is CancellationError), placement == .gpu, !ComputeEnvironment.gpuAvailable else { throw error }
-                    lastStageTimings.backgroundRetries += 1
-                    let result = try analyzeOnce(chunk, placement: &placement)
-                    if placement == .cpu { lastStageTimings.cpuChunks += 1 }
-                    return result
-                }
-            }
-
             let preAnalysisKey = RecordingReuse.contextKey(profile: profiles[2], configuration: Self.modelConfiguration,
                 chunkBytes: Self.analysisChunkBytes, meetingDate: meetingDate, timezone: timezone)
             let preAnalyzed: [String: LocalAnalysisResult] = Dictionary(
                 (loadPreAnalysis(meetingID: meetingID, contextKey: preAnalysisKey)?.entries ?? []).map { ($0.key, $0.result) },
                 uniquingKeysWith: { first, _ in first })
-            if checkpoint.chunkTurnIDs == nil {
-                let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: try currentSession(),
-                    meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes,
-                    participants: participants, agenda: agenda)
-                var seen = Set<String>()
-                checkpoint.turns = fitted.flatMap { $0 }.filter { seen.insert($0.id).inserted }
-                checkpoint.chunkTurnIDs = fitted.map { $0.map(\.id) }
-                try save()
+            checkpoint = try await analyzeTranscript(checkpoint, profile: profiles[2],
+                meetingDate: meetingDate, timezone: timezone, participants: participants,
+                agenda: agenda, preAnalyzed: preAnalyzed, save: save)
+            removePreAnalysis(meetingID: meetingID)
+        }
+        try Task.checkCancellation()
+        if discardActiveCheckpoint { throw CancellationError() }
+        await progress(.completed)
+        return checkpoint
+    }
+
+    /// Generate fresh minutes from saved transcript turns without touching recording checkpoints.
+    public func reprocessTranscript(meetingID: UUID, turns: [AnalysisTurn], meetingDate: Date, timezone: String,
+                                    model: VidurModel, participants: [String], agenda: String?,
+                                    corrections: [TranscriptCorrection]? = nil) async throws -> MeetingAnalysisCheckpoint {
+        guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Try again after it finishes.") }
+        guard !turns.isEmpty else { throw OfflineError.unavailable("A saved transcript is required to reprocess minutes.") }
+        running = true
+        activeMeetingID = meetingID
+        discardActiveCheckpoint = false
+        defer { running = false; activeMeetingID = nil; discardActiveCheckpoint = false }
+        lastAnalysisReuse = (0, 0)
+        lastAnalysisFallbackChunks = 0
+        lastAnalysisFallbackReason = nil
+        lastStageTimings = AnalysisStageTimings()
+        try checkConditions()
+        let profile = try requiredProfiles(model: model)[2]
+        var initial = MeetingAnalysisCheckpoint(sourceSignature: "saved-transcript", stage: .analysis,
+            turns: turns, speakers: [], analysis: [], analyzedChunks: 0)
+        initial.transcriptCorrections = corrections
+        let result = try await analyzeTranscript(initial, profile: profile, meetingDate: meetingDate,
+            timezone: timezone, participants: participants, agenda: agenda, preAnalyzed: [:]) { _ in }
+        try Task.checkCancellation()
+        if discardActiveCheckpoint { throw CancellationError() }
+        guard lastAnalysisFallbackChunks == 0 else {
+            throw OfflineError.unavailable("The minutes model could not analyze the whole transcript. Please try again.")
+        }
+        return result
+    }
+
+    private func analyzeTranscript(_ initial: MeetingAnalysisCheckpoint, profile: ModelProfile,
+                                   meetingDate: Date, timezone: String, participants: [String], agenda: String?,
+                                   preAnalyzed: [String: LocalAnalysisResult],
+                                   save: (MeetingAnalysisCheckpoint) throws -> Void) async throws -> MeetingAnalysisCheckpoint {
+        var checkpoint = initial
+        func elapsedMs(_ start: Date) -> Int { Int(Date().timeIntervalSince(start) * 1_000) }
+        let minutesStarted = Date()
+        defer { lastStageTimings.minutesMs = elapsedMs(minutesStarted) }
+        await backend.releaseSpeechEngine()
+        let folder = try await backend.verifiedFolder(profile)
+        // Optional so the old model is freed before a replacement loads; two
+        // resident language models would exceed the memory budget.
+        var session: (any MeetingAnalysisSession)?
+        func currentSession() throws -> any MeetingAnalysisSession {
+            if let session, !ComputeEnvironment.needsReload(session.placement) { return session }
+            session = nil
+            let loadStarted = Date()
+            let loaded = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
+            lastStageTimings.modelLoadMs += elapsedMs(loadStarted)
+            lastStageTimings.modelLoads += 1
+            session = loaded
+            return loaded
+        }
+        func analyzeOnce(_ chunk: [AnalysisTurn], placement: inout ComputePlacement) throws -> LocalAnalysisResult {
+            let active = try currentSession()
+            placement = active.placement
+            return try active.analyze(turns: chunk, meetingDate: meetingDate, timezone: timezone,
+                question: nil, participants: participants, agenda: agenda)
+        }
+        /// A chunk interrupted by the move to the background (iOS rejects the GPU
+        /// work) is analyzed again on the CPU instead of falling back to rules.
+        func analyzeChunk(_ chunk: [AnalysisTurn]) throws -> LocalAnalysisResult {
+            var placement = ComputePlacement.independent
+            do {
+                let result = try analyzeOnce(chunk, placement: &placement)
+                if placement == .cpu { lastStageTimings.cpuChunks += 1 }
+                return result
+            } catch {
+                guard !(error is CancellationError), placement == .gpu, !ComputeEnvironment.gpuAvailable else { throw error }
+                lastStageTimings.backgroundRetries += 1
+                let result = try analyzeOnce(chunk, placement: &placement)
+                if placement == .cpu { lastStageTimings.cpuChunks += 1 }
+                return result
             }
-            guard Set(checkpoint.turns.map(\.id)).count == checkpoint.turns.count else {
-                throw OfflineError.unavailable("Transcript checkpoint IDs are invalid. Reanalyze the saved recording.")
+        }
+
+        if checkpoint.chunkTurnIDs == nil {
+            let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: try currentSession(),
+                meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes,
+                participants: participants, agenda: agenda)
+            var seen = Set<String>()
+            checkpoint.turns = fitted.flatMap { $0 }.filter { seen.insert($0.id).inserted }
+            checkpoint.chunkTurnIDs = fitted.map { $0.map(\.id) }
+            try save(checkpoint)
+        }
+        guard Set(checkpoint.turns.map(\.id)).count == checkpoint.turns.count else {
+            throw OfflineError.unavailable("Transcript checkpoint IDs are invalid. Reanalyze the saved recording.")
+        }
+        let byID = Dictionary(uniqueKeysWithValues: checkpoint.turns.map { ($0.id, $0) })
+        let chunks = try (checkpoint.chunkTurnIDs ?? []).map { ids in
+            try ids.map { id in
+                guard let turn = byID[id] else {
+                    throw OfflineError.unavailable("Analysis checkpoint is invalid. Reanalyze the saved recording.")
+                }
+                return turn
             }
-            let byID = Dictionary(uniqueKeysWithValues: checkpoint.turns.map { ($0.id, $0) })
-            let chunks = try (checkpoint.chunkTurnIDs ?? []).map { ids in
-                try ids.map { id in
-                    guard let turn = byID[id] else {
-                        throw OfflineError.unavailable("Analysis checkpoint is invalid. Reanalyze the saved recording.")
-                    }
-                    return turn
+        }
+        guard checkpoint.analyzedChunks == checkpoint.analysis.count,
+              checkpoint.analyzedChunks <= chunks.count, !chunks.isEmpty,
+              chunks.allSatisfy({ !$0.isEmpty && Set($0.map(\.id)).count == $0.count }),
+              Set(chunks.flatMap { $0.map(\.id) }) == Set(checkpoint.turns.map(\.id)) else {
+            throw OfflineError.unavailable("Analysis checkpoint is invalid. Preserve the recording and restart analysis.")
+        }
+        for index in checkpoint.analyzedChunks..<chunks.count {
+            try checkConditions()
+            if discardActiveCheckpoint { throw CancellationError() }
+            let result: LocalAnalysisResult
+            if let cached = preAnalyzed[RecordingReuse.chunkKey(chunks[index])],
+               (try? cached.validate(against: chunks[index])) != nil {
+                // Identical turn IDs and texts were analyzed during recording.
+                result = cached.sanitized(against: chunks[index])
+                lastAnalysisReuse.reused += 1
+            } else {
+                do {
+                    let chunkStarted = Date()
+                    let raw = try analyzeChunk(chunks[index])
+                    lastStageTimings.chunkMs.append(elapsedMs(chunkStarted))
+                    result = raw.sanitized(against: chunks[index])
+                    lastAnalysisReuse.analyzed += 1
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch OfflineError.memoryBudget(let required, let budget) {
+                    throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
+                } catch {
+                    // Unparseable or over-long model output for one chunk. Keep
+                    // the meeting going: the reducer's grounded transcript rules
+                    // still extract this chunk's explicit actions and decisions.
+                    try checkConditions()
+                    result = LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
+                    lastAnalysisFallbackChunks += 1
+                    lastAnalysisFallbackReason = (error as? LocalizedError)?.errorDescription ?? "model output unusable"
                 }
             }
-            guard checkpoint.analyzedChunks == checkpoint.analysis.count,
-                  checkpoint.analyzedChunks <= chunks.count, !chunks.isEmpty,
-                  chunks.allSatisfy({ !$0.isEmpty && Set($0.map(\.id)).count == $0.count }),
-                  Set(chunks.flatMap { $0.map(\.id) }) == Set(checkpoint.turns.map(\.id)) else {
-                throw OfflineError.unavailable("Analysis checkpoint is invalid. Preserve the recording and restart analysis.")
-            }
-            for index in checkpoint.analyzedChunks..<chunks.count {
-                try checkConditions()
-                let result: LocalAnalysisResult
-                if let cached = preAnalyzed[RecordingReuse.chunkKey(chunks[index])],
-                   (try? cached.validate(against: chunks[index])) != nil {
-                    // Identical turn IDs and texts were analyzed during recording.
-                    result = cached.sanitized(against: chunks[index])
-                    lastAnalysisReuse.reused += 1
-                } else {
-                    do {
-                        let chunkStarted = Date()
-                        let raw = try analyzeChunk(chunks[index])
-                        lastStageTimings.chunkMs.append(elapsedMs(chunkStarted))
-                        result = raw.sanitized(against: chunks[index])
-                        lastAnalysisReuse.analyzed += 1
-                    } catch is CancellationError {
-                        throw CancellationError()
-                    } catch OfflineError.memoryBudget(let required, let budget) {
-                        throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
-                    } catch {
-                        // Unparseable or over-long model output for one chunk. Keep
-                        // the meeting going: the reducer's grounded transcript rules
-                        // still extract this chunk's explicit actions and decisions.
-                        try checkConditions()
-                        result = LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
-                        lastAnalysisFallbackChunks += 1
-                        lastAnalysisFallbackReason = (error as? LocalizedError)?.errorDescription ?? "model output unusable"
-                    }
-                }
-                checkpoint.analysis.append(result)
-                checkpoint.analyzedChunks = index + 1
-                try save()
-            }
-            if let session, !ComputeEnvironment.needsReload(session.placement),
+            checkpoint.analysis.append(result)
+            checkpoint.analyzedChunks = index + 1
+            try save(checkpoint)
+        }
+        if let session, !ComputeEnvironment.needsReload(session.placement),
            var comparisons = checkpoint.transcriptCorrections, !comparisons.isEmpty {
             let contexts = comparisons.map { comparison in
                 let before = checkpoint.turns.filter { $0.end <= comparison.start }.suffix(2).map(\.text)
@@ -883,12 +930,7 @@ public actor MeetingAnalysisPipeline {
             }
         }
         checkpoint.stage = .completed
-            try save()
-            removePreAnalysis(meetingID: meetingID)
-        }
-        try Task.checkCancellation()
-        if discardActiveCheckpoint { throw CancellationError() }
-        await progress(.completed)
+        try save(checkpoint)
         return checkpoint
     }
 
