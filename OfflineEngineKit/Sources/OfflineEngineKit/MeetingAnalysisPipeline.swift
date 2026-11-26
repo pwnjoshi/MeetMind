@@ -934,7 +934,9 @@ public actor MeetingAnalysisPipeline {
             }.prefix(10))
             if !facts.isEmpty {
                 do {
-                    if let draft = try session.draftOverviewContext(facts.map(\.text)), facts.indices.contains(draft.index) {
+                    let context = checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns)
+                    if let draft = try session.draftOverviewContext(facts, transcript: context),
+                       facts.indices.contains(draft.index) {
                         checkpoint.rankedOverviewFacts = [facts[draft.index]]
                         checkpoint.draftedOverviewContext = draft.text
                     }
