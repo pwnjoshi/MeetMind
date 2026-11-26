@@ -410,6 +410,78 @@ public actor MeetingAnalysisPipeline {
         return (recovered.isEmpty ? revised : (revised + recovered).sorted { $0.start < $1.start }, corrections)
     }
 
+    /// Short interior gaps worth rechecking. Track the union of recognized spans
+    /// so overlapping turns cannot create a false gap.
+    static func missedSpeechWindows(_ turns: [AnalysisTurn], duration: Double) -> [SpeechRegion] {
+        var windows: [SpeechRegion] = []
+        var coveredEnd: Double?
+        for turn in turns.sorted(by: { $0.start < $1.start }) {
+            guard turn.start.isFinite, turn.end.isFinite, turn.end > turn.start,
+                  turn.start >= 0, turn.start < duration else { continue }
+            if let end = coveredEnd, (6...18).contains(turn.start - end) {
+                windows.append(SpeechRegion(start: end, end: turn.start))
+            }
+            coveredEnd = max(coveredEnd ?? 0, min(turn.end, duration))
+        }
+        return Array(windows.sorted {
+            $0.duration == $1.duration ? $0.start < $1.start : $0.duration > $1.duration
+        }.prefix(2))
+    }
+
+    private func recoverMissedSpeech(in turns: [AnalysisTurn], audio: URL, duration: Double,
+                                     profile: ModelProfile, languageCode: String?) async throws -> [AnalysisTurn] {
+        let windows = Self.missedSpeechWindows(turns, duration: duration)
+        guard !windows.isEmpty else { return turns }
+        let folder = try await backend.verifiedFolder(profile)
+        var recovered: [AnalysisTurn] = []
+        for (index, window) in windows.enumerated() {
+            do {
+                func decode(padding: Double, language: String?) async throws -> [AnalysisTurn] {
+                    try checkConditions()
+                    let start = max(0, window.start - padding)
+                    let end = min(duration, window.end + padding)
+                    let clip = try RecordingReuse.extractAudio(from: audio, start: start, end: end)
+                    defer { RecordingReuse.removeClip(clip) }
+                    return try await backend.transcribe(audio: clip, folder: folder,
+                        request: SpeechRequest(languageCode: language, vocabulary: nil, memory: nil))
+                        .compactMap { turn in
+                            let absoluteStart = turn.start + start
+                            let absoluteEnd = turn.end + start
+                            guard absoluteStart.isFinite, absoluteEnd.isFinite,
+                                  absoluteStart >= window.start - 0.15, absoluteEnd <= window.end + 0.15,
+                                  absoluteEnd > absoluteStart else { return nil }
+                            return AnalysisTurn(id: turn.id, text: turn.text, start: max(window.start, absoluteStart),
+                                                end: min(window.end, absoluteEnd), speaker: nil)
+                        }
+                }
+                let primary = try await decode(padding: 0, language: languageCode)
+                guard !primary.isEmpty else { continue }
+                let confirmation = try await decode(padding: 0.4, language: languageCode)
+                for (offset, turn) in primary.enumerated() {
+                    let key = Self.captionWords(turn.text)
+                    guard key.count >= 4, confirmation.contains(where: {
+                        abs($0.start - turn.start) <= 1 && abs($0.end - turn.end) <= 1
+                            && Self.captionWords($0.text) == key
+                    }) else { continue }
+                    recovered.append(AnalysisTurn(id: "audio-gap-\(index)-\(offset)", text: turn.text,
+                        start: turn.start, end: turn.end, speaker: nil))
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch OfflineError.thermalPause {
+                throw OfflineError.thermalPause
+            } catch {
+                try Task.checkCancellation()
+            }
+        }
+        return (turns + recovered).sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+    }
+
+    private static func captionWords(_ text: String) -> [String] {
+        text.lowercased().split(whereSeparator: \.isWhitespace)
+            .map { $0.trimmingCharacters(in: .punctuationCharacters) }.filter { !$0.isEmpty }
+    }
+
     /// Analyzes finalized transcript chunks while recording continues, so the
     /// post-recording pass can reuse them. Everything here is optional work:
     /// it does nothing unless the device is cool, not in Low Power Mode, the
@@ -662,7 +734,7 @@ public actor MeetingAnalysisPipeline {
         }
         let profiles = try requiredProfiles(model: model)
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|\(Self.checkpointFormatVersion)|chunks-v5|mt-v1|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
+        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|\(Self.checkpointFormatVersion)|chunks-v5|audio-gap-v1|mt-v1|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         if !reviewedTurns.isEmpty {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
@@ -704,6 +776,8 @@ public actor MeetingAnalysisPipeline {
                 checkpoint.turns = checked.turns
                 checkpoint.transcriptCorrections = checked.corrections
             }
+            checkpoint.turns = try await recoverMissedSpeech(in: checkpoint.turns, audio: audio,
+                duration: duration, profile: profiles[0], languageCode: languageCode)
             lastStageTimings.transcriptionMs = elapsedMs(started)
             await backend.releaseSpeechEngine()
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }

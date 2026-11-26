@@ -2,6 +2,15 @@ import XCTest
 @testable import OfflineEngineKit
 
 final class MeetingAnalysisPipelineTests: XCTestCase {
+    func testMissedSpeechWindowRechecksTheAdiGapAndIgnoresOverlap() {
+        let spans = [(125.47, 127.87), (128.84, 136.9), (132.0, 134.0), (147.72, 150.8), (152.89, 159.23)]
+        let turns = spans.enumerated().map { index, span in
+            AnalysisTurn(id: "t\(index)", text: "Recognized segment", start: span.0, end: span.1, speaker: nil)
+        }
+        XCTAssertEqual(MeetingAnalysisPipeline.missedSpeechWindows(turns, duration: 190.5),
+                       [SpeechRegion(start: 136.9, end: 147.72)])
+    }
+
     func testRemoteAudioIsRejectedBeforeAnyEngineStartsAndLeaseIsReleased() async {
         let pipeline = MeetingAnalysisPipeline()
         for _ in 0..<2 {

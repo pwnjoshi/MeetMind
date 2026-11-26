@@ -512,6 +512,21 @@ enum ActionExtractor {
                 return task
             }
         }
+        // An explicit named allocation can arrive as a continuation, for
+        // example "and Garima will be doing the model finding part".
+        let allocation = #"(?i)^([\p{L}][\p{L}'-]{1,24})\s+will\s+be\s+(?:doing|handling)\s+(?:the\s+)+(.+?)(?:\s+whatever\s+we\s+discussed.*)?$"#
+        if let name = MinutesRegex.firstMatch(allocation, in: text, group: 1),
+           let object = MinutesRegex.firstMatch(allocation, in: text, group: 2),
+           let owner = resolveOwner(HindiText.capitalizeFirst(name), context: context),
+           let task = makeTask(action: nil, object: object, owner: owner, evidence: evidence) {
+            return task
+        }
+        let acceptedWork = #"(?i)\bthat\s+works[, .]+you\s+can\s+do\s+(?:the\s+that\s+you\s+can\s+do\s+)?the\s+(.+?)\s+as\s+you\s+said\b"#
+        if let object = MinutesRegex.firstMatch(acceptedWork, in: text, group: 1),
+           object.split(whereSeparator: \.isWhitespace).count >= 2,
+           let task = makeTask(action: nil, object: "the " + object, owner: nil, evidence: evidence) {
+            return task
+        }
         // A settled outcome ("tay hua, ... karenge") is a decision, not a request.
         guard !DecisionExtractor.isDecision(sentence) else { return nil }
         return hinglishTask(text, evidence: evidence, turn: turn, context: context)

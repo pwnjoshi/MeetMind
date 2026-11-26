@@ -7,6 +7,24 @@ final class MeetingAnalysisReducerTests: XCTestCase {
                                   speakers: [], analysis: analysis, analyzedChunks: analysis.count)
     }
 
+    func testExplicitAllocationSurvivesLowercaseTranscript() {
+        let words = "and garima will be doing the the model finding part whatever we discussed about you all right"
+        let turn = AnalysisTurn(id: "allocation", text: words, start: 159, end: 166, speaker: "S1")
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: [turn], analysis: []))
+        XCTAssertEqual(reduced.tasks.count, 1)
+        XCTAssertEqual(reduced.tasks.first?.owner, "Garima")
+        XCTAssertEqual(reduced.tasks.first?.title, "Handle model finding part")
+        XCTAssertEqual(reduced.tasks.first?.evidence.first?.quote, words)
+    }
+
+    func testAcceptedWorkDoesNotGuessTheAddressee() {
+        let words = "all right so okay that works you can do the that you can do the ui part as you said and"
+        let turn = AnalysisTurn(id: "accepted", text: words, start: 153, end: 159, speaker: "S1")
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: [turn], analysis: []))
+        XCTAssertEqual(reduced.tasks.first?.title.lowercased(), "handle the ui part")
+        XCTAssertNil(reduced.tasks.first?.owner)
+    }
+
     func testActionQualityGateRejectsIncompleteDeliverables() {
         XCTAssertTrue(MeetingAnalysisReducer.isIncompleteActionTitle("Tell you."))
         XCTAssertTrue(MeetingAnalysisReducer.isIncompleteActionTitle("Buy some"))
