@@ -492,10 +492,13 @@ public final class AnalysisCoordinator {
         guard current.summary?.generatedAt == previousSummaryDate else {
             throw OfflineError.unavailable("The saved minutes changed while reprocessing.")
         }
+        let currentDecisions = current.summary?.keyDecisions ?? []
+        let manualSources = MeetingRecordStore.shared.record(for: meetingID).manualDecisionSources ?? [:]
+        let decisions = uniqueTexts(currentDecisions.filter { manualSources[$0] != nil } + fields.decisions)
         return MinutesDraft(
             meetingID: meetingID, currentOverview: current.summary?.executiveSummary ?? "",
-            currentDecisions: current.summary?.keyDecisions ?? [], overview: fields.overview,
-            decisions: fields.decisions, suggestedActions: fields.reduced.tasks.map(\.title),
+            currentDecisions: currentDecisions, overview: fields.overview,
+            decisions: decisions, suggestedActions: fields.reduced.tasks.map(\.title),
             points: fields.points, analysisData: try JSONEncoder().encode(fields.reduced.checkpoint),
             previousAnalysis: previousAnalysis, previousAgenda: previousAgenda,
             previousSummaryDate: previousSummaryDate, turns: turns,

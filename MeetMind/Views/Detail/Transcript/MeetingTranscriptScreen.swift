@@ -21,6 +21,7 @@ public struct MeetingTranscriptScreen: View {
     @State private var didFocus = false
     @State private var actionSource: TranscriptCard?
     @State private var actionTitle = ""
+    @State private var addsDecision = false
     @State private var audioAvailable = false
     @State private var isProcessing = false
     @State private var isSearchOpen = false
@@ -87,19 +88,19 @@ public struct MeetingTranscriptScreen: View {
         .sheet(item: $actionSource) { card in
             NavigationStack {
                 Form {
-                    TextField("Action", text: $actionTitle, axis: .vertical)
+                    TextField(addsDecision ? "Decision" : "Action", text: $actionTitle, axis: .vertical)
                     Section("Transcript evidence") {
                         Text(card.text)
                     }
                 }
-                .navigationTitle("Add Action")
+                .navigationTitle(addsDecision ? "Add Decision" : "Add Action")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") { actionSource = nil }
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") { saveAction(from: card) }
+                        Button("Save") { saveRecordItem(from: card) }
                             .disabled(actionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
@@ -296,10 +297,17 @@ public struct MeetingTranscriptScreen: View {
         .accessibilityAction(named: "Change speaker") { if !isProcessing { reassigningCard = card } }
         .contextMenu {
             Button("Add action from passage", systemImage: "plus.circle") {
+                addsDecision = false
                 actionTitle = ""
                 actionSource = card
             }
             .disabled(isProcessing || meeting?.status != .completed)
+            Button("Add decision from passage", systemImage: "checkmark.circle") {
+                addsDecision = true
+                actionTitle = ""
+                actionSource = card
+            }
+            .disabled(isProcessing || meeting?.status != .completed || meeting?.summary == nil)
             if let (line, correction) = correction(for: card) {
                 if correction.replacement != nil {
                     Button("Restore original text", systemImage: "arrow.uturn.backward") {
@@ -491,9 +499,19 @@ public struct MeetingTranscriptScreen: View {
         persist()
     }
 
-    private func saveAction(from card: TranscriptCard) {
+    private func saveRecordItem(from card: TranscriptCard) {
         let title = actionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let meeting, meeting.status == .completed, !isProcessing, !title.isEmpty else { return }
+        if addsDecision {
+            do {
+                try MeetingRecordEditor.addTranscriptDecision(title, segmentIDs: card.lines.map(\.id),
+                    meeting: meeting, context: modelContext, store: .shared)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            actionSource = nil
+            return
+        }
         let source = card.lines.map { line in
             let seconds = Int(line.start)
             return String(format: "[%02d:%02d] ", seconds / 60, seconds % 60) + line.text

@@ -67,6 +67,7 @@ public struct MeetingRecordData: Codable, Equatable, Sendable {
     public var keptPrivateAt: Date?
     public var shares: [SharedMinutesEntry] = []
     public var voiceAssignments: [VoiceAssignment] = []
+    public var manualDecisionSources: [String: [UUID]]?
 
     public init() {}
 

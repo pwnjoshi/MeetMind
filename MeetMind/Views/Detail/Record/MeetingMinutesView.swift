@@ -164,8 +164,13 @@ struct MeetingMinutesView: View {
             section("Decisions") {
                 ForEach(content.decisions) { decision in
                     let evidence = MeetingEvidence.decision(decision.text, in: analysis)
+                    let sourceIDs = Set(store.record(for: meeting.id).manualDecisionSources?[decision.text] ?? [])
+                    let manualMoments = meeting.orderedTranscriptSegments.filter { sourceIDs.contains($0.id) }.map {
+                        EvidenceMoment(turnID: $0.id.uuidString, speaker: Speaker.displayName(of: $0.speaker),
+                                       start: $0.startTime, quote: $0.text, colorHex: $0.speaker?.colorHex ?? "#6B7280")
+                    }
                     pointRow(key: "x|\(decision.text)", text: decision.text,
-                             moments: quotes(evidence, analysis, names))
+                             moments: manualMoments.isEmpty ? quotes(evidence, analysis, names) : manualMoments)
                 }
             }
         }

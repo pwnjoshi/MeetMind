@@ -127,12 +127,26 @@ public enum MeetingRecordEditor {
         }
     }
 
+    static func addTranscriptDecision(_ text: String, segmentIDs: [UUID], meeting: Meeting,
+                                      context: ModelContext, store: MeetingRecordStore) throws {
+        guard let summary = meeting.summary else { throw MeetingRecordEditError.missingMinutes }
+        let decisions = summary.keyDecisions.contains(text) ? summary.keyDecisions : summary.keyDecisions + [text]
+        try commitDecisions(decisions, summary: summary, meeting: meeting, context: context, store: store) {
+            var sources = $0.manualDecisionSources ?? [:]
+            sources[text] = segmentIDs
+            $0.manualDecisionSources = sources
+        }
+    }
+
     private static func commitDecisions(_ newDecisions: [String], summary: Summary, meeting: Meeting,
                                         context: ModelContext, store: MeetingRecordStore,
                                         record change: (inout MeetingRecordData) -> Void) throws {
         let previousDecisions = summary.keyDecisions
         let before = store.record(for: meeting.id)
-        try store.update(meeting.id, change)
+        try store.update(meeting.id) { record in
+            change(&record)
+            record.manualDecisionSources = record.manualDecisionSources?.filter { newDecisions.contains($0.key) }
+        }
         summary.keyDecisions = newDecisions
         do {
             try context.save()
