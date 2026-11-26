@@ -319,7 +319,7 @@ public enum MeetingAnalysisReducer {
 
     private static func cleanedTask(_ task: SuggestedTask) -> SuggestedTask? {
         let title = polishedTask(task.title)
-        guard isSubstantive(title), !task.evidence.isEmpty else { return nil }
+        guard isSubstantive(title), !isIncompleteActionTitle(title), !task.evidence.isEmpty else { return nil }
         return SuggestedTask(title: title, category: task.category, owner: cleanedOptional(task.owner),
                              deadlineText: cleanedOptional(plausibleDeadline(task.deadlineText)), priority: task.priority,
                              evidence: uniqueEvidence(task.evidence))
@@ -870,6 +870,12 @@ public enum MeetingAnalysisReducer {
             .lowercased().unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character(String($0)) : " " }
             .reduce(into: "") { $0.append($1) }
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    static func isIncompleteActionTitle(_ text: String) -> Bool {
+        MinutesRegex.firstMatch(
+            #"(?i)^(?:tell|inform|buy|get|send|share|do|handle)\s+(?:you|me|us|him|her|them|it|this|that|some|something|anything)$"#,
+            in: normalize(text)) != nil
     }
 
     static func isSubstantive(_ text: String) -> Bool {

@@ -41,11 +41,14 @@ struct MeetingMinutesView: View {
         let isEmpty = content.summary.isEmpty && content.agenda.isEmpty && content.present.isEmpty
             && content.absent.isEmpty && content.decisions.isEmpty
         VStack(alignment: .leading, spacing: 22) {
-            if analysis?.transcriptCorrections?.contains(where: { $0.replacement == nil }) == true {
+            let needsMinutesReview = analysis?.minutesNeedSourceReview == true
+            if needsMinutesReview || analysis?.transcriptCorrections?.contains(where: { $0.replacement == nil }) == true {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Some wording needs review", systemImage: "text.bubble")
+                    Label(needsMinutesReview ? "Review these minutes" : "Some wording needs review", systemImage: "text.bubble")
                         .font(.subheadline.weight(.semibold))
-                    Text("Disputed lines were left out of these minutes.")
+                    Text(needsMinutesReview
+                         ? "MeetMind retried unclear actions. Check the transcript before sharing."
+                         : "Disputed lines were left out of these minutes.")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("Review transcript", action: onOpenTranscript)
                         .font(.subheadline)

@@ -60,6 +60,8 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public var transcriptCorrections: [TranscriptCorrection]? = nil
     public var rankedOverviewFacts: [SupportedPoint]? = nil
     public var draftedOverviewContext: String? = nil
+    public var minutesQualityRetryAttempted: Bool? = nil
+    public var minutesNeedSourceReview: Bool? = nil
     /// L2-normalised voice embedding per speaker label, from the diarization clustering. Used only to
     /// recognise known voices on this device. Absent in checkpoints saved by older versions.
     public var speakerEmbeddings: [String: [Float]]? = nil
@@ -992,7 +994,35 @@ public actor MeetingAnalysisPipeline {
                     lastAnalysisFallbackReason = (error as? LocalizedError)?.errorDescription ?? "model output unusable"
                 }
             }
-            checkpoint.analysis.append(result)
+            var checkedTasks = result.tasks
+            let vague = result.tasks.contains { MeetingAnalysisReducer.isIncompleteActionTitle($0.title) }
+            let reallocation = result.tasks.isEmpty && chunk.contains {
+                MinutesRegex.firstMatch(#"(?i)\b(?:reallocate|reassign|swap tasks|switch tasks)\b"#, in: $0.text) != nil
+            }
+            if vague || reallocation {
+                checkedTasks.removeAll { MeetingAnalysisReducer.isIncompleteActionTitle($0.title) }
+                checkpoint.minutesNeedSourceReview = true
+                if checkpoint.minutesQualityRetryAttempted != true {
+                    checkpoint.minutesQualityRetryAttempted = true
+                    try save(checkpoint)
+                    do {
+                        let repaired = try currentSession().repairMinutes(turns: chunk, meetingDate: meetingDate,
+                            timezone: timezone, participants: participants, agenda: agenda).sanitized(against: chunk)
+                        let concrete = repaired.tasks.filter { !MeetingAnalysisReducer.isIncompleteActionTitle($0.title) }
+                        if !concrete.isEmpty {
+                            checkedTasks.append(contentsOf: concrete)
+                        }
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch OfflineError.thermalPause {
+                        throw OfflineError.thermalPause
+                    } catch {
+                        try Task.checkCancellation()
+                    }
+                }
+            }
+            checkpoint.analysis.append(LocalAnalysisResult(discussion: result.discussion, decisions: result.decisions,
+                                                          tasks: checkedTasks, openIssues: result.openIssues))
             checkpoint.analyzedChunks = index + 1
             try save(checkpoint)
         }

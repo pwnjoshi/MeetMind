@@ -7,6 +7,13 @@ final class MeetingAnalysisReducerTests: XCTestCase {
                                   speakers: [], analysis: analysis, analyzedChunks: analysis.count)
     }
 
+    func testActionQualityGateRejectsIncompleteDeliverables() {
+        XCTAssertTrue(MeetingAnalysisReducer.isIncompleteActionTitle("Tell you."))
+        XCTAssertTrue(MeetingAnalysisReducer.isIncompleteActionTitle("Buy some"))
+        XCTAssertFalse(MeetingAnalysisReducer.isIncompleteActionTitle("Tell you which target users to interview"))
+        XCTAssertFalse(MeetingAnalysisReducer.isIncompleteActionTitle("Buy some replacement microphones"))
+    }
+
     func testExplicitCommitmentBecomesGroundedReviewableTaskWhenModelMissesIt() throws {
         let text = "Rahul will send the estimate tomorrow."
         let turn = AnalysisTurn(id: "t1", text: text, start: 0, end: 3, speaker: "Rahul")

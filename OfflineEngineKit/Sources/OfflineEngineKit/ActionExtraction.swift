@@ -560,7 +560,7 @@ enum ActionExtractor {
         } else {
             title = MeetingAnalysisReducer.polishedTask("Handle " + body)
         }
-        guard MeetingAnalysisReducer.isSubstantive(title) else { return nil }
+        guard MeetingAnalysisReducer.isSubstantive(title), !MeetingAnalysisReducer.isIncompleteActionTitle(title) else { return nil }
         return SuggestedTask(title: title, category: MeetingAnalysisReducer.category(for: title), owner: owner,
                              deadlineText: deadline, priority: nil, evidence: evidence)
     }
@@ -711,7 +711,7 @@ enum ActionExtractor {
             }
         }
         let polished = MeetingAnalysisReducer.polishedTask(title)
-        guard MeetingAnalysisReducer.isSubstantive(polished) else { return nil }
+        guard MeetingAnalysisReducer.isSubstantive(polished), !MeetingAnalysisReducer.isIncompleteActionTitle(polished) else { return nil }
         return SuggestedTask(title: polished, category: MeetingAnalysisReducer.category(for: polished), owner: owner,
                              deadlineText: deadline, priority: nil, evidence: evidence)
     }

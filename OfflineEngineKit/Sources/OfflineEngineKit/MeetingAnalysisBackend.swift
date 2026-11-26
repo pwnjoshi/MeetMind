@@ -11,6 +11,8 @@ protocol MeetingAnalysisSession {
     func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]?
     /// English text for Hindi or Hinglish turns, keyed by turn ID. Only IDs that were given are returned. Nil means
     /// this session cannot translate; the minutes then use the original text.
+    func repairMinutes(turns: [AnalysisTurn], meetingDate: Date, timezone: String,
+                       participants: [String], agenda: String?) throws -> LocalAnalysisResult
     func translateToEnglish(_ turns: [AnalysisTurn]) throws -> [String: String]?
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult
@@ -26,6 +28,12 @@ extension MeetingAnalysisSession {
     func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn]) throws -> (index: Int, text: String)? { nil }
     func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]? { nil }
     func translateToEnglish(_ turns: [AnalysisTurn]) throws -> [String: String]? { nil }
+
+    func repairMinutes(turns: [AnalysisTurn], meetingDate: Date, timezone: String,
+                       participants: [String], agenda: String?) throws -> LocalAnalysisResult {
+        try analyze(turns: turns, meetingDate: meetingDate, timezone: timezone, question: nil,
+                    participants: participants, agenda: agenda)
+    }
 
     var placement: ComputePlacement { .independent }
 
