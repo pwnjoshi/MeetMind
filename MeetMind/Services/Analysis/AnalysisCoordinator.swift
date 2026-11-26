@@ -495,10 +495,13 @@ public final class AnalysisCoordinator {
     }
 
     private func savedTurns(for meeting: Meeting) -> [AnalysisTurn] {
+        let names = MeetingSpeakerNames(meeting: meeting, store: MeetingRecordStore.shared).assignedLabels
         return meeting.orderedTranscriptSegments.compactMap { segment -> AnalysisTurn? in
             guard !segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            let label = segment.speaker?.recordingVoiceLabel
+            let identified = label.flatMap { names[$0] } ?? label ?? segment.speaker?.name
             return AnalysisTurn(id: segment.id.uuidString, text: segment.text, start: segment.startTime,
-                end: segment.endTime, speaker: segment.speaker?.recordingVoiceLabel ?? segment.speaker?.name)
+                end: segment.endTime, speaker: identified)
         }
     }
 

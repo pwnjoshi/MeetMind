@@ -660,7 +660,7 @@ public actor MeetingAnalysisPipeline {
         }
         let profiles = try requiredProfiles(model: model)
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|\(Self.checkpointFormatVersion)|chunks-v4|mt-v1|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
+        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|\(Self.checkpointFormatVersion)|chunks-v5|mt-v1|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         if !reviewedTurns.isEmpty {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
@@ -797,6 +797,7 @@ public actor MeetingAnalysisPipeline {
     private func analyzeTranscript(_ initial: MeetingAnalysisCheckpoint, profile: ModelProfile,
                                    meetingDate: Date, timezone: String, participants: [String], agenda: String?,
                                    preAnalyzed: [String: LocalAnalysisResult],
+                                   preferCompleteTranscript: Bool = true,
                                    save: (MeetingAnalysisCheckpoint) throws -> Void) async throws -> MeetingAnalysisCheckpoint {
         var checkpoint = initial
         func elapsedMs(_ start: Date) -> Int { Int(Date().timeIntervalSince(start) * 1_000) }
@@ -906,7 +907,14 @@ public actor MeetingAnalysisPipeline {
             // Fit the English processing text to the model. Turns that fitting splits are split in the original
             // text too, so `checkpoint.turns` always holds exactly what was spoken.
             let processing = TranscriptTranslation.processingTurns(checkpoint.turns, translations: checkpoint.translations)
-            let fitted = try Self.fittedAnalysisChunks(processing, model: try currentSession(),
+            let active = try currentSession()
+            let completeInput = TranscriptTranslation.processingTurns(
+                checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns), translations: checkpoint.translations)
+            let canTryComplete = preferCompleteTranscript && preAnalyzed.isEmpty && !processing.isEmpty
+                && (try? active.inputTokenCount(turns: completeInput, meetingDate: meetingDate,
+                    timezone: timezone, question: nil, participants: participants, agenda: agenda))
+                    .map { $0 <= active.inputTokenLimit } == true
+            let fitted = canTryComplete ? [processing] : try Self.fittedAnalysisChunks(processing, model: active,
                 meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes,
                 participants: participants, agenda: agenda)
             var seen = Set<String>()
@@ -964,6 +972,17 @@ public actor MeetingAnalysisPipeline {
                 } catch OfflineError.memoryBudget(let required, let budget) {
                     throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
                 } catch {
+                    if preferCompleteTranscript, chunks.count == 1,
+                       Self.analysisChunks(chunks[0], maxJSONBytes: Self.analysisChunkBytes).count > 1 {
+                        // A long structured response can exhaust the output budget
+                        // even when the entire input fits.
+                        checkpoint.chunkTurnIDs = nil
+                        try save(checkpoint)
+                        session = nil
+                        return try await analyzeTranscript(checkpoint, profile: profile,
+                            meetingDate: meetingDate, timezone: timezone, participants: participants,
+                            agenda: agenda, preAnalyzed: preAnalyzed, preferCompleteTranscript: false, save: save)
+                    }
                     // Unparseable or over-long model output for one chunk. Keep
                     // the meeting going: the reducer's grounded transcript rules
                     // still extract this chunk's explicit actions and decisions.
