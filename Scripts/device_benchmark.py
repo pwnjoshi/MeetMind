@@ -14,7 +14,7 @@ import threading
 import time
 
 BUNDLE = "com.meetmind.app.JK2M3K5ACG"
-MODELS = ["whisper-small", "whisper-large", "diarization", "qwen-3.5-2b", "qwen-1.7b"]
+MODELS = ["whisper-small", "whisper-large", "diarization", "qwen-3.5-2b", "qwen-1.7b", "qwen-3.5-0.8b"]
 
 
 def command(*args):

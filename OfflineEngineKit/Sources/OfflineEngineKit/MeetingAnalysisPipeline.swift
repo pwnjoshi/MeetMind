@@ -3,7 +3,8 @@ import AVFoundation
 import CryptoKit
 
 public enum VidurModel: String, CaseIterable, Sendable {
-    case fast = "qwen-1.7b"
+    case fast = "qwen-3.5-0.8b"
+    case baseline = "qwen-1.7b"
     /// Evaluation-only comparison model. The app never selects it for users.
     case comparison = "qwen-3.5-2b"
 
@@ -16,8 +17,7 @@ public enum VidurModel: String, CaseIterable, Sendable {
         return .fast
     }
 
-    /// Any saved selection other than the 1.7B model (the retired 4B or the 2B comparison model)
-    /// becomes the 1.7B model.
+    /// Use the single production text model for any previously saved selection.
     public static func migrateSavedSelection(defaults: UserDefaults = .standard) {
         if let saved = defaults.string(forKey: preferenceKey), saved != Self.fast.rawValue {
             defaults.set(Self.fast.rawValue, forKey: preferenceKey)
@@ -26,8 +26,8 @@ public enum VidurModel: String, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        // Sizes from models.json: 1,282,439,584 bytes (1.7B) and 1,280,835,808 bytes (2B).
-        case .fast: return "Qwen3 1.7B \u{00B7} 1.28 GB"
+        case .fast: return "Qwen3.5 0.8B \u{00B7} 533 MB"
+        case .baseline: return "Qwen3 1.7B \u{00B7} 1.28 GB"
         case .comparison: return "Qwen3.5 2B \u{00B7} 1.28 GB"
         }
     }

@@ -46,6 +46,7 @@ def main():
     revision, files = snapshot("FluidInference/speaker-diarization-coreml", lambda p: p.startswith(tuple(n + ".mlmodelc/" for n in ("Segmentation", "Embedding", "FBank", "PldaRho"))) or p == "plda-parameters.json")
     entries.append(dict(id="diarization", name="FluidAudio offline VBx", revision=revision, files=files))
     for identifier, repo, filename in [
+        ("qwen-3.5-0.8b", "unsloth/Qwen3.5-0.8B-GGUF", "Qwen3.5-0.8B-Q4_K_M.gguf"),
         ("qwen-1.7b", "bartowski/Qwen_Qwen3-1.7B-GGUF", "Qwen_Qwen3-1.7B-Q4_K_M.gguf"),
         ("qwen-3.5-2b", "unsloth/Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q4_K_M.gguf"),
     ]:

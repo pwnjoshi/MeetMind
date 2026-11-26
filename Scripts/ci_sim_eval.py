@@ -32,7 +32,7 @@ BUNDLE = "com.meetmind.app"
 MARKER = "MEETMIND_EVAL "
 PAIR = re.compile(r'(\w+)=("(?:[^"\\]|\\.)*"|\S+)')
 AUDIO_EXTENSIONS = (".wav", ".m4a", ".caf", ".mp3", ".aac", ".mp4")
-REQUIRED_MODELS = ("whisper-large", "diarization", "qwen-1.7b")
+REQUIRED_MODELS = ("whisper-large", "diarization", "qwen-3.5-0.8b")
 
 
 def parse_line(line):

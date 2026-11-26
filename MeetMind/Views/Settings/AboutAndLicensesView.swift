@@ -19,7 +19,7 @@ struct AboutAndLicensesView: View {
         Component(name: "pyannote segmentation 3.0", role: "Speaker segmentation model, converted to Core ML by Fluid Inference", license: "MIT"),
         Component(name: "WeSpeaker ResNet34-LM via pyannote", role: "Speaker voice embedding model, modified Core ML conversion by Fluid Inference", license: "CC BY 4.0"),
         Component(name: "llama.cpp", role: "Runs the language model on this iPhone", license: "MIT"),
-        Component(name: "Qwen3 1.7B (GGUF Q4_K_M by bartowski)", role: "Writes minutes and answers Vidur questions", license: "Apache 2.0"),
+        Component(name: "Qwen3.5 0.8B (GGUF Q4_K_M by Unsloth)", role: "Writes minutes and answers Vidur questions", license: "Apache 2.0"),
     ]
 
     private var version: String {

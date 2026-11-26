@@ -411,11 +411,11 @@ final class MinutesQualityTests: XCTestCase {
     // MARK: - One model
 
     func testDefaultAndComparisonModelAreAvailable() throws {
-        XCTAssertEqual(VidurModel.allCases, [.fast, .comparison])
-        XCTAssertEqual(VidurModel.fast.rawValue, "qwen-1.7b")
+        XCTAssertEqual(VidurModel.allCases, [.fast, .baseline, .comparison])
+        XCTAssertEqual(VidurModel.fast.rawValue, "qwen-3.5-0.8b")
         XCTAssertEqual(VidurModel.comparison.rawValue, "qwen-3.5-2b")
         XCTAssertEqual(VidurModel.selected, .fast)
-        XCTAssertEqual(MeetingAnalysisPipeline.requiredModelIDs, ["whisper-large", "diarization", "qwen-1.7b"])
+        XCTAssertEqual(MeetingAnalysisPipeline.requiredModelIDs, ["whisper-large", "diarization", "qwen-3.5-0.8b"])
         XCTAssertFalse(try OfflineModelStore.profiles().contains { $0.id == "qwen-4b" })
         XCTAssertFalse(VidurModel.fast.title.contains("4B"))
     }
@@ -426,10 +426,10 @@ final class MinutesQualityTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("qwen-4b", forKey: VidurModel.preferenceKey)
         VidurModel.migrateSavedSelection(defaults: defaults)
-        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-1.7b")
+        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-3.5-0.8b")
         defaults.set("qwen-3.5-2b", forKey: VidurModel.preferenceKey)
         VidurModel.migrateSavedSelection(defaults: defaults)
-        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-1.7b")
+        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-3.5-0.8b")
         defaults.removeObject(forKey: VidurModel.preferenceKey)
         VidurModel.migrateSavedSelection(defaults: defaults)
         XCTAssertNil(defaults.object(forKey: VidurModel.preferenceKey))
