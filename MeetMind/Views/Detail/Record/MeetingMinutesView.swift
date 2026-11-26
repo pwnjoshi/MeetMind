@@ -25,7 +25,7 @@ struct MeetingMinutesView: View {
     let meeting: Meeting
     var viewModel: MeetingDetailViewModel? = nil
     var onOpenPeople: () -> Void = {}
-    var onOpenTranscript: () -> Void = {}
+    var onOpenTranscript: (Double?) -> Void = { _ in }
     @State private var store = MeetingRecordStore.shared
     @State private var expanded: Set<String> = []
     @State private var playingTurnID: String?
@@ -42,7 +42,13 @@ struct MeetingMinutesView: View {
             && content.absent.isEmpty && content.decisions.isEmpty
         VStack(alignment: .leading, spacing: 22) {
             let needsMinutesReview = analysis?.minutesNeedSourceReview == true
-            if needsMinutesReview || analysis?.transcriptCorrections?.contains(where: { $0.replacement == nil }) == true {
+            let disputed = (analysis?.transcriptCorrections ?? []).filter { correction in
+                correction.replacement == nil && meeting.orderedTranscriptSegments.contains {
+                    !$0.isEdited && abs($0.startTime - correction.start) < 0.01
+                        && abs($0.endTime - correction.end) < 0.01 && $0.text == correction.original
+                }
+            }
+            if needsMinutesReview || !disputed.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(needsMinutesReview ? "Review these minutes" : "Some wording needs review", systemImage: "text.bubble")
                         .font(.subheadline.weight(.semibold))
@@ -50,9 +56,18 @@ struct MeetingMinutesView: View {
                          ? "MeetMind retried unclear actions. Check the transcript before sharing."
                          : "Disputed lines were left out of these minutes.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Button("Review transcript", action: onOpenTranscript)
-                        .font(.subheadline)
-                        .frame(minHeight: 44)
+                    if disputed.isEmpty {
+                        Button("Review transcript") { onOpenTranscript(nil) }
+                            .font(.subheadline)
+                            .frame(minHeight: 44)
+                    }
+                    ForEach(Array(disputed.enumerated()), id: \.offset) { _, correction in
+                        let seconds = Int(correction.start)
+                        let timestamp = String(format: "%02d:%02d", seconds / 60, seconds % 60)
+                        Button("Review disputed wording at \(timestamp)") { onOpenTranscript(correction.start) }
+                            .font(.subheadline)
+                            .frame(minHeight: 44)
+                    }
                 }
             }
             if isEmpty {

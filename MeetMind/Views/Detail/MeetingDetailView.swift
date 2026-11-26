@@ -25,7 +25,7 @@ public struct MeetingDetailView: View {
     @State private var showSpeakerReassign: TranscriptSegment? = nil
     @State private var showReprocessConfirmation = false
     @State private var isReprocessing = false
-    @State private var showReprocessSuccess = false
+    @State private var minutesDraft: AnalysisCoordinator.MinutesDraft?
     @State private var showDeleteConfirmation = false
     @State private var deletionError: String?
     @State private var showNoteSheet = false
@@ -162,7 +162,31 @@ public struct MeetingDetailView: View {
             if let meeting = viewModel.meeting { MinutesReviewChecklistView(meeting: meeting) }
         }
         .fullScreenCover(item: $transcriptRoute) { route in
-            MeetingTranscriptScreen(meetingId: route.id)
+            MeetingTranscriptScreen(meetingId: route.id, focusTime: route.focusTime)
+        }
+        .sheet(item: $minutesDraft) { draft in
+            NavigationStack {
+                List {
+                    draftSection("Current minutes", overview: draft.currentOverview, decisions: draft.currentDecisions)
+                    draftSection("Regenerated draft", overview: draft.overview, decisions: draft.decisions)
+                    Section("Draft action suggestions") {
+                        if draft.suggestedActions.isEmpty { Text("No suggested actions").foregroundStyle(.secondary) }
+                        ForEach(draft.suggestedActions.indices, id: \.self) { index in
+                            Text(draft.suggestedActions[index])
+                        }
+                    }
+                }
+                .navigationTitle("Compare Minutes")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Keep Current") { minutesDraft = nil }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Use Draft") { applyMinutesDraft(draft) }
+                    }
+                }
+            }
         }
         .navigationDestination(isPresented: $showsPDFPreview) {
             if let document = momDocument() {
@@ -289,7 +313,6 @@ public struct MeetingDetailView: View {
         .modifier(ReprocessMinutesFeedback(
             isReprocessing: isReprocessing,
             showConfirmation: $showReprocessConfirmation,
-            showSuccess: $showReprocessSuccess,
             onConfirm: reprocessMinutes
         ))
         .alert("Delete meeting?", isPresented: $showDeleteConfirmation) {
@@ -349,12 +372,15 @@ public struct MeetingDetailView: View {
 
     private struct TranscriptRoute: Identifiable {
         let id: UUID
+        let focusTime: Double?
     }
 
-    private func openTranscript() {
+    private func openTranscript() { openTranscript(at: nil) }
+
+    private func openTranscript(at focusTime: Double?) {
         guard let id = viewModel.meeting?.id else { return }
         viewModel.stopPlayback()
-        transcriptRoute = TranscriptRoute(id: id)
+        transcriptRoute = TranscriptRoute(id: id, focusTime: focusTime)
     }
 
     private func reprocessMinutes() {
@@ -363,11 +389,30 @@ public struct MeetingDetailView: View {
         Task { @MainActor in
             defer { isReprocessing = false }
             do {
-                try await AnalysisCoordinator(context: modelContext).reprocessMinutes(meetingID: id, model: VidurModel.selected)
-                showReprocessSuccess = true
+                minutesDraft = try await AnalysisCoordinator(context: modelContext)
+                    .prepareMinutesDraft(meetingID: id, model: VidurModel.selected)
             } catch {
                 deletionError = error.localizedDescription
             }
+        }
+    }
+
+    private func draftSection(_ title: String, overview: String, decisions: [String]) -> some View {
+        Section(title) {
+            Text(overview.isEmpty ? "No overview" : overview)
+            Text("Decisions").font(.subheadline.weight(.semibold))
+            if decisions.isEmpty { Text("No decisions").foregroundStyle(.secondary) }
+            ForEach(decisions.indices, id: \.self) { index in Text(decisions[index]) }
+        }
+    }
+
+    private func applyMinutesDraft(_ draft: AnalysisCoordinator.MinutesDraft) {
+        do {
+            try AnalysisCoordinator(context: modelContext).applyMinutesDraft(draft)
+            minutesDraft = nil
+        } catch {
+            minutesDraft = nil
+            deletionError = error.localizedDescription
         }
     }
 
@@ -526,7 +571,7 @@ public struct MeetingDetailView: View {
                 default:
                     if let meeting = viewModel.meeting {
                         MeetingMinutesView(meeting: meeting, viewModel: viewModel,
-                                           onOpenPeople: { showPeople = true }, onOpenTranscript: openTranscript)
+                                           onOpenPeople: { showPeople = true }, onOpenTranscript: { openTranscript(at: $0) })
                     }
                 }
             }
@@ -546,7 +591,6 @@ public struct MeetingDetailView: View {
 private struct ReprocessMinutesFeedback: ViewModifier {
     let isReprocessing: Bool
     @Binding var showConfirmation: Bool
-    @Binding var showSuccess: Bool
     let onConfirm: () -> Void
 
     func body(content: Content) -> some View {
@@ -564,10 +608,7 @@ private struct ReprocessMinutesFeedback: ViewModifier {
                 Button("Cancel", role: .cancel) {}
                 Button("Reprocess", action: onConfirm)
             } message: {
-                Text("This replaces the saved summary, discussion, decisions, and suggested actions using the current transcript. Saved actions are kept.")
-            }
-            .alert("Minutes reprocessed", isPresented: $showSuccess) {
-                Button("OK", role: .cancel) {}
+                Text("MeetMind will generate a draft from the current transcript. You can compare it with your saved minutes before choosing which version to keep.")
             }
     }
 }

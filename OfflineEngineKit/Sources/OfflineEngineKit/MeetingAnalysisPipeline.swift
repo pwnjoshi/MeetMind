@@ -1069,23 +1069,26 @@ public actor MeetingAnalysisPipeline {
                 }
             }
             var checkedTasks = result.tasks
+            var checkedDecisions = result.decisions
             let vague = result.tasks.contains { MeetingAnalysisReducer.isIncompleteActionTitle($0.title) }
-            let reallocation = result.tasks.isEmpty && chunk.contains {
-                MinutesRegex.firstMatch(#"(?i)\b(?:reallocate|reassign|swap tasks|switch tasks)\b"#, in: $0.text) != nil
-            }
-            if vague || reallocation {
+            let reallocationPattern = #"(?i)\b(?:reallocat(?:e|ion)|reassign(?:ment)?|swap tasks|switch tasks)\b"#
+            let reallocationTurns = Set(chunk.filter {
+                MinutesRegex.firstMatch(reallocationPattern, in: $0.text) != nil
+            }.map(\.id))
+            let coveredTurns = Set(result.tasks.filter {
+                !MeetingAnalysisReducer.isIncompleteActionTitle($0.title)
+            }.flatMap(\.evidence).map(\.turnID))
+            let missedReallocation = !reallocationTurns.isSubset(of: coveredTurns)
+            if vague || missedReallocation {
                 checkedTasks.removeAll { MeetingAnalysisReducer.isIncompleteActionTitle($0.title) }
                 checkpoint.minutesNeedSourceReview = true
                 if checkpoint.minutesQualityRetryAttempted != true {
-                    checkpoint.minutesQualityRetryAttempted = true
-                    try save(checkpoint)
                     do {
                         let repaired = try currentSession().repairMinutes(turns: chunk, meetingDate: meetingDate,
                             timezone: timezone, participants: participants, agenda: agenda).sanitized(against: chunk)
                         let concrete = repaired.tasks.filter { !MeetingAnalysisReducer.isIncompleteActionTitle($0.title) }
-                        if !concrete.isEmpty {
-                            checkedTasks.append(contentsOf: concrete)
-                        }
+                        checkedTasks.append(contentsOf: concrete)
+                        checkedDecisions.append(contentsOf: repaired.decisions)
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch OfflineError.thermalPause {
@@ -1093,9 +1096,10 @@ public actor MeetingAnalysisPipeline {
                     } catch {
                         try Task.checkCancellation()
                     }
+                    checkpoint.minutesQualityRetryAttempted = true
                 }
             }
-            checkpoint.analysis.append(LocalAnalysisResult(discussion: result.discussion, decisions: result.decisions,
+            checkpoint.analysis.append(LocalAnalysisResult(discussion: result.discussion, decisions: checkedDecisions,
                                                           tasks: checkedTasks, openIssues: result.openIssues))
             checkpoint.analyzedChunks = index + 1
             try save(checkpoint)

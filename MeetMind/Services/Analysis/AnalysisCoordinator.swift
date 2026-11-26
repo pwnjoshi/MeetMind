@@ -436,10 +436,29 @@ public final class AnalysisCoordinator {
         return (reduced, overview, uniqueTexts(pointSource), uniqueTexts(decisionSource), topicAgenda)
     }
 
-    public func reprocessMinutes(meetingID: UUID, model: VidurModel) async throws {
+    struct MinutesDraft: Identifiable {
+        let id = UUID()
+        let meetingID: UUID
+        let currentOverview: String
+        let currentDecisions: [String]
+        let overview: String
+        let decisions: [String]
+        let suggestedActions: [String]
+        fileprivate let points: [String]
+        fileprivate let analysisData: Data
+        fileprivate let previousAnalysis: Data?
+        fileprivate let previousAgenda: String?
+        fileprivate let previousSummaryDate: Date?
+        fileprivate let turns: [AnalysisTurn]
+        fileprivate let replacementAgenda: String?
+        fileprivate let replaceAgenda: Bool
+    }
+
+    func prepareMinutesDraft(meetingID: UUID, model: VidurModel) async throws -> MinutesDraft {
         let meeting = try fetchMeeting(meetingID)
         let turns = savedTurns(for: meeting)
         let previousAnalysis = meeting.offlineAnalysisData
+        let previousSummaryDate = meeting.summary?.generatedAt
         let previousAgenda = meeting.agendaText
         let previousGeneratedAgenda = previousAnalysis.flatMap {
             try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: $0)
@@ -470,20 +489,42 @@ public final class AnalysisCoordinator {
             throw OfflineError.unavailable("The meeting changed while reprocessing. Open it again to retry.")
         }
         let fields = minutesFields(result, for: current)
-        let analysisData = try JSONEncoder().encode(fields.reduced.checkpoint)
+        guard current.summary?.generatedAt == previousSummaryDate else {
+            throw OfflineError.unavailable("The saved minutes changed while reprocessing.")
+        }
+        return MinutesDraft(
+            meetingID: meetingID, currentOverview: current.summary?.executiveSummary ?? "",
+            currentDecisions: current.summary?.keyDecisions ?? [], overview: fields.overview,
+            decisions: fields.decisions, suggestedActions: fields.reduced.tasks.map(\.title),
+            points: fields.points, analysisData: try JSONEncoder().encode(fields.reduced.checkpoint),
+            previousAnalysis: previousAnalysis, previousAgenda: previousAgenda,
+            previousSummaryDate: previousSummaryDate, turns: turns,
+            replacementAgenda: fields.topicAgenda.isEmpty ? nil : fields.topicAgenda, replaceAgenda: replaceAgenda)
+    }
+
+    func applyMinutesDraft(_ draft: MinutesDraft) throws {
+        let meetingID = draft.meetingID
+        let current = try fetchMeeting(meetingID)
+        guard current.status == .completed, current.offlineAnalysisData == draft.previousAnalysis,
+              current.agendaText == draft.previousAgenda, savedTurns(for: current) == draft.turns,
+              current.summary?.generatedAt == draft.previousSummaryDate,
+              current.summary?.executiveSummary ?? "" == draft.currentOverview,
+              current.summary?.keyDecisions ?? [] == draft.currentDecisions else {
+            throw OfflineError.unavailable("The meeting changed. Generate a new draft from the latest version.")
+        }
         let store = MeetingRecordStore.shared
         let previousRecord = store.record(for: meetingID)
         var updatedRecord = previousRecord
         if !previousRecord.deciderIDs.isEmpty {
-            updatedRecord.remapDeciders(oldDecisions: current.summary?.keyDecisions ?? [], newDecisions: fields.decisions)
+            updatedRecord.remapDeciders(oldDecisions: current.summary?.keyDecisions ?? [], newDecisions: draft.decisions)
         }
         let decidersChanged = updatedRecord.deciderIDs != previousRecord.deciderIDs
         try context.save()
         if decidersChanged { try store.update(meetingID) { $0.deciderIDs = updatedRecord.deciderIDs } }
-        applyMinutes(overview: fields.overview, points: fields.points, decisions: fields.decisions,
-                     analysisData: analysisData, to: current)
-        if replaceAgenda {
-            current.agendaText = fields.topicAgenda.isEmpty ? nil : fields.topicAgenda
+        applyMinutes(overview: draft.overview, points: draft.points, decisions: draft.decisions,
+                     analysisData: draft.analysisData, to: current)
+        if draft.replaceAgenda {
+            current.agendaText = draft.replacementAgenda
         }
         do {
             try context.save()

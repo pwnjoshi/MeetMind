@@ -5,6 +5,7 @@ import OfflineEngineKit
 /// Transcript and audio page ("B6e · Transcript"). Works pushed in a NavigationStack or in a sheet.
 public struct MeetingTranscriptScreen: View {
     private let meetingId: UUID
+    private let focusTime: Double?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -17,6 +18,9 @@ public struct MeetingTranscriptScreen: View {
     @State private var corrections: [TranscriptCorrection] = []
     @State private var cards: [TranscriptCard] = []
     @State private var activeCardID: UUID?
+    @State private var didFocus = false
+    @State private var actionSource: TranscriptCard?
+    @State private var actionTitle = ""
     @State private var audioAvailable = false
     @State private var isProcessing = false
     @State private var isSearchOpen = false
@@ -31,8 +35,9 @@ public struct MeetingTranscriptScreen: View {
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    public init(meetingId: UUID) {
+    public init(meetingId: UUID, focusTime: Double? = nil) {
         self.meetingId = meetingId
+        self.focusTime = focusTime
         _meetings = Query(filter: #Predicate<Meeting> { $0.id == meetingId })
     }
 
@@ -79,6 +84,27 @@ public struct MeetingTranscriptScreen: View {
         .onChange(of: isProcessing) { _, _ in rebuildCards() }
         .onChange(of: meeting?.audioFileURL) { _, _ in loadAudio() }
         .onChange(of: activeCardID) { _, newValue in autoScrollTarget = newValue }
+        .sheet(item: $actionSource) { card in
+            NavigationStack {
+                Form {
+                    TextField("Action", text: $actionTitle, axis: .vertical)
+                    Section("Transcript evidence") {
+                        Text(card.text)
+                    }
+                }
+                .navigationTitle("Add Action")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { actionSource = nil }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { saveAction(from: card) }
+                            .disabled(actionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+        }
         .sheet(item: $editingCard) { card in
             TranscriptCardEditSheet(card: card) { edits in saveEdits(edits) }
         }
@@ -235,6 +261,13 @@ public struct MeetingTranscriptScreen: View {
                     scrollHoldUntil = Date().addingTimeInterval(4)
                 }
             )
+            .task(id: cards.count) {
+                guard !didFocus, let focusTime,
+                      let id = TranscriptCardBuilder.activeCardID(at: focusTime, in: cards) else { return }
+                didFocus = true
+                if audioAvailable { audio.seek(to: focusTime) }
+                proxy.scrollTo(id, anchor: .center)
+            }
             .onChange(of: autoScrollTarget) { _, target in
                 guard let target, Date() >= scrollHoldUntil, !isSearchOpen || !TranscriptSearch.isActive(query) else { return }
                 if reduceMotion {
@@ -262,6 +295,11 @@ public struct MeetingTranscriptScreen: View {
         .accessibilityAction(named: "Edit text") { if !isProcessing { editingCard = card } }
         .accessibilityAction(named: "Change speaker") { if !isProcessing { reassigningCard = card } }
         .contextMenu {
+            Button("Add action from passage", systemImage: "plus.circle") {
+                actionTitle = ""
+                actionSource = card
+            }
+            .disabled(isProcessing || meeting?.status != .completed)
             if let (line, correction) = correction(for: card) {
                 if correction.replacement != nil {
                     Button("Restore original text", systemImage: "arrow.uturn.backward") {
@@ -451,6 +489,28 @@ public struct MeetingTranscriptScreen: View {
             segment.speaker = speaker
         }
         persist()
+    }
+
+    private func saveAction(from card: TranscriptCard) {
+        let title = actionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let meeting, meeting.status == .completed, !isProcessing, !title.isEmpty else { return }
+        let source = card.lines.map { line in
+            let seconds = Int(line.start)
+            return String(format: "[%02d:%02d] ", seconds / 60, seconds % 60) + line.text
+        }.joined(separator: "\n")
+        let item = ActionItem(title: title, meeting: meeting)
+        item.priorityRaw = ""
+        item.sourceEvidence = source
+        modelContext.insert(item)
+        meeting.addActionItem(item)
+        do {
+            try modelContext.save()
+            actionSource = nil
+        } catch {
+            modelContext.rollback()
+            actionSource = nil
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func persist() {
