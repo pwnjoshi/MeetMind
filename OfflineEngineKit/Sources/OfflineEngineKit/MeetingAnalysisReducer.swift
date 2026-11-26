@@ -480,21 +480,29 @@ public enum MeetingAnalysisReducer {
                 continue
             }
             let title = task.title.replacingOccurrences(of: #"(?i)[,\s]+instead[.!?]*$"#, with: "", options: .regularExpression)
-            let deliverable = verbAndObject(title)
+            let reference = MinutesRegex.firstMatch(
+                #"(?i)^(\w+)\s+(?:it|that|this)(?:\s+(?:on\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))?$"#,
+                in: title, group: 1)
+            let weekday = reference == nil ? nil : title.split(separator: " ").last
+                .map(String.init).flatMap { HindiText.weekdays.contains($0.lowercased()) ? $0 : nil }
+            let deliverable = verbAndObject(reference ?? title)
             let related = result.indices.filter { index in
                 let earlier = result[index]
                 guard let previousOwner = earlier.owner, normalize(previousOwner) != normalize(owner),
                       position(earlier) < position(task) else { return false }
                 let previous = verbAndObject(earlier.title)
-                return !deliverable.verb.isEmpty && !deliverable.object.isEmpty
-                    && previous.verb == deliverable.verb && previous.object == deliverable.object
+                return !deliverable.verb.isEmpty && !previous.object.isEmpty
+                    && previous.verb == deliverable.verb
+                    && (reference != nil || previous.object == deliverable.object)
             }
             guard related.count == 1, let index = related.first else {
-                result.append(task)
+                // An unresolved pronoun is not a standalone deliverable.
+                if reference == nil { result.append(task) }
                 continue
             }
-            result[index] = SuggestedTask(title: title, category: task.category, owner: owner,
-                deadlineText: task.deadlineText, priority: task.priority,
+            let resolvedTitle = reference == nil ? title : result[index].title
+            result[index] = SuggestedTask(title: resolvedTitle, category: task.category, owner: owner,
+                deadlineText: task.deadlineText ?? weekday, priority: task.priority,
                 evidence: uniqueEvidence(task.evidence + result[index].evidence))
         }
         return result

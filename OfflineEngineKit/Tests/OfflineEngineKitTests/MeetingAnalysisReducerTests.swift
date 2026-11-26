@@ -131,6 +131,30 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(Set(reduced.tasks.first?.evidence.map(\.turnID) ?? []), ["t1", "t3"])
     }
 
+    func testLaterReferentialHandoffAcrossChunksNeedsUniqueDeliverable() {
+        let first = AnalysisTurn(id: "report", text: "Aditya, please send the report by Friday.",
+                                 start: 0, end: 3, speaker: "S1")
+        let second = AnalysisTurn(id: "deck", text: "Maya, please send the partner deck by Friday.",
+                                  start: 10, end: 13, speaker: "S1")
+        let later = AnalysisTurn(id: "handoff", text: "Garima will send it Monday instead.",
+                                 start: 3600, end: 3603, speaker: "S2")
+        let chunks = (0..<2).map { _ in LocalAnalysisResult(discussion: [], decisions: [], tasks: []) }
+        let participants = ["Aditya", "Maya", "Garima"]
+        var saved = checkpoint(turns: [first, later], analysis: chunks)
+        saved.chunkTurnIDs = [["report"], ["handoff"]]
+        let resolved = MeetingAnalysisReducer.reduce(saved, participants: participants).tasks
+        XCTAssertEqual(resolved.map(\.title), ["Send the report"])
+        XCTAssertEqual(resolved.first?.owner, "Garima")
+        XCTAssertEqual(resolved.first?.deadlineText?.lowercased(), "monday")
+        XCTAssertEqual(Set(resolved.first?.evidence.map(\.turnID) ?? []), ["report", "handoff"])
+
+        saved.turns.insert(second, at: 1)
+        saved.chunkTurnIDs = [["report", "deck"], ["handoff"]]
+        let ambiguous = MeetingAnalysisReducer.reduce(saved, participants: participants).tasks
+        XCTAssertEqual(Set(ambiguous.compactMap(\.owner)), ["Aditya", "Maya"])
+        XCTAssertEqual(ambiguous.count, 2)
+    }
+
     func testOverviewRankingOnlyUsesCurrentGroundedDiscussion() {
         let lines = ["The mobile prototype now opens offline.", "The budget report shows rising costs."]
         let turns = lines.enumerated().map { index, line in
