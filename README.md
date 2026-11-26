@@ -1,5 +1,11 @@
 # MeetMind
 
+[![iOS CI](https://github.com/pwnjoshi/MeetMind/actions/workflows/build_ios.yml/badge.svg?branch=main)](https://github.com/pwnjoshi/MeetMind/actions/workflows/build_ios.yml?query=branch%3Amain)
+[![iOS 17+](https://img.shields.io/badge/iOS-17%2B-1d4ed8)](#build-and-test)
+[![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-F05138)](#build-and-test)
+[![GitHub stars](https://img.shields.io/github/stars/pwnjoshi/MeetMind)](https://github.com/pwnjoshi/MeetMind/stargazers)
+[![GitHub discussions](https://img.shields.io/badge/GitHub-Discussions-2563eb)](https://github.com/pwnjoshi/MeetMind/discussions)
+
 Native iOS 17+ meeting recorder built with SwiftUI and SwiftData. No account is
 required; recordings, transcripts, notes, photos, and summaries are stored locally.
 
