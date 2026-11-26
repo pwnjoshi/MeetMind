@@ -119,7 +119,7 @@ final class HindiLoanwordNoiseTests: XCTestCase {
         XCTAssertFalse(HindiText.containsDevanagari(reduced.executiveSummary), debug, file: file, line: line)
         XCTAssertTrue(reduced.executiveSummary.contains("20 November"), debug, file: file, line: line)
         XCTAssertTrue(reduced.executiveSummary.contains("Pune vendor"), debug, file: file, line: line)
-        XCTAssertTrue(reduced.executiveSummary.contains("prepare the agenda"), debug, file: file, line: line)
+        XCTAssertTrue(reduced.executiveSummary.contains("preparing the agenda"), debug, file: file, line: line)
         XCTAssertTrue(reduced.discussion.contains { $0.text.hasPrefix("Launch date: proposed 20 November") }, debug, file: file, line: line)
         XCTAssertTrue(reduced.discussion.contains { $0.text.hasPrefix("Vendor: Pune vendor preferred for lower price") }, debug, file: file, line: line)
         XCTAssertFalse(reduced.discussion.contains { HindiText.containsDevanagari($0.text) }, debug, file: file, line: line)
