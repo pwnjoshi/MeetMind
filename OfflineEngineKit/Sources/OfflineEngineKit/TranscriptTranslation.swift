@@ -58,31 +58,12 @@ enum TranscriptTranslation {
 
     // MARK: Validation
 
+    /// The longest English line that is accepted. `translate.gbnf` allows more characters per line than this, so
+    /// output the grammar cut off at its own limit is always longer than this and is rejected, never stored.
+    static let maxLineLength = 1_000
+
     private static let metaPhrases = ["translation", "translate", "hindi", "devanagari", "i cannot", "i can't",
                                       "i'm sorry", "i am sorry", "as an ai", "unintelligible", "note:"]
-    private static let digitPattern = "[0-9\u{0966}-\u{096F}]+(?:[,.][0-9\u{0966}-\u{096F}]+)*"
-
-    /// Numbers in the text with Devanagari digits converted and thousands separators removed, so "15-20,000"
-    /// and the same range written in Devanagari digits compare equal.
-    static func numbers(in text: String) -> Set<String> {
-        var result = Set<String>()
-        var rest = text[...]
-        while let range = rest.range(of: digitPattern, options: .regularExpression) {
-            var token = ""
-            for scalar in rest[range].unicodeScalars {
-                if (0x0966...0x096F).contains(scalar.value) {
-                    token.unicodeScalars.append(Unicode.Scalar(scalar.value - 0x0966 + 0x30)!)
-                } else if scalar == "," {
-                    continue
-                } else {
-                    token.unicodeScalars.append(scalar)
-                }
-            }
-            result.insert(token)
-            rest = rest[range.upperBound...]
-        }
-        return result
-    }
 
     private static func words(_ text: String) -> [Substring] {
         text.split(whereSeparator: { $0.isWhitespace })
@@ -97,7 +78,7 @@ enum TranscriptTranslation {
     /// Returns the trimmed English, or nil when the line cannot be trusted.
     static func validated(source: String, english: String, participants: [String]) -> String? {
         let trimmed = english.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= 400, !HindiText.containsDevanagari(trimmed) else { return nil }
+        guard !trimmed.isEmpty, trimmed.count <= maxLineLength, !HindiText.containsDevanagari(trimmed) else { return nil }
         let letters = trimmed.unicodeScalars.filter { CharacterSet.letters.contains($0) }
         guard !letters.isEmpty else { return nil }
         let latin = letters.filter { $0.value < 0x250 }.count
@@ -107,7 +88,9 @@ enum TranscriptTranslation {
         let englishCount = words(trimmed).count
         guard englishCount >= 1, sourceCount >= 1 else { return nil }
         let upper = max(6, sourceCount * 3)
-        let lower = sourceCount >= 3 ? Int((Double(sourceCount) * 0.25).rounded(.up)) : 1
+        // A translation much shorter than a longer source has lost content, so the floor is higher there.
+        let floor = sourceCount >= 6 ? 0.4 : 0.25
+        let lower = sourceCount >= 3 ? Int((Double(sourceCount) * floor).rounded(.up)) : 1
         guard englishCount <= upper, englishCount >= lower else { return nil }
 
         let lowerEnglish = trimmed.lowercased()

@@ -87,8 +87,9 @@ enum MinutesBuilder {
               !MeetingAnalysisReducer.isTranscriptCopy(text: cleaned, turns: turns) else { return false }
         for word in cleaned.split(whereSeparator: { !$0.isLetter }) {
             let lower = word.lowercased()
-            let named = names.explicit.contains(lower)
-                || (names.vocatives.contains(lower) && word.first?.isUppercase == true)
+            let capitalized = word.first?.isUppercase == true
+            let named = (names.explicit.contains(lower) && capitalized)
+                || (names.vocatives.contains(lower) && capitalized)
             if named && !names.owners.contains(lower) { return false }
         }
         return true

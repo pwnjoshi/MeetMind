@@ -247,7 +247,7 @@ public final class AnalysisCoordinator {
                 languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
                 reviewedTurns: reviewedTurns,
                 participants: meeting.namedAttendees.map(\.name),
-                agenda: meeting.agendaText, liveCaptionEvidence: liveCaptionEvidence) { [weak self] stage in
+                agenda: writtenAgenda(for: meeting), liveCaptionEvidence: liveCaptionEvidence) { [weak self] stage in
                     await self?.reached(stage, meetingID: meetingID, lease: lease, progress: progress)
                 }
             try Task.checkCancellation()
@@ -404,6 +404,13 @@ public final class AnalysisCoordinator {
             }
     }
 
+    /// The agenda a person wrote. Template defaults and agendas the minutes filled in are not included,
+    /// so the overview never feeds its own output back.
+    private func writtenAgenda(for meeting: Meeting) -> String? {
+        guard let planned = PlannedAgenda.planned(meeting), !isPlaceholderAgenda(planned) else { return nil }
+        return planned
+    }
+
     private func minutesFields(_ result: MeetingAnalysisCheckpoint, for meeting: Meeting)
         -> (reduced: ReducedMeetingAnalysis, overview: String, points: [String], decisions: [String], topicAgenda: String) {
         let speakerNames = MeetingSpeakerNames(meeting: meeting, store: MeetingRecordStore.shared).assignedLabels
@@ -411,7 +418,7 @@ public final class AnalysisCoordinator {
         let reduced = MeetingAnalysisReducer.reduce(result, participants: meeting.namedAttendees.map(\.name),
                                                     speakerNames: speakerNames,
                                                     meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
-                                                    timeZone: zone)
+                                                    timeZone: zone, agenda: writtenAgenda(for: meeting))
         let minutes = reduced.minutes
         var pointSource: [String] = []
         for topic in minutes.topics { pointSource.append(contentsOf: topic.discussion) }

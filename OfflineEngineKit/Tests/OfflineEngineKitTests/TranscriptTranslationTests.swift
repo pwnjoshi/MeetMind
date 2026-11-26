@@ -40,8 +40,6 @@ final class TranscriptTranslationTests: XCTestCase {
     }
 
     func testDevanagariDigitsAndSeparatorsCompareEqual() {
-        XCTAssertEqual(TranscriptTranslation.numbers(in: "१५-२०,००० रुपये"), TranscriptTranslation.numbers(in: "15-20,000 rupees"))
-        XCTAssertEqual(TranscriptTranslation.numbers(in: "15-20,000 rupees"), ["15", "20000"])
         XCTAssertNotNil(TranscriptTranslation.validated(source: "खर्च १५-२०,००० रुपये है", english: "The cost is 15-20,000 rupees.",
                                                         participants: []))
     }
@@ -66,7 +64,25 @@ final class TranscriptTranslationTests: XCTestCase {
         XCTAssertNil(TranscriptTranslation.validated(source: "बजट कल भेज देना",
             english: String(repeating: "word ", count: 30), participants: []))
         XCTAssertNil(TranscriptTranslation.validated(source: String(repeating: "बजट ", count: 12), english: "Okay", participants: []))
-        XCTAssertNil(TranscriptTranslation.validated(source: "बजट कल भेज देना", english: String(repeating: "a", count: 401), participants: []))
+        XCTAssertNil(TranscriptTranslation.validated(source: "बजट कल भेज देना", english: String(repeating: "a", count: TranscriptTranslation.maxLineLength + 1), participants: []))
+    }
+
+
+    func testLongRomanizedLinesAreKeptWhole() {
+        // About 120 words (roughly 700 bytes) of Hinglish. Its English is longer than the old 300-character cap.
+        let source = String(repeating: "kal vendor ko budget bhej do ", count: 24)
+        let english = String(repeating: "Send the vendor the budget tomorrow. ", count: 14)
+        XCTAssertGreaterThan(english.count, 300)
+        XCTAssertNotNil(TranscriptTranslation.validated(source: source, english: english, participants: []))
+        // translate.gbnf allows 1,200 characters per line, so grammar-truncated output exceeds this limit.
+        XCTAssertLessThan(TranscriptTranslation.maxLineLength, 1_200)
+    }
+
+    func testLongSourceWithAMuchShorterTranslationIsRejected() {
+        let source = "kal vendor ko budget bhej do aur phir team ko bata do"
+        XCTAssertNil(TranscriptTranslation.validated(source: source, english: "Send the budget.", participants: []))
+        XCTAssertNotNil(TranscriptTranslation.validated(
+            source: source, english: "Send the vendor the budget tomorrow and then tell the team.", participants: []))
     }
 
 

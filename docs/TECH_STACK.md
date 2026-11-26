@@ -75,9 +75,14 @@ Why each step is built this way:
   and the minutes carry a language note. Evidence quotes point at the original words.
 - **One resident LLM.** Qwen3 1.7B does translation, extraction and Vidur answers, so only one language
   model has to fit in memory next to the speech model. Qwen3.5 2B stays available only as
-  `--model qwen-3.5-2b` for comparison. On the same saved transcripts it was about 3.4x slower per run
-  (minutes generation 93 s vs 23 s, 190 s vs 53 s, 221 s vs 77 s on three test recordings) with no gain in
-  accuracy.
+  `--model qwen-3.5-2b` for comparison. Device run on an iPhone 15 with identical saved transcripts, minutes
+  generation took 23 s with 1.7B and 93 s with 2B on one transcript, 53 s and 190 s on a second (Hindi), and
+  77 s and 221 s on a third, so 2B was about 3 to 4 times slower. On the third transcript both models produced the
+  same three tasks, neither found tasks in the Hindi one, and 2B wrote two false claims into the overview.
+  That is three transcripts on one device, enough to choose a default but not a general accuracy ranking. The
+  result files stay private because they hold meeting content. Translation quality of 1.7B on Hindi has not yet
+  been measured on a device; `docs/EVALUATION.md` describes the run that reports translated and untranslated
+  line counts.
 - **Rules where a small model is weak.** Owners, deadlines, cancellations and Hindi requests come from
   deterministic extractors. The overview is composed from checked items, with at most one model sentence
   that must pass grounding checks.

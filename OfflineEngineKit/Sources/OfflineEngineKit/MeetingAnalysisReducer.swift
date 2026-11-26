@@ -230,8 +230,10 @@ public enum MeetingAnalysisReducer {
         let stored = LocalAnalysisResult(discussion: discussion, decisions: storedDecisions, tasks: storedTasks,
                                          openIssues: storedOpen)
         var finalMinutes = mapper.original(minutes)
-        finalMinutes.languageNote = TranscriptTranslation.languageNote(turns: checkpoint.turns,
-                                                                       translations: checkpoint.translations)
+        // Captions that were never resolved were not sent to the model, so they are not counted as failures.
+        finalMinutes.languageNote = TranscriptTranslation.languageNote(
+            turns: checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns),
+            translations: checkpoint.translations)
         var normalized = checkpoint
         normalized.analysis = [mapper.original(stored)]
         normalized.analyzedChunks = 1

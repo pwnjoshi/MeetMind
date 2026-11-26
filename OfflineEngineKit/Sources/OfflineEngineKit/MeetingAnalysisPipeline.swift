@@ -853,25 +853,32 @@ public actor MeetingAnalysisPipeline {
                 return try active.translateToEnglish(candidates)
             }
             var produced: [String: String]?
-            do {
-                var placement = ComputePlacement.independent
+            // A failure other than cancellation, heat or memory is tried once more in this run. The translation
+            // is the first stage, so a second failure is stored as "nothing translated". It is not retried on a
+            // later resume: chunk analysis then runs on the Hindi text, and changing that text afterwards would
+            // make the saved chunk results disagree with the processing transcript.
+            attempts: for attempt in 1...2 {
                 do {
-                    produced = try translateOnce(placement: &placement)
+                    var placement = ComputePlacement.independent
+                    do {
+                        produced = try translateOnce(placement: &placement)
+                    } catch {
+                        guard !(error is CancellationError), placement == .gpu, !ComputeEnvironment.gpuAvailable else { throw error }
+                        lastStageTimings.backgroundRetries += 1
+                        produced = try translateOnce(placement: &placement)
+                    }
+                    break attempts
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch OfflineError.thermalPause {
+                    throw OfflineError.thermalPause
+                } catch OfflineError.memoryBudget(let required, let budget) {
+                    throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
                 } catch {
-                    guard !(error is CancellationError), placement == .gpu, !ComputeEnvironment.gpuAvailable else { throw error }
-                    lastStageTimings.backgroundRetries += 1
-                    produced = try translateOnce(placement: &placement)
+                    // No usable translation: the minutes continue with the Hindi phrase rules.
+                    try checkConditions()
+                    if attempt == 2 { produced = [:] }
                 }
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch OfflineError.thermalPause {
-                throw OfflineError.thermalPause
-            } catch OfflineError.memoryBudget(let required, let budget) {
-                throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
-            } catch {
-                // No usable translation: the minutes continue with the Hindi phrase rules.
-                try checkConditions()
-                produced = [:]
             }
             if let produced {
                 var translations: [TurnTranslation] = []

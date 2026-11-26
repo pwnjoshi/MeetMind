@@ -159,6 +159,15 @@ final class OverviewAndAssignmentTests: XCTestCase {
         XCTAssertFalse(usable("Which retailers joined the pilot?"))
     }
 
+    func testAttendeeNameMatchesOnlyAsACapitalizedWord() {
+        let turns = overviewTurns.enumerated().map { turn("t\($0.offset)", $0.element) }
+        let names = MinutesBuilder.overviewNames(turns: turns, participants: ["Meera", "Dev", "Mark"],
+                                                 speakerNames: [:], tasks: [])
+        func usable(_ text: String) -> Bool { MinutesBuilder.isUsableOverviewSentence(text, turns: turns, names: names) }
+        XCTAssertTrue(usable("The vendor list will mark a new baseline after the pilot."))
+        XCTAssertFalse(usable("The vendor list was raised by Mark after the pilot."))
+    }
+
     func testAgendaLeadsTheOverview() {
         let reduced = MeetingAnalysisReducer.reduce(
             overviewCheckpoint(), participants: ["Meera", "Dev"],
