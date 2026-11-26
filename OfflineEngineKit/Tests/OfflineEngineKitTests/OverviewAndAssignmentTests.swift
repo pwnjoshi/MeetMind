@@ -135,6 +135,23 @@ final class OverviewAndAssignmentTests: XCTestCase {
         XCTAssertTrue(result.decisions.isEmpty)
     }
 
+    func testPocActionKeepsSameSpeakerContinuationAndNextMeeting() {
+        let turns = [
+            AnalysisTurn(id: "poc", text: "And Pawan, you continue with POC, right?", start: 166.3, end: 168.8, speaker: "S1"),
+            AnalysisTurn(id: "goal", text: "Try to see how can we bring in all these", start: 168.9, end: 171.6, speaker: "S1"),
+            AnalysisTurn(id: "features", text: "features that I'm talking about into the app", start: 171.7, end: 175, speaker: "S1"),
+            AnalysisTurn(id: "next", text: "We'll resume the next meeting tomorrow at 11am.", start: 187, end: 194, speaker: "S1")
+        ]
+        let checkpoint = MeetingAnalysisCheckpoint(sourceSignature: "poc-context", stage: .completed,
+            turns: turns, speakers: [], analysis: [], analyzedChunks: 0)
+        let result = MeetingAnalysisReducer.reduce(checkpoint, participants: ["Pawan"])
+        let action = result.minutes.actions.first { $0.owner == "Pawan" }
+        XCTAssertTrue(action?.title.contains("discussed features") == true)
+        XCTAssertEqual(Set(action?.evidence.map(\.turnID) ?? []), ["poc", "goal", "features"])
+        XCTAssertEqual(result.minutes.nextMeeting?.timeText, "11am")
+        XCTAssertEqual(result.minutes.nextMeeting?.dateText, "tomorrow")
+    }
+
     func testOverviewKeepsOneCleanContextSentenceAndNamesNobodyWithoutATask() {
         let reduced = MeetingAnalysisReducer.reduce(overviewCheckpoint(), participants: ["Meera", "Dev"])
         let statements = reduced.minutes.summaryStatements.map(\.text)

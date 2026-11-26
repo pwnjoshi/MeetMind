@@ -164,7 +164,10 @@ enum NextMeetingFinder {
                 guard dateText != nil || timeText != nil else { continue }
                 let iso = dateText.flatMap { DueDateResolver.resolve($0, meetingDate: meetingDate, timeZone: timeZone) }
                 var text = "Next meeting"
-                if let dateText = dateText { text += " on " + dateText }
+                if let dateText {
+                    let relative = ["today", "tomorrow", "tonight", "kal"].contains(dateText.lowercased())
+                    text += (relative ? " " : " on ") + dateText
+                }
                 if let timeText = timeText { text += " at " + timeText }
                 return MinutesNextMeeting(text: text + ".", dateText: dateText, timeText: timeText, isoDate: iso,
                                           evidence: [SourceEvidence(turnID: turns[turnIndex].id, quote: piece)])

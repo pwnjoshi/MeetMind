@@ -564,6 +564,23 @@ enum MinutesBuilder {
             let owner = canonicalOwner(task.owner)
             var deadline = task.deadlineText
             var baseTitle = task.title
+            var evidence = task.evidence
+            if MinutesRegex.firstMatch(#"(?i)^continue(?: with)? (?:the )?(?:POC|proof of concept)$"#,
+                                       in: baseTitle) != nil,
+               let source = task.evidence.last, let index = indexByID[source.turnID],
+               let speaker = input.turns[index].speaker {
+                let anchor = input.turns[index]
+                let following = Array(input.turns.dropFirst(index + 1).prefix(3).prefix { next in
+                    next.speaker == speaker && next.start >= anchor.start && next.end - anchor.end <= 16
+                })
+                let context = following.map(\.text).joined(separator: " ")
+                if MinutesRegex.firstMatch(#"(?i)^\s*try to see how (?:we can|can we) bring in (?:all )?these features.*\binto the app\b"#,
+                                           in: context) != nil {
+                    baseTitle = "Continue the proof of concept and assess how the discussed features can fit into the app"
+                    evidence = MinutesComposer.unique(evidence + following.map { SourceEvidence(turnID: $0.id, quote: $0.text) })
+                }
+            }
+
             // A deadline phrase left inside a model-written title belongs in the deadline, not the title.
             let split = ActionExtractor.splitDeadline(baseTitle)
             if let found = split.deadline {
@@ -583,7 +600,7 @@ enum MinutesBuilder {
             // The minutes are written in English, so a Devanagari deadline ("फ्राइडे तक") reads "by Friday".
             let shownDeadline = deadline.map { HindiText.containsDevanagari($0) ? MinutesComposer.englishDeadline($0) : $0 }
             return MinutesAction(title: MinutesComposer.actionTitle(baseTitle), owner: owner, deadlineText: shownDeadline, dueDate: due, topic: topic,
-                                 evidence: task.evidence, timestamp: turn?.start, speaker: speakerName(turn))
+                                 evidence: evidence, timestamp: turn?.start, speaker: speakerName(turn))
         }
 
         // MARK: Topics and summary

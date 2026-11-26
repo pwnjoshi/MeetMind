@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import PDFKit
+import OfflineEngineKit
 
 /// Immutable reviewed content used by PDF, Markdown, plain-text sharing, and approval.
 public struct DocumentSnapshot: Equatable, Sendable {
@@ -53,6 +54,10 @@ public struct DocumentSnapshot: Equatable, Sendable {
             Section(heading: "Key Decisions", lines: content.decisions.map { content.decisionLine($0) })
         ]
         let sections = candidates.filter { !$0.lines.isEmpty }
+        let confirmedNextMeeting = meeting.offlineAnalysisData.flatMap {
+            try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: $0)
+        }?.minutes?.nextMeeting
+        let closing = confirmedNextMeeting.map { [Section(heading: "Next Meeting", lines: [$0.text])] } ?? []
         let actions = content.actions.map { line in
             Action(title: line.title, assignee: line.ownerName, dueDate: line.dueText,
                    priority: line.priorityName, isCompleted: line.isCompleted)
@@ -68,7 +73,7 @@ public struct DocumentSnapshot: Equatable, Sendable {
             status: meeting.status.displayName,
             sections: sections,
             actions: actions,
-            closingSections: [],
+            closingSections: closing,
             transcript: transcript
         )
     }

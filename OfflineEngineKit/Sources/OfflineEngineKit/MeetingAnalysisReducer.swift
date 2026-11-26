@@ -215,7 +215,7 @@ public enum MeetingAnalysisReducer {
             let action = minutes.actions[index]
             storedTasks.append(SuggestedTask(title: action.title, category: task.category, owner: action.owner ?? task.owner,
                                              deadlineText: action.deadlineText ?? task.deadlineText, priority: task.priority,
-                                             evidence: task.evidence))
+                                             evidence: action.evidence))
         }
         var storedDecisions: [SupportedPoint] = []
         for (index, point) in decisions.enumerated() {
