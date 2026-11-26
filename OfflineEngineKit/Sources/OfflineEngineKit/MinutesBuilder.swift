@@ -538,11 +538,19 @@ enum MinutesBuilder {
         }
 
         func buildSummary(topics: [MinutesTopic], issues: [MinutesOpenIssue]) -> [MinutesSummaryStatement] {
-            let coveredTopics = Array(topics.filter { !$0.evidence.isEmpty }.prefix(5))
-            let decisions = input.decisions.filter { !HindiText.looksHindi($0.text) && !$0.evidence.isEmpty }
-            let tasks = input.tasks.filter { !$0.evidence.isEmpty }
+            func hasTranscriptEvidence(_ evidence: [SourceEvidence]) -> Bool {
+                !evidence.isEmpty && evidence.allSatisfy { item in
+                    guard let index = indexByID[item.turnID],
+                          !item.quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+                    return input.turns[index].text.contains(item.quote)
+                }
+            }
+
+            let coveredTopics = Array(topics.filter { hasTranscriptEvidence($0.evidence) }.prefix(5))
+            let decisions = input.decisions.filter { !HindiText.looksHindi($0.text) && hasTranscriptEvidence($0.evidence) }
+            let tasks = input.tasks.filter { hasTranscriptEvidence($0.evidence) }
             let namedIssues = issues.filter {
-                $0.topic != nil && !HindiText.looksHindi($0.subject) && $0.subject.count <= 60 && !$0.evidence.isEmpty
+                $0.topic != nil && !HindiText.looksHindi($0.subject) && $0.subject.count <= 60 && hasTranscriptEvidence($0.evidence)
             }
 
             var statements: [MinutesSummaryStatement] = []
@@ -564,7 +572,7 @@ enum MinutesBuilder {
                 + (coveredTopics.isEmpty || !input.rankedDiscussion.isEmpty ? input.discussion : [])
             var selectedText = Set<String>()
             let context = candidates.filter { point in
-                !HindiText.looksHindi(point.text) && !point.evidence.isEmpty
+                !HindiText.looksHindi(point.text) && hasTranscriptEvidence(point.evidence)
                     && MeetingAnalysisReducer.isSummaryContext(point.text)
                     && point.evidence.contains { !outcomeTurns.contains($0.turnID) }
                     && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted

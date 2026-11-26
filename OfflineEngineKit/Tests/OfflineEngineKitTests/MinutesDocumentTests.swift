@@ -122,15 +122,20 @@ final class MinutesDocumentTests: XCTestCase {
         let agendaSource = SourceEvidence(turnID: agenda.id, quote: agenda.text)
         let blockerSource = SourceEvidence(turnID: blocker.id, quote: blocker.text)
         let point = SupportedPoint(text: blocker.text, evidence: [blockerSource])
+        let invented = "The rollout is blocked by a funding freeze."
+        let wrongQuote = SupportedPoint(text: invented, evidence: [
+            SourceEvidence(turnID: blocker.id, quote: invented)
+        ])
         var hindi = HindiAnalysis()
         hindi.topics = [HindiTopic(title: "Rollout", evidence: agendaSource)]
 
         let minutes = MinutesBuilder.build(.init(turns: [agenda, blocker], hindi: hindi, decisions: [],
-            discussion: [point, point], rankedDiscussion: [], openIssues: [], tasks: [], participants: [],
+            discussion: [wrongQuote, point, point], rankedDiscussion: [], openIssues: [], tasks: [], participants: [],
             speakerNames: [:], meetingDate: nil, timeZone: utc))
 
         let statements = minutes.summaryStatements.filter { $0.text == blocker.text }
         XCTAssertEqual(statements.count, 1)
+        XCTAssertFalse(minutes.executiveSummary.contains(invented))
         XCTAssertEqual(statements.first?.evidence.map(\.turnID), [blocker.id])
     }
 
