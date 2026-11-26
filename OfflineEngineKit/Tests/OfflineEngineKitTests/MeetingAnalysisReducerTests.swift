@@ -36,6 +36,14 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(request?.evidence.map(\.turnID), ["t0", "t1", "t2"])
     }
 
+    func testOverviewSkipsClippedSachinDiscussion() {
+        XCTAssertFalse(MeetingAnalysisReducer.isSummaryContext(
+            "Basically searching for every UI possible to integrate or making it more better."))
+        XCTAssertFalse(MeetingAnalysisReducer.isSummaryContext("So that'll reduce the development curve here."))
+        XCTAssertTrue(MeetingAnalysisReducer.isSummaryContext(
+            "The team evaluated interface options to reduce development time."))
+    }
+
     func testQuestionAboutAgendaDoesNotSupportCreatingOne() {
         let turn = AnalysisTurn(id: "t1", text: "Can you tell me what the app development agenda is?",
                                 start: 0, end: 4, speaker: "S1")

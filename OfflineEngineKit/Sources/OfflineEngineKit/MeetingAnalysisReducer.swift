@@ -365,6 +365,10 @@ public enum MeetingAnalysisReducer {
               !cleaned.hasSuffix("…") else { return false }
         let key = clauseKey(cleaned)
         let opening = [" okay so ", " can i get a quick ", " let's get started ", " let's call it a day "]
+        // Prefer a statement with a clear subject over a clipped turn that starts
+        // with a filler followed by an isolated activity or a vague reference.
+        let fragment = #"(?i)^(?:(?:basically|just)\s+[a-z]+ing\b|(?:so\s+)?(?:that|it)(?:['’]ll|\s+will)\b)"#
+        guard MinutesRegex.firstMatch(fragment, in: cleaned) == nil else { return false }
         let acknowledgements: Set<String> = ["yes", "yes i have been", "okay", "sure", "oh yeah"]
         return !opening.contains { key.hasPrefix($0) } && !acknowledgements.contains(normalize(cleaned))
     }
