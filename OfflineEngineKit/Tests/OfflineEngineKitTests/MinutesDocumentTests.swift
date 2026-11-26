@@ -83,7 +83,7 @@ final class MinutesDocumentTests: XCTestCase {
         let marketing = budgetSubject.lowercased()
         let expected = "Neha and Pawan discussed the launch date, vendor, budget and design change. "
             + "They decided to launch on 20 November and go with the Pune vendor. "
-            + "Next steps are to prepare the agenda and send the presentation to the client. "
+            + "Follow-up work covers preparing the agenda and sending the presentation to the client. "
             + "The \(marketing) and design change remain open."
         XCTAssertEqual(reduced.executiveSummary, expected, debug, file: file, line: line)
         XCTAssertEqual(minutes.executiveSummary, expected, debug, file: file, line: line)

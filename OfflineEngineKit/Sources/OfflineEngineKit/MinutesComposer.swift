@@ -95,7 +95,34 @@ enum MinutesComposer {
                                     in: text, with: "researching and narrow down the target user segment")
         text = MinutesRegex.replace(#"(?i)\s+and\s+make\s+sure\s+you\s+look\s+for\s+user\s+segment\s+that\s+very\s+closely\s+requires\s+the\s+need\s+of\s+"#,
                                     in: text, with: ", focusing on users who need ")
+        text = MinutesRegex.replace(#"(?i)^go further on the user flow\b"#, in: text, with: "Refine the user flow")
+        text = MinutesRegex.replace(#"(?i)\blook for some good designs of competitor apps\b"#,
+                                    in: text, with: "review competitor app designs")
+        text = MinutesRegex.replace(#"(?i)^continue with (?:the )?POC$"#,
+                                    in: text, with: "Continue the proof of concept")
         return text
+    }
+
+    static func followUpSentence(_ titles: [String]) -> String {
+        guard !titles.isEmpty else { return "" }
+        let gerunds = [
+            "refine": "refining", "review": "reviewing", "evaluate": "evaluating",
+            "narrow": "narrowing", "continue": "continuing", "prepare": "preparing", "send": "sending"
+        ]
+        let phrases = titles.compactMap { title -> String? in
+            let compact = MinutesRegex.replace(#"(?i)^continue evaluating\b"#, in: title, with: "evaluate")
+            let focus = MinutesRegex.replace(#"(?i)^continue researching and narrow down the target user segment\b"#,
+                                             in: compact, with: "narrow down the target audience")
+            let clauses = MinutesRegex.replace(#"(?i)\band review competitor app designs\b"#,
+                                               in: focus, with: "and reviewing competitor app designs")
+            let words = clauses.split(separator: " ", maxSplits: 1)
+            guard words.count == 2, let gerund = gerunds[String(words[0])] else { return nil }
+            return gerund + " " + words[1]
+        }
+        if phrases.count == titles.count {
+            return "Follow-up work covers " + list(phrases) + "."
+        }
+        return "Next steps are to " + list(titles) + "."
     }
 
     static func taskLine(_ task: SuggestedTask) -> String {

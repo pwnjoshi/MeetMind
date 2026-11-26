@@ -700,17 +700,12 @@ enum MinutesBuilder {
                 decisionPhrases: decisions.map { MinutesBuilder.shortPhrase($0.text) }, tasks: [], openSubjects: []),
                 evidence: decisions.flatMap(\.evidence))
             let nextSteps = tasks.prefix(4).map { task in
-                var title = MinutesComposer.actionTitle(task.title)
-                title = MinutesRegex.replace(#"(?i)^go further on the user flow\b"#, in: title, with: "Refine the user flow")
-                title = MinutesRegex.replace(#"(?i)\blook for some good designs of competitor apps\b"#,
-                                             in: title, with: "review competitor app designs")
-                title = MinutesRegex.replace(#"(?i)\bcontinue with (?:the )?POC\b"#,
-                                             in: title, with: "continue the proof of concept")
+                let title = MinutesComposer.actionTitle(task.title)
                 let withoutDeadline = ActionExtractor.splitDeadline(title).text
                 return HindiText.lowercaseFirst(MinutesComposer.stripPeriod(withoutDeadline))
             }
             if !nextSteps.isEmpty {
-                append("Next steps are to " + MinutesComposer.list(nextSteps) + ".",
+                append(MinutesComposer.followUpSentence(nextSteps),
                        evidence: tasks.prefix(4).flatMap(\.evidence))
             }
             append(MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [], tasks: [],
