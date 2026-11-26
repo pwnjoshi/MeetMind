@@ -31,7 +31,7 @@ final class TranscriptTranslationTests: XCTestCase {
     }
 
     func testValidationRejectsAddedAndDroppedDigits() {
-        XCTAssertNil(TranscriptTranslation.validated(source: budgetSource, english: "15 to 20 thousand is enough for the budget.",
+        XCTAssertNil(TranscriptTranslation.validated(source: budgetSource, english: "15 to 30 thousand is enough for the budget.",
                                                      participants: []))
         XCTAssertNil(TranscriptTranslation.validated(source: "बजट १५ से २० हज़ार है", english: "The budget is fifteen to twenty thousand.",
                                                      participants: []))
@@ -67,6 +67,82 @@ final class TranscriptTranslationTests: XCTestCase {
             english: String(repeating: "word ", count: 30), participants: []))
         XCTAssertNil(TranscriptTranslation.validated(source: String(repeating: "बजट ", count: 12), english: "Okay", participants: []))
         XCTAssertNil(TranscriptTranslation.validated(source: "बजट कल भेज देना", english: String(repeating: "a", count: 401), participants: []))
+    }
+
+
+    // MARK: - Numbers compared by value
+
+    private let rangeSource = "मेरे साब से 15-20,000 इस इनफ"
+
+    private func accepts(_ source: String, _ english: String) -> Bool {
+        TranscriptTranslation.validated(source: source, english: english, participants: []) != nil
+    }
+
+    func testNumbersCompareByValueAfterNormalizingDigitsAndSeparators() {
+        XCTAssertTrue(accepts("लागत १५-२०,००० रुपये है", "The cost is 15-20,000 rupees."))
+        XCTAssertTrue(accepts("कीमत १,५०,००० है", "The price is 150000."))
+        XCTAssertTrue(accepts("कीमत 1,50,000 है", "The price is 150,000."))
+        XCTAssertEqual(TranscriptNumbers.englishValues(in: "It costs 1,50,000 or 2.5 lakh"), [150_000, 250_000])
+    }
+
+    func testARangeMayCarryItsMultiplierOnBothEnds() {
+        XCTAssertTrue(accepts(rangeSource, "15-20,000 is enough"))
+        XCTAssertTrue(accepts(rangeSource, "15,000 to 20,000 is enough"))
+        XCTAssertTrue(accepts(rangeSource, "15-20 thousand is enough"))
+        XCTAssertTrue(accepts(rangeSource, "15 to 20 thousand is enough"))
+        XCTAssertTrue(accepts("मेरे साब से 15-20 हज़ार इस इनफ", "15,000 to 20,000 is enough"))
+        XCTAssertTrue(accepts("मेरे साब से 15-20 हजार इस इनफ", "15 to 20 thousand is enough"))
+    }
+
+    func testEnglishThousandLakhAndCroreEqualTheirDigitValues() {
+        XCTAssertTrue(accepts("दाम 2 लाख है", "The price is 2 lakh."))
+        XCTAssertTrue(accepts("दाम 2 लाख है", "The price is 200,000."))
+        XCTAssertTrue(accepts("दाम 20 हज़ार है", "The price is 20 thousand."))
+        XCTAssertTrue(accepts("दाम 5 करोड़ है", "The price is 5 crore."))
+        XCTAssertTrue(accepts("दाम 5 करोड़ है", "The price is 50 million."))
+        XCTAssertTrue(accepts("दाम 5 करोड़ है", "The price is 50,000,000."))
+    }
+
+    func testSpokenHindiNumberWordsMayAppearAsDigits() {
+        XCTAssertTrue(accepts("पंद्रह से बीस हज़ार काफ़ी है", "15 to 20 thousand is enough"))
+        XCTAssertTrue(accepts("पंद्रह से बीस हज़ार काफ़ी है", "15,000 to 20,000 is enough"))
+        XCTAssertTrue(accepts("पन्द्रह से बीस हजार काफ़ी है", "15 to 20 thousand is enough"))
+        XCTAssertTrue(accepts("बीस लोग आए", "20 people came"))
+        XCTAssertTrue(accepts("ग्यारह लोग आए", "11 people came"))
+        XCTAssertTrue(accepts("पचास लोग आए", "50 people came"))
+        XCTAssertTrue(accepts("सौ रुपये दीजिए", "Give 100 rupees"))
+        XCTAssertTrue(accepts("दो सौ पचास लोग आए", "250 people came"))
+        XCTAssertTrue(accepts("तीन हज़ार पाँच सौ रुपये", "3,500 rupees"))
+        XCTAssertTrue(accepts("दस लाख का बजट है", "The budget is 1,000,000"))
+        XCTAssertTrue(accepts("एक करोड़ का बजट है", "The budget is 1 crore"))
+        XCTAssertTrue(accepts("pandrah se bees hazaar kaafi hai", "15 to 20 thousand is enough"))
+        XCTAssertTrue(accepts("pandrah se bees hazar kaafi hai", "15,000 to 20,000 is enough"))
+        XCTAssertTrue(accepts("do lakh ka budget hai", "The budget is 2 lakh"))
+        XCTAssertTrue(accepts("paanch crore ka budget hai", "The budget is 5 crore"))
+        XCTAssertTrue(accepts("das sau bees log aaye", "1,020 people came"))
+    }
+
+    func testSpokenNumberWordsAreNotRequiredToBeDigits() {
+        XCTAssertTrue(accepts("पंद्रह से बीस हज़ार काफ़ी है", "Fifteen to twenty thousand is enough"))
+        XCTAssertTrue(accepts("बीस लोग आए", "Twenty people came"))
+    }
+
+    func testRejectsANumberThatCannotBeDerivedFromTheSource() {
+        XCTAssertFalse(accepts(rangeSource, "15-30 thousand is enough"))
+        XCTAssertFalse(accepts(rangeSource, "25,000 is enough"))
+        XCTAssertFalse(accepts(rangeSource, "15,000 to 20,000 is enough for 3 people"))
+        XCTAssertFalse(accepts("पंद्रह से बीस हज़ार काफ़ी है", "15 to 25 thousand is enough"))
+        XCTAssertFalse(accepts("बीस लोग आए", "30 people came"))
+        XCTAssertFalse(accepts("दो लाख का बजट है", "The budget is 20 lakh"))
+        XCTAssertFalse(accepts("हम कल मिलेंगे", "We will meet at 5 tomorrow"))
+    }
+
+    func testRejectsDroppingASourceNumberEntirely() {
+        XCTAssertFalse(accepts(rangeSource, "That is enough for me"))
+        XCTAssertFalse(accepts(rangeSource, "20,000 is enough"))
+        XCTAssertFalse(accepts("लागत १५ रुपये है", "The cost is small"))
+        XCTAssertFalse(accepts("बजट १५ से २० हज़ार है", "The budget is fifteen to twenty thousand."))
+        XCTAssertFalse(accepts("बजट १५ से २० हज़ार है", "The budget is 20 thousand."))
     }
 
     // MARK: - Processing text and evidence

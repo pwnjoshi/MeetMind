@@ -116,7 +116,7 @@ enum TranscriptTranslation {
             return nil
         }
 
-        guard numbers(in: trimmed) == numbers(in: source) else { return nil }
+        guard TranscriptNumbers.accepts(english: trimmed, source: source) else { return nil }
 
         let sourceTokens = wordTokens(source) + wordTokens(HindiRomanizer.romanize(source))
         let englishTokens = Set(wordTokens(trimmed).map { $0.lowercased() })
