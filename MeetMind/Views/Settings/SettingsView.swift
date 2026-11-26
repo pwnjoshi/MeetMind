@@ -566,7 +566,7 @@ struct OfflineAnalysisModelsView: View {
         .navigationTitle("Offline models")
         .task {
             do {
-                let ids = Set(MeetingAnalysisPipeline.requiredModelIDs + VidurModel.allCases.map(\.rawValue))
+                let ids = Set(MeetingAnalysisPipeline.requiredModelIDs)
                 profiles = try OfflineModelStore.profiles().filter { ids.contains($0.id) }
                 await refresh()
             } catch { message = error.localizedDescription }

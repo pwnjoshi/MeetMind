@@ -227,7 +227,7 @@ public enum MeetingEvaluation {
         let warning = await pipeline.lastSpeakerWarning
 
         let reduced = MeetingAnalysisReducer.reduce(checkpoint, participants: participants,
-                                                    meetingDate: meetingDate, timeZone: zone)
+                                                    meetingDate: meetingDate, timeZone: zone, agenda: agenda)
         let minutes = reduced.minutes
         let turns = checkpoint.turns.map {
             EvaluationResult.Turn(id: $0.id, start: $0.start, end: $0.end, speaker: $0.speaker, text: $0.text)

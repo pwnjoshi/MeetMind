@@ -191,7 +191,7 @@ class LogParsingTests(unittest.TestCase):
         problems = sim.preflight_problems(sim.summarize_events(events))
         self.assertEqual(len(problems), 2)
         self.assertIn("diarization-aaaaaaaaaaaa", " ".join(problems))
-        self.assertIn("qwen-3.5-2b", " ".join(problems))
+        self.assertIn("qwen-1.7b", " ".join(problems))
 
     def test_zero_available_memory_on_simulator_is_not_a_problem(self):
         lines = ["MEETMIND_EVAL env simulator=1 available_mb=0"] + [

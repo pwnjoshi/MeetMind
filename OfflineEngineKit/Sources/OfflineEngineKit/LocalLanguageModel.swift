@@ -133,11 +133,13 @@ final class LocalLanguageModel {
         if question == nil {
             system += """
 
-            Examples ([X] = placeholder; use the transcript's own words):
+            Examples ([X] = placeholder; use the transcript's words):
             "[Name], can you prepare the [document] by [day]?" "Sure." -> task Prepare the [document]; owner [Name]; deadlineText "by [day]".
             "[Name] ko [document] bhejna hai kal tak." -> task Send the [document]; owner [Name]; deadlineText "kal tak".
             "[Thing] kal bhej dega." -> task Send the [thing]; owner null ([Thing] is not a name).
-            "Let's go with the [option]." -> decision: The [option] is approved (stated reason).
+            "I would recommend that [Name] reviews the [thing]." -> task Review the [thing]; owner [Name].
+            "[Name], you continue with the [thing]." -> task Continue with the [thing]; owner [Name].
+            "Let's go with the [option]." -> decision: The [option] is approved.
             "[Option] abhi decide nahi hua." -> no decision, no task.
             "I can't do the [document]." -> nothing.
             """

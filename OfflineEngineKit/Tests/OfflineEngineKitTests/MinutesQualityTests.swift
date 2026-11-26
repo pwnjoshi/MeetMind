@@ -401,17 +401,21 @@ final class MinutesQualityTests: XCTestCase {
     func testPromptMentionsRomanScriptAndCancellation() throws {
         let turn = AnalysisTurn(id: "t1", text: "Hello", start: 0, end: 1, speaker: nil)
         let prompt = try LocalLanguageModel.makePrompt(turns: [turn], meetingDate: Date(), timezone: "UTC")
-        for needle in ["Roman letters", "rehne do", "never in decisions", "main ... dunga"] {
+        for needle in ["Roman letters", "rehne do", "never in decisions", "main ... dunga",
+                       "I would recommend that [Name] reviews the [thing]", "[Name], you continue with the [thing]"] {
             XCTAssertTrue(prompt.contains(needle), needle)
         }
-        XCTAssertEqual(OfflineAnalysisContract.promptVersion, "meeting-analysis-v14")
+        XCTAssertEqual(OfflineAnalysisContract.promptVersion, "meeting-analysis-v15")
     }
 
     // MARK: - One model
 
     func testDefaultAndComparisonModelAreAvailable() throws {
-        XCTAssertEqual(VidurModel.allCases, [.fast, .baseline])
-        XCTAssertEqual(VidurModel.fast.rawValue, "qwen-3.5-2b")
+        XCTAssertEqual(VidurModel.allCases, [.fast, .comparison])
+        XCTAssertEqual(VidurModel.fast.rawValue, "qwen-1.7b")
+        XCTAssertEqual(VidurModel.comparison.rawValue, "qwen-3.5-2b")
+        XCTAssertEqual(VidurModel.selected, .fast)
+        XCTAssertEqual(MeetingAnalysisPipeline.requiredModelIDs, ["whisper-large", "diarization", "qwen-1.7b"])
         XCTAssertFalse(try OfflineModelStore.profiles().contains { $0.id == "qwen-4b" })
         XCTAssertFalse(VidurModel.fast.title.contains("4B"))
     }
@@ -422,7 +426,10 @@ final class MinutesQualityTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("qwen-4b", forKey: VidurModel.preferenceKey)
         VidurModel.migrateSavedSelection(defaults: defaults)
-        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-3.5-2b")
+        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-1.7b")
+        defaults.set("qwen-3.5-2b", forKey: VidurModel.preferenceKey)
+        VidurModel.migrateSavedSelection(defaults: defaults)
+        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-1.7b")
         defaults.removeObject(forKey: VidurModel.preferenceKey)
         VidurModel.migrateSavedSelection(defaults: defaults)
         XCTAssertNil(defaults.object(forKey: VidurModel.preferenceKey))

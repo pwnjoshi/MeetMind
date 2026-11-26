@@ -27,9 +27,10 @@ public enum MeetingAnalysisReducer {
     ///     sentence itself) can become a task owner.
     ///   - speakerNames: Maps a transcript speaker label to the attendee the user named,
     ///     so first-person commitments ("I will ...") can receive an owner.
+    ///   - agenda: The agenda the person wrote. When present it leads the overview.
     public static func reduce(_ checkpoint: MeetingAnalysisCheckpoint, participants: [String] = [],
                               speakerNames: [String: String] = [:], meetingDate: Date? = nil,
-                              timeZone: TimeZone = TimeZone.current) -> ReducedMeetingAnalysis {
+                              timeZone: TimeZone = TimeZone.current, agenda: String? = nil) -> ReducedMeetingAnalysis {
         let verifiedTurns = checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns)
         // A vocative ("Pawan, ...") names the next voice; a self-introduction names the current one.
         let speakerNames = SpeakerNameInference.infer(turns: verifiedTurns, participants: participants,
@@ -173,8 +174,10 @@ public enum MeetingAnalysisReducer {
             }
         }
         var overviewFacts = ranked
+        let overviewNames = MinutesBuilder.overviewNames(turns: verifiedTurns, participants: participants,
+                                                         speakerNames: speakerNames, tasks: tasks)
         if let source = ranked.first, let draft = checkpoint.draftedOverviewContext,
-           let checked = verifiedOverviewContext(draft, source: source) {
+           let checked = verifiedOverviewContext(draft, source: source, turns: verifiedTurns, names: overviewNames) {
             overviewFacts[0] = checked
         }
         let overviewDiscussion = overviewFacts.isEmpty ? discussion : overviewFacts
@@ -182,7 +185,8 @@ public enum MeetingAnalysisReducer {
         let minutes = MinutesBuilder.build(MinutesBuilder.Input(
             turns: verifiedTurns, hindi: hindi, decisions: decisions, discussion: discussion, rankedDiscussion: overviewFacts,
             openIssues: openIssues, tasks: tasks,
-            participants: participants, speakerNames: speakerNames, meetingDate: meetingDate, timeZone: timeZone))
+            participants: participants, speakerNames: speakerNames, meetingDate: meetingDate, timeZone: timeZone,
+            agenda: agenda))
         if !minutes.executiveSummary.isEmpty { executiveSummary = minutes.executiveSummary }
         // The deterministic path is primary whenever it found structure, for any script. Model discussion
         // that copies the transcript, or is not English, never reaches Discussion or the summary.
@@ -248,8 +252,13 @@ public enum MeetingAnalysisReducer {
 
     /// A model point that is not English or that nearly repeats a transcript sentence adds nothing to minutes.
     private static func isTranscriptCopy(_ point: SupportedPoint, turns: [AnalysisTurn]) -> Bool {
-        if HindiText.looksHindi(point.text) { return true }
-        let tokens = meaningfulTokens(point.text)
+        isTranscriptCopy(text: point.text, turns: turns)
+    }
+
+    /// True when the text is not English or when at least 70% of its meaningful words sit in one transcript sentence.
+    static func isTranscriptCopy(text: String, turns: [AnalysisTurn]) -> Bool {
+        if HindiText.looksHindi(text) { return true }
+        let tokens = meaningfulTokens(text)
         guard !tokens.isEmpty else { return false }
         for turn in turns {
             for sentence in sentences(in: turn.text) {
@@ -364,11 +373,16 @@ public enum MeetingAnalysisReducer {
         return sentences.isEmpty ? "No substantive meeting outcomes were identified." : sentences.joined(separator: " ")
     }
 
-    static func verifiedOverviewContext(_ draft: String, source: SupportedPoint) -> SupportedPoint? {
+    /// Checks the model's one overview sentence. With `turns` and `names` it also applies the shared overview
+    /// rules (no leading connective, no transcript copy, no person without a task).
+    static func verifiedOverviewContext(_ draft: String, source: SupportedPoint, turns: [AnalysisTurn]? = nil,
+                                        names: MinutesBuilder.OverviewNames? = nil) -> SupportedPoint? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.utf8.count <= 280, !text.contains("\n"), !HindiText.looksHindi(text),
               !source.evidence.isEmpty, isSummaryContext(text),
               TaskGrounding.claimDetailsMatch(text, cited: [source.text]) else { return nil }
+        if let turns = turns, let names = names,
+           !MinutesBuilder.isUsableOverviewSentence(text, turns: turns, names: names) { return nil }
         // Allow copy edits only. Preserve all factual words in their original
         // order, including names, negation, and qualifiers.
         let fillers: Set<String> = ["basically", "actually", "um", "uh"]

@@ -90,7 +90,7 @@ final class VidurAnswerEngineTests: XCTestCase {
         _ = try await engine.answer(question: "pricing page", turns: turns, model: .fast)
         XCTAssertEqual(counter.loadCount, 2)
         let key = await engine.warmModelKey
-        XCTAssertEqual(key, "qwen-3.5-2b@r2")
+        XCTAssertEqual(key, "qwen-1.7b@r2")
     }
 
     func testEvictionForcesReload() async throws {

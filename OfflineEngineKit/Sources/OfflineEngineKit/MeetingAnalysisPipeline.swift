@@ -3,8 +3,9 @@ import AVFoundation
 import CryptoKit
 
 public enum VidurModel: String, CaseIterable, Sendable {
-    case fast = "qwen-3.5-2b"
-    case baseline = "qwen-1.7b"
+    case fast = "qwen-1.7b"
+    /// Evaluation-only comparison model. The app never selects it for users.
+    case comparison = "qwen-3.5-2b"
 
     public static let preferenceKey = "Manent.vidurModel"
     /// Model downloads the app no longer offers. `OfflineModelStore` deletes their files once.
@@ -15,7 +16,8 @@ public enum VidurModel: String, CaseIterable, Sendable {
         return .fast
     }
 
-    /// A saved selection of a retired model (the old 4B) becomes the 1.7B model.
+    /// Any saved selection other than the 1.7B model (the retired 4B or the 2B comparison model)
+    /// becomes the 1.7B model.
     public static func migrateSavedSelection(defaults: UserDefaults = .standard) {
         if let saved = defaults.string(forKey: preferenceKey), saved != Self.fast.rawValue {
             defaults.set(Self.fast.rawValue, forKey: preferenceKey)
@@ -24,8 +26,9 @@ public enum VidurModel: String, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .fast: return "Qwen3.5 2B \u{00B7} 1.28 GB"
-        case .baseline: return "Qwen3 1.7B \u{00B7} 1.28 GB"
+        // Sizes from models.json: 1,282,439,584 bytes (1.7B) and 1,280,835,808 bytes (2B).
+        case .fast: return "Qwen3 1.7B \u{00B7} 1.28 GB"
+        case .comparison: return "Qwen3.5 2B \u{00B7} 1.28 GB"
         }
     }
 }
@@ -530,7 +533,7 @@ public actor MeetingAnalysisPipeline {
         // question vocabulary instead of decoding every historical chunk. The
         // answer remains transcript-grounded; callers can ask a follow-up when
         // no ranked passage supports it.
-        let budget = profile.id == VidurModel.fast.rawValue ? 2 : 3
+        let budget = profile.id == VidurModel.comparison.rawValue ? 2 : 3
         for chunk in Self.rankedQuestionChunks(chunks, question: question, limit: budget) {
             try checkConditions()
             let result = try model.analyze(turns: chunk, meetingDate: referenceDate, timezone: timezone, question: question)
@@ -927,14 +930,18 @@ public actor MeetingAnalysisPipeline {
         }
         if let session, !ComputeEnvironment.needsReload(session.placement) {
             let reduced = MeetingAnalysisReducer.reduce(checkpoint, participants: participants,
-                meetingDate: meetingDate, timeZone: TimeZone(identifier: timezone) ?? .current)
+                meetingDate: meetingDate, timeZone: TimeZone(identifier: timezone) ?? .current, agenda: agenda)
+            let overviewTurns = checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns)
+            let overviewNames = MinutesBuilder.overviewNames(turns: overviewTurns, participants: participants,
+                                                             speakerNames: [:], tasks: reduced.tasks)
+            // The model only ranks and lightly edits sentences that already pass the overview rules.
             let facts = Array(reduced.discussion.filter {
-                MeetingAnalysisReducer.isSummaryContext($0.text) && !HindiText.looksHindi($0.text)
+                MinutesBuilder.isUsableOverviewSentence($0.text, turns: overviewTurns, names: overviewNames)
                     && !$0.evidence.isEmpty && $0.text.utf8.count <= 240
             }.prefix(10))
             if !facts.isEmpty {
                 do {
-                    let context = checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns)
+                    let context = overviewTurns
                     if let draft = try session.draftOverviewContext(facts, transcript: context),
                        facts.indices.contains(draft.index) {
                         checkpoint.rankedOverviewFacts = [facts[draft.index]]

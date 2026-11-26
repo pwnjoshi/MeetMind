@@ -164,7 +164,7 @@ def main(argv=None):
     parser.add_argument("--golden", required=True, help="folder of golden meetings")
     parser.add_argument("--only", help="comma-separated meeting ids")
     parser.add_argument("--language", help="force the transcription language code, e.g. hi (default: automatic)")
-    parser.add_argument("--model", choices=("qwen-1.7b", "qwen-3.5-2b"), default="qwen-3.5-2b")
+    parser.add_argument("--model", choices=("qwen-1.7b", "qwen-3.5-2b"), default="qwen-1.7b")
     parser.add_argument("--transcript-from", help="prior result root with <meeting>/result.json for minutes-only replay")
     parser.add_argument("--timeout", type=int, default=7200, help="seconds to wait for the run (default 7200)")
     parser.add_argument("--out", default=os.path.join("build", "eval"))

@@ -161,10 +161,14 @@ final class MeetingAnalysisReducerTests: XCTestCase {
             AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
         }
         let points = turns.map { SupportedPoint(text: $0.text, evidence: [SourceEvidence(turnID: $0.id, quote: $0.text)]) }
-        var saved = checkpoint(turns: turns, analysis: [LocalAnalysisResult(discussion: points, decisions: [], tasks: [])])
-        saved.rankedOverviewFacts = [SupportedPoint(text: "The budget was approved.", evidence: points[1].evidence), points[1]]
+        // The model's points are paraphrases; an overview sentence that copies the transcript is rejected.
+        let paraphrases = ["Offline access to the mobile prototype is available.",
+                           "Costs are climbing according to the budget report."]
+        let discussionPoints = zip(paraphrases, points).map { SupportedPoint(text: $0, evidence: $1.evidence) }
+        var saved = checkpoint(turns: turns, analysis: [LocalAnalysisResult(discussion: discussionPoints, decisions: [], tasks: [])])
+        saved.rankedOverviewFacts = [SupportedPoint(text: "The budget was approved.", evidence: points[1].evidence), discussionPoints[1]]
         let result = MeetingAnalysisReducer.reduce(saved)
-        XCTAssertTrue(result.executiveSummary.hasPrefix(lines[1]))
+        XCTAssertTrue(result.executiveSummary.hasPrefix(paraphrases[1]))
         XCTAssertFalse(result.executiveSummary.contains("approved"))
         XCTAssertEqual(result.discussion.count, 2)
     }
@@ -174,11 +178,12 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         let turns = lines.enumerated().map { index, line in
             AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
         }
-        let fact = SupportedPoint(text: lines[0], evidence: [SourceEvidence(turnID: turns[0].id, quote: lines[0])])
+        let paraphrase = "Offline access to the prototype is available."
+        let fact = SupportedPoint(text: paraphrase, evidence: [SourceEvidence(turnID: turns[0].id, quote: lines[0])])
         var saved = checkpoint(turns: turns, analysis: [LocalAnalysisResult(discussion: [fact], decisions: [], tasks: [])])
         saved.rankedOverviewFacts = [fact, fact]
         let result = MeetingAnalysisReducer.reduce(saved)
-        XCTAssertEqual(result.executiveSummary.components(separatedBy: lines[0]).count, 2)
+        XCTAssertEqual(result.executiveSummary.components(separatedBy: paraphrase).count, 2)
         XCTAssertTrue(result.executiveSummary.contains("retain the existing audit log"))
     }
 

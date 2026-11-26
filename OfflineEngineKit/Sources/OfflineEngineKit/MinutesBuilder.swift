@@ -17,10 +17,98 @@ enum MinutesBuilder {
         let speakerNames: [String: String]
         let meetingDate: Date?
         let timeZone: TimeZone
+        /// The agenda the person wrote, when there is one. It leads the overview as "Agenda: a; b; c."
+        var agenda: String? = nil
     }
 
     static func build(_ input: Input) -> MinutesContent {
         Assembler(input).run()
+    }
+
+    // MARK: - Overview sentence rules
+
+    /// People the transcript names. `explicit` holds attendees, speaker names and task owners; `vocatives`
+    /// holds capitalized words used to address someone ("Maya, ..."). `owners` are the people who own a task.
+    struct OverviewNames {
+        var explicit: Set<String> = []
+        var vocatives: Set<String> = []
+        var owners: Set<String> = []
+    }
+
+    private static let vocativeStoplist: Set<String> = [
+        "okay", "yeah", "yes", "thanks", "thank", "right", "well", "sure", "hello", "great", "good", "perfect",
+        "also", "actually", "basically", "however", "then", "first", "next", "finally", "now", "today", "again",
+        "sorry", "please", "nice", "cool", "awesome", "exactly", "absolutely", "definitely", "fine", "alright",
+        "anyway", "honestly", "obviously", "usually", "maybe", "perhaps", "hopefully", "meanwhile", "otherwise",
+        "overall", "still", "since", "because", "hence", "thus", "and", "but", "so", "tomorrow", "yesterday",
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
+    ]
+
+    private static func nameParts(_ value: String) -> [String] {
+        value.split { !$0.isLetter }.map { $0.lowercased() }.filter { $0.count > 1 }
+    }
+
+    static func overviewNames(turns: [AnalysisTurn], participants: [String], speakerNames: [String: String],
+                              tasks: [SuggestedTask]) -> OverviewNames {
+        var names = OverviewNames()
+        for value in participants + Array(speakerNames.values) where !SpeakerNameInference.isGenericLabel(value) {
+            names.explicit.formUnion(nameParts(value))
+        }
+        let vocative = try? NSRegularExpression(pattern: #"(?:^|[.!?]\s+)([A-Z][a-z]{2,}),\s"#)
+        for turn in turns {
+            if let label = turn.speaker, !SpeakerNameInference.isGenericLabel(label) {
+                names.explicit.formUnion(nameParts(label))
+            }
+            let text = turn.text as NSString
+            vocative?.enumerateMatches(in: turn.text, range: NSRange(location: 0, length: text.length)) { match, _, _ in
+                guard let match = match, match.numberOfRanges > 1 else { return }
+                let word = text.substring(with: match.range(at: 1)).lowercased()
+                if !vocativeStoplist.contains(word) { names.vocatives.insert(word) }
+            }
+        }
+        for task in tasks {
+            guard let owner = task.owner else { continue }
+            let parts = nameParts(owner)
+            names.explicit.formUnion(parts)
+            names.owners.formUnion(parts)
+        }
+        return names
+    }
+
+    /// One overview context sentence must read as a statement about the meeting. It is rejected when it opens
+    /// with a connective or filler, copies a transcript sentence, is a question or an instruction, or names a
+    /// person who owns no task. The model's sentence and the deterministic candidates share this check.
+    static func isUsableOverviewSentence(_ text: String, turns: [AnalysisTurn], names: OverviewNames) -> Bool {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty, !HindiText.looksHindi(cleaned) else { return false }
+        let connective = #"(?i)^\W*(?:and|so|but|also|then|okay|ok|basically|however|right|yeah)\b"#
+        guard MinutesRegex.firstMatch(connective, in: cleaned) == nil,
+              MeetingAnalysisReducer.isSummaryContext(cleaned),
+              !MeetingAnalysisReducer.isTranscriptCopy(text: cleaned, turns: turns) else { return false }
+        for word in cleaned.split(whereSeparator: { !$0.isLetter }) {
+            let lower = word.lowercased()
+            let named = names.explicit.contains(lower)
+                || (names.vocatives.contains(lower) && word.first?.isUppercase == true)
+            if named && !names.owners.contains(lower) { return false }
+        }
+        return true
+    }
+
+    /// "Agenda: a; b; c." from the written agenda: at most three items of at most 60 characters.
+    static func agendaSentence(_ agenda: String?) -> String? {
+        guard let agenda = agenda else { return nil }
+        var items: [String] = []
+        for line in agenda.components(separatedBy: CharacterSet.newlines.union(CharacterSet(charactersIn: ";"))) {
+            var item = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            item = item.replacingOccurrences(of: #"^(?:[-•*]|\d+[.)])\s*"#, with: "", options: .regularExpression)
+            item = item.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            if item.count > 60 {
+                item = String(item.prefix(60)).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            }
+            if !item.isEmpty, !items.contains(item) { items.append(item) }
+            if items.count == 3 { break }
+        }
+        return items.isEmpty ? nil : "Agenda: " + items.joined(separator: "; ") + "."
     }
 
     // MARK: - Phrase helpers
@@ -571,12 +659,17 @@ enum MinutesBuilder {
             let candidates = priorityContext + input.rankedDiscussion
                 + (coveredTopics.isEmpty || !input.rankedDiscussion.isEmpty ? input.discussion : [])
             var selectedText = Set<String>()
+            let overviewPeople = MinutesBuilder.overviewNames(turns: input.turns, participants: input.participants,
+                                                     speakerNames: input.speakerNames, tasks: input.tasks)
+            // At most one context sentence, and only when it passes the shared overview rules. When none
+            // does, the overview is composed from the agenda, topics, decisions, tasks and open questions.
             let context = candidates.filter { point in
                 !HindiText.looksHindi(point.text) && hasTranscriptEvidence(point.evidence)
-                    && MeetingAnalysisReducer.isSummaryContext(point.text)
+                    && MinutesBuilder.isUsableOverviewSentence(point.text, turns: input.turns, names: overviewPeople)
                     && point.evidence.contains { !outcomeTurns.contains($0.turnID) }
                     && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted
-            }.prefix(2)
+            }.prefix(1)
+            if let agenda = MinutesBuilder.agendaSentence(input.agenda) { append(agenda, evidence: []) }
             for point in context {
                 let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)

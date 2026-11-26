@@ -265,7 +265,7 @@ enum ActionExtractor {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         text = text.trimmingCharacters(in: CharacterSet(charactersIn: ".!?\u{0964}\u{2026}\"\u{201C}\u{201D} "))
         text = replace(#"^(?:action\s+items?|action|todo|to-do|task|follow[- ]?up)\s*[:\-]\s*"#, in: text)
-        text = replace(#"^(?:(?:okay|ok|so|and|also|alright|right|then|well|now|yeah|yes|sure|great|cool|perfect|actually|haan|haanji|achha|accha|toh|chalo|ji|hi|hey|hello|namaste)[,]?\s+)+"#, in: text)
+        text = replace(#"^(?:(?:okay|ok|so|and|also|alright|right|then|well|now|yeah|yes|sure|great|cool|perfect|actually|however|haan|haanji|achha|accha|toh|chalo|ji|hi|hey|hello|namaste)[,]?\s+)+"#, in: text)
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -414,7 +414,7 @@ enum ActionExtractor {
 
     // MARK: - English and mixed request forms
 
-    private enum RuleKind { case ownerAction, actionOwner, ownerObject, objectOwner, selfAction }
+    private enum RuleKind { case ownerAction, actionOwner, ownerObject, objectOwner, selfAction, ownerClause }
     private struct Rule { let regex: NSRegularExpression; let kind: RuleKind }
 
     private static func englishRules() -> [Rule] {
@@ -444,6 +444,10 @@ enum ActionExtractor {
         add([#"^(?i:(?:i'll|i\s+will|i'm\s+going\s+to|let\s+me|we'll|we\s+will)\s+(?:ask|get|have|tell|request|remind)\s+)"#, name, #"\s+(?i:to\s+)?(.+)$"#], .ownerAction)
         add([#"^(?i:(?:i|we)\s+(?:need|want|would\s+like|'d\s+like)\s+)"#, name, #"\s+(?i:to\s+)(.+)$"#], .ownerAction)
         add([#"^(?i:(?:please\s+)?(?:ask|get|tell|remind)\s+)"#, name, #"\s+(?i:to\s+)(.+)$"#], .ownerAction)
+        // "I would recommend that Vaishnavi goes further on the user flow" / "We suggest Rahul reviews the plan"
+        add([#"^(?i:(?:i|we)(?:\s+would|\s+will|'d)?\s+(?:recommend|suggest|propose|want|expect)\s+(?:that\s+)?)"#, name, #"\s+(.+)$"#], .ownerClause)
+        // "Rahul should review the plan"
+        add(["^", nameTwo, #"\s+(?i:should)\s+(.+)$"#], .ownerClause)
         // "Pawan to share the notes"
         add(["^", name, #"\s+(?i:to)\s+(.+)$"#], .ownerAction)
         // "Rahul will send the estimate tomorrow"
@@ -487,6 +491,11 @@ enum ActionExtractor {
                 guard let owner = resolveOwner(ownerRaw, context: context), startsWithVerb(action),
                       let task = makeTask(action: action, object: nil, owner: owner, evidence: evidence) else { continue }
                 return task
+            case .ownerClause:
+                guard let owner = resolveOwner(groups[1], context: context),
+                      let action = baseFormClause(groups[2]),
+                      let task = makeTask(action: action, object: nil, owner: owner, evidence: evidence) else { continue }
+                return task
             case .ownerObject, .objectOwner:
                 let ownerRaw = rule.kind == .ownerObject ? groups[1] : groups[2]
                 let object = rule.kind == .ownerObject ? groups[2] : groups[1]
@@ -506,6 +515,34 @@ enum ActionExtractor {
         // A settled outcome ("tay hua, ... karenge") is a decision, not a request.
         guard !DecisionExtractor.isDecision(sentence) else { return nil }
         return hinglishTask(text, evidence: evidence, turn: turn, context: context)
+    }
+
+    /// Verbs that can open a recommended task, in their base form.
+    private static let clauseVerbs: Set<String> = actionVerbs.union([
+        "go", "focus", "explore", "improve", "start", "begin", "keep", "dive", "consider"
+    ])
+
+    /// "goes" -> "go", "reviews" -> "review". A word that is not a known verb gives nil.
+    private static func baseVerb(_ word: String) -> String? {
+        let lower = word.lowercased().trimmingCharacters(in: .punctuationCharacters)
+        if clauseVerbs.contains(lower) { return lower }
+        var candidates: [String] = []
+        if lower.hasSuffix("ies"), lower.count > 4 { candidates.append(String(lower.dropLast(3)) + "y") }
+        if lower.hasSuffix("es"), lower.count > 3 { candidates.append(String(lower.dropLast(2))) }
+        if lower.hasSuffix("s"), lower.count > 2 { candidates.append(String(lower.dropLast())) }
+        return candidates.first { clauseVerbs.contains($0) }
+    }
+
+    /// "goes further on the flow and looks for designs" -> "go further on the flow and look for designs".
+    /// The clause must open with a verb (third person or base form); negations and descriptions give nil.
+    private static func baseFormClause(_ clause: String) -> String? {
+        var words = clause.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard let first = words.first, let verb = baseVerb(first) else { return nil }
+        words[0] = verb
+        for index in words.indices.dropFirst() where words[index - 1].lowercased() == "and" {
+            if let converted = baseVerb(words[index]) { words[index] = converted }
+        }
+        return words.joined(separator: " ")
     }
 
     private static func makeTask(action: String?, object: String?, owner: String?,

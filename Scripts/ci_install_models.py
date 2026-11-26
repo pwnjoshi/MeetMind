@@ -14,7 +14,7 @@ Mirrors OfflineEngineKit's OfflineModelStore so the app sees the models as ready
 --cache-dir keeps the same layout (<id>-<digest>/...) and is what actions/cache should persist.
 Everything is idempotent: complete, size-checked cache folders are not downloaded again, partial
 files resume with HTTP Range, and an installed folder that already matches is left alone.
-Default models are whisper-large, diarization and qwen-3.5-2b. whisper-small is not needed.
+Default models are whisper-large, diarization and qwen-1.7b. whisper-small is not needed.
 """
 import argparse
 import concurrent.futures
@@ -30,7 +30,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MANIFEST = os.path.join(HERE, "..", "OfflineEngineKit", "Sources", "OfflineEngineKit", "Resources", "models.json")
-DEFAULT_IDS = ("whisper-large", "diarization", "qwen-3.5-2b")
+DEFAULT_IDS = ("whisper-large", "diarization", "qwen-1.7b")
 DEFAULT_BUNDLE = "com.meetmind.app"
 SUPPORT_SUBPATH = ("Library", "Application Support", "OfflineIntelligence", "Models")
 CHUNK = 1024 * 1024
