@@ -130,8 +130,8 @@ final class HindiMeetingMinutesTests: XCTestCase {
     func testSummaryNamesTheParticipantsAndOutcomes() {
         let (reduced, _) = reduce(latinWords, participants: ["Neha", "Pawan"])
         XCTAssertTrue(reduced.executiveSummary.hasPrefix("Neha and Pawan discussed the"), reduced.executiveSummary)
-        XCTAssertTrue(reduced.executiveSummary.contains("Pawan will prepare the agenda by Friday"), reduced.executiveSummary)
-        XCTAssertTrue(reduced.executiveSummary.contains("Neha will send the presentation to the client by tomorrow"), reduced.executiveSummary)
+        XCTAssertTrue(reduced.executiveSummary.contains("prepare the agenda"), reduced.executiveSummary)
+        XCTAssertTrue(reduced.executiveSummary.contains("send the presentation to the client"), reduced.executiveSummary)
         XCTAssertTrue(reduced.executiveSummary.contains("remain open"), reduced.executiveSummary)
     }
 

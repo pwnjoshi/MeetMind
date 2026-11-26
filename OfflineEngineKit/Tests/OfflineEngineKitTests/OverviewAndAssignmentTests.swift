@@ -112,6 +112,24 @@ final class OverviewAndAssignmentTests: XCTestCase {
         return saved
     }
 
+    func testOverviewGroupsFollowUpsAndKeepsTimingQuestionOpen() {
+        let turns = [
+            turn("timing", "During the recording, should we do the processing part or do all the things later on?"),
+            turn("flow", "Vaishnavi, please refine the user flow."),
+            turn("models", "Aditya, please evaluate the models."),
+            turn("audience", "Garima, please narrow down the target user segment."),
+            turn("poc", "Pawan, please continue with the POC.")
+        ]
+        let checkpoint = MeetingAnalysisCheckpoint(sourceSignature: "overview", stage: .completed,
+            turns: turns, speakers: [], analysis: [], analyzedChunks: 0)
+        let result = MeetingAnalysisReducer.reduce(checkpoint)
+        XCTAssertTrue(result.executiveSummary.contains("whether to process audio during recording or afterward"))
+        XCTAssertTrue(result.executiveSummary.contains("Next steps are to"))
+        XCTAssertFalse(result.executiveSummary.contains("Vaishnavi will"))
+        XCTAssertEqual(Set(result.minutes.actions.compactMap(\.owner)), ["Vaishnavi", "Aditya", "Garima", "Pawan"])
+        XCTAssertTrue(result.decisions.isEmpty)
+    }
+
     func testOverviewKeepsOneCleanContextSentenceAndNamesNobodyWithoutATask() {
         let reduced = MeetingAnalysisReducer.reduce(overviewCheckpoint(), participants: ["Meera", "Dev"])
         let statements = reduced.minutes.summaryStatements.map(\.text)

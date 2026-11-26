@@ -676,19 +676,30 @@ enum MinutesBuilder {
                 append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)
             }
 
+            let timingDiscussion = input.turns.filter {
+                MinutesRegex.firstMatch(#"(?i)^(?=.*\bduring\b)(?=.*\b(?:audio|recording)\b).*\bprocess(?:ing)?\b.*\bor\b.*\b(?:later|after|afterward|afterwards)\b"#,
+                                        in: $0.text) != nil
+                    && MinutesRegex.firstMatch(#"(?i)\b(?:whether|should)\b"#, in: $0.text) != nil
+            }
+            if let turn = timingDiscussion.first {
+                append("The team discussed whether to process audio during recording or afterward.",
+                       evidence: [SourceEvidence(turnID: turn.id, quote: turn.text)])
+            }
+
             let names = summaryNames()
             append(MinutesComposer.executiveSummary(names: names, topics: coveredTopics.map(\.title),
                 decisionPhrases: [], tasks: [], openSubjects: []), evidence: coveredTopics.flatMap(\.evidence))
             append(MinutesComposer.executiveSummary(names: names, topics: [],
                 decisionPhrases: decisions.map { MinutesBuilder.shortPhrase($0.text) }, tasks: [], openSubjects: []),
                 evidence: decisions.flatMap(\.evidence))
-            for task in tasks.prefix(4) {
-                append(MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [],
-                    tasks: [task], openSubjects: []), evidence: task.evidence)
+            let nextSteps = tasks.prefix(4).map { task in
+                let title = MinutesComposer.actionTitle(task.title)
+                let withoutDeadline = ActionExtractor.splitDeadline(title).text
+                return HindiText.lowercaseFirst(MinutesComposer.stripPeriod(withoutDeadline))
             }
-            if tasks.count > 4 {
-                append("The action list contains \(tasks.count - 4) more items.",
-                       evidence: tasks.dropFirst(4).flatMap(\.evidence))
+            if !nextSteps.isEmpty {
+                append("Next steps are to " + MinutesComposer.list(nextSteps) + ".",
+                       evidence: tasks.prefix(4).flatMap(\.evidence))
             }
             append(MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [], tasks: [],
                 openSubjects: namedIssues.map(\.subject)), evidence: namedIssues.flatMap(\.evidence))
