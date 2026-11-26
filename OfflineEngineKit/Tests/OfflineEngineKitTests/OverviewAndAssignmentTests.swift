@@ -123,7 +123,10 @@ final class OverviewAndAssignmentTests: XCTestCase {
         let checkpoint = MeetingAnalysisCheckpoint(sourceSignature: "overview", stage: .completed,
             turns: turns, speakers: [], analysis: [], analyzedChunks: 0)
         let result = MeetingAnalysisReducer.reduce(checkpoint)
-        XCTAssertTrue(result.executiveSummary.contains("whether to process audio during recording or afterward"))
+        XCTAssertEqual(result.minutes.summaryStatements.first?.text,
+                       "The team discussed the app’s UI, target users and whether to process audio during recording or afterward.")
+        let cited = Set(result.minutes.summaryStatements.first?.evidence.map(\.turnID) ?? [])
+        XCTAssertEqual(cited, ["flow", "audience", "timing"])
         XCTAssertTrue(result.executiveSummary.contains("Next steps are to"))
         XCTAssertFalse(result.executiveSummary.contains("Vaishnavi will"))
         XCTAssertEqual(Set(result.minutes.actions.compactMap(\.owner)), ["Vaishnavi", "Aditya", "Garima", "Pawan"])

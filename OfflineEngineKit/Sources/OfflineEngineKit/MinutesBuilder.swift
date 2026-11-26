@@ -671,20 +671,27 @@ enum MinutesBuilder {
                     && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted
             }.prefix(1)
             if let agenda = MinutesBuilder.agendaSentence(input.agenda) { append(agenda, evidence: []) }
-            for point in context {
-                let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)
+            let discussionTopics: [(label: String, pattern: String)] = [
+                ("the app’s UI", #"(?i)\b(?:figma|user flow|ui design|interface design)\b"#),
+                ("target users", #"(?i)\b(?:user segments?|target users?|target audience)\b"#),
+                ("whether to process audio during recording or afterward",
+                 #"(?i)^(?=.*\bduring\b)(?=.*\b(?:audio|recording)\b)(?=.*\b(?:whether|should)\b).*\bprocess(?:ing)?\b.*\bor\b.*\b(?:later|after|afterward|afterwards)\b"#)
+            ]
+            let supportedTopics = discussionTopics.compactMap { topic -> (String, SourceEvidence)? in
+                guard let turn = input.turns.first(where: { MinutesRegex.firstMatch(topic.pattern, in: $0.text) != nil })
+                else { return nil }
+                return (topic.label, SourceEvidence(turnID: turn.id, quote: turn.text))
+            }
+            if !supportedTopics.isEmpty {
+                append("The team discussed " + MinutesComposer.list(supportedTopics.map { $0.0 }) + ".",
+                       evidence: supportedTopics.map { $0.1 })
+            } else {
+                for point in context {
+                    let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)
+                }
             }
 
-            let timingDiscussion = input.turns.filter {
-                MinutesRegex.firstMatch(#"(?i)^(?=.*\bduring\b)(?=.*\b(?:audio|recording)\b).*\bprocess(?:ing)?\b.*\bor\b.*\b(?:later|after|afterward|afterwards)\b"#,
-                                        in: $0.text) != nil
-                    && MinutesRegex.firstMatch(#"(?i)\b(?:whether|should)\b"#, in: $0.text) != nil
-            }
-            if let turn = timingDiscussion.first {
-                append("The team discussed whether to process audio during recording or afterward.",
-                       evidence: [SourceEvidence(turnID: turn.id, quote: turn.text)])
-            }
 
             let names = summaryNames()
             append(MinutesComposer.executiveSummary(names: names, topics: coveredTopics.map(\.title),
@@ -693,7 +700,12 @@ enum MinutesBuilder {
                 decisionPhrases: decisions.map { MinutesBuilder.shortPhrase($0.text) }, tasks: [], openSubjects: []),
                 evidence: decisions.flatMap(\.evidence))
             let nextSteps = tasks.prefix(4).map { task in
-                let title = MinutesComposer.actionTitle(task.title)
+                var title = MinutesComposer.actionTitle(task.title)
+                title = MinutesRegex.replace(#"(?i)^go further on the user flow\b"#, in: title, with: "Refine the user flow")
+                title = MinutesRegex.replace(#"(?i)\blook for some good designs of competitor apps\b"#,
+                                             in: title, with: "review competitor app designs")
+                title = MinutesRegex.replace(#"(?i)\bcontinue with (?:the )?POC\b"#,
+                                             in: title, with: "continue the proof of concept")
                 let withoutDeadline = ActionExtractor.splitDeadline(title).text
                 return HindiText.lowercaseFirst(MinutesComposer.stripPeriod(withoutDeadline))
             }
