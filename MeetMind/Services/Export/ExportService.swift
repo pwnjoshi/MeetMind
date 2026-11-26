@@ -50,7 +50,6 @@ public struct DocumentSnapshot: Equatable, Sendable {
             Section(heading: "Agenda", lines: content.agenda),
             Section(heading: presentHeading, lines: content.present.map(\.label)),
             Section(heading: "Absent", lines: content.absent.map(\.label)),
-            Section(heading: "Discussion", lines: content.discussion),
             Section(heading: "Key Decisions", lines: content.decisions.map { content.decisionLine($0) })
         ]
         let sections = candidates.filter { !$0.lines.isEmpty }

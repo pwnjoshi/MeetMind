@@ -157,8 +157,6 @@ public struct MeetingMinutesContent: Equatable, Sendable {
         let points = clean(summary?.keyPoints ?? [])
         let overview = (summary?.executiveSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         // Older minutes stored the discussion joined into the summary; show it once.
-        let overviewRepeatsPoints = !points.isEmpty && overview == points.joined(separator: "\n")
-        let summaryText = overviewRepeatsPoints ? "" : overview
 
         var discussion = points
         var openIssues: [String] = []
@@ -227,7 +225,7 @@ public struct MeetingMinutesContent: Equatable, Sendable {
         }
 
         return MeetingMinutesContent(
-            summary: summaryText,
+            summary: overview,
             agenda: agenda,
             hasAttendanceRecord: meeting.absentParticipantIDs != nil,
             present: present,

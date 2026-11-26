@@ -16,7 +16,7 @@ extension View {
     }
 }
 
-/// "Minutes" segment: one white card with Summary, Agenda, Present / Absent, Discussion, Decisions,
+/// "Minutes" segment: one white card with Summary, Agenda, Present / Absent, Decisions,
 /// Next meeting. Empty sections are left out. Every section is derived from `MeetingMinutesContent`,
 /// so edits made in the other tabs, the People sheet or Edit Minutes appear here at once.
 /// A dotted underline marks a point that has a quote in the recording; tapping it shows the quote and can play it.
@@ -30,7 +30,6 @@ struct MeetingMinutesView: View {
     @State private var expanded: Set<String> = []
     @State private var playingTurnID: String?
 
-    private enum Marker { case bullet, check, orange }
 
     private var canPlay: Bool { viewModel != nil && meeting.resolvedAudioFileURL != nil }
 
@@ -40,7 +39,7 @@ struct MeetingMinutesView: View {
         let analysis = meeting.offlineAnalysis
         let names = MeetingSpeakerNames(meeting: meeting, record: record)
         let isEmpty = content.summary.isEmpty && content.agenda.isEmpty && content.present.isEmpty
-            && content.absent.isEmpty && content.discussion.isEmpty && content.decisions.isEmpty
+            && content.absent.isEmpty && content.decisions.isEmpty
         VStack(alignment: .leading, spacing: 22) {
             if analysis?.transcriptCorrections?.contains(where: { $0.replacement == nil }) == true {
                 VStack(alignment: .leading, spacing: 6) {
@@ -64,7 +63,6 @@ struct MeetingMinutesView: View {
                 summarySection(content, languageNote: analysis?.minutes?.languageNote)
                 agendaSection(content)
                 peopleSection(content)
-                discussionSection(content, analysis: analysis, names: names)
                 decisionsSection(content, analysis: analysis, names: names)
                 nextMeetingSection(analysis)
             }
@@ -142,27 +140,13 @@ struct MeetingMinutesView: View {
     }
 
     @ViewBuilder
-    private func discussionSection(_ content: MeetingMinutesContent, analysis: MeetingAnalysisCheckpoint?,
-                                   names: MeetingSpeakerNames) -> some View {
-        if !content.discussion.isEmpty {
-            section("Discussion") {
-                ForEach(Array(content.discussion.enumerated()), id: \.offset) { entry in
-                    let evidence = MeetingEvidence.discussion(entry.element, in: analysis)
-                    pointRow(key: "d|\(entry.element)", text: entry.element, marker: .bullet,
-                             moments: quotes(evidence, analysis, names))
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
     private func decisionsSection(_ content: MeetingMinutesContent, analysis: MeetingAnalysisCheckpoint?,
                                   names: MeetingSpeakerNames) -> some View {
         if !content.decisions.isEmpty {
             section("Decisions") {
                 ForEach(content.decisions) { decision in
                     let evidence = MeetingEvidence.decision(decision.text, in: analysis)
-                    pointRow(key: "x|\(decision.text)", text: decision.text, marker: .check,
+                    pointRow(key: "x|\(decision.text)", text: decision.text,
                              moments: quotes(evidence, analysis, names))
                 }
             }
@@ -196,24 +180,13 @@ struct MeetingMinutesView: View {
         return MeetingEvidence.moments(from: evidence, result: analysis, meeting: meeting, names: names)
     }
 
-    @ViewBuilder
-    private func markerView(_ marker: Marker) -> some View {
-        switch marker {
-        case .bullet:
-            Circle().fill(Color.secondary).frame(width: 6, height: 6)
-        case .check:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.subheadline)
-                .foregroundStyle(Color(red: 0.13, green: 0.55, blue: 0.24))
-        case .orange:
-            Circle().fill(Color.orange).frame(width: 8, height: 8)
-        }
-    }
-
-    private func pointRow(key: String, text: String, marker: Marker, moments: [EvidenceMoment]) -> some View {
+    private func pointRow(key: String, text: String, moments: [EvidenceMoment]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                markerView(marker).accessibilityHidden(true)
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(Color(red: 0.13, green: 0.55, blue: 0.24))
+                    .accessibilityHidden(true)
                 if moments.isEmpty {
                     Text(text)
                         .font(.body)

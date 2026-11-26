@@ -1,18 +1,13 @@
 import SwiftUI
 import SwiftData
 
-/// "Edit Minutes": summary, agenda, attendance, discussion and decisions.
+/// "Edit Minutes": summary, agenda, attendance and decisions.
 /// Text fields hold a draft until Save; Save writes through `MeetingRecordEditor` so decided-by people follow their
 /// decisions and every other tab sees the change. Actions are edited in the Actions tab.
 @MainActor
 struct EditSavedMinutesSheet: View {
     let meeting: Meeting
     let summary: Summary
-
-    private struct EditableLine: Identifiable {
-        let id = UUID()
-        var text: String
-    }
 
     private struct EditableDecision: Identifiable {
         let id = UUID()
@@ -28,7 +23,6 @@ struct EditSavedMinutesSheet: View {
     @State private var overview: String
     @State private var agenda: String
     @State private var absentIDs: Set<UUID>
-    @State private var discussion: [EditableLine]
     @State private var decisions: [EditableDecision]
     @State private var showAddPerson = false
     @State private var saveError: String?
@@ -45,7 +39,6 @@ struct EditSavedMinutesSheet: View {
         _overview = State(initialValue: content.summary)
         _agenda = State(initialValue: meeting.agendaText ?? "")
         _absentIDs = State(initialValue: absent)
-        _discussion = State(initialValue: summary.keyPoints.map { EditableLine(text: $0) })
         var lines: [EditableDecision] = []
         for (index, text) in summary.keyDecisions.enumerated() {
             lines.append(EditableDecision(originalIndex: index, text: text))
@@ -63,16 +56,6 @@ struct EditSavedMinutesSheet: View {
                     TextField("Agenda", text: $agenda, axis: .vertical)
                 }
                 attendeesSection
-                Section {
-                    ForEach($discussion) { $line in
-                        lineField($line, index: discussion.firstIndex(where: { $0.id == line.id }) ?? 0)
-                    }
-                    .onDelete { discussion.remove(atOffsets: $0) }
-                    Button("Add Discussion Point", systemImage: "plus") { discussion.append(EditableLine(text: "")) }
-                        .frame(minHeight: 44)
-                } header: {
-                    Text("Discussion")
-                }
                 Section {
                     ForEach($decisions) { $line in
                         decisionField($line, index: decisions.firstIndex(where: { $0.id == line.id }) ?? 0)
@@ -152,14 +135,6 @@ struct EditSavedMinutesSheet: View {
 
     // MARK: Lines
 
-    private func lineField(_ line: Binding<EditableLine>, index: Int) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle().fill(Color(hex: Self.palette[index % Self.palette.count])).frame(width: 10, height: 10)
-                .padding(.top, 6)
-            TextField("Text", text: line.text, axis: .vertical)
-        }
-    }
-
     private func decisionField(_ line: Binding<EditableDecision>, index: Int) -> some View {
         let deciderName = decider(for: line.wrappedValue.originalIndex)
         return VStack(alignment: .leading, spacing: 2) {
@@ -184,14 +159,7 @@ struct EditSavedMinutesSheet: View {
 
     // MARK: Save
 
-    private func clean(_ lines: [EditableLine]) -> [String] {
-        lines.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-    }
-
     private func save() {
-        let oldPoints = summary.keyPoints
-        let newPoints = clean(discussion)
-        let mirroredDiscussion = summary.executiveSummary == oldPoints.joined(separator: "\n")
         let newOverview = overview.trimmingCharacters(in: .whitespacesAndNewlines)
 
         meeting.agendaText = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -200,11 +168,7 @@ struct EditSavedMinutesSheet: View {
         }
         if newOverview != initialOverview {
             summary.executiveSummary = newOverview
-        } else if mirroredDiscussion && newPoints != oldPoints {
-            // Older minutes stored the discussion as the summary; keep the two in step.
-            summary.executiveSummary = newPoints.joined(separator: "\n")
         }
-        if newPoints != oldPoints { summary.keyPoints = newPoints }
 
         let edits = decisions.map { DecisionEdit(originalIndex: $0.originalIndex, text: $0.text) }
         do {
