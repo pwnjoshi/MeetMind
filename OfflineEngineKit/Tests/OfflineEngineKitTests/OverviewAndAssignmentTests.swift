@@ -115,9 +115,9 @@ final class OverviewAndAssignmentTests: XCTestCase {
     func testOverviewGroupsFollowUpsAndKeepsTimingQuestionOpen() {
         let turns = [
             turn("timing", "During the recording, should we do the processing part or do all the things later on?"),
-            turn("flow", "Vaishnavi, please refine the user flow."),
-            turn("models", "Aditya, please evaluate the models."),
-            turn("audience", "Garima, please narrow down the target user segment."),
+            turn("flow", "I would recommend that Vaishnavi goes further on the user flow and looks for some good designs of competitor apps."),
+            turn("models", "Aditya, you can continue focusing more on the models, right, which is more suitable and accurate."),
+            turn("audience", "Garima, you continue your research and narrow down your user segment."),
             turn("poc", "Pawan, please continue with the POC.")
         ]
         let checkpoint = MeetingAnalysisCheckpoint(sourceSignature: "overview", stage: .completed,

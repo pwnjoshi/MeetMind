@@ -232,11 +232,11 @@ final class HindiLoanwordNoiseTests: XCTestCase {
         XCTAssertFalse(reduced.discussion.contains { $0.text.lowercased().contains("agreed") }, debug)
         XCTAssertFalse(reduced.executiveSummary.lowercased().contains("go with the design change"), debug)
 
-        // The summary names each deadline once, with "by".
+        // The overview groups the work. Deadlines belong to the individual actions.
         let summary = reduced.executiveSummary
         XCTAssertFalse(summary.contains("Friday Friday"), debug)
-        XCTAssertEqual(summary.components(separatedBy: "by Friday").count - 1, 1, debug)
-        XCTAssertEqual(summary.components(separatedBy: "by tomorrow").count - 1, 1, debug)
+        XCTAssertFalse(summary.contains("by Friday"), debug)
+        XCTAssertFalse(summary.contains("by tomorrow"), debug)
         XCTAssertFalse(summary.contains("agenda Friday"), debug)
         XCTAssertFalse(summary.lowercased().contains("budget for marketing"), debug)
         XCTAssertFalse(summary.lowercased().contains("current design"), debug)
