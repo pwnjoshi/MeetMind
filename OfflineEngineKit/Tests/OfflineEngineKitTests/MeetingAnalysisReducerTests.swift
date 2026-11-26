@@ -54,6 +54,10 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertFalse(MeetingAnalysisReducer.isSummaryContext(
             "Basically searching for every UI possible to integrate or making it more better."))
         XCTAssertFalse(MeetingAnalysisReducer.isSummaryContext("So that'll reduce the development curve here."))
+        XCTAssertFalse(MeetingAnalysisReducer.isSummaryContext(
+            "Also look for some good designs and see your competitors because UI plays a very sick."))
+        XCTAssertFalse(MeetingAnalysisReducer.isSummaryContext(
+            "So given this, we understand that Aditya and Vaishnavi are in a way working on Figma in the UI part."))
         XCTAssertTrue(MeetingAnalysisReducer.isSummaryContext(
             "The team evaluated interface options to reduce development time."))
     }
