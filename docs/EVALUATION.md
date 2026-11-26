@@ -120,6 +120,46 @@ Turn ends are the next turn's start. `lang` is a guess from the script and a few
 
 Useful options: `--only id1,id2` (subset), `--language hi` (force the transcription language instead of automatic detection), `--skip-run` (pull and score what is already on the phone), `--skip-push` (files already on the phone), `--task-source rawTasks` (score the reducer's raw tasks instead of the minutes actions).
 
+### Minutes with translation on three recordings
+
+After installing the IPA built from the minutes branch, run each recording through the full pipeline
+(`<id>` is `test-meet`, `hindi` or `sachin-sir` in the private `build\two-meeting-review` set):
+
+```
+build\device-tools\Scripts\python.exe Scripts\device_eval.py --golden build\two-meeting-review --only <id> --model qwen-1.7b --out build\minutes-v15 --timeout 1700
+```
+
+To rerun only the minutes stage on transcripts that were saved earlier (no Whisper, no diarization), point
+`--transcript-from` at a prior result root that holds `<id>/result.json`. This pushes each saved `turns` list
+as `transcript.json` and launches with `--eval-reuse-transcript`:
+
+```
+build\device-tools\Scripts\python.exe Scripts\device_eval.py --golden build\two-meeting-review --only <id> --model qwen-1.7b --transcript-from build\latest-phone-replay\runs\c754ebae5d61eb0ca1b0d178eed5f49ad6e3e5fb --out build\minutes-v15 --timeout 1700
+```
+
+Replay results are written to `<out>\runs\<commit>\<model>\<id>\result.json`, full runs to
+`<out>\runs\<commit>\<id>\result.json`. Add `--skip-push` when the files are already on the phone, and
+`--capture-only` for recordings whose `labels.json` has no reference labels (it saves results without scoring).
+Use `--model qwen-3.5-2b` only for a speed comparison.
+
+Fields to read in `result.json`: `timings.minutesMs`, `timings.translationMs`, `peakFootprintMB`,
+`translatedTurns` (Hindi turns with their English text), `untranslatedTurnIDs` (turns that failed
+validation and kept the Hindi rules), and `languageNote` (what the minutes tell the reader about machine
+translation). Results from builds before schema 2 lack the translation fields.
+
+### Agenda and attendee hints
+
+`labels.json` may contain only the hint fields, for a hinted rerun:
+
+```json
+{"participants": ["Aditya", "Garima"], "agenda": ["Launch plan", "Budget"]}
+```
+
+`EvaluationRunner.labelContext` reads `participants` (falling back to speaker names) and `agenda` from
+`labels.json` and passes them to `MeetingEvaluation.run`. They prime the Whisper prompt through
+`SpeechVocabulary.make` and also reach the minutes stage and the reducer. A missing or malformed file means
+no hints, which is the default for the private recordings.
+
 Scoring alone, from results you already have: `python Scripts/eval_score.py --golden golden --results build/eval/runs/<commit>`.
 
 ## How the numbers are defined

@@ -33,6 +33,55 @@ one-time model download from Hugging Face.
 - **Fast:** recording-time transcription of 30 s chunks; fast grammar sampling (2.5x faster minutes);
   instant answers for factual Vidur questions.
 
+## Transcription and minutes architecture
+
+Pipeline, in order:
+
+```
+Recording
+  -> Whisper large-v3 turbo transcription in the spoken language
+       (prompt = agenda terms + attendee names via SpeechVocabulary,
+        per-meeting language memory, live-caption cross-check)
+  -> diarization (FluidAudio, separate model)
+  -> Hindi detection per turn
+  -> Qwen3 1.7B text translation of Hindi turns to English
+       (validated: numbers and names must survive; the original Hindi turn is always kept)
+  -> chunked grounded extraction (Qwen3 1.7B + deterministic rules)
+  -> reducer (merges model output with the rule extractors)
+  -> deterministic overview, at most one checked model sentence
+  -> every item's evidence maps back to the original words, plus a language note
+       that says which turns were machine translated
+```
+
+Why each step is built this way:
+
+- **Transcribe in the spoken language, translate as a separate text step.** Whisper large-v3 turbo was
+  fine-tuned without translation data, so its built-in translate task is not expected to work well
+  ([openai/whisper discussion 2363](https://github.com/openai/whisper/discussions/2363)). Hindi audio is
+  therefore transcribed as Hindi and translated by the text model, which sees the whole turn and can be
+  checked.
+- **Context-primed ASR.** Commercial speech-to-text works the same way. OpenAI's speech-to-text accepts a
+  free-text prompt, keyword hints and expected languages, carries context from the previous chunk of long
+  audio, returns detected languages, and offers diarization as a separate model
+  ([OpenAI speech-to-text guide](https://developers.openai.com/api/docs/guides/speech-to-text)). Wispr Flow
+  runs cloud ASR plus an LLM formatting pass within roughly 700 ms, conditions the ASR on context (speaker,
+  surrounding text, user history), learns from corrections, calls code-switching a hard open problem, and
+  invests in showing uncertainty
+  ([Wispr Flow technical challenges](https://wisprflow.ai/post/technical-challenges)). Manent applies the
+  same layers on the phone: agenda and names prime Whisper, language is remembered per meeting, speakers
+  are separated by a different model, and a text LLM formats and extracts.
+- **Honest about uncertainty.** The original Hindi is never replaced. Translated turns are listed in the
+  result, turns that failed validation are listed as untranslated and fall back to the Hindi phrase rules,
+  and the minutes carry a language note. Evidence quotes point at the original words.
+- **One resident LLM.** Qwen3 1.7B does translation, extraction and Vidur answers, so only one language
+  model has to fit in memory next to the speech model. Qwen3.5 2B stays available only as
+  `--model qwen-3.5-2b` for comparison. On the same saved transcripts it was about 3.4x slower per run
+  (minutes generation 93 s vs 23 s, 190 s vs 53 s, 221 s vs 77 s on three test recordings) with no gain in
+  accuracy.
+- **Rules where a small model is weak.** Owners, deadlines, cancellations and Hindi requests come from
+  deterministic extractors. The overview is composed from checked items, with at most one model sentence
+  that must pass grounding checks.
+
 ## Measured on iPhone 15 (latest runs)
 
 | Check | Result |
