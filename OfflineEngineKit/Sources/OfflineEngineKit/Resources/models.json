@@ -387,15 +387,15 @@
     ]
   },
   {
-    "id": "qwen-1.7b",
-    "name": "Qwen_Qwen3-1.7B-Q4_K_M.gguf",
-    "revision": "dcb19155b962dbb6389f4691a982043a8e651022",
+    "id": "qwen-3.5-2b",
+    "name": "Qwen3.5-2B-Q4_K_M.gguf",
+    "revision": "31ea6ac42dacbee2db8a2540a323377b3f652c75",
     "files": [
       {
         "path": "model.gguf",
-        "url": "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/dcb19155b962dbb6389f4691a982043a8e651022/Qwen_Qwen3-1.7B-Q4_K_M.gguf",
-        "sha256": "72c5c3cb38fa32d5256e2fe30d03e7a64c6c79e668ad84057e3bd66e250b24fb",
-        "bytes": 1282439584
+        "url": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/31ea6ac42dacbee2db8a2540a323377b3f652c75/Qwen3.5-2B-Q4_K_M.gguf",
+        "sha256": "cbb39d5102a6e6ef9675912b1c21d02335f4374c6bc267faa6cb96d7987d4a7b",
+        "bytes": 1280835808
       }
     ]
   }

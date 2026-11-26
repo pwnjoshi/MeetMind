@@ -43,7 +43,7 @@ final class DataLifecycleTests: XCTestCase {
         let profile = UserProfile(name: "Private user", email: "private@example.test", role: "Private",
                                   voiceProfileURL: voiceProfile)
         defaults.set(try JSONEncoder().encode(profile), forKey: "MeetMind_UserProfile")
-        defaults.set("qwen-1.7b", forKey: "Manent.vidurModel")
+        defaults.set("qwen-3.5-2b", forKey: "Manent.vidurModel")
         defaults.set("secret", forKey: "MeetMind_APIKey")
         defaults.set(true, forKey: "MeetMind_IsOnboardingCompleted")
         defaults.set([meeting.id.uuidString], forKey: "MeetMind.pendingOfflineAnalysisIDs")
@@ -63,7 +63,7 @@ final class DataLifecycleTests: XCTestCase {
         XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<Tag>()), 0)
         XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<Folder>()), 0)
         XCTAssertTrue(FileManager.default.fileExists(atPath: modelSentinel.path))
-        XCTAssertEqual(defaults.string(forKey: "Manent.vidurModel"), "qwen-1.7b")
+        XCTAssertEqual(defaults.string(forKey: "Manent.vidurModel"), "qwen-3.5-2b")
         XCTAssertNil(defaults.object(forKey: "MeetMind_APIKey"))
         XCTAssertNil(defaults.object(forKey: "MeetMind_IsOnboardingCompleted"))
         XCTAssertTrue(fixture.records.isEmpty)

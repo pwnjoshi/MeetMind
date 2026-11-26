@@ -400,6 +400,9 @@ final class LocalLanguageModel {
         <|im_start|>user
         \(data)<|im_end|>
         <|im_start|>assistant
+        <think>
+
+        </think>
 
         """
         var tokens = [llama_token](repeating: 0, count: prompt.utf8.count + 16)

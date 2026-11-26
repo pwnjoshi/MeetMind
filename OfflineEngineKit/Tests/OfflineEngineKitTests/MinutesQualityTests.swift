@@ -411,7 +411,7 @@ final class MinutesQualityTests: XCTestCase {
 
     func testOnlyTheSmallModelRemains() throws {
         XCTAssertEqual(VidurModel.allCases, [.fast])
-        XCTAssertEqual(VidurModel.fast.rawValue, "qwen-1.7b")
+        XCTAssertEqual(VidurModel.fast.rawValue, "qwen-3.5-2b")
         XCTAssertFalse(try OfflineModelStore.profiles().contains { $0.id == "qwen-4b" })
         XCTAssertFalse(VidurModel.fast.title.contains("4B"))
     }
@@ -422,7 +422,7 @@ final class MinutesQualityTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("qwen-4b", forKey: VidurModel.preferenceKey)
         VidurModel.migrateSavedSelection(defaults: defaults)
-        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-1.7b")
+        XCTAssertEqual(defaults.string(forKey: VidurModel.preferenceKey), "qwen-3.5-2b")
         defaults.removeObject(forKey: VidurModel.preferenceKey)
         VidurModel.migrateSavedSelection(defaults: defaults)
         XCTAssertNil(defaults.object(forKey: VidurModel.preferenceKey))
@@ -431,7 +431,7 @@ final class MinutesQualityTests: XCTestCase {
     func testRetiredModelFoldersAreDeletedAndOthersKept() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("retired-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
-        let names = ["qwen-4b-0123456789ab", "qwen-4b-0123456789ab.download", "qwen-1.7b-fedcba987654", "diarization-aaaaaaaaaaaa"]
+        let names = ["qwen-4b-0123456789ab", "qwen-4b-0123456789ab.download", "qwen-3.5-2b-fedcba987654", "diarization-aaaaaaaaaaaa"]
         for name in names {
             let folder = root.appendingPathComponent(name)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -441,7 +441,7 @@ final class MinutesQualityTests: XCTestCase {
         let removed = await store.removeRetiredModels(ids: VidurModel.retiredModelIDs)
         XCTAssertEqual(Set(removed), ["qwen-4b-0123456789ab", "qwen-4b-0123456789ab.download"])
         let remaining = try FileManager.default.contentsOfDirectory(atPath: root.path)
-        XCTAssertEqual(Set(remaining), ["qwen-1.7b-fedcba987654", "diarization-aaaaaaaaaaaa"])
+        XCTAssertEqual(Set(remaining), ["qwen-3.5-2b-fedcba987654", "diarization-aaaaaaaaaaaa"])
         let again = await store.removeRetiredModels(ids: VidurModel.retiredModelIDs)
         XCTAssertTrue(again.isEmpty)
     }
