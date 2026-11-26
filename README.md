@@ -33,6 +33,13 @@ engines have not replaced the normal meeting pipeline. See
 [OFFLINE_QUALIFICATION.md](OFFLINE_QUALIFICATION.md) for device measurements and
 outstanding Hinglish quality gates.
 
+## Support
+
+- [Recording privacy and offline transcription](https://github.com/pwnjoshi/MeetMind/discussions/4)
+- [Building and testing on an iOS simulator](https://github.com/pwnjoshi/MeetMind/discussions/5)
+
+Ask setup or usage questions in [Discussions Q&A](https://github.com/pwnjoshi/MeetMind/discussions/categories/q-a). For reproducible bugs, [open an issue](https://github.com/pwnjoshi/MeetMind/issues/new) with your iOS version, device model, and steps to reproduce. Use sample data in place of private recordings or transcripts.
+
 ## Build and test
 
 Use Xcode 26+ with Swift 6.2+ on macOS. Before opening the project, prepare the
