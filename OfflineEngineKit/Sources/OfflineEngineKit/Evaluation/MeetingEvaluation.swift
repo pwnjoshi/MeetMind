@@ -161,7 +161,8 @@ public enum MeetingEvaluation {
     /// the host scorer needs. The checkpoint folder is created and removed inside `scratchRoot`.
     public static func run(id: String, audio: URL, participants: [String], agenda: String?,
                            languageCode: String?, commit: String, device: String,
-                           scratchRoot: URL,
+                           scratchRoot: URL, model: VidurModel = .fast,
+                           reviewedTurns: [AnalysisTurn] = [],
                            thermalStatus: @Sendable (Bool) async -> Void = { _ in }) async throws -> EvaluationResult {
         let fileManager = FileManager.default
         let meetingID = UUID()
@@ -170,7 +171,6 @@ public enum MeetingEvaluation {
         defer { try? fileManager.removeItem(at: root) }
 
         let pipeline = MeetingAnalysisPipeline.makeEvaluationPipeline(checkpointRoot: root)
-        let model = VidurModel.selected
         let duration = try await AVURLAsset(url: audio).load(.duration).seconds
         let meetingDate = Date()
         let zone = TimeZone.current
@@ -201,7 +201,8 @@ public enum MeetingEvaluation {
                 do {
                     result = try await pipeline.run(
                         meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: zone.identifier,
-                        languageCode: languageCode, model: model, participants: participants, agenda: agenda,
+                        languageCode: languageCode, model: model, reviewedTurns: reviewedTurns,
+                        participants: participants, agenda: agenda,
                         progress: { stage in stages.mark(stage) })
                     attempts.append(await pipeline.lastStageTimings)
                     fallbackChunks += await pipeline.lastAnalysisFallbackChunks

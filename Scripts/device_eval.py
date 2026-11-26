@@ -15,6 +15,7 @@ The pulled results contain transcripts, so build/eval is git-ignored territory: 
 import argparse
 import asyncio
 import inspect
+import json
 import os
 import queue
 import subprocess
@@ -63,7 +64,7 @@ async def open_container():
     return await HouseArrestService.create(lockdown, BUNDLE, documents_only=False)
 
 
-async def push(folders):
+async def push(folders, transcripts):
     afc = await open_container()
     async with afc:
         await settle(afc.makedirs(REMOTE_ROOT))
@@ -74,6 +75,8 @@ async def push(folders):
                 await settle(afc.rm(f"{remote}/result.json", force=True))
             except Exception:
                 pass
+            if name in transcripts:
+                await settle(afc.set_file_contents(f"{remote}/transcript.json", transcripts[name]))
             for path in (audio, os.path.join(folder, "labels.json")):
                 with open(path, "rb") as handle:
                     data = handle.read()
@@ -107,9 +110,11 @@ async def clean_device():
     print("removed Documents/Evaluation from the device", flush=True)
 
 
-def launch_and_wait(only, language, timeout):
+def launch_and_wait(only, language, timeout, model, reuse_transcript):
     """Launch the evaluation and stream MEETMIND_EVAL lines. Returns (ok, commit)."""
-    args = f"{BUNDLE} --offline-evaluation"
+    args = f"{BUNDLE} --offline-evaluation --eval-model={model}"
+    if reuse_transcript:
+        args += " --eval-reuse-transcript"
     if only:
         args += " --eval-only=" + ",".join(only)
     if language:
@@ -159,6 +164,8 @@ def main(argv=None):
     parser.add_argument("--golden", required=True, help="folder of golden meetings")
     parser.add_argument("--only", help="comma-separated meeting ids")
     parser.add_argument("--language", help="force the transcription language code, e.g. hi (default: automatic)")
+    parser.add_argument("--model", choices=("qwen-1.7b", "qwen-3.5-2b"), default="qwen-3.5-2b")
+    parser.add_argument("--transcript-from", help="prior result root with <meeting>/result.json for minutes-only replay")
     parser.add_argument("--timeout", type=int, default=7200, help="seconds to wait for the run (default 7200)")
     parser.add_argument("--out", default=os.path.join("build", "eval"))
     parser.add_argument("--skip-push", action="store_true", help="files are already on the device")
@@ -180,11 +187,21 @@ def main(argv=None):
             raise RuntimeError("MeetMind is not installed on the connected iPhone.")
         print(f"MeetMind {app.get('CFBundleShortVersionString')} build {app.get('CFBundleVersion')}", flush=True)
         if not args.skip_push and not args.skip_run:
-            asyncio.run(push(folders))
+            transcripts = {}
+            if args.transcript_from:
+                for name in names:
+                    with open(os.path.join(args.transcript_from, name, "result.json"), encoding="utf-8") as source:
+                        turns = json.load(source).get("turns")
+                    if not isinstance(turns, list) or not turns:
+                        raise ValueError(f"No saved transcript turns for {name}.")
+                    transcripts[name] = json.dumps(turns, ensure_ascii=False).encode("utf-8")
+            asyncio.run(push(folders, transcripts))
         ok, commit = True, None
         if not args.skip_run:
-            ok, commit = launch_and_wait(names, args.language, args.timeout)
+            ok, commit = launch_and_wait(names, args.language, args.timeout, args.model, bool(args.transcript_from))
         staging = os.path.join(args.out, "runs", commit or time.strftime("%Y%m%d-%H%M%S"))
+        if args.transcript_from:
+            staging = os.path.join(staging, args.model)
         got = asyncio.run(pull(names, staging))
         if args.clean_device:
             asyncio.run(clean_device())

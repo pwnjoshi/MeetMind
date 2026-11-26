@@ -3,9 +3,8 @@ import AVFoundation
 import CryptoKit
 
 public enum VidurModel: String, CaseIterable, Sendable {
-    /// The only analysis and answer model. The 4B option was retired: the app stays on one
-    /// 1.7B download and gets its accuracy from the deterministic rules around it.
     case fast = "qwen-3.5-2b"
+    case baseline = "qwen-1.7b"
 
     public static let preferenceKey = "Manent.vidurModel"
     /// Model downloads the app no longer offers. `OfflineModelStore` deletes their files once.
@@ -26,6 +25,7 @@ public enum VidurModel: String, CaseIterable, Sendable {
     public var title: String {
         switch self {
         case .fast: return "Qwen3.5 2B \u{00B7} 1.28 GB"
+        case .baseline: return "Qwen3 1.7B \u{00B7} 1.28 GB"
         }
     }
 }

@@ -15,6 +15,8 @@ enum EvaluationRunner {
         var only: Set<String>?
         /// Forced Whisper language code from `--eval-language=hi`. Nil means automatic.
         var language: String?
+        var model: VidurModel = .fast
+        var reuseTranscript = false
     }
 
     struct LabelContext {
@@ -37,6 +39,11 @@ enum EvaluationRunner {
                     .split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
                 options.only = Set(names)
+            } else if argument.hasPrefix("--eval-model="),
+                       let model = VidurModel(rawValue: String(argument.dropFirst("--eval-model=".count))) {
+                options.model = model
+            } else if argument == "--eval-reuse-transcript" {
+                options.reuseTranscript = true
             } else if argument.hasPrefix("--eval-language=") {
                 let code = String(argument.dropFirst("--eval-language=".count))
                     .trimmingCharacters(in: .whitespaces)
@@ -156,9 +163,19 @@ enum EvaluationRunner {
             line("meeting id=\(name) state=running")
             let context = labelContext(in: folder)
             do {
+                var turns: [AnalysisTurn] = []
+                if options.reuseTranscript {
+                    let data = try Data(contentsOf: folder.appendingPathComponent("transcript.json"))
+                    turns = try JSONDecoder().decode([AnalysisTurn].self, from: data)
+                    guard turns.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+                          Set(turns.map(\.id)).count == turns.count else {
+                        throw OfflineError.unavailable("The evaluation transcript is empty or contains duplicate turns.")
+                    }
+                }
                 let result = try await MeetingEvaluation.run(
                     id: name, audio: audio, participants: context.participants, agenda: context.agenda,
                     languageCode: options.language, commit: commit, device: device, scratchRoot: scratch,
+                    model: options.model, reviewedTurns: turns,
                     thermalStatus: { cooling in
                         await MainActor.run {
                             status(cooling ? "Paused while iPhone cools" : "Evaluating \(name)")
