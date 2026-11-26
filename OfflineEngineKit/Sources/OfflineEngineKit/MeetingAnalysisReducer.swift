@@ -172,10 +172,15 @@ public enum MeetingAnalysisReducer {
                 candidate.text == fact.text && candidate.evidence.elementsEqual(fact.evidence) { $0.turnID == $1.turnID && $0.quote == $1.quote }
             }
         }
-        let overviewDiscussion = ranked.isEmpty ? discussion : ranked
+        var overviewFacts = ranked
+        if let source = ranked.first, let draft = checkpoint.draftedOverviewContext,
+           let checked = verifiedOverviewContext(draft, source: source) {
+            overviewFacts[0] = checked
+        }
+        let overviewDiscussion = overviewFacts.isEmpty ? discussion : overviewFacts
         var executiveSummary = composeExecutiveSummary(discussion: overviewDiscussion, decisions: decisions)
         let minutes = MinutesBuilder.build(MinutesBuilder.Input(
-            turns: verifiedTurns, hindi: hindi, decisions: decisions, discussion: discussion, rankedDiscussion: ranked,
+            turns: verifiedTurns, hindi: hindi, decisions: decisions, discussion: discussion, rankedDiscussion: overviewFacts,
             openIssues: openIssues, tasks: tasks,
             participants: participants, speakerNames: speakerNames, meetingDate: meetingDate, timeZone: timeZone))
         if !minutes.executiveSummary.isEmpty { executiveSummary = minutes.executiveSummary }
@@ -357,6 +362,21 @@ public enum MeetingAnalysisReducer {
             sentences.append(contentsOf: decisions.prefix(2).map(\.text))
         }
         return sentences.isEmpty ? "No substantive meeting outcomes were identified." : sentences.joined(separator: " ")
+    }
+
+    static func verifiedOverviewContext(_ draft: String, source: SupportedPoint) -> SupportedPoint? {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.utf8.count <= 280, !text.contains("\n"), !HindiText.looksHindi(text),
+              !source.evidence.isEmpty, isSummaryContext(text),
+              TaskGrounding.claimDetailsMatch(text, cited: [source.text]) else { return nil }
+        // Allow copy edits only. Preserve all factual words in their original
+        // order, including names, negation, and qualifiers.
+        let fillers: Set<String> = ["basically", "actually", "um", "uh"]
+        func words(_ value: String) -> [String] {
+            clauseKey(value).split(separator: " ").map(String.init).filter { !fillers.contains($0) }
+        }
+        guard words(text) == words(source.text) else { return nil }
+        return SupportedPoint(text: text, evidence: source.evidence)
     }
 
     static func isSummaryContext(_ text: String) -> Bool {

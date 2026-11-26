@@ -7,7 +7,7 @@ protocol MeetingAnalysisSession {
     /// Where this session runs. The pipeline reloads a GPU session on the CPU when the
     /// app moves to the background, and back on the GPU when it returns.
     var placement: ComputePlacement { get }
-    func rankOverviewFacts(_ facts: [String]) throws -> [Int]
+    func draftOverviewContext(_ facts: [String]) throws -> (index: Int, text: String)?
     func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]?
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult
@@ -20,7 +20,7 @@ protocol MeetingAnalysisSession {
 }
 
 extension MeetingAnalysisSession {
-    func rankOverviewFacts(_ facts: [String]) throws -> [Int] { [] }
+    func draftOverviewContext(_ facts: [String]) throws -> (index: Int, text: String)? { nil }
     func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]? { nil }
 
     var placement: ComputePlacement { .independent }

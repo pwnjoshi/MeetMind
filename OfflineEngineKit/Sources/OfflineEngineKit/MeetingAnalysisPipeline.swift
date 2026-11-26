@@ -56,6 +56,7 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public var minutes: MinutesContent? = nil
     public var transcriptCorrections: [TranscriptCorrection]? = nil
     public var rankedOverviewFacts: [SupportedPoint]? = nil
+    public var draftedOverviewContext: String? = nil
     /// L2-normalised voice embedding per speaker label, from the diarization clustering. Used only to
     /// recognise known voices on this device. Absent in checkpoints saved by older versions.
     public var speakerEmbeddings: [String: [Float]]? = nil
@@ -931,12 +932,12 @@ public actor MeetingAnalysisPipeline {
                 MeetingAnalysisReducer.isSummaryContext($0.text) && !HindiText.looksHindi($0.text)
                     && !$0.evidence.isEmpty && $0.text.utf8.count <= 240
             }.prefix(10))
-            if facts.count >= 3 {
+            if !facts.isEmpty {
                 do {
-                    let ranked = try session.rankOverviewFacts(facts.map(\.text))
-                    var seen = Set<Int>()
-                    let selected = ranked.filter { facts.indices.contains($0) && seen.insert($0).inserted }
-                    checkpoint.rankedOverviewFacts = selected.isEmpty ? nil : selected.prefix(3).map { facts[$0] }
+                    if let draft = try session.draftOverviewContext(facts.map(\.text)), facts.indices.contains(draft.index) {
+                        checkpoint.rankedOverviewFacts = [facts[draft.index]]
+                        checkpoint.draftedOverviewContext = draft.text
+                    }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {

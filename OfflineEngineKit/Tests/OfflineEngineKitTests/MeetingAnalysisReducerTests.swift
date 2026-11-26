@@ -36,6 +36,20 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(request?.evidence.map(\.turnID), ["t0", "t1", "t2"])
     }
 
+    func testOverviewCopyEditKeepsMaterialWordsAndEvidence() {
+        let quote = "Basically, Garima did not approve the 20 proposals."
+        let source = SupportedPoint(text: quote, evidence: [SourceEvidence(turnID: "t1", quote: quote)])
+        let accepted = MeetingAnalysisReducer.verifiedOverviewContext(
+            "Garima did not approve the 20 proposals.", source: source)
+        XCTAssertEqual(accepted?.evidence.first?.quote, quote)
+        XCTAssertNil(MeetingAnalysisReducer.verifiedOverviewContext(
+            "Garima did approve the 20 proposals.", source: source))
+        XCTAssertNil(MeetingAnalysisReducer.verifiedOverviewContext(
+            "Aditya did not approve the 20 proposals.", source: source))
+        XCTAssertNil(MeetingAnalysisReducer.verifiedOverviewContext(
+            "Garima did not approve the 10 proposals.", source: source))
+    }
+
     func testOverviewSkipsClippedSachinDiscussion() {
         XCTAssertFalse(MeetingAnalysisReducer.isSummaryContext(
             "Basically searching for every UI possible to integrate or making it more better."))
