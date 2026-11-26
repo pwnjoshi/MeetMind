@@ -108,13 +108,16 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertTrue(pdfText.contains("AGENDA Review the release checklist"))
         XCTAssertTrue(pdfText.contains("PRESENT Alice Johnson"))
         XCTAssertTrue(pdfText.contains("ABSENT Sam Rivera"))
-        XCTAssertTrue(pdfText.contains("DISCUSSION Model migrations verified Audio pipeline hardened"))
+        XCTAssertFalse(pdfText.contains("DISCUSSION"))
+        XCTAssertFalse(pdfText.contains("Model migrations verified"))
         XCTAssertTrue(pdfText.contains("KEY DECISIONS Approved release v1.0.0 for App Store"))
     }
     
     /// Tier 1: Feature 7 - Validates generateMarkdown contains executive summary and decisions.
     func test_tier1_feature7_generateMarkdownContainsSummaryAndDecisions() throws {
         let md = exportService.generateMarkdown(for: sampleMeeting)
+        XCTAssertFalse(md.contains("## Discussion"))
+        XCTAssertFalse(md.contains("Model migrations verified"))
         XCTAssertTrue(md.contains("## Executive Summary"))
         XCTAssertTrue(md.contains("Sprint goals achieved with all unit tests passing."))
         XCTAssertTrue(md.contains("## Key Decisions"))
@@ -143,7 +146,8 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertTrue(text.contains("ATTENDEES:"))
         XCTAssertTrue(text.contains("EXECUTIVE SUMMARY:"))
         XCTAssertTrue(text.contains("KEY DECISIONS:"))
-        XCTAssertTrue(text.contains("Model migrations verified"))
+        XCTAssertFalse(text.contains("DISCUSSION:"))
+        XCTAssertFalse(text.contains("Model migrations verified"))
         XCTAssertTrue(text.contains("ACTION ITEMS:"))
         XCTAssertTrue(text.contains("[X] Publish App Store build"))
     }
