@@ -409,8 +409,8 @@ final class MinutesQualityTests: XCTestCase {
 
     // MARK: - One model
 
-    func testOnlyTheSmallModelRemains() throws {
-        XCTAssertEqual(VidurModel.allCases, [.fast])
+    func testDefaultAndComparisonModelAreAvailable() throws {
+        XCTAssertEqual(VidurModel.allCases, [.fast, .baseline])
         XCTAssertEqual(VidurModel.fast.rawValue, "qwen-3.5-2b")
         XCTAssertFalse(try OfflineModelStore.profiles().contains { $0.id == "qwen-4b" })
         XCTAssertFalse(VidurModel.fast.title.contains("4B"))
