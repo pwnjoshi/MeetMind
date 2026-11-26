@@ -31,14 +31,18 @@ public enum MeetingAnalysisReducer {
     public static func reduce(_ checkpoint: MeetingAnalysisCheckpoint, participants: [String] = [],
                               speakerNames: [String: String] = [:], meetingDate: Date? = nil,
                               timeZone: TimeZone = TimeZone.current, agenda: String? = nil) -> ReducedMeetingAnalysis {
-        let verifiedTurns = checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns)
+        // Minutes are written from the English processing transcript when Hindi turns were translated. Evidence
+        // is mapped back to the spoken words before anything leaves this function.
+        let mapper = EvidenceMapper(turns: checkpoint.turns, translations: checkpoint.translations)
+        let verifiedTurns = TranscriptTranslation.processingTurns(
+            checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns), translations: checkpoint.translations)
         // A vocative ("Pawan, ...") names the next voice; a self-introduction names the current one.
         let speakerNames = SpeakerNameInference.infer(turns: verifiedTurns, participants: participants,
                                                       speakerNames: speakerNames)
         let context = ExtractionContext(participants: participants, speakerNames: speakerNames)
         let grounding = Grounding(turns: verifiedTurns)
         let hindi = HindiMeetingExtractor.analyze(verifiedTurns, context: context)
-        let verifiedAnalysis = checkpoint.analysis.map { $0.sanitized(against: verifiedTurns) }
+        let verifiedAnalysis = checkpoint.analysis.map { mapper.processing($0).sanitized(against: verifiedTurns) }
         let generatedDiscussion = verifiedAnalysis.flatMap(\.discussion)
         let generatedDecisions = verifiedAnalysis.flatMap(\.decisions)
         let generatedOpenIssues = verifiedAnalysis.flatMap(\.openIssues)
@@ -168,9 +172,11 @@ public enum MeetingAnalysisReducer {
         tasks = Array(applyLaterTaskUpdates(reconcileExplicitTransfers(tasks, order: turnOrder),
                                       turns: verifiedTurns, order: turnOrder).prefix(24))
 
-        let ranked = (checkpoint.rankedOverviewFacts ?? []).filter { fact in
-            discussion.contains { candidate in
-                candidate.text == fact.text && candidate.evidence.elementsEqual(fact.evidence) { $0.turnID == $1.turnID && $0.quote == $1.quote }
+        // The stored fact carries spoken-word evidence, so compare in that form.
+        let ranked: [SupportedPoint] = (checkpoint.rankedOverviewFacts ?? []).compactMap { fact in
+            discussion.first { candidate in
+                candidate.text == fact.text
+                    && mapper.original(candidate.evidence).elementsEqual(fact.evidence) { $0.turnID == $1.turnID && $0.quote == $1.quote }
             }
         }
         var overviewFacts = ranked
@@ -223,14 +229,18 @@ public enum MeetingAnalysisReducer {
         }
         let stored = LocalAnalysisResult(discussion: discussion, decisions: storedDecisions, tasks: storedTasks,
                                          openIssues: storedOpen)
+        var finalMinutes = mapper.original(minutes)
+        finalMinutes.languageNote = TranscriptTranslation.languageNote(turns: checkpoint.turns,
+                                                                       translations: checkpoint.translations)
         var normalized = checkpoint
-        normalized.analysis = [stored]
+        normalized.analysis = [mapper.original(stored)]
         normalized.analyzedChunks = 1
         normalized.chunkTurnIDs = [checkpoint.turns.map(\.id)]
-        normalized.minutes = minutes
-        return ReducedMeetingAnalysis(executiveSummary: executiveSummary, discussion: discussion,
-                                      decisions: decisions, openIssues: openIssues, tasks: tasks,
-                                      checkpoint: normalized, agendaTopics: hindi.agendaTopics, minutes: minutes)
+        normalized.minutes = finalMinutes
+        return ReducedMeetingAnalysis(executiveSummary: executiveSummary, discussion: mapper.original(discussion),
+                                      decisions: mapper.original(decisions), openIssues: mapper.original(openIssues),
+                                      tasks: mapper.original(tasks), checkpoint: normalized,
+                                      agendaTopics: hindi.agendaTopics, minutes: finalMinutes)
     }
 
     private static let hindiFallbackSummary =

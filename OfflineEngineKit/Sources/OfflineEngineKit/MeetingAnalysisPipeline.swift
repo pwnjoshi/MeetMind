@@ -66,6 +66,11 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     /// Revision of the diarization model that produced `speakerEmbeddings`. Embeddings from different
     /// revisions are not comparable.
     public var speakerEmbeddingModel: String? = nil
+    /// English renderings of Hindi turns, used only to write the minutes. `turns` keeps the original words.
+    /// Nil until the translation stage has run; absent in checkpoints saved by older versions.
+    public var translations: [TurnTranslation]? = nil
+    /// Hindi turns whose translation was missing or failed validation. They keep the Hindi phrase rules.
+    public var untranslatedTurnIDs: [String]? = nil
 
     func excludingUnresolvedCaptions(from turns: [AnalysisTurn]) -> [AnalysisTurn] {
         let unresolved = (transcriptCorrections ?? []).filter { $0.replacement == nil }
@@ -655,7 +660,7 @@ public actor MeetingAnalysisPipeline {
         }
         let profiles = try requiredProfiles(model: model)
         let attributes = try FileManager.default.attributesOfItem(atPath: audio.path)
-        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|\(Self.checkpointFormatVersion)|chunks-v4|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
+        var signature = "\(audio.lastPathComponent)|\(attributes[.size] ?? 0)|\(attributes[.modificationDate] ?? Date.distantPast)|\(meetingDate.timeIntervalSince1970)|\(timezone)|\(languageCode ?? "auto")|\(profiles.map(\.revision).joined(separator: ","))|\(OfflineAnalysisContract.promptVersion)|\(Self.checkpointFormatVersion)|chunks-v4|mt-v1|ctx\(Self.modelConfiguration.contextTokens)|bytes\(Self.analysisChunkBytes)"
         if !reviewedTurns.isEmpty {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
@@ -835,12 +840,74 @@ public actor MeetingAnalysisPipeline {
             }
         }
 
+        // Hindi turns are translated to English once, before the minutes are written. `checkpoint.turns` keeps the
+        // spoken words; the translations are stored next to them and a resumed run never translates again.
+        if checkpoint.translations == nil, checkpoint.chunkTurnIDs == nil,
+           checkpoint.turns.contains(where: TranscriptTranslation.needsTranslation) {
+            let translationStarted = Date()
+            let candidates = checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns)
+                .filter(TranscriptTranslation.needsTranslation)
+            func translateOnce(placement: inout ComputePlacement) throws -> [String: String]? {
+                let active = try currentSession()
+                placement = active.placement
+                return try active.translateToEnglish(candidates)
+            }
+            var produced: [String: String]?
+            do {
+                var placement = ComputePlacement.independent
+                do {
+                    produced = try translateOnce(placement: &placement)
+                } catch {
+                    guard !(error is CancellationError), placement == .gpu, !ComputeEnvironment.gpuAvailable else { throw error }
+                    lastStageTimings.backgroundRetries += 1
+                    produced = try translateOnce(placement: &placement)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch OfflineError.thermalPause {
+                throw OfflineError.thermalPause
+            } catch OfflineError.memoryBudget(let required, let budget) {
+                throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
+            } catch {
+                // No usable translation: the minutes continue with the Hindi phrase rules.
+                try checkConditions()
+                produced = [:]
+            }
+            if let produced {
+                var translations: [TurnTranslation] = []
+                var failed: [String] = []
+                for turn in candidates {
+                    if let raw = produced[turn.id],
+                       let english = TranscriptTranslation.validated(source: turn.text, english: raw,
+                                                                     participants: participants) {
+                        translations.append(TurnTranslation(turnID: turn.id, source: turn.text, english: english,
+                                                            model: profile.id))
+                    } else {
+                        failed.append(turn.id)
+                    }
+                }
+                checkpoint.translations = translations
+                checkpoint.untranslatedTurnIDs = failed
+                lastStageTimings.translatedTurns = translations.count
+                lastStageTimings.untranslatedTurns = failed.count
+                lastStageTimings.translationMs = elapsedMs(translationStarted)
+                try save(checkpoint)
+            }
+        }
+
         if checkpoint.chunkTurnIDs == nil {
-            let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: try currentSession(),
+            // Fit the English processing text to the model. Turns that fitting splits are split in the original
+            // text too, so `checkpoint.turns` always holds exactly what was spoken.
+            let processing = TranscriptTranslation.processingTurns(checkpoint.turns, translations: checkpoint.translations)
+            let fitted = try Self.fittedAnalysisChunks(processing, model: try currentSession(),
                 meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes,
                 participants: participants, agenda: agenda)
             var seen = Set<String>()
-            checkpoint.turns = fitted.flatMap { $0 }.filter { seen.insert($0.id).inserted }
+            let fittedTurns = fitted.flatMap { $0 }.filter { seen.insert($0.id).inserted }
+            let reconciled = TranscriptTranslation.reconcile(original: checkpoint.turns, fitted: fittedTurns,
+                translations: checkpoint.translations, model: profile.id)
+            checkpoint.turns = reconciled.turns
+            checkpoint.translations = reconciled.translations
             checkpoint.chunkTurnIDs = fitted.map { $0.map(\.id) }
             try save(checkpoint)
         }
@@ -865,7 +932,9 @@ public actor MeetingAnalysisPipeline {
         for index in checkpoint.analyzedChunks..<chunks.count {
             try checkConditions()
             if discardActiveCheckpoint { throw CancellationError() }
-            let chunk = checkpoint.excludingUnresolvedCaptions(from: chunks[index])
+            // The model reads the English processing text; evidence is mapped back to the spoken words later.
+            let chunk = TranscriptTranslation.processingTurns(
+                checkpoint.excludingUnresolvedCaptions(from: chunks[index]), translations: checkpoint.translations)
             let result: LocalAnalysisResult
             if chunk.allSatisfy({ $0.text.isEmpty }) {
                 result = LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
@@ -931,7 +1000,8 @@ public actor MeetingAnalysisPipeline {
         if let session, !ComputeEnvironment.needsReload(session.placement) {
             let reduced = MeetingAnalysisReducer.reduce(checkpoint, participants: participants,
                 meetingDate: meetingDate, timeZone: TimeZone(identifier: timezone) ?? .current, agenda: agenda)
-            let overviewTurns = checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns)
+            let overviewTurns = TranscriptTranslation.processingTurns(
+                checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns), translations: checkpoint.translations)
             let overviewNames = MinutesBuilder.overviewNames(turns: overviewTurns, participants: participants,
                                                              speakerNames: [:], tasks: reduced.tasks)
             // The model only ranks and lightly edits sentences that already pass the overview rules.
@@ -941,8 +1011,10 @@ public actor MeetingAnalysisPipeline {
             }.prefix(10))
             if !facts.isEmpty {
                 do {
-                    let context = overviewTurns
-                    if let draft = try session.draftOverviewContext(facts, transcript: context),
+                    // The model reads facts and transcript in English; the stored fact keeps the spoken-word evidence.
+                    let mapper = EvidenceMapper(turns: checkpoint.turns, translations: checkpoint.translations)
+                    let modelFacts = facts.map { SupportedPoint(text: $0.text, evidence: mapper.processing($0.evidence)) }
+                    if let draft = try session.draftOverviewContext(modelFacts, transcript: overviewTurns),
                        facts.indices.contains(draft.index) {
                         checkpoint.rankedOverviewFacts = [facts[draft.index]]
                         checkpoint.draftedOverviewContext = draft.text

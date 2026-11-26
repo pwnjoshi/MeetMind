@@ -61,7 +61,7 @@ struct MeetingMinutesView: View {
                     .font(.subheadline)
                     .frame(minHeight: 44)
             } else {
-                summarySection(content)
+                summarySection(content, languageNote: analysis?.minutes?.languageNote)
                 agendaSection(content)
                 peopleSection(content)
                 discussionSection(content, analysis: analysis, names: names)
@@ -87,10 +87,13 @@ struct MeetingMinutesView: View {
     }
 
     @ViewBuilder
-    private func summarySection(_ content: MeetingMinutesContent) -> some View {
+    private func summarySection(_ content: MeetingMinutesContent, languageNote: String?) -> some View {
         if !content.summary.isEmpty {
             section("Summary") {
                 Text(content.summary).font(.body).textSelection(.enabled)
+                if let languageNote, !languageNote.isEmpty {
+                    Text(languageNote).font(.footnote).foregroundStyle(.secondary)
+                }
             }
         }
     }

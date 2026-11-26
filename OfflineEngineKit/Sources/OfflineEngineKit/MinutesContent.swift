@@ -131,6 +131,8 @@ public struct MinutesContent: Codable, Sendable {
     public let openIssues: [MinutesOpenIssue]
     public let suggestedAttendees: [SuggestedAttendee]
     public let nextMeeting: MinutesNextMeeting?
+    /// Says how much of the minutes came from machine-translated Hindi. Absent when nothing was translated.
+    public var languageNote: String? = nil
 
     public init(executiveSummary: String, topics: [MinutesTopic], resolutions: [MinutesResolution],
                 actions: [MinutesAction], openIssues: [MinutesOpenIssue],
@@ -146,7 +148,7 @@ public struct MinutesContent: Codable, Sendable {
                                              openIssues: [], suggestedAttendees: [], nextMeeting: nil)
 
     private enum CodingKeys: String, CodingKey {
-        case executiveSummary, topics, resolutions, actions, openIssues, suggestedAttendees, nextMeeting, summaryStatements
+        case executiveSummary, topics, resolutions, actions, openIssues, suggestedAttendees, nextMeeting, summaryStatements, languageNote
     }
 
     public init(from decoder: Decoder) throws {
@@ -159,6 +161,7 @@ public struct MinutesContent: Codable, Sendable {
         openIssues = try container.decodeIfPresent([MinutesOpenIssue].self, forKey: .openIssues) ?? []
         suggestedAttendees = try container.decodeIfPresent([SuggestedAttendee].self, forKey: .suggestedAttendees) ?? []
         nextMeeting = try container.decodeIfPresent(MinutesNextMeeting.self, forKey: .nextMeeting)
+        languageNote = try container.decodeIfPresent(String.self, forKey: .languageNote)
     }
 
     /// Agenda text derived from topic titles, one per line.

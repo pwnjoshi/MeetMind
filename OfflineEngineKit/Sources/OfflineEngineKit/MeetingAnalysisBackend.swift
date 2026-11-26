@@ -9,6 +9,9 @@ protocol MeetingAnalysisSession {
     var placement: ComputePlacement { get }
     func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn]) throws -> (index: Int, text: String)?
     func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]?
+    /// English text for Hindi or Hinglish turns, keyed by turn ID. Only IDs that were given are returned. Nil means
+    /// this session cannot translate; the minutes then use the original text.
+    func translateToEnglish(_ turns: [AnalysisTurn]) throws -> [String: String]?
     func inputTokenCount(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> Int
     func analyze(turns: [AnalysisTurn], meetingDate: Date, timezone: String, question: String?) throws -> LocalAnalysisResult
     /// Participant names and the agenda are untrusted prompt context. Conformers that
@@ -22,6 +25,7 @@ protocol MeetingAnalysisSession {
 extension MeetingAnalysisSession {
     func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn]) throws -> (index: Int, text: String)? { nil }
     func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]? { nil }
+    func translateToEnglish(_ turns: [AnalysisTurn]) throws -> [String: String]? { nil }
 
     var placement: ComputePlacement { .independent }
 

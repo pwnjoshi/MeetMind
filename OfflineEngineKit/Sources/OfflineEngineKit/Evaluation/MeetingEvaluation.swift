@@ -116,6 +116,14 @@ public struct EvaluationResult: Codable, Sendable {
         public let backgroundRetries: Int
         public let fallbackChunks: Int
         public let thermalWaitMs: Int?
+        /// Time spent translating Hindi turns to English. Absent in results from older builds.
+        public let translationMs: Int?
+    }
+
+    /// The English text the minutes were written from, for one Hindi turn. `turns` keeps the spoken words.
+    public struct TranslatedTurn: Codable, Sendable {
+        public let id: String
+        public let english: String
     }
 
     public struct StageMark: Codable, Sendable {
@@ -146,6 +154,12 @@ public struct EvaluationResult: Codable, Sendable {
     public let stageMarks: [StageMark]
     public let peakFootprintMB: Int
     public let thermalStateEnd: Int
+    /// Hindi turns that were translated to English to write the minutes. Empty when none were.
+    public let translatedTurns: [TranslatedTurn]?
+    /// Hindi turns that could not be translated reliably and kept the Hindi phrase rules.
+    public let untranslatedTurnIDs: [String]?
+    /// What the minutes say about machine translation.
+    public let languageNote: String?
 }
 
 extension MeetingAnalysisPipeline {
@@ -243,9 +257,10 @@ public enum MeetingEvaluation {
         let issueTexts = minutes.openIssues.map { $0.text }
         let openIssues = issueTexts.isEmpty ? reduced.openIssues.map { $0.text } : issueTexts
         let overview = minutes.executiveSummary.isEmpty ? reduced.executiveSummary : minutes.executiveSummary
+        let translated = (checkpoint.translations ?? []).map { EvaluationResult.TranslatedTurn(id: $0.turnID, english: $0.english) }
         let chunkAverage = chunkTimes.isEmpty ? 0 : chunkTimes.reduce(0, +) / chunkTimes.count
         return EvaluationResult(
-            schema: 1, id: id, commit: commit, device: device,
+            schema: 2, id: id, commit: commit, device: device,
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             model: model.rawValue, promptVersion: OfflineAnalysisContract.promptVersion,
             audioSeconds: duration.isFinite ? duration : 0, languageHint: languageCode,
@@ -256,8 +271,11 @@ public enum MeetingEvaluation {
                 minutesMs: sum(\.minutesMs), modelLoadMs: sum(\.modelLoadMs), modelLoads: sum(\.modelLoads),
                 chunks: chunkTimes.count, chunkAvgMs: chunkAverage, chunkMaxMs: chunkTimes.max() ?? 0,
                 cpuChunks: sum(\.cpuChunks), backgroundRetries: sum(\.backgroundRetries),
-                fallbackChunks: fallbackChunks, thermalWaitMs: thermalWaitMs),
+                fallbackChunks: fallbackChunks, thermalWaitMs: thermalWaitMs,
+                translationMs: sum(\.translationMs)),
             stageMarks: stages.snapshot(), peakFootprintMB: Int(peakBytes / 1_048_576),
-            thermalStateEnd: ProcessInfo.processInfo.thermalState.rawValue)
+            thermalStateEnd: ProcessInfo.processInfo.thermalState.rawValue,
+            translatedTurns: translated, untranslatedTurnIDs: checkpoint.untranslatedTurnIDs ?? [],
+            languageNote: minutes.languageNote)
     }
 }

@@ -1,0 +1,6 @@
+root ::= "{" ws "\"lines\":" ws "[" ws line ("," ws line){0,11} "]" ws "}" ws
+line ::= "{" ws "\"id\":" ws id "," ws "\"en\":" ws string "}" ws
+id ::= "\"" [0-9]{1,3} "\"" ws
+string ::= "\"" char{0,300} "\"" ws
+char ::= [^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4})
+ws ::= [ \n]?

@@ -146,6 +146,10 @@ public struct AnalysisStageTimings: Sendable, Equatable {
     public var cpuChunks = 0
     /// Chunks redone on the CPU after the move to the background interrupted them.
     public var backgroundRetries = 0
+    /// Time spent translating Hindi turns to English, and how many turns were translated or kept in Hindi.
+    public var translationMs = 0
+    public var translatedTurns = 0
+    public var untranslatedTurns = 0
 
     public init() {}
 
@@ -154,6 +158,7 @@ public struct AnalysisStageTimings: Sendable, Equatable {
         return "transcribe_ms=\(transcriptionMs) speakers_ms=\(speakersMs) minutes_ms=\(minutesMs) "
             + "model_load_ms=\(modelLoadMs) model_loads=\(modelLoads) chunks=\(chunkMs.count) "
             + "chunk_avg_ms=\(average) chunk_max_ms=\(chunkMs.max() ?? 0) cpu_chunks=\(cpuChunks) "
-            + "background_retries=\(backgroundRetries)"
+            + "background_retries=\(backgroundRetries) translation_ms=\(translationMs) "
+            + "translated_turns=\(translatedTurns) untranslated_turns=\(untranslatedTurns)"
     }
 }
