@@ -238,7 +238,12 @@ final class LiveCaptionLanguageArbiterTests: XCTestCase {
     }
 
     func testAlignedEnglishClauseCanReplaceWordsInsideAHindiPhrase() {
-        let hindi = words("मैं प्लीज सेंड प्रोजेक्ट रिपोर्ट फिर", confidence: 0.92, start: 0, end: 6)
+        // Time the Hindi-script English clause over the same 1–5 s as the English recognizer.
+        // A single 0–6 s phrase spreads words by character count and starts the clause at 0.46 s,
+        // outside mixedClause's 0.35 s alignment tolerance, so it never was "aligned".
+        let hindi = words("मैं", confidence: 0.92, start: 0, end: 1)
+            + words("प्लीज सेंड प्रोजेक्ट रिपोर्ट", confidence: 0.92, start: 1, end: 5)
+            + words("फिर", confidence: 0.92, start: 5, end: 6)
         let english = words("please send project report", confidence: 0.94, start: 1, end: 5)
         let mixed = CaptionLanguageHub.mixedClause(english: english, hindi: hindi)
         XCTAssertEqual(mixed?.map(\.text), ["मैं", "please", "send", "project", "report", "फिर"])

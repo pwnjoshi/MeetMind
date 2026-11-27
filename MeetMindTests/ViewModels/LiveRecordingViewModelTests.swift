@@ -36,7 +36,11 @@ final class LiveRecordingViewModelTests: XCTestCase {
         mockAudioService = MockAudioRecordingService()
         mockAudioService.automaticallyAdvancesDuration = false
         mockSpeechService = MockSpeechTranscriptionService()
-        testAudioURL = URL(fileURLWithPath: "/tmp/live_test_audio_\(UUID().uuidString).m4a")
+        // The recording-recovery journal only accepts destinations under Documents, or under the
+        // process's temporary directory as a test seam. On the simulator that is the app's sandbox
+        // tmp, not "/tmp", so a hard-coded "/tmp" path is rejected as an unsafe location.
+        testAudioURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("live_test_audio_\(UUID().uuidString).m4a")
         
         initialMeeting = Meeting(
             title: "Live Standup",
