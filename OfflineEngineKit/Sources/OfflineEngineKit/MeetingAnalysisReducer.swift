@@ -509,27 +509,32 @@ public enum MeetingAnalysisReducer {
                   let response = turns.dropFirst(index + proposal.count).prefix(3).first(where: {
                       $0.speaker != nil && $0.speaker != requester && $0.start - request.end <= 25
                           && MinutesRegex.firstMatch(acceptance, in: $0.text) != nil
-                          && !stems($0.text).isDisjoint(with: stems(subject).subtracting(["part", "work"]))
+                          && !MinutesComposer.words($0.text).isDisjoint(with: MinutesComposer.words(subject).subtracting(["part", "work"]))
                   }), let responder = response.speaker else { continue }
             let responseIndex = turns.firstIndex(where: { $0.id == response.id }) ?? index
             let selection = turns[responseIndex...].prefix(3).prefix { $0.speaker == responder }
-            let ownMatches = tasks.indices.filter { taskIndex in
-                let task = tasks[taskIndex]
-                return task.evidence.contains { $0.turnID == response.id }
-                    && !stems(task.title).isDisjoint(with: stems(subject).subtracting(["part", "work"]))
-            }
-            let otherMatches = tasks.indices.filter { taskIndex in
-                let task = tasks[taskIndex]
-                return task.owner.map(normalize) == normalize(other)
-                    && selection.contains { turn in task.evidence.contains { $0.turnID == turn.id } }
-            }
-            guard ownMatches.count == 1, otherMatches.count == 1,
-                  let ownIndex = ownMatches.first, let otherIndex = otherMatches.first,
-                  ownIndex != otherIndex else { continue }
+            let assignment = #"(?i)\b([\p{L}][\p{L}'’-]*) will be (?:doing|handling|taking) (?:the )?(.+?)(?:\s+whatever we discussed|[.!?]|$)"#
+            guard let confirmed = selection.first(where: {
+                MinutesRegex.firstMatch(assignment, in: $0.text, group: 1).map(normalize) == normalize(other)
+            }), let otherSubject = MinutesRegex.firstMatch(assignment, in: confirmed.text, group: 2) else { continue }
             let owner = speakerNames[requester] ?? (SpeakerNameInference.isGenericLabel(requester) ? nil : requester)
-            let evidence = uniqueEvidence([request, delegation, response].map {
+            let evidence = [response, confirmed, request, delegation].map {
                 SourceEvidence(turnID: $0.id, quote: $0.text)
-            } + tasks[otherIndex].evidence)
+            }
+            let retained = tasks.filter { task in
+                let words = MinutesComposer.words(task.title)
+                return !task.evidence.contains { $0.turnID == response.id || $0.turnID == confirmed.id }
+                    || (words.isDisjoint(with: MinutesComposer.words(subject).subtracting(["part", "work"]))
+                        && words.isDisjoint(with: MinutesComposer.words(otherSubject).subtracting(["part", "work"])))
+            }
+            let ownIndex = retained.count
+            let otherIndex = ownIndex + 1
+            let assignments = retained + [
+                SuggestedTask(title: "Handle the " + subject, category: "", owner: owner,
+                              deadlineText: nil, priority: nil, evidence: evidence),
+                SuggestedTask(title: "Handle " + otherSubject, category: "", owner: other,
+                              deadlineText: nil, priority: nil, evidence: evidence)
+            ]
             let earlier = turns.prefix(index).suffix(10)
             let uiContext = earlier.last {
                 $0.speaker == responder && MinutesRegex.firstMatch(#"(?i)\bredesign the UI\b"#, in: $0.text) != nil
@@ -540,15 +545,15 @@ public enum MeetingAnalysisReducer {
             let summariesContext = earlier.last {
                 $0.speaker == responder && MinutesRegex.firstMatch(#"(?i)\bquality of (?:the )?(?:summar(?:y|ies)|minutes)\b"#, in: $0.text) != nil
             }
-            var revised = tasks
+            var revised = assignments
             for taskIndex in [ownIndex, otherIndex] {
-                let task = tasks[taskIndex]
+                let task = assignments[taskIndex]
                 var title = MinutesComposer.actionTitle(task.title)
                 var context: [AnalysisTurn] = []
-                if taskIndex == ownIndex, stems(task.title).contains("ui"), let uiContext {
+                if taskIndex == ownIndex, MinutesComposer.words(task.title).contains("ui"), let uiContext {
                     title = "Redesign the app’s user interface"
                     context = [uiContext]
-                } else if taskIndex == otherIndex, stems(task.title).contains("model"),
+                } else if taskIndex == otherIndex, MinutesComposer.words(task.title).contains("model"),
                           let modelContext, let summariesContext, modelContext.start - summariesContext.end <= 15,
                           selection.contains(where: { $0.text.localizedCaseInsensitiveContains("whatever we discussed") }) {
                     title = "Find a lightweight model to improve summary quality"
