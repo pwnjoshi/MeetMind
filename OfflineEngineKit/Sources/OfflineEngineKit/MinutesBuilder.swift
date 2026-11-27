@@ -84,7 +84,7 @@ enum MinutesBuilder {
         let connective = #"(?i)^\W*(?:and|so|but|also|then|okay|ok|basically|however|right|yeah)\b"#
         guard MinutesRegex.firstMatch(connective, in: cleaned) == nil,
               MeetingAnalysisReducer.isSummaryContext(cleaned),
-              !MinutesRegex.matches(#"(?i)^\W*(?:we (?:are discussing|need to|will proceed)|agenda to discuss|the ['"“]?if\b)"#, in: cleaned),
+              !MinutesRegex.matches(#"(?i)^\W*(?:we (?:are discussing|need to|will proceed)|agenda to discuss|the ['\x22“]?if\b)"#, in: cleaned),
               !MeetingAnalysisReducer.isTranscriptCopy(text: cleaned, turns: turns) else { return false }
         for word in cleaned.split(whereSeparator: { !$0.isLetter }) {
             let lower = word.lowercased()
