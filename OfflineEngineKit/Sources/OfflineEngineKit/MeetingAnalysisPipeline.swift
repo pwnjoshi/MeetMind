@@ -60,6 +60,7 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public var transcriptCorrections: [TranscriptCorrection]? = nil
     public var rankedOverviewFacts: [SupportedPoint]? = nil
     public var draftedOverviewContext: String? = nil
+    public var draftedOverviewLines: [String]? = nil
     public var minutesQualityRetryAttempted: Bool? = nil
     public var minutesNeedSourceReview: Bool? = nil
     /// L2-normalised voice embedding per speaker label, from the diarization clustering. Used only to
@@ -1138,26 +1139,24 @@ public actor MeetingAnalysisPipeline {
                 checkpoint.excludingUnresolvedCaptions(from: checkpoint.turns), translations: checkpoint.translations)
             let overviewNames = MinutesBuilder.overviewNames(turns: overviewTurns, participants: participants,
                                                              speakerNames: [:], tasks: reduced.tasks)
-            // The model only ranks and lightly edits sentences that already pass the overview rules.
-            let facts = Array(reduced.discussion.filter {
+            let facts = reduced.discussion.filter {
                 MinutesBuilder.isUsableOverviewSentence($0.text, turns: overviewTurns, names: overviewNames)
-                    && !$0.evidence.isEmpty && $0.text.utf8.count <= 240
-            }.prefix(10))
-            if !facts.isEmpty {
-                do {
-                    // The model reads facts and transcript in English; the stored fact keeps the spoken-word evidence.
-                    let mapper = EvidenceMapper(turns: checkpoint.turns, translations: checkpoint.translations)
-                    let modelFacts = facts.map { SupportedPoint(text: $0.text, evidence: mapper.processing($0.evidence)) }
-                    if let draft = try session.draftOverviewContext(modelFacts, transcript: overviewTurns),
-                       facts.indices.contains(draft.index) {
-                        checkpoint.rankedOverviewFacts = [facts[draft.index]]
-                        checkpoint.draftedOverviewContext = draft.text
-                    }
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-                    try Task.checkCancellation()
+                    && !$0.evidence.isEmpty && $0.text.utf8.count <= 280
+            }
+            do {
+                let mapper = EvidenceMapper(turns: checkpoint.turns, translations: checkpoint.translations)
+                let modelFacts = facts.map { SupportedPoint(text: $0.text, evidence: mapper.processing($0.evidence)) }
+                if let draft = try session.draftOverviewContext(modelFacts, transcript: overviewTurns) {
+                    var seen = Set<Int>()
+                    let selected = draft.filter { facts.indices.contains($0.index) && seen.insert($0.index).inserted }
+                    checkpoint.rankedOverviewFacts = selected.map { facts[$0.index] }
+                    checkpoint.draftedOverviewLines = selected.map(\.text)
+                    checkpoint.draftedOverviewContext = nil
                 }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
             }
         }
         checkpoint.stage = .completed

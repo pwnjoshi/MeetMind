@@ -333,38 +333,55 @@ enum LocalSpeech {
             }
         }
 
-        // A decoder can return the first sentence and silently omit the rest.
-        // Retry only uncovered audio inside detected speech, with a per-file cap.
-        let missing = passes.enumerated().flatMap { index, pass in
-            let relative = SpeechRegion(start: 0, end: pass.region.duration)
-            let coverage = pass.turns.map { SpeechRegion(start: $0.start, end: $0.end) }
-            return SpeechRegionPlanner.missingIntervals(in: relative, covered: coverage).map { (index, $0) }
-        }.sorted { $0.1.duration > $1.1.duration }
-        for (index, gap) in missing.prefix(4) {
-            try Task.checkCancellation()
-            let offset = passes[index].region.start
-            let started = Date()
-            let retry: RegionDecode
-            do {
-                let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, startTime: offset + gap.start,
-                                                                       endTime: offset + gap.end)
-                guard samples.count >= minimumRegionSamples else { continue }
-                retry = try await decodeRegion(engine: engine, samples: samples, language: nil, prompt: automaticPrompt)
-            } catch {
-                try Task.checkCancellation()
-                if error is CancellationError { throw error }
-                continue
+        // Consider gaps across region boundaries as well as inside a region.
+        // A short independent energy scan below screens out silent gaps.
+        let coverage = passes.flatMap { pass in
+            pass.turns.map { SpeechRegion(start: pass.region.start + $0.start, end: pass.region.start + $0.end) }
+        }
+        let recording = SpeechRegion(start: 0, end: duration)
+        let uncovered = SpeechRegionPlanner.missingIntervals(in: recording, covered: coverage)
+        let regional = passes.flatMap { SpeechRegionPlanner.missingIntervals(in: $0.region, covered: coverage) }
+        let candidates = Array(Set((uncovered.filter { $0.duration <= 24 } + regional)))
+            .sorted { lhs, rhs in
+                lhs.duration == rhs.duration ? lhs.start < rhs.start : lhs.duration > rhs.duration
             }
-            stats.decodeSeconds += Date().timeIntervalSince(started)
-            stats.redecodes += 1
-            guard let language = retry.language, ["hi", "en"].contains(language),
-                  (retry.confidence ?? 0) >= 0.50 else { continue }
-            for turn in retry.turns {
-                let moved = SpeechRegionPlanner.shifted(start: turn.start, end: turn.end,
-                    by: gap.start, limit: gap.duration)
-                guard moved.end > moved.start else { continue }
-                passes[index].turns.append(AnalysisTurn(id: turn.id, text: turn.text,
-                    start: moved.start, end: moved.end, speaker: nil))
+        var recovered: [AnalysisTurn] = []
+        var retried: [SpeechRegion] = []
+        for gap in candidates {
+            if retried.count == 4 { break }
+            guard !retried.contains(where: { min($0.end, gap.end) > max($0.start, gap.start) }) else { continue }
+            try Task.checkCancellation()
+            let probe = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, startTime: gap.start, endTime: gap.end)
+            let frames = SpeechRegionPlanner.frameEnergies(probe, frameLength: 320)
+            guard SpeechRegionPlanner.speechMask(energies: frames).filter({ $0 }).count >= 25 else { continue }
+            retried.append(gap)
+            var remaining = [gap]
+            for padding in [0.35, 2.0] {
+                guard let hole = remaining.max(by: { $0.duration < $1.duration }) else { break }
+                try Task.checkCancellation()
+                let start = max(0, hole.start - padding), end = min(duration, hole.end + padding)
+                let started = Date()
+                do {
+                    let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, startTime: start, endTime: end)
+                    guard samples.count >= minimumRegionSamples else { continue }
+                    stats.redecodes += 1
+                    let retry = try await decodeRegion(engine: engine, samples: samples, language: nil, prompt: automaticPrompt)
+                    stats.decodeSeconds += Date().timeIntervalSince(started)
+                    guard let language = retry.language, ["hi", "en"].contains(language),
+                          (retry.confidence ?? 0) >= 0.50 else { continue }
+                    for turn in retry.turns {
+                        let moved = SpeechRegionPlanner.shifted(start: turn.start, end: turn.end, by: start, limit: end - start)
+                        let overlap = min(moved.end, hole.end) - max(moved.start, hole.start)
+                        guard overlap > 0, overlap >= (moved.end - moved.start) * 0.75 else { continue }
+                        recovered.append(AnalysisTurn(id: turn.id, text: turn.text,
+                            start: max(hole.start, moved.start), end: min(hole.end, moved.end), speaker: nil))
+                    }
+                    let filled = recovered.map { SpeechRegion(start: $0.start, end: $0.end) }
+                    remaining = SpeechRegionPlanner.missingIntervals(in: gap, covered: filled)
+                } catch {
+                    try Task.checkCancellation()
+                    if error is CancellationError { throw error }
+                }
             }
         }
 
@@ -382,7 +399,9 @@ enum LocalSpeech {
                                           start: moved.start, end: moved.end, speaker: nil))
             }
         }
-        return turns
+        return (turns + recovered).sorted { $0.start < $1.start }.enumerated().map { index, turn in
+            AnalysisTurn(id: "t\(index + 1)", text: turn.text, start: turn.start, end: turn.end, speaker: nil)
+        }
     }
 
     /// Reads the file in one-minute blocks (bounded memory), measures frame energy, and plans regions.

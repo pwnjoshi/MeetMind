@@ -1,7 +1,7 @@
 import Foundation
 
 /// A stretch of continuous speech inside an audio file, in seconds from the start of the file.
-struct SpeechRegion: Equatable, Sendable {
+struct SpeechRegion: Hashable, Sendable {
     var start: Double
     var end: Double
     var duration: Double { end - start }
@@ -215,12 +215,10 @@ enum SpeechRegionPlanner {
         return pad(capped, by: parameters.padding, duration: duration)
     }
 
-    /// Finds substantial untranscribed intervals inside a speech region that
-    /// already yielded some words. Empty regions are retried separately.
+    /// Finds substantial untranscribed intervals, including an empty decode.
     static func missingIntervals(in region: SpeechRegion, covered: [SpeechRegion]) -> [SpeechRegion] {
         let coverage = covered.filter { $0.end > $0.start && $0.end > region.start && $0.start < region.end }
             .sorted { $0.start < $1.start }
-        guard !coverage.isEmpty else { return [] }
         let minimumGap = 4.0
         var cursor = region.start
         var result: [SpeechRegion] = []

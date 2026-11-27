@@ -187,6 +187,15 @@ public enum MeetingAnalysisReducer {
         var overviewFacts = ranked
         let overviewNames = MinutesBuilder.overviewNames(turns: verifiedTurns, participants: participants,
                                                          speakerNames: speakerNames, tasks: tasks)
+        if let lines = checkpoint.draftedOverviewLines,
+           lines.count == checkpoint.rankedOverviewFacts?.count {
+            for (fact, line) in zip(checkpoint.rankedOverviewFacts ?? [], lines) {
+                guard let index = overviewFacts.firstIndex(where: { $0.text == fact.text }),
+                      let checked = verifiedOverviewContext(line, source: overviewFacts[index],
+                          turns: verifiedTurns, names: overviewNames) else { continue }
+                overviewFacts[index] = checked
+            }
+        }
         if let source = ranked.first, let draft = checkpoint.draftedOverviewContext,
            let checked = verifiedOverviewContext(draft, source: source, turns: verifiedTurns, names: overviewNames) {
             overviewFacts[0] = checked

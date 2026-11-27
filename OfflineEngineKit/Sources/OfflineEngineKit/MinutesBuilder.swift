@@ -679,14 +679,13 @@ enum MinutesBuilder {
             var selectedText = Set<String>()
             let overviewPeople = MinutesBuilder.overviewNames(turns: input.turns, participants: input.participants,
                                                      speakerNames: input.speakerNames, tasks: input.tasks)
-            // At most one context sentence, and only when it passes the shared overview rules. When none
-            // does, the overview is composed from the agenda, topics, decisions, tasks and open questions.
+            // Include distinct, grounded context alongside the structured outcomes.
             let context = candidates.filter { point in
                 !HindiText.looksHindi(point.text) && hasTranscriptEvidence(point.evidence)
                     && MinutesBuilder.isUsableOverviewSentence(point.text, turns: input.turns, names: overviewPeople)
                     && point.evidence.contains { !outcomeTurns.contains($0.turnID) }
                     && selectedText.insert(MeetingAnalysisReducer.clauseKey(point.text)).inserted
-            }.prefix(1)
+            }.prefix(5)
             if let agenda = MinutesBuilder.agendaSentence(input.agenda) { append(agenda, evidence: []) }
             let discussionTopics: [(label: String, pattern: String)] = [
                 ("the app’s UI", #"(?i)\b(?:figma|user flow|ui design|interface design)\b"#),
@@ -702,11 +701,11 @@ enum MinutesBuilder {
             if !supportedTopics.isEmpty {
                 append("The team discussed " + MinutesComposer.list(supportedTopics.map { $0.0 }) + ".",
                        evidence: supportedTopics.map { $0.1 })
-            } else {
-                for point in context {
-                    let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)
-                }
+            }
+            let topicTurns = Set(supportedTopics.map { $0.1.turnID })
+            for point in context where point.evidence.contains(where: { !topicTurns.contains($0.turnID) }) {
+                let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)
             }
 
 

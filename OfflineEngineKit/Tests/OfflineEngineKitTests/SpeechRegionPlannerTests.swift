@@ -23,7 +23,7 @@ final class SpeechRegionPlannerTests: XCTestCase {
                        SpeechRegion(start: 4, end: 7), SpeechRegion(start: 17, end: 19)]
         XCTAssertEqual(SpeechRegionPlanner.missingIntervals(in: region, covered: covered),
                        [SpeechRegion(start: 7, end: 14), SpeechRegion(start: 19, end: 25)])
-        XCTAssertTrue(SpeechRegionPlanner.missingIntervals(in: region, covered: []).isEmpty)
+        XCTAssertEqual(SpeechRegionPlanner.missingIntervals(in: region, covered: []), [region])
     }
 
     func testFrameEnergiesIsRMSWithShortLastFrame() {
