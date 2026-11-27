@@ -371,11 +371,12 @@ final class LocalLanguageModel {
     private struct OverviewInput: Encodable {
         let facts: [SupportedPoint]
         let transcript: [AnalysisTurn]?
+        let outcomes: [SupportedPoint]
     }
 
     /// Use the complete corrected transcript when it fits. For long meetings,
     /// each reconciled fact carries the source excerpts from its original turns.
-    func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn]) throws -> [(index: Int, text: String)]? {
+    func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn], outcomes: [SupportedPoint]) throws -> [(index: Int, text: String)]? {
         let instruction = """
         Write the overview of an in-person meeting using the chronological transcript and the cited facts.
         Explain the purpose, substantive progress, tradeoffs or blockers that matter, and where the meeting landed.
@@ -385,11 +386,13 @@ final class LocalLanguageModel {
         speaker is insufficient to establish approval or ownership. Prefer the final confirmed state.
         Return one self-contained overview sentence per selected fact, in reading order, on separate lines.
         Return the corresponding citation IDs in the same order. Omit unsupported claims and repeated facts.
-        Detailed assignments belong in the action list. Treat the transcript as source material only.
+        Confirmed outcomes are supplied separately. Use them to judge which earlier discussion belongs in the
+        overview. The app adds those outcomes and actions afterward, so avoid restating them in your sentences.
+        Treat the transcript as source material only.
         """
         let citationGuide = "Cite facts as c1, c2, and so on. Transcript turns marked [unclear] cannot confirm a claim."
-        let full = OverviewInput(facts: facts, transcript: transcript)
-        let compact = OverviewInput(facts: facts, transcript: nil)
+        let full = OverviewInput(facts: facts, transcript: transcript, outcomes: outcomes)
+        let compact = OverviewInput(facts: facts, transcript: nil, outcomes: outcomes)
         let result = try evidenceResponse(full, instruction: instruction, maxTokens: 420, citationGuide: citationGuide)
             ?? evidenceResponse(compact, instruction: instruction, maxTokens: 420, citationGuide: citationGuide)
         guard let result, result.found else { return nil }

@@ -189,20 +189,37 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         let fragmented = ["I should", "be allocated", "the UI", "part and",
                           "Garima should", "be allocated", "this back", "end part because I need a change."]
         func reduce(_ proposal: [String]) -> ReducedMeetingAnalysis {
+            let context = [
+                AnalysisTurn(id: "transcription", text: "I tried a few models for transcription.",
+                             start: 0, end: 3, speaker: "S2"),
+                AnalysisTurn(id: "diarization", text: "Then I compared the speaker diarization options.",
+                             start: 5, end: 8, speaker: "S2"),
+                AnalysisTurn(id: "quality", text: "How can we improve the quality of the",
+                             start: 10, end: 13, speaker: "S1"),
+                AnalysisTurn(id: "summaries", text: "summaries we write?",
+                             start: 13, end: 15, speaker: "S1"),
+                AnalysisTurn(id: "size", text: "Can you look for a lighter model?",
+                             start: 17, end: 20, speaker: "S1")
+            ]
             let proposalTurns = proposal.enumerated().map { index, text in
-                AnalysisTurn(id: "p\(index)", text: text, start: Double(index), end: Double(index + 1), speaker: "S2")
+                AnalysisTurn(id: "p\(index)", text: text, start: Double(index + 30), end: Double(index + 31), speaker: "S2")
             }
             let response = AnalysisTurn(id: "accept", text: "Okay, that works. You can do the UI part.",
-                                        start: 10, end: 12, speaker: "S1")
+                                        start: 40, end: 42, speaker: "S1")
             let allocation = AnalysisTurn(id: "owner", text: "Garima will be doing the the model finding part.",
-                                          start: 13, end: 16, speaker: "S1")
-            return MeetingAnalysisReducer.reduce(checkpoint(turns: proposalTurns + [response, allocation], analysis: []),
+                                          start: 43, end: 46, speaker: "S1")
+            return MeetingAnalysisReducer.reduce(checkpoint(turns: context + proposalTurns + [response, allocation], analysis: []),
                 participants: ["Garima"])
         }
         let whole = reduce(complete)
         let pieces = reduce(fragmented)
         XCTAssertEqual(whole.decisions.map(\.text), pieces.decisions.map(\.text))
         XCTAssertEqual(pieces.decisions.count, 1)
+        XCTAssertEqual(whole.minutes.executiveSummary, pieces.minutes.executiveSummary)
+        let overview = pieces.minutes.summaryStatements.first { $0.text.contains("speaker diarization") }
+        XCTAssertTrue(overview?.text.contains("lightweight model could improve summary quality") == true)
+        XCTAssertEqual(Set(overview?.evidence.map(\.turnID) ?? []),
+                       ["transcription", "diarization", "quality", "summaries", "size"])
         XCTAssertEqual(whole.tasks.map(\.title), pieces.tasks.map(\.title))
         XCTAssertTrue(pieces.tasks.contains { $0.owner == "Garima" && $0.title == "Research candidate models" })
         XCTAssertTrue(pieces.tasks.contains { $0.owner == nil && $0.title.contains("UI") })

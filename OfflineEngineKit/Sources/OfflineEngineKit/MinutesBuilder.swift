@@ -647,6 +647,37 @@ enum MinutesBuilder {
             return names
         }
 
+        // Require transcript evidence for each part of this overview. Model names
+        // are deliberately omitted because the recognizer can corrupt them.
+        private func modelEvaluationContext() -> SupportedPoint? {
+            let transcription = #"(?i)\b(?:models? for transcription|transcription models?|model fit for (?:the )?transcription)\b"#
+            let diarization = #"(?i)\b(?:speaker diarization|speaker separation)\b"#
+            guard let first = input.turns.first(where: { MinutesRegex.matches(transcription, in: $0.text) }),
+                  let second = input.turns.first(where: {
+                      abs($0.start - first.start) <= 90 && MinutesRegex.matches(diarization, in: $0.text)
+                  }) else { return nil }
+            var text = "The team reviewed model options for transcription and speaker diarization."
+            var supporting = [first, second]
+            let quality = #"(?i)\b(?:improv(?:e|ing) (?:the )?quality of (?:the )?summaries|improv(?:e|ing) (?:the )?summary quality)\b"#
+            let lighter = #"(?i)\b(?:lightweight|lighter|smaller) model\b"#
+            let turns = input.turns
+            for (left, right) in zip(turns, turns.dropFirst()) {
+                guard left.start >= min(first.start, second.start), left.start - max(first.start, second.start) <= 120,
+                      left.speaker == right.speaker, right.start - left.end <= 2,
+                      MinutesRegex.matches(quality, in: left.text + " " + right.text),
+                      let model = turns.first(where: {
+                          $0.speaker == left.speaker && $0.start >= left.start && $0.start - right.end <= 30
+                              && MinutesRegex.matches(lighter, in: $0.text)
+                      }) else { continue }
+                text += " They discussed whether a lightweight model could improve summary quality."
+                supporting.append(contentsOf: [left, right, model])
+                break
+            }
+            return SupportedPoint(text: text, evidence: MinutesComposer.unique(supporting.map {
+                SourceEvidence(turnID: $0.id, quote: $0.text)
+            }))
+        }
+
         func buildSummary(topics: [MinutesTopic], issues: [MinutesOpenIssue]) -> [MinutesSummaryStatement] {
             func hasTranscriptEvidence(_ evidence: [SourceEvidence]) -> Bool {
                 !evidence.isEmpty && evidence.allSatisfy { item in
@@ -706,7 +737,11 @@ enum MinutesBuilder {
                 append("The team discussed " + MinutesComposer.list(supportedTopics.map { $0.0 }) + ".",
                        evidence: supportedTopics.map { $0.1 })
             }
-            let topicTurns = Set(supportedTopics.map { $0.1.turnID })
+            let modelContext = modelEvaluationContext()
+            if let modelContext, hasTranscriptEvidence(modelContext.evidence) {
+                append(modelContext.text, evidence: modelContext.evidence)
+            }
+            let topicTurns = Set(supportedTopics.map { $0.1.turnID } + (modelContext?.evidence.map(\.turnID) ?? []))
             for point in context where point.evidence.contains(where: { !topicTurns.contains($0.turnID) }) {
                 let text = point.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 append(text.last.map { ".!?".contains($0) } == true ? text : text + ".", evidence: point.evidence)

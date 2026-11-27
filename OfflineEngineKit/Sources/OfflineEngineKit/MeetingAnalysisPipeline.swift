@@ -1146,7 +1146,11 @@ public actor MeetingAnalysisPipeline {
             do {
                 let mapper = EvidenceMapper(turns: checkpoint.turns, translations: checkpoint.translations)
                 let modelFacts = facts.map { SupportedPoint(text: $0.text, evidence: mapper.processing($0.evidence)) }
-                if let draft = try session.draftOverviewContext(modelFacts, transcript: overviewTurns) {
+                let outcomes = reduced.decisions + reduced.tasks.map {
+                    SupportedPoint(text: MinutesComposer.taskLine($0), evidence: $0.evidence)
+                }
+                let modelOutcomes = outcomes.map { SupportedPoint(text: $0.text, evidence: mapper.processing($0.evidence)) }
+                if let draft = try session.draftOverviewContext(modelFacts, transcript: overviewTurns, outcomes: modelOutcomes) {
                     var seen = Set<Int>()
                     let selected = draft.filter { facts.indices.contains($0.index) && seen.insert($0.index).inserted }
                     checkpoint.rankedOverviewFacts = selected.map { facts[$0.index] }

@@ -7,7 +7,7 @@ protocol MeetingAnalysisSession {
     /// Where this session runs. The pipeline reloads a GPU session on the CPU when the
     /// app moves to the background, and back on the GPU when it returns.
     var placement: ComputePlacement { get }
-    func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn]) throws -> [(index: Int, text: String)]?
+    func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn], outcomes: [SupportedPoint]) throws -> [(index: Int, text: String)]?
     func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]?
     /// English text for Hindi or Hinglish turns, keyed by turn ID. Only IDs that were given are returned. Nil means
     /// this session cannot translate; the minutes then use the original text.
@@ -25,7 +25,7 @@ protocol MeetingAnalysisSession {
 }
 
 extension MeetingAnalysisSession {
-    func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn]) throws -> [(index: Int, text: String)]? { nil }
+    func draftOverviewContext(_ facts: [SupportedPoint], transcript: [AnalysisTurn], outcomes: [SupportedPoint]) throws -> [(index: Int, text: String)]? { nil }
     func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]? { nil }
     func translateToEnglish(_ turns: [AnalysisTurn]) throws -> [String: String]? { nil }
 
