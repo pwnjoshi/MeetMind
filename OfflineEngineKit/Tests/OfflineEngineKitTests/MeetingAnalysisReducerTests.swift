@@ -183,6 +183,34 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertFalse(partial.decisions.contains { $0.text.contains("agreed to reassign") })
     }
 
+    func testFragmentedAllocationMatchesCompleteTurnsAndReportsOutcomeOnce() {
+        let complete = ["I should be allocated the UI part and",
+                        "Garima should be allocated this backend part because I need a change."]
+        let fragmented = ["I should", "be allocated", "the UI", "part and",
+                          "Garima should", "be allocated", "this back", "end part because I need a change."]
+        func reduce(_ proposal: [String]) -> ReducedMeetingAnalysis {
+            let proposalTurns = proposal.enumerated().map { index, text in
+                AnalysisTurn(id: "p\(index)", text: text, start: Double(index), end: Double(index + 1), speaker: "S2")
+            }
+            let response = AnalysisTurn(id: "accept", text: "Okay, that works. You can do the UI part.",
+                                        start: 10, end: 12, speaker: "S1")
+            let allocation = AnalysisTurn(id: "owner", text: "Garima will be doing the the model finding part.",
+                                          start: 13, end: 16, speaker: "S1")
+            return MeetingAnalysisReducer.reduce(checkpoint(turns: proposalTurns + [response, allocation], analysis: []),
+                participants: ["Garima"])
+        }
+        let whole = reduce(complete)
+        let pieces = reduce(fragmented)
+        XCTAssertEqual(whole.decisions.map(\.text), pieces.decisions.map(\.text))
+        XCTAssertEqual(pieces.decisions.count, 1)
+        XCTAssertEqual(whole.tasks.map(\.title), pieces.tasks.map(\.title))
+        XCTAssertTrue(pieces.tasks.contains { $0.owner == "Garima" && $0.title == "Research candidate models" })
+        XCTAssertTrue(pieces.tasks.contains { $0.owner == nil && $0.title.contains("UI") })
+        XCTAssertFalse(pieces.minutes.executiveSummary.contains("Next steps are"))
+        XCTAssertFalse(pieces.minutes.executiveSummary.contains("resolved to the team agreed"))
+        XCTAssertTrue(pieces.decisions.first?.evidence.contains { $0.quote == "be allocated" } == true)
+    }
+
     func testLaterReferentialHandoffAcrossChunksNeedsUniqueDeliverable() {
         let first = AnalysisTurn(id: "report", text: "Aditya, please send the report by Friday.",
                                  start: 0, end: 3, speaker: "S1")

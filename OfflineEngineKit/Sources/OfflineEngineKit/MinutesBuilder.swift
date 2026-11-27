@@ -427,12 +427,16 @@ enum MinutesBuilder {
 
         // MARK: Resolutions
 
+        private func isConfirmedAllocation(_ text: String) -> Bool {
+            text.hasPrefix("The team agreed to reassign follow-up work: ")
+        }
+
         func buildResolutions() -> [MinutesResolution] {
             var result: [MinutesResolution] = []
             for decision in input.decisions {
                 let turn = firstTurn(decision.evidence)
                 let hasScript = HindiText.containsDevanagari(decision.text) || HindiText.looksRomanizedHindi(decision.text)
-                if hasScript {
+                if hasScript || isConfirmedAllocation(decision.text) {
                     result.append(MinutesResolution(text: decision.text, rationale: nil, topic: nil, evidence: decision.evidence,
                                                     timestamp: turn?.start, speaker: speakerName(turn)))
                     continue
@@ -712,17 +716,25 @@ enum MinutesBuilder {
             let names = summaryNames()
             append(MinutesComposer.executiveSummary(names: names, topics: coveredTopics.map(\.title),
                 decisionPhrases: [], tasks: [], openSubjects: []), evidence: coveredTopics.flatMap(\.evidence))
+            let allocations = decisions.filter { isConfirmedAllocation($0.text) }
+            let otherDecisions = decisions.filter { !isConfirmedAllocation($0.text) }
+            for allocation in allocations { append(allocation.text, evidence: allocation.evidence) }
             append(MinutesComposer.executiveSummary(names: names, topics: [],
-                decisionPhrases: decisions.map { MinutesBuilder.shortPhrase($0.text) }, tasks: [], openSubjects: []),
-                evidence: decisions.flatMap(\.evidence))
-            let nextSteps = tasks.prefix(4).map { task in
+                decisionPhrases: otherDecisions.map { MinutesBuilder.shortPhrase($0.text) }, tasks: [], openSubjects: []),
+                evidence: otherDecisions.flatMap(\.evidence))
+            let allocationTurns = Set(allocations.flatMap(\.evidence).map(\.turnID))
+            let remainingTasks = tasks.filter { task in
+                let cited = Set(task.evidence.map(\.turnID))
+                return !cited.isSubset(of: allocationTurns)
+            }
+            let nextSteps = remainingTasks.prefix(4).map { task in
                 let title = MinutesComposer.actionTitle(task.title)
                 let withoutDeadline = ActionExtractor.splitDeadline(title).text
                 return HindiText.lowercaseFirst(MinutesComposer.stripPeriod(withoutDeadline))
             }
             if !nextSteps.isEmpty {
                 append(MinutesComposer.followUpSentence(nextSteps),
-                       evidence: tasks.prefix(4).flatMap(\.evidence))
+                       evidence: remainingTasks.prefix(4).flatMap(\.evidence))
             }
             append(MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [], tasks: [],
                 openSubjects: namedIssues.map(\.subject)), evidence: namedIssues.flatMap(\.evidence))

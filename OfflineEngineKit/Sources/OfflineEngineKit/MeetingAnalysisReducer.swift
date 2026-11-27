@@ -175,6 +175,9 @@ public enum MeetingAnalysisReducer {
         if let allocation = confirmedAllocation(in: verifiedTurns, tasks: tasks, speakerNames: speakerNames) {
             tasks = allocation.tasks
             decisions = deduplicatePoints(decisions + [allocation.decision])
+            discussion.removeAll { point in
+                point.evidence.contains { allocation.proposalIDs.contains($0.turnID) }
+            }
         }
 
         // The stored fact carries spoken-word evidence, so compare in that form.
@@ -504,17 +507,22 @@ public enum MeetingAnalysisReducer {
     /// and explicitly assigns both affected deliverables.
     private static func confirmedAllocation(
         in turns: [AnalysisTurn], tasks: [SuggestedTask], speakerNames: [String: String]
-    ) -> (tasks: [SuggestedTask], decision: SupportedPoint)? {
+    ) -> (tasks: [SuggestedTask], decision: SupportedPoint, proposalIDs: Set<String>)? {
         let selfRequest = #"(?i)\bI should be allocated (?:the )?(.+?)(?:\s+and\s+|[.!?]|$)"#
         let otherRequest = #"(?i)\b(?!I\b)([\p{L}][\p{L}'’-]*) should be allocated (?:the |this )?(.+?)(?:\s+because\b|[.!?]|$)"#
         let acceptance = #"(?i)\b(?:that works|agreed|sounds good|okay)\b.*\byou can (?:do|take|handle)\b"#
         for index in turns.indices.reversed() {
             let request = turns[index]
-            guard let requester = request.speaker,
-                  let subject = MinutesRegex.firstMatch(selfRequest, in: request.text, group: 1) else { continue }
-            let proposal = turns[index...].prefix(3).prefix { $0.speaker == requester }
-            guard let delegation = proposal.first(where: { MinutesRegex.firstMatch(otherRequest, in: $0.text) != nil }),
-                  let other = MinutesRegex.firstMatch(otherRequest, in: delegation.text, group: 1),
+            guard let requester = request.speaker else { continue }
+            var proposal = [request]
+            for turn in turns.dropFirst(index + 1).prefix(15) {
+                guard let previous = proposal.last, turn.speaker == requester,
+                      turn.start - previous.end <= 1.5, turn.end - request.start <= 18 else { break }
+                proposal.append(turn)
+            }
+            let proposalText = proposal.map(\.text).joined(separator: " ")
+            guard let subject = MinutesRegex.firstMatch(selfRequest, in: proposalText, group: 1),
+                  let other = MinutesRegex.firstMatch(otherRequest, in: proposalText, group: 1),
                   let response = turns.dropFirst(index + proposal.count).prefix(3).first(where: {
                       $0.speaker != nil && $0.speaker != requester && $0.start - request.end <= 25
                           && MinutesRegex.firstMatch(acceptance, in: $0.text) != nil
@@ -522,12 +530,12 @@ public enum MeetingAnalysisReducer {
                   }), let responder = response.speaker else { continue }
             let responseIndex = turns.firstIndex(where: { $0.id == response.id }) ?? index
             let selection = turns[responseIndex...].prefix(3).prefix { $0.speaker == responder }
-            let assignment = #"(?i)\b([\p{L}][\p{L}'’-]*) will be (?:doing|handling|taking) (?:the )?(.+?)(?:\s+whatever we discussed|[.!?]|$)"#
+            let assignment = #"(?i)\b([\p{L}][\p{L}'’-]*) will be (?:doing|handling|taking) (?:the\s+)*(.+?)(?:\s+whatever we discussed|[.!?]|$)"#
             guard let confirmed = selection.first(where: {
                 MinutesRegex.firstMatch(assignment, in: $0.text, group: 1).map(normalize) == normalize(other)
             }), let otherSubject = MinutesRegex.firstMatch(assignment, in: confirmed.text, group: 2) else { continue }
             let owner = speakerNames[requester] ?? (SpeakerNameInference.isGenericLabel(requester) ? nil : requester)
-            let evidence = [response, confirmed, request, delegation].map {
+            let evidence = ([response, confirmed] + proposal).map {
                 SourceEvidence(turnID: $0.id, quote: $0.text)
             }
             let retained = tasks.filter { task in
@@ -544,15 +552,17 @@ public enum MeetingAnalysisReducer {
                 SuggestedTask(title: "Handle " + otherSubject, category: "", owner: other,
                               deadlineText: nil, priority: nil, evidence: evidence)
             ]
-            let earlier = turns.prefix(index).suffix(10)
+            let earlier = turns.prefix(index).suffix(24).filter { request.start - $0.start <= 75 }
             let uiContext = earlier.last {
                 $0.speaker == responder && MinutesRegex.firstMatch(#"(?i)\bredesign the UI\b"#, in: $0.text) != nil
             }
             let modelContext = earlier.last {
                 $0.speaker == responder && MinutesRegex.firstMatch(#"(?i)\b(?:lightweight|smaller) model\b"#, in: $0.text) != nil
             }
-            let summariesContext = earlier.last {
-                $0.speaker == responder && MinutesRegex.firstMatch(#"(?i)\bquality of (?:the )?(?:summar(?:y|ies)|minutes)\b"#, in: $0.text) != nil
+            let summariesContext = Array(zip(earlier, earlier.dropFirst())).last { first, next in
+                first.speaker == responder && next.speaker == responder && next.start - first.end <= 1.5
+                    && MinutesRegex.firstMatch(#"(?i)\bquality of (?:the )?(?:summar(?:y|ies)|minutes)\b"#,
+                        in: first.text + " " + next.text) != nil
             }
             var revised = assignments
             for taskIndex in [ownIndex, otherIndex] {
@@ -563,10 +573,10 @@ public enum MeetingAnalysisReducer {
                     title = "Redesign the app’s user interface"
                     context = [uiContext]
                 } else if taskIndex == otherIndex, MinutesComposer.words(task.title).contains("model"),
-                          let modelContext, let summariesContext, modelContext.start - summariesContext.end <= 15,
+                          let modelContext, let summariesContext, modelContext.start - summariesContext.1.end <= 15,
                           selection.contains(where: { $0.text.localizedCaseInsensitiveContains("whatever we discussed") }) {
                     title = "Find a lightweight model to improve summary quality"
-                    context = [summariesContext, modelContext]
+                    context = [summariesContext.0, summariesContext.1, modelContext]
                 }
                 let contextEvidence = context.map { SourceEvidence(turnID: $0.id, quote: $0.text) }
                 revised[taskIndex] = SuggestedTask(
@@ -583,7 +593,7 @@ public enum MeetingAnalysisReducer {
                     + HindiText.lowercaseFirst(ownTitle) + ", and " + other + " will "
                     + HindiText.lowercaseFirst(otherTitle) + ".",
                 evidence: uniqueEvidence(revised[ownIndex].evidence + revised[otherIndex].evidence))
-            return (revised, decision)
+            return (revised, decision, Set(proposal.map(\.id)))
         }
         return nil
     }
