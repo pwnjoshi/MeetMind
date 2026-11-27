@@ -360,7 +360,10 @@ public final class LiveRecordingViewModel {
                             validationCode: "recording_start_failed"
                         )
                     } else {
-                        try? recoveryStore.recordFailure(meetingID: meetingId, code: "recording_start_failed")
+                        // No audio was written, so there is nothing to recover. Keeping the record
+                        // made the next launch show "An interrupted recording needs attention" with a
+                        // missing audio file, e.g. after a denied microphone permission.
+                        try? recoveryStore.remove(meetingID: meetingId)
                     }
                     throw error
                 }

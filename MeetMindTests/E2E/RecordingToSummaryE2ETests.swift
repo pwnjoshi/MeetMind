@@ -30,5 +30,7 @@ final class RecordingToSummaryE2ETests: XCTestCase {
         recording.startSession()
         do { try await recording.waitUntilRecordingStarted(); XCTFail("Must report denied permission") }
         catch { XCTAssertFalse(recording.isRecording); XCTAssertNotNil(recording.errorMessage) }
+        // A start that never wrote audio leaves nothing to recover on the next launch.
+        XCTAssertNil(try RecordingTakeJournalStore.live().load(meetingID: recording.meetingId))
     }
 }
