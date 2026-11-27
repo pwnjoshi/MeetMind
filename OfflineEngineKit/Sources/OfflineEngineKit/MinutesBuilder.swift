@@ -99,7 +99,7 @@ enum MinutesBuilder {
     /// Generated headings need a concrete subject. Written agendas use their own path.
     static func isUsefulGeneratedTopic(_ title: String) -> Bool {
         let generic = #"(?i)^\W*(?:(?:agenda to|we are|we need to|whether|if)\b|(?:(?:discuss|review|work on|proceed with)\s+)?(?:the\s+)?(?:code|ui|backend|technical|development|model|work|task)\s+(?:part|stuff|things?)\W*$)"#
-        return MinutesComposer.words(title).subtracting(["if", "we", "it", "they", "that", "this"]).count >= 2
+        return !MinutesComposer.words(title).subtracting(["if", "we", "it", "they", "that", "this"]).isEmpty
             && !MinutesRegex.matches(generic, in: title)
     }
 
