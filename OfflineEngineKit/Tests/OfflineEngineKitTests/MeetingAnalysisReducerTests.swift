@@ -156,6 +156,33 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(Set(reduced.tasks.first?.evidence.map(\.turnID) ?? []), ["t1", "t3"])
     }
 
+    func testAllocationRequiresConfirmationOfBothDeliverables() {
+        let lines = [
+            "I should be allocated the UI part.",
+            "And Garima should be allocated this backend part because I have been on it.",
+            "Okay, that works. You can do the UI part as you said.",
+            "Garima will be doing the model finding part."
+        ]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index * 5),
+                         end: Double(index * 5 + 4), speaker: index < 2 ? "S2" : "S1")
+        }
+        let analysis = LocalAnalysisResult(discussion: [], decisions: [], tasks: [
+            SuggestedTask(title: "Handle the UI part", category: "", owner: nil, deadlineText: nil,
+                          priority: nil, evidence: [SourceEvidence(turnID: "t2", quote: lines[2])]),
+            SuggestedTask(title: "Handle model finding part", category: "", owner: "Garima", deadlineText: nil,
+                          priority: nil, evidence: [SourceEvidence(turnID: "t3", quote: lines[3])])
+        ])
+        let names = ["S2": "Aditya"]
+        let confirmed = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: [analysis]),
+            participants: ["Aditya", "Garima"], speakerNames: names)
+        XCTAssertTrue(confirmed.decisions.contains { $0.text.contains("agreed to reassign") })
+        XCTAssertTrue(confirmed.tasks.contains { $0.owner == "Aditya" && $0.title.contains("UI") })
+        let partial = MeetingAnalysisReducer.reduce(checkpoint(turns: Array(turns.dropLast()), analysis: [analysis]),
+            participants: ["Aditya", "Garima"], speakerNames: names)
+        XCTAssertFalse(partial.decisions.contains { $0.text.contains("agreed to reassign") })
+    }
+
     func testLaterReferentialHandoffAcrossChunksNeedsUniqueDeliverable() {
         let first = AnalysisTurn(id: "report", text: "Aditya, please send the report by Friday.",
                                  start: 0, end: 3, speaker: "S1")

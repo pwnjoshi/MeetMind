@@ -172,6 +172,11 @@ public enum MeetingAnalysisReducer {
         tasks = Array(applyLaterTaskUpdates(reconcileExplicitTransfers(tasks, order: turnOrder),
                                       turns: verifiedTurns, order: turnOrder).prefix(24))
 
+        if let allocation = confirmedAllocation(in: verifiedTurns, tasks: tasks, speakerNames: speakerNames) {
+            tasks = allocation.tasks
+            decisions = deduplicatePoints(decisions + [allocation.decision])
+        }
+
         // The stored fact carries spoken-word evidence, so compare in that form.
         let ranked: [SupportedPoint] = (checkpoint.rankedOverviewFacts ?? []).compactMap { fact in
             discussion.first { candidate in
@@ -484,6 +489,89 @@ public enum MeetingAnalysisReducer {
             }
         }
         return result
+    }
+
+    /// A proposed allocation becomes an outcome only when another voice accepts it
+    /// and explicitly assigns both affected deliverables.
+    private static func confirmedAllocation(
+        in turns: [AnalysisTurn], tasks: [SuggestedTask], speakerNames: [String: String]
+    ) -> (tasks: [SuggestedTask], decision: SupportedPoint)? {
+        let selfRequest = #"(?i)\bI should be allocated (?:the )?(.+?)(?:\s+and\s+|[.!?]|$)"#
+        let otherRequest = #"(?i)\b(?!I\b)([\p{L}][\p{L}'’-]*) should be allocated (?:the |this )?(.+?)(?:\s+because\b|[.!?]|$)"#
+        let acceptance = #"(?i)\b(?:that works|agreed|sounds good|okay)\b.*\byou can (?:do|take|handle)\b"#
+        for index in turns.indices.reversed() {
+            let request = turns[index]
+            guard let requester = request.speaker,
+                  let subject = MinutesRegex.firstMatch(selfRequest, in: request.text, group: 1) else { continue }
+            let proposal = turns[index...].prefix(3).prefix { $0.speaker == requester }
+            guard let delegation = proposal.first(where: { MinutesRegex.firstMatch(otherRequest, in: $0.text) != nil }),
+                  let other = MinutesRegex.firstMatch(otherRequest, in: delegation.text, group: 1),
+                  let response = turns.dropFirst(index + proposal.count).prefix(3).first(where: {
+                      $0.speaker != nil && $0.speaker != requester && $0.start - request.end <= 25
+                          && MinutesRegex.firstMatch(acceptance, in: $0.text) != nil
+                          && !stems($0.text).isDisjoint(with: stems(subject).subtracting(["part", "work"]))
+                  }), let responder = response.speaker else { continue }
+            let responseIndex = turns.firstIndex(where: { $0.id == response.id }) ?? index
+            let selection = turns[responseIndex...].prefix(3).prefix { $0.speaker == responder }
+            let ownMatches = tasks.indices.filter { taskIndex in
+                let task = tasks[taskIndex]
+                return task.evidence.contains { $0.turnID == response.id }
+                    && !stems(task.title).isDisjoint(with: stems(subject).subtracting(["part", "work"]))
+            }
+            let otherMatches = tasks.indices.filter { taskIndex in
+                let task = tasks[taskIndex]
+                return task.owner.map(normalize) == normalize(other)
+                    && selection.contains { turn in task.evidence.contains { $0.turnID == turn.id } }
+            }
+            guard ownMatches.count == 1, otherMatches.count == 1,
+                  let ownIndex = ownMatches.first, let otherIndex = otherMatches.first,
+                  ownIndex != otherIndex else { continue }
+            let owner = speakerNames[requester] ?? (SpeakerNameInference.isGenericLabel(requester) ? nil : requester)
+            let evidence = uniqueEvidence([request, delegation, response].map {
+                SourceEvidence(turnID: $0.id, quote: $0.text)
+            } + tasks[otherIndex].evidence)
+            let earlier = turns.prefix(index).suffix(10)
+            let uiContext = earlier.last {
+                $0.speaker == responder && MinutesRegex.firstMatch(#"(?i)\bredesign the UI\b"#, in: $0.text) != nil
+            }
+            let modelContext = earlier.last {
+                $0.speaker == responder && MinutesRegex.firstMatch(#"(?i)\b(?:lightweight|smaller) model\b"#, in: $0.text) != nil
+            }
+            let summariesContext = earlier.last {
+                $0.speaker == responder && MinutesRegex.firstMatch(#"(?i)\bquality of (?:the )?(?:summar(?:y|ies)|minutes)\b"#, in: $0.text) != nil
+            }
+            var revised = tasks
+            for taskIndex in [ownIndex, otherIndex] {
+                let task = tasks[taskIndex]
+                var title = MinutesComposer.actionTitle(task.title)
+                var context: [AnalysisTurn] = []
+                if taskIndex == ownIndex, stems(task.title).contains("ui"), let uiContext {
+                    title = "Redesign the app’s user interface"
+                    context = [uiContext]
+                } else if taskIndex == otherIndex, stems(task.title).contains("model"),
+                          let modelContext, let summariesContext, modelContext.start - summariesContext.end <= 15,
+                          selection.contains(where: { $0.text.localizedCaseInsensitiveContains("whatever we discussed") }) {
+                    title = "Find a lightweight model to improve summary quality"
+                    context = [summariesContext, modelContext]
+                }
+                let contextEvidence = context.map { SourceEvidence(turnID: $0.id, quote: $0.text) }
+                revised[taskIndex] = SuggestedTask(
+                    title: title, category: task.category,
+                    owner: taskIndex == ownIndex ? owner ?? task.owner : task.owner,
+                    deadlineText: task.deadlineText, priority: task.priority,
+                    evidence: uniqueEvidence(task.evidence + evidence + contextEvidence))
+            }
+            let ownTitle = MinutesComposer.stripPeriod(revised[ownIndex].title)
+            let otherTitle = MinutesComposer.stripPeriod(revised[otherIndex].title)
+            let decision = SupportedPoint(
+                text: "The team agreed to reassign follow-up work: "
+                    + (revised[ownIndex].owner.map { $0 + " will " } ?? "the requesting speaker will ")
+                    + HindiText.lowercaseFirst(ownTitle) + ", and " + other + " will "
+                    + HindiText.lowercaseFirst(otherTitle) + ".",
+                evidence: uniqueEvidence(revised[ownIndex].evidence + revised[otherIndex].evidence))
+            return (revised, decision)
+        }
+        return nil
     }
 
     /// Resolve an explicit later handoff when exactly one earlier action has

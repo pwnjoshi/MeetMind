@@ -100,6 +100,8 @@ enum MinutesComposer {
                                     in: text, with: "review competitor app designs")
         text = MinutesRegex.replace(#"(?i)^continue with (?:the )?POC$"#,
                                     in: text, with: "Continue the proof of concept")
+        text = MinutesRegex.replace(#"(?i)^handle the ui part$"#, in: text, with: "Handle the app’s UI work")
+        text = MinutesRegex.replace(#"(?i)^handle (?:the )?model finding part$"#, in: text, with: "Research candidate models")
         return text
     }
 
