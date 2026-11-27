@@ -17,6 +17,15 @@ final class SpeechRegionPlannerTests: XCTestCase {
         return result
     }
 
+    func testMissingIntervalsUseCoverageAndIgnoreShortPauses() {
+        let region = SpeechRegion(start: 0, end: 25)
+        let covered = [SpeechRegion(start: 14, end: 16), SpeechRegion(start: 1, end: 5),
+                       SpeechRegion(start: 4, end: 7), SpeechRegion(start: 17, end: 19)]
+        XCTAssertEqual(SpeechRegionPlanner.missingIntervals(in: region, covered: covered),
+                       [SpeechRegion(start: 7, end: 14), SpeechRegion(start: 19, end: 25)])
+        XCTAssertTrue(SpeechRegionPlanner.missingIntervals(in: region, covered: []).isEmpty)
+    }
+
     func testFrameEnergiesIsRMSWithShortLastFrame() {
         let samples = [Float](repeating: 0.5, count: 2_500)
         let result = SpeechRegionPlanner.frameEnergies(samples, frameLength: 1_000)

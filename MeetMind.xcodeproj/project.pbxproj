@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00C0B32CEE000100000001 /* RecordingRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0B42CEE000100000001 /* RecordingRecoveryTests.swift */; };
+		1A00C00D2CEE000100000001 /* ConnectivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00E2CEE000100000001 /* ConnectivityMonitor.swift */; };
+		1A00C00F2CEE000100000001 /* RecordingRecoveryCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0102CEE000100000001 /* RecordingRecoveryCoordinator.swift */; };
+		1A00C0132CEE000100000001 /* RecordingTakeJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0142CEE000100000001 /* RecordingTakeJournal.swift */; };
+		1A00C05E2CEE000100000001 /* ModelDownloadUXTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C05F2CEE000100000001 /* ModelDownloadUXTests.swift */; };
 		1A00C0092CEE000100000001 /* MinutesSendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C00A2CEE000100000001 /* MinutesSendSheet.swift */; };
 		1A00C0052CEE000100000001 /* VidurLatencyProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0062CEE000100000001 /* VidurLatencyProbe.swift */; };
 		1A00C0072CEE000100000001 /* VidurChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B00C0082CEE000100000001 /* VidurChatModels.swift */; };
@@ -345,6 +350,11 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1B00C0B42CEE000100000001 /* RecordingRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Services/RecordingRecoveryTests.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C00E2CEE000100000001 /* ConnectivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Connectivity/ConnectivityMonitor.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0102CEE000100000001 /* RecordingRecoveryCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/RecordingRecovery/RecordingRecoveryCoordinator.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C0142CEE000100000001 /* RecordingTakeJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/RecordingRecovery/RecordingTakeJournal.swift"; sourceTree = SOURCE_ROOT; };
+		1B00C05F2CEE000100000001 /* ModelDownloadUXTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMindTests/Services/ModelDownloadUXTests.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C00A2CEE000100000001 /* MinutesSendSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Detail/Share/MinutesSendSheet.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0062CEE000100000001 /* VidurLatencyProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Services/Vidur/VidurLatencyProbe.swift"; sourceTree = SOURCE_ROOT; };
 		1B00C0082CEE000100000001 /* VidurChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetMind/Views/Vidur/VidurChatModels.swift"; sourceTree = SOURCE_ROOT; };
@@ -706,6 +716,9 @@
 		1D0000032CEE000100000001 /* MeetMind */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C00E2CEE000100000001 /* ConnectivityMonitor.swift */,
+				1B00C0102CEE000100000001 /* RecordingRecoveryCoordinator.swift */,
+				1B00C0142CEE000100000001 /* RecordingTakeJournal.swift */,
 				1B00C00A2CEE000100000001 /* MinutesSendSheet.swift */,
 				1B00C0062CEE000100000001 /* VidurLatencyProbe.swift */,
 				1B00C0082CEE000100000001 /* VidurChatModels.swift */,
@@ -998,6 +1011,8 @@
 		1D0000042CEE000100000001 /* MeetMindTests */ = {
 			isa = PBXGroup;
 			children = (
+				1B00C0B42CEE000100000001 /* RecordingRecoveryTests.swift */,
+				1B00C05F2CEE000100000001 /* ModelDownloadUXTests.swift */,
 				1B00C0BB2CEE000100000001 /* SpeakerVoiceNamingTests.swift */,
 				1B00C0AF2CEE000100000001 /* LiveCaptionLanguageArbiterTests.swift */,
 				1B00C0C22CEE000100000001 /* AgendaPointsTests.swift */,
@@ -1343,6 +1358,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C00D2CEE000100000001 /* ConnectivityMonitor.swift in Sources */,
+				1A00C00F2CEE000100000001 /* RecordingRecoveryCoordinator.swift in Sources */,
+				1A00C0132CEE000100000001 /* RecordingTakeJournal.swift in Sources */,
 				1A00C0092CEE000100000001 /* MinutesSendSheet.swift in Sources */,
 				1A00C0052CEE000100000001 /* VidurLatencyProbe.swift in Sources */,
 				1A00C0072CEE000100000001 /* VidurChatModels.swift in Sources */,
@@ -1604,6 +1622,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00C0B32CEE000100000001 /* RecordingRecoveryTests.swift in Sources */,
+				1A00C05E2CEE000100000001 /* ModelDownloadUXTests.swift in Sources */,
 				1A00C0BA2CEE000100000001 /* SpeakerVoiceNamingTests.swift in Sources */,
 				1A00C0AE2CEE000100000001 /* LiveCaptionLanguageArbiterTests.swift in Sources */,
 				1A00C0C12CEE000100000001 /* AgendaPointsTests.swift in Sources */,

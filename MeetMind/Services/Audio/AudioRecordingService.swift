@@ -101,6 +101,19 @@ public final class AudioRecordingService: NSObject, AudioRecordingServiceProtoco
     }
     
     public func startRecording(destinationURL: URL) async throws {
+        lock.lock()
+        guard internalState == .idle || internalState == .stopped else {
+            let currentState = internalState
+            lock.unlock()
+            throw AudioRecordingError.invalidState("Cannot start recording in state: \(currentState)")
+        }
+        lock.unlock()
+        // AVAudioFile(forWriting:) truncates an existing file. Refuse before
+        // requesting hardware or opening the writer; the recovery transaction
+        // owns validation and quarantine outside this real-time service.
+        guard !FileManager.default.fileExists(atPath: destinationURL.path) else {
+            throw AudioRecordingError.recoveryRequired
+        }
         guard await AVAudioApplication.requestRecordPermission() else {
             throw AudioRecordingError.permissionDenied
         }

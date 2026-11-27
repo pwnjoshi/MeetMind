@@ -1,5 +1,7 @@
 # Manent Support
 
+> **SUBMISSION BLOCKER:** Replace `<SUPPORT EMAIL>` before hosting this page or submitting its URL to App Store Connect.
+
 Contact: `<SUPPORT EMAIL>` (replies within a few working days). Please do not email meeting audio or minutes. Manent never uploads them, and we cannot recover them for you.
 
 When you write, include: iPhone model, iOS version, Manent version (Settings > About and Licences), what you did, and what you expected.
@@ -26,16 +28,16 @@ Check Wi-Fi and free storage (the minutes model needs about 1.3 GB plus working 
 The language model runs on the phone and is small, so it can make mistakes. Open the meeting and correct the minutes before sharing. Speaking clearly, one person at a time, and recording close to the speakers helps. Hindi, English and mixed Hindi-English are supported.
 
 **Analysis is slow or the phone gets warm.**
-Long meetings take several minutes, and older iPhones are slower. Keep Manent open or let it finish in the background. Plug in for long meetings.
+Long meetings take several minutes, and older iPhones are slower. Keep Manent open for the most predictable progress. Analysis may continue when iOS grants background processing time, but iOS can suspend it; reopening Manent resumes saved work. Force-quitting stops analysis. Plug in for long meetings.
 
 **Recording stopped when I locked my phone or took a call.**
-Manent records in the background, but a phone call, another app that takes over the microphone, or low battery mode can interrupt recording. The audio captured so far is kept.
+Manent can keep recording while it remains active in the background, but a force-quit stops recording. A phone call, another app that takes over the microphone, or low battery mode can also interrupt recording. The audio captured so far is kept.
 
 **Live captions do not appear.**
 Allow Speech Recognition in iOS Settings > Manent. Captions use Apple's on-device recognizer, which needs the language available on your iPhone.
 
 **Calendar, Reminders or Camera do not work.**
-These are optional. Turn them on in iOS Settings > Manent.
+These are optional. Turn them on in iOS Settings > Manent. Calendar access only writes follow-up events you request; Manent does not read upcoming Calendar events. Reminders access exports selected actions and sends later completion updates from Manent; it does not import completion from Reminders.
 
 **How do I delete everything?**
 Settings (Profile) > Delete All Data. Or delete the app.

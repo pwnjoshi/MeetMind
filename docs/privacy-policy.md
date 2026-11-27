@@ -1,10 +1,12 @@
 # Manent Privacy Policy
 
+> **SUBMISSION BLOCKER:** This policy is a template until the owner replaces `<DATE>`, `<YOUR NAME OR COMPANY>` and `<SUPPORT EMAIL>`. Do not host or submit this placeholder version as the production privacy policy.
+
 Effective date: `<DATE>`
 Developer: `<YOUR NAME OR COMPANY>`
 Contact: `<SUPPORT EMAIL>`
 
-Manent is an iPhone and iPad app that records meetings and writes minutes. It is built to keep your meeting content on your device.
+Manent is an iPhone app that records meetings and writes minutes. It is built to keep your meeting content on your device.
 
 ## The short version
 
@@ -15,7 +17,7 @@ Manent is an iPhone and iPad app that records meetings and writes minutes. It is
 
 ## What Manent stores on your device
 
-Manent stores the following in its private app storage on your iPhone or iPad:
+Manent stores the following in its private app storage on your iPhone:
 
 - Audio recordings of the meetings you record or import.
 - Transcripts, speaker labels, minutes, decisions, action items and notes.
@@ -32,7 +34,7 @@ This data is not uploaded by Manent. Manent has no iCloud sync. If you back up y
 - Live captions use Apple's speech recognition set to on-device mode. Audio is not sent to Apple for this.
 - Transcription after a meeting uses OpenAI Whisper models running on your device.
 - Speaker separation uses models running on your device.
-- Minutes and Vidur answers are written by a language model (Qwen3) running on your device.
+- Minutes and Vidur answers are written by Qwen3 1.7B running on your device.
 
 ## Network use
 
@@ -48,13 +50,13 @@ Manent asks for these only when needed. You can change them any time in iOS Sett
 |---|---|---|
 | Microphone | Recording meetings | Yes, to record |
 | Speech Recognition | On-device live captions while you record | Optional |
-| Calendars (full access) | Showing upcoming meetings, adding follow-up events you ask for | Optional |
-| Reminders (full access) | Exporting action items you choose and syncing their completed state | Optional |
+| Calendars (full access) | Writing a follow-up event only when you ask; Manent does not read or show upcoming Calendar events | Optional |
+| Reminders (full access) | Exporting selected Manent action items and sending later Manent completion updates to those exported reminders; Manent does not import reminder completion into the app | Optional |
 | Camera | Photographing a whiteboard or slide to attach to a meeting | Optional |
 | Photos | Attaching photos you pick to meeting notes or your letterhead | Optional |
 | Notifications | Reminders about meetings and finished analysis | Optional |
 
-Manent keeps recording when the screen locks or you switch apps (background audio), and finishes analysis in the background (background processing). iOS shows its recording indicator while the microphone is in use.
+Manent keeps recording when the screen locks or you switch apps (background audio). Analysis may continue in the background when iOS grants processing time, but iOS can suspend it; reopening Manent resumes saved work. Force-quitting Manent stops recording and analysis. iOS shows its recording indicator while the microphone is in use.
 
 ## Recording other people
 

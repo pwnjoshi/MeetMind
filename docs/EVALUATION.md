@@ -148,9 +148,9 @@ It runs the same transcription, speaker separation and minutes code as the app's
 | `MeetMind/Services/Evaluation/` | On-device runner and hidden launch view |
 | `OfflineEngineKit/.../Evaluation/MeetingEvaluation.swift` | Pipeline run, memory sampler, result format |
 
-## Automatic evaluation on every build (simulator, synthetic meetings)
+## Manual full evaluation (simulator, synthetic meetings)
 
-`.github/workflows/eval.yml` builds the app for the iOS Simulator, installs the three analysis models, speaks eight synthetic meetings with macOS `say`, runs `--offline-evaluation` in the simulator, scores the results and writes the report to the job summary and the `offline-evaluation-report` artifact. It runs on manual dispatch and on pushes to `codex/complete-offline-meeting-flow`. It is a separate workflow, so a failure never blocks the IPA build.
+`.github/workflows/eval.yml` builds the app for the iOS Simulator, installs the three analysis models, speaks eight synthetic meetings with macOS `say`, runs `--offline-evaluation` in the simulator, scores the results and writes the report to the job summary and the `offline-evaluation-report` artifact. Run it manually with workflow dispatch. It does not run on every push and does not block the IPA build.
 
 | File | Purpose |
 |---|---|

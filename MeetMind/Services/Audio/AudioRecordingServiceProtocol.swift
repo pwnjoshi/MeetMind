@@ -39,6 +39,7 @@ public enum AudioRecordingError: LocalizedError, Sendable, Equatable {
     case engineStartFailed(String)
     case inputNodeUnavailable
     case fileCreationFailed(String)
+    case recoveryRequired
     case invalidState(String)
     case recordingFailed(String)
     
@@ -54,6 +55,8 @@ public enum AudioRecordingError: LocalizedError, Sendable, Equatable {
             return "Audio input node is not available on this device."
         case .fileCreationFailed(let reason):
             return "Could not create destination audio file: \(reason)"
+        case .recoveryRequired:
+            return "An earlier recording is still safe on this iPhone and must be recovered before recording again."
         case .invalidState(let reason):
             return "Invalid recording state operation: \(reason)"
         case .recordingFailed(let reason):

@@ -247,6 +247,10 @@ public final class Meeting: Identifiable {
     @Relationship(deleteRule: .nullify, inverse: \Tag.meetings)
     public var tags: [Tag]
     
+    /// Finalized live recognition retained as comparison evidence for this recording.
+    /// The saved transcript and its edits are stored separately.
+    public var liveCaptionEvidenceData: Data? = nil
+
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     public var transcriptSegments: [TranscriptSegment]
     

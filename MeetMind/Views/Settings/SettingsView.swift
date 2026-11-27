@@ -517,45 +517,61 @@ struct ProfileEditorView: View {
 struct OfflineAnalysisModelsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var profiles: [ModelProfile] = []
-    @State private var installed = Set<String>()
+    @State private var readiness: [String: ModelReadiness] = [:]
     @State private var operation: Task<Void, Never>?
-    @State private var busy = false
-    @State private var progress = 0.0
+    @State private var activeModelID: String?
+    @State private var progressByModel: [String: Double] = [:]
     @State private var message = ""
+    @State private var connectivity = ConnectivityMonitor.shared
+    @State private var pendingCellularDownload: ModelProfile?
+    @State private var pendingDelete: ModelProfile?
 
     var body: some View {
         List {
             Section {
-                Text("Meeting audio, transcripts, and analysis stay on this iPhone. Internet is needed only to download public model files. Keep the app open during downloads and meeting analysis.")
+                Text("Models run privately on this iPhone. Downloads are foreground-only; if iOS pauses one, verified chunks resume when you tap Resume.")
                     .font(.footnote).foregroundStyle(.secondary)
+                if connectivity.snapshot.kind == .offline {
+                    Label("Connect to the internet to download or repair models.", systemImage: "wifi.slash")
+                        .foregroundStyle(.secondary)
+                }
+                if connectivity.snapshot.isConstrained {
+                    Text("Low Data Mode is on. iOS may pause large downloads, but completed verified chunks are kept.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Text("Hindi–English accuracy is still being evaluated. Review generated tasks and source quotes before accepting them.")
                     .font(.footnote).foregroundStyle(.secondary)
-                if !message.isEmpty { Text(message) }
-                if busy {
-                    ProgressView(value: progress)
-                    Button("Pause download") { operation?.cancel() }
-                }
+                if !message.isEmpty { Text(message).font(.footnote) }
             }
             ForEach(profiles) { profile in
-                Section(profile.name) {
-                    LabeledContent("Download size", value: ByteCountFormatter.string(fromByteCount: profile.downloadBytes, countStyle: .file))
-                    LabeledContent("Status", value: installed.contains(profile.id) ? "Downloaded" : "Not downloaded")
-                    Button(installed.contains(profile.id) ? "Verify or repair model" : "Download model") {
-                        perform {
-                            try await OfflineModelStore.shared.install(profile) { value in
-                                Task { @MainActor in progress = value }
-                            }
-                            message = "Model verified and ready."
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(modelTitle(profile)).font(.headline)
+                            Spacer()
+                            Text(statusText(profile)).font(.subheadline).foregroundStyle(statusColor(profile))
                         }
-                    }.disabled(busy)
-                    if installed.contains(profile.id) {
-                        Button("Remove model download", role: .destructive) {
-                            perform {
-                                try await OfflineModelStore.shared.remove(profile)
-                                message = "Model removed. Saved recordings and results are preserved. Download it again before analyzing another meeting."
+                        Text(modelPurpose(profile)).font(.subheadline).foregroundStyle(.secondary)
+                        LabeledContent("Size", value: formattedBytes(profile.downloadBytes))
+                        if activeModelID == profile.id {
+                            ProgressView(value: progressByModel[profile.id] ?? 0)
+                            Text("\(Int(((progressByModel[profile.id] ?? 0) * 100).rounded()))%")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Button(primaryActionTitle(profile)) {
+                                if activeModelID == profile.id { operation?.cancel() }
+                                else { requestDownload(profile) }
                             }
-                        }.disabled(busy)
+                            .disabled(activeModelID != nil && activeModelID != profile.id)
+                            if canDelete(profile) {
+                                Spacer()
+                                Button("Delete", role: .destructive) { pendingDelete = profile }
+                                    .disabled(activeModelID != nil)
+                            }
+                        }
                     }
+                    .padding(.vertical, 4)
                 }
             }
             NavigationLink("Model licenses") {
@@ -571,29 +587,167 @@ struct OfflineAnalysisModelsView: View {
                 await refresh()
             } catch { message = error.localizedDescription }
         }
+        .alert("Download \(formattedBytes(pendingCellularDownload?.downloadBytes ?? 0)) using cellular data?", isPresented: Binding(
+            get: { pendingCellularDownload != nil },
+            set: { if !$0 { pendingCellularDownload = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { pendingCellularDownload = nil }
+            Button("Download") {
+                if let profile = pendingCellularDownload { performDownload(profile) }
+                pendingCellularDownload = nil
+            }
+        } message: {
+            Text("Carrier charges may apply. The download starts only after you confirm.")
+        }
+        .confirmationDialog("Delete required model?", isPresented: Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        ), titleVisibility: .visible) {
+            Button("Delete Model", role: .destructive) {
+                if let profile = pendingDelete { delete(profile) }
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text("Future analysis will need this model again. Existing meetings keep their audio, transcripts, and minutes.")
+        }
         .onDisappear { operation?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { operation?.cancel() } }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { operation?.cancel() }
+        }
+    }
+
+    private func modelTitle(_ profile: ModelProfile) -> String {
+        ModelDownloadProgressAccumulator.friendlyName(for: profile.id)
+    }
+
+    private func modelPurpose(_ profile: ModelProfile) -> String {
+        switch profile.id {
+        case "whisper-large": return "Transcript"
+        case "diarization": return "Speakers"
+        default: return "Minutes & Vidur"
+        }
+    }
+
+    private func formattedBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private func statusText(_ profile: ModelProfile) -> String {
+        if activeModelID == profile.id { return "Downloading"
+        }
+        switch readiness[profile.id] ?? .absent {
+        case .absent: return "Needed"
+        case .downloading: return "Downloading"
+        case .verifying: return "Verifying"
+        case .ready: return "Installed"
+        case .corrupt: return "Repair needed"
+        case .incompatible: return "Update needed"
+        }
+    }
+
+    private func statusColor(_ profile: ModelProfile) -> Color {
+        switch readiness[profile.id] ?? .absent {
+        case .ready: return .green
+        case .corrupt, .incompatible: return .orange
+        default: return .secondary
+        }
+    }
+
+    private func primaryActionTitle(_ profile: ModelProfile) -> String {
+        if activeModelID == profile.id { return "Pause" }
+        switch readiness[profile.id] ?? .absent {
+        case .ready: return "Verify"
+        case .corrupt, .incompatible: return "Repair"
+        default:
+            if connectivity.snapshot.kind == .offline { return "Retry" }
+            return (progressByModel[profile.id] ?? 0) > 0 ? "Resume" : "Download"
+        }
+    }
+
+    private func canDelete(_ profile: ModelProfile) -> Bool {
+        switch readiness[profile.id] ?? .absent {
+        case .ready, .corrupt, .incompatible: return true
+        default: return false
+        }
     }
 
     private func refresh() async {
-        var ready = Set<String>()
-        for profile in profiles {
-            if await OfflineModelStore.shared.isInstalled(profile) { ready.insert(profile.id) }
-        }
-        installed = ready
+        var states: [String: ModelReadiness] = [:]
+        for profile in profiles { states[profile.id] = await OfflineModelStore.shared.readiness(profile) }
+        readiness = states
     }
 
-    private func perform(_ action: @escaping @MainActor () async throws -> Void) {
-        guard !busy else { return }
-        busy = true
-        progress = 0
+    private func requestDownload(_ profile: ModelProfile) {
+        guard activeModelID == nil else { return }
+        if readiness[profile.id] == .ready {
+            performVerification(profile)
+            return
+        }
+        operation = Task { @MainActor in
+            do {
+                let capacity = try await OfflineModelStore.shared.storageCapacity(for: [profile])
+                guard capacity.hasEnoughSpace else {
+                    message = "Not enough storage. Free exactly \(formattedBytes(capacity.shortageBytes)); \(formattedBytes(capacity.availableBytes)) is currently available."
+                    return
+                }
+                switch DownloadAccessPolicy.decision(for: profile.downloadBytes, connectivity: connectivity.snapshot) {
+                case .offline:
+                    message = "Connect to the internet, then tap Retry. Partial downloads are saved."
+                case .confirmCellular:
+                    pendingCellularDownload = profile
+                case .allow:
+                    performDownload(profile)
+                }
+            } catch { message = error.localizedDescription }
+        }
+    }
+
+    private func performVerification(_ profile: ModelProfile) {
+        operation = Task { @MainActor in
+            message = "Verifying \(modelTitle(profile))…"
+            await refresh()
+            message = readiness[profile.id] == .ready ? "Model verified and ready." : "This model needs repair."
+        }
+    }
+
+    private func performDownload(_ profile: ModelProfile) {
+        guard activeModelID == nil else { return }
+        activeModelID = profile.id
         message = ""
         UIApplication.shared.isIdleTimerDisabled = true
         operation = Task { @MainActor in
-            defer { busy = false; UIApplication.shared.isIdleTimerDisabled = false }
-            do { try await action() }
-            catch is CancellationError { message = "Paused. Completed download chunks are saved; tap Download to resume." }
-            catch { message = error.localizedDescription }
+            defer { activeModelID = nil; UIApplication.shared.isIdleTimerDisabled = false }
+            do {
+                switch readiness[profile.id] ?? .absent {
+                case .corrupt, .incompatible:
+                    try await OfflineModelStore.shared.repair(profile) { value in
+                        Task { @MainActor in progressByModel[profile.id] = max(progressByModel[profile.id] ?? 0, value) }
+                    }
+                default:
+                    try await OfflineModelStore.shared.install(profile) { value in
+                        Task { @MainActor in progressByModel[profile.id] = max(progressByModel[profile.id] ?? 0, value) }
+                    }
+                }
+                message = "Model verified and ready."
+            } catch is CancellationError {
+                message = "Paused. Verified download chunks are saved; tap Resume while MeetMind is open."
+            } catch {
+                message = connectivity.snapshot.kind == .offline
+                    ? "Connect to the internet, then tap Retry. Partial downloads are saved."
+                    : error.localizedDescription
+            }
+            await refresh()
+        }
+    }
+
+    private func delete(_ profile: ModelProfile) {
+        operation = Task { @MainActor in
+            do {
+                try await OfflineModelStore.shared.remove(profile)
+                progressByModel[profile.id] = nil
+                message = "Model deleted. Existing meetings kept their audio, transcripts, and minutes."
+            } catch { message = error.localizedDescription }
             await refresh()
         }
     }

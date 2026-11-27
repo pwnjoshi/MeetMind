@@ -19,6 +19,10 @@ public protocol AnalysisPipelineRunning: Sendable {
              model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
              participants: [String], agenda: String?,
              progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint
+    func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String?,
+             model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
+             participants: [String], agenda: String?, liveCaptionEvidence: [AnalysisTurn],
+             progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint
     func savedCheckpoint(meetingID: UUID) async -> MeetingAnalysisCheckpoint?
     func speakerWarning() async -> String?
     func analysisReuseCounts() async -> (reused: Int, analyzed: Int)
@@ -30,6 +34,15 @@ extension AnalysisPipelineRunning {
     public func stageTimings() async -> AnalysisStageTimings { AnalysisStageTimings() }
     public func analysisReuseCounts() async -> (reused: Int, analyzed: Int) { (0, 0) }
     public func analysisFallbackSummary() async -> (chunks: Int, reason: String?) { (0, nil) }
+
+    public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String?,
+                    model: VidurModel, stopAfterSpeakers: Bool, reviewedTurns: [AnalysisTurn],
+                    participants: [String], agenda: String?, liveCaptionEvidence: [AnalysisTurn],
+                    progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
+        try await run(meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: timezone,
+                      languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
+                      reviewedTurns: reviewedTurns, participants: participants, agenda: agenda, progress: progress)
+    }
 
     /// Conformers that predate participant/agenda context still work; the
     /// extra context only improves owner resolution in the real pipeline.
@@ -216,20 +229,31 @@ public final class AnalysisCoordinator {
             AnalysisTurn(id: $0.id.uuidString, text: $0.text, start: $0.startTime,
                          end: $0.endTime, speaker: $0.speaker?.recordingVoiceLabel ?? $0.speaker?.name)
         } : []
+        let liveEvidence = meeting.liveCaptionEvidenceData
+            .flatMap { try? JSONDecoder().decode([LiveTranscriptSegment].self, from: $0) } ?? []
+        let liveCaptionEvidence = liveEvidence.enumerated().map { index, phrase in
+            AnalysisTurn(id: "live-caption-\(index)", text: phrase.text,
+                         start: phrase.startTime, end: phrase.endTime, speaker: nil)
+        }
+        let pendingCorrections = reviewedTurns.isEmpty ? nil : Self.unreviewedCorrections(
+            from: meeting.offlineAnalysisData, segments: existing)
         do {
             let runStarted = Date()
             OfflineProcessingGate.begin()
             defer { OfflineProcessingGate.end() }
-            let result = try await pipeline.run(meetingID: meetingID, audio: audio,
+            var result = try await pipeline.run(meetingID: meetingID, audio: audio,
                 meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
                 timezone: meeting.analysisTimezone ?? TimeZone.current.identifier,
                 languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
                 reviewedTurns: reviewedTurns,
                 participants: meeting.namedAttendees.map(\.name),
-                agenda: meeting.agendaText) { [weak self] stage in
+                agenda: meeting.agendaText, liveCaptionEvidence: liveCaptionEvidence) { [weak self] stage in
                     await self?.reached(stage, meetingID: meetingID, lease: lease, progress: progress)
                 }
             try Task.checkCancellation()
+            if !reviewedTurns.isEmpty {
+                result.transcriptCorrections = pendingCorrections
+            }
             if reviewedTurns.isEmpty {
                 // Known voices are named before the transcript is rebuilt, so the names carry through.
                 await SpeakerVoiceNaming.apply(result, to: meeting, context: context)
@@ -237,6 +261,9 @@ public final class AnalysisCoordinator {
             }
             let warning = await pipeline.speakerWarning()
             if stopAfterSpeakers {
+                if result.transcriptCorrections?.isEmpty == false {
+                    meeting.offlineAnalysisData = try JSONEncoder().encode(result.withoutVoiceEmbeddings())
+                }
                 meeting.analysisState = "speakerReview"
                 try context.save()
                 try await jobs.transition(lease, state: .speakerReview, stage: .speakers, warning: warning)
@@ -367,6 +394,16 @@ public final class AnalysisCoordinator {
     }
 
     /// The minutes text derived from a completed checkpoint, shared by the final pass and repairs.
+    private static func unreviewedCorrections(from data: Data?, segments: [TranscriptSegment]) -> [TranscriptCorrection]? {
+        let edited = segments.filter(\.isEdited)
+        let checkpoint = data.flatMap { try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: $0) }
+        return checkpoint?.transcriptCorrections?.filter { correction in
+                !edited.contains {
+                    abs($0.startTime - correction.start) < 0.01 && abs($0.endTime - correction.end) < 0.01
+                }
+            }
+    }
+
     private func minutesFields(_ result: MeetingAnalysisCheckpoint, for meeting: Meeting)
         -> (reduced: ReducedMeetingAnalysis, overview: String, points: [String], decisions: [String], topicAgenda: String) {
         let speakerNames = MeetingSpeakerNames(meeting: meeting, store: MeetingRecordStore.shared).assignedLabels
@@ -378,7 +415,12 @@ public final class AnalysisCoordinator {
         let minutes = reduced.minutes
         var pointSource: [String] = []
         for topic in minutes.topics { pointSource.append(contentsOf: topic.discussion) }
-        if pointSource.isEmpty { pointSource = reduced.discussion.map(\.text) }
+        let structuredEvidence = minutes.topics.flatMap(\.evidence)
+        pointSource.append(contentsOf: reduced.discussion.filter { point in
+            !point.evidence.contains { item in
+                structuredEvidence.contains { $0.turnID == item.turnID && $0.quote == item.quote }
+            }
+        }.map(\.text))
         var decisionSource = minutes.resolutions.map(\.text)
         if decisionSource.isEmpty { decisionSource = reduced.decisions.map(\.text) }
         let overview = minutes.topics.isEmpty || minutes.executiveSummary.isEmpty
@@ -387,26 +429,69 @@ public final class AnalysisCoordinator {
         return (reduced, overview, uniqueTexts(pointSource), uniqueTexts(decisionSource), topicAgenda)
     }
 
+    public func reprocessMinutes(meetingID: UUID, model: VidurModel) async throws {
+        let meeting = try fetchMeeting(meetingID)
+        let turns = savedTurns(for: meeting)
+        let previousAnalysis = meeting.offlineAnalysisData
+        guard meeting.status == .completed, !turns.isEmpty else {
+            throw OfflineError.unavailable("A saved transcript is required to reprocess minutes.")
+        }
+        let modelProfile = try requiredProfiles(model: model, speakersOnly: false)[2]
+        guard await models.readiness(modelProfile) == .ready else {
+            throw OfflineError.unavailable("Download or repair the Minutes & Vidur model in Settings, then try again.")
+        }
+        OfflineProcessingGate.begin()
+        defer { OfflineProcessingGate.end() }
+        let corrections = Self.unreviewedCorrections(from: previousAnalysis, segments: meeting.orderedTranscriptSegments)
+        let result = try await MeetingAnalysisPipeline.shared.reprocessTranscript(
+            meetingID: meetingID, turns: turns, meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
+            timezone: meeting.analysisTimezone ?? TimeZone.current.identifier, model: model,
+            participants: meeting.namedAttendees.map(\.name), agenda: meeting.agendaText,
+            corrections: corrections)
+        try Task.checkCancellation()
+        let current = try fetchMeeting(meetingID)
+        guard current.status == .completed, current.offlineAnalysisData == previousAnalysis,
+              savedTurns(for: current) == turns else {
+            throw OfflineError.unavailable("The meeting changed while reprocessing. Open it again to retry.")
+        }
+        let fields = minutesFields(result, for: current)
+        let analysisData = try JSONEncoder().encode(fields.reduced.checkpoint)
+        let store = MeetingRecordStore.shared
+        let previousRecord = store.record(for: meetingID)
+        var updatedRecord = previousRecord
+        if !previousRecord.deciderIDs.isEmpty {
+            updatedRecord.remapDeciders(oldDecisions: current.summary?.keyDecisions ?? [], newDecisions: fields.decisions)
+        }
+        let decidersChanged = updatedRecord.deciderIDs != previousRecord.deciderIDs
+        try context.save()
+        if decidersChanged { try store.update(meetingID) { $0.deciderIDs = updatedRecord.deciderIDs } }
+        applyMinutes(overview: fields.overview, points: fields.points, decisions: fields.decisions,
+                     analysisData: analysisData, to: current)
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            if decidersChanged { try? store.update(meetingID) { $0.deciderIDs = previousRecord.deciderIDs } }
+            throw error
+        }
+    }
+
+    private func savedTurns(for meeting: Meeting) -> [AnalysisTurn] {
+        return meeting.orderedTranscriptSegments.compactMap { segment -> AnalysisTurn? in
+            guard !segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return AnalysisTurn(id: segment.id.uuidString, text: segment.text, start: segment.startTime,
+                end: segment.endTime, speaker: segment.speaker?.recordingVoiceLabel ?? segment.speaker?.name)
+        }
+    }
+
     private func commitMinutes(_ result: MeetingAnalysisCheckpoint, to meeting: Meeting) throws {
         // Names the user gave attendees let the reducer attach an owner to requests
         // ("Pawan, can you ...") and to first-person promises. Generic labels never count.
         // Topic bullets are rephrased English; a model discussion point never replaces them.
         let fields = minutesFields(result, for: meeting)
-        let reduced = fields.reduced
-        // The existing summary is updated in place. Deleting it and attaching a new one in
-        // the same change tripped a SwiftData assertion on launch-time repairs.
-        if let summary = meeting.summary, !summary.isDeleted, summary.modelContext != nil {
-            summary.executiveSummary = fields.overview
-            summary.keyPoints = fields.points
-            summary.keyDecisions = fields.decisions
-            summary.generatedAt = Date()
-        } else {
-            meeting.summary = Summary(executiveSummary: fields.overview,
-                keyPoints: fields.points, keyDecisions: fields.decisions, meeting: meeting)
-        }
-        // Tasks stay review suggestions (never auto-accepted); owner and context are preassigned in the checkpoint.
-        // Suggested attendees live in `minutes.suggestedAttendees` and are never added automatically.
-        meeting.offlineAnalysisData = try JSONEncoder().encode(reduced.checkpoint)
+        let analysisData = try JSONEncoder().encode(fields.reduced.checkpoint)
+        applyMinutes(overview: fields.overview, points: fields.points, decisions: fields.decisions,
+                     analysisData: analysisData, to: meeting)
         // An empty or placeholder agenda is filled with the topics heard in the meeting; the user can edit it later.
         let currentAgenda = (meeting.agendaText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let topicAgenda = fields.topicAgenda
@@ -417,6 +502,24 @@ public final class AnalysisCoordinator {
         } else if copiedAgenda {
             meeting.agendaText = nil
         }
+    }
+
+    private func applyMinutes(overview: String, points: [String], decisions: [String],
+                              analysisData: Data, to meeting: Meeting) {
+        // The existing summary is updated in place. Deleting it and attaching a new one in
+        // the same change tripped a SwiftData assertion on launch-time repairs.
+        if let summary = meeting.summary, !summary.isDeleted, summary.modelContext != nil {
+            summary.executiveSummary = overview
+            summary.keyPoints = points
+            summary.keyDecisions = decisions
+            summary.generatedAt = Date()
+        } else {
+            meeting.summary = Summary(executiveSummary: overview,
+                keyPoints: points, keyDecisions: decisions, meeting: meeting)
+        }
+        // Tasks stay review suggestions (never auto-accepted); owner and context are preassigned in the checkpoint.
+        // Suggested attendees live in `minutes.suggestedAttendees` and are never added automatically.
+        meeting.offlineAnalysisData = analysisData
         meeting.status = .completed
         meeting.analysisState = "completed"
         meeting.minutesNeedFinalization = true

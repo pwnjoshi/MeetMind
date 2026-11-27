@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import OfflineEngineKit
 
 /// Transcript and audio page ("B6e · Transcript"). Works pushed in a NavigationStack or in a sheet.
 public struct MeetingTranscriptScreen: View {
@@ -13,9 +14,10 @@ public struct MeetingTranscriptScreen: View {
     @AppStorage(HindiScriptPreference.key) private var hindiScript = HindiScriptStyle.devanagari.rawValue
 
     @State private var audio = TranscriptAudioController()
-    @State private var cards: [TranscriptCard] = []
+    @State private var corrections: [TranscriptCorrection] = []
     /// Speakers offered by "Change speaker". Rebuilt with the cards; row rendering must not touch SwiftData.
     @State private var speakerChoices: [Speaker] = []
+    @State private var cards: [TranscriptCard] = []
     @State private var activeCardID: UUID?
     @State private var audioAvailable = false
     @State private var isProcessing = false
@@ -23,6 +25,7 @@ public struct MeetingTranscriptScreen: View {
     @State private var query = ""
     @State private var revision = 0
     @State private var scrollHoldUntil = Date.distantPast
+    @State private var reviewingCorrection: TranscriptCorrection?
     @State private var editingCard: TranscriptCard?
     @State private var reassigningCard: TranscriptCard?
     @State private var errorMessage: String?
@@ -69,8 +72,12 @@ public struct MeetingTranscriptScreen: View {
             audioAvailable = false
         }
         .onReceive(ticker) { _ in refreshProcessing() }
-        .onChange(of: meeting?.transcriptSegments.count) { _, _ in rebuildCards() }
-        .onChange(of: meeting?.offlineAnalysisData?.count) { _, _ in rebuildCards() }
+        // Attributes only: reading the speaker relationship here would fault it on every render.
+        // Speaker changes made on this screen refresh through `revision`.
+        .onChange(of: meeting?.orderedTranscriptSegments.map {
+            TranscriptRevision(id: $0.id, text: $0.text, start: $0.startTime, end: $0.endTime)
+        }) { _, _ in rebuildCards() }
+        .onChange(of: meeting?.offlineAnalysisData) { _, _ in rebuildCards() }
         .onChange(of: revision) { _, _ in rebuildCards() }
         .onChange(of: isProcessing) { _, _ in rebuildCards() }
         .onChange(of: meeting?.audioFileURL) { _, _ in loadAudio() }
@@ -88,6 +95,23 @@ public struct MeetingTranscriptScreen: View {
                 },
                 onDismiss: { reassigningCard = nil }
             )
+        }
+        .alert("Transcript comparison", isPresented: Binding(
+            get: { reviewingCorrection != nil },
+            set: { if !$0 { reviewingCorrection = nil } }
+        )) {
+            Button("OK", role: .cancel) { reviewingCorrection = nil }
+        } message: {
+            if let correction = reviewingCorrection {
+                if let replacement = correction.replacement {
+                    Text("Original: \(correction.original)\nAudio retry: \(replacement)")
+                } else {
+                    let note = correction.contextFavorsAlternative == true
+                        ? "The surrounding conversation favors the live caption. Listen back to confirm."
+                        : "The audio retry did not confirm the alternate wording."
+                    Text("\(note)\nLive caption: \(correction.alternative)")
+                }
+            }
         }
         .alert("Couldn't save", isPresented: Binding(
             get: { errorMessage != nil },
@@ -241,6 +265,22 @@ public struct MeetingTranscriptScreen: View {
         .accessibilityAction(named: "Edit text") { if !isProcessing { editingCard = card } }
         .accessibilityAction(named: "Change speaker") { if !isProcessing { reassigningCard = card } }
         .contextMenu {
+            if let (line, correction) = correction(for: card) {
+                if correction.replacement != nil {
+                    Button("Restore original text", systemImage: "arrow.uturn.backward") {
+                        saveEdits([line.id: correction.original])
+                    }
+                    .disabled(isProcessing)
+                } else {
+                    Button("Confirm displayed wording", systemImage: "checkmark") {
+                        saveEdits([line.id: line.text], confirmUnchanged: true)
+                    }
+                    .disabled(isProcessing)
+                }
+                Button("Review transcript comparison", systemImage: "text.bubble") {
+                    reviewingCorrection = correction
+                }
+            }
             Button { editingCard = card } label: { Label("Edit text", systemImage: "pencil") }
                 .disabled(isProcessing)
             Button { reassigningCard = card } label: { Label("Change speaker", systemImage: "person.2") }
@@ -315,12 +355,23 @@ public struct MeetingTranscriptScreen: View {
 
     // MARK: Data
 
+    private struct TranscriptRevision: Equatable {
+        let id: UUID
+        let text: String
+        let start: TimeInterval
+        let end: TimeInterval
+    }
+
     private func rebuildCards() {
         guard let meeting else {
             cards = []
+            corrections = []
             speakerChoices = []
             return
         }
+        corrections = meeting.offlineAnalysisData.flatMap {
+            try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: $0)
+        }?.transcriptCorrections ?? []
         let ordered = meeting.orderedTranscriptSegments
         let refs = ordered.map {
             TranscriptSegmentRef(id: $0.id, sequenceIndex: $0.sequenceIndex, start: $0.startTime)
@@ -373,13 +424,25 @@ public struct MeetingTranscriptScreen: View {
         return result
     }
 
-    private func saveEdits(_ edits: [UUID: String]) {
+    private func correction(for card: TranscriptCard) -> (TranscriptCardLine, TranscriptCorrection)? {
+        for line in card.lines where !line.isEdited {
+            if let match = corrections.first(where: {
+                abs($0.start - line.start) < 0.01 && abs($0.end - line.end) < 0.01
+                    && ($0.replacement ?? $0.original) == line.text
+            }) {
+                return (line, match)
+            }
+        }
+        return nil
+    }
+
+    private func saveEdits(_ edits: [UUID: String], confirmUnchanged: Bool = false) {
         guard let meeting, !isProcessing else { return }
         var changed = false
         for segment in meeting.transcriptSegments {
             guard let draft = edits[segment.id] else { continue }
             let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty, trimmed != segment.text {
+            if !trimmed.isEmpty, trimmed != segment.text || (confirmUnchanged && !segment.isEdited) {
                 segment.updateText(trimmed)
                 changed = true
             }

@@ -49,9 +49,11 @@ PRIVATE BY DESIGN
 - Delete All Data in Settings removes everything Manent stored.
 
 HOW IT WORKS
-Manent uses open models that run on your iPhone: Whisper for speech recognition, a speaker-separation model, and Qwen3 for writing minutes. Their licences are listed in Settings, About and Licences. The models are large downloads (about 0.5 GB to 1.3 GB each, see Settings, Offline Analysis Models), so connect to Wi-Fi the first time. Analysis of a long meeting takes minutes and uses battery, and it is slower on older iPhones. Minutes are drafts: review them before you share them, because a small on-device model can make mistakes with names, numbers and dates.
+Manent uses open models that run on your iPhone: Whisper for speech recognition, a speaker-separation model, and Qwen3 1.7B for writing minutes and answering Vidur questions. Their licences are listed in Settings, About and Licences. The models are large downloads (about 0.5 GB to 1.3 GB each, see Settings, Offline Analysis Models), so connect to Wi-Fi the first time. Analysis of a long meeting takes minutes and uses battery, and it is slower on older iPhones. Minutes are drafts: review them before you share them, because a small on-device model can make mistakes with names, numbers and dates.
 
-Manent needs microphone access to record, and speech recognition access for live captions. Calendar, Reminders, camera and photo access are optional and requested only when you use those features.
+Manent needs microphone access to record, and speech recognition access for live captions. Calendar, Reminders, camera and photo access are optional and requested only when you use those features. Calendar access only writes follow-up events you request. Reminders access exports selected Manent action items and updates those exported reminders from Manent.
+
+You are responsible for telling participants that you are recording and obtaining consent where required by local law.
 
 Questions? See the support page linked on this listing.
 ```

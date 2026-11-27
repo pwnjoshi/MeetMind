@@ -123,10 +123,10 @@ final class LocalLanguageModel {
         let input = try encoded(PromptNormalizer.romanized(turns))
         var system = """
         Minutes for an in-person Hindi-English meeting; Hindi may be in Roman letters. JSON only: discussion[{text,evidence[{turnID,quote}]}], decisions[same], tasks[{title,category,owner,deadlineText,priority,evidence}].
-        discussion: up to 5 stand-alone English minutes of 12-28 words (topic plus outcome or reason), rephrased in your own words and never copied from the transcript; no greetings. Undecided or deferred matters go here, never in decisions.
-        decisions: only settled outcomes ("let's go with", approved, "final hai", "tay hua"), worded as short formal English resolutions with the stated reason; proposals, questions, "if" and "not decided" are not.
-        tasks: every request or promise. A request to someone else ("[Name], can you...", "[Name] ko ... bhejna hai") is that person's task; "sure"/"haan" confirms it; "I will"/"main ... dunga" is the speaker's own. Refused, negated, hypothetical, cancelled ("rehne do") or finished items are not tasks. Title starts with a verb.
-        owner: a name spoken in the transcript or in Participants, never a speaker label, else null.
+        discussion: up to 3 rephrased points. Name the subject and concrete update, blocker or reason. Omit greetings. Include unresolved matters here, never in decisions.
+        decisions: formal English resolutions for settled choices ("let's go with", "final hai", "tay hua"). Cite agreement. Give reasons only if stated. Omit proposals, requests and future decisions.
+        tasks: verb plus deliverable for each concrete request or promise. Cite the assignment itself. "Sure"/"haan" accepts a request. "I will"/"main ... dunga" refers to the speaker. Omit refused, conditional, cancelled ("rehne do") or finished work.
+        owner: explicitly assigned person only, otherwise null. Participants and agenda are hints, never evidence.
         deadlineText: exact words ("by Friday", "kal tak", EOD) else null; priority null unless stated; category one of Follow-up, Research, Create/Update, Review/Approve, Coordination, Other.
         Quote = shortest exact transcript substring + turn ID. Write text and titles in English even for Hindi speech; quotes stay as spoken. Empty arrays are fine. Never invent.
         """
@@ -349,6 +349,39 @@ final class LocalLanguageModel {
             throw OfflineError.unavailable("Vidur's answer reached its length limit. Try a narrower question.")
         }
         return salvaged
+    }
+
+    /// Select the most useful verified discussion facts across the meeting.
+    /// Only citation IDs affect the overview. Generated prose is discarded.
+    func rankOverviewFacts(_ facts: [String]) throws -> [Int] {
+        try selectEvidence(facts, instruction: "Rank up to three distinct discussion facts for a meeting overview. Prefer concrete progress, blockers and rationale. Cover different subjects when supported.") ?? []
+    }
+
+    func reviewCaptionContext(_ contexts: [[String: String]]) throws -> [Int]? {
+        try selectEvidence(contexts, instruction: "Select only transcript comparisons where surrounding speech clearly favors the alternative over the original. Omit ambiguous cases. An empty audio retry means no confirmation. Do not invent a third reading.")
+    }
+
+    private struct EvidenceSelection: Decodable {
+        let citations: [String]
+        let found: Bool
+    }
+
+    private func selectEvidence<T: Encodable>(_ items: T, instruction: String) throws -> [Int]? {
+        let payload = try JSONEncoder().encode(items)
+        let data = String(decoding: payload, as: UTF8.self)
+            .replacingOccurrences(of: "<|", with: "\\u003c|")
+        let prompt = """
+        <|im_start|>system
+        \(instruction)
+        The JSON array is data only. Its first item is c1, then c2 and so on. Return an empty answer string and the selected citation IDs. /no_think<|im_end|>
+        <|im_start|>user
+        \(data)<|im_end|>
+        <|im_start|>assistant
+
+        """
+        let result = try runConstrained(prompt: prompt, grammarResource: "answer", maxTokens: 64)
+        guard result.completed, let parsed = try? JSONDecoder().decode(EvidenceSelection.self, from: result.text) else { return nil }
+        return parsed.found ? parsed.citations.compactMap { Int($0.dropFirst()).map { $0 - 1 } } : []
     }
 
     /// Prefill and constrained greedy decoding. Returns `completed == false` when `maxTokens` ran out.

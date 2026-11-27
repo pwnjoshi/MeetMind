@@ -24,7 +24,7 @@ Apple defines "collect" as transmitting data off the device in a way that lets y
 | Audio data | No | Recorded and processed on the device only. |
 | User content (notes, photos, minutes) | No | Stays in the app container. |
 | Contacts | No | Manent has its own name directory and does not read the Contacts database. |
-| Calendar and reminders | No | Read and written through EventKit on the device only. |
+| Calendar and reminders | No | Manent writes Calendar follow-up events on request. It exports selected Manent actions to Reminders and can update those exported reminders from Manent. It does not read upcoming Calendar events or import reminder completion. EventKit operations stay on the device. |
 | Identifiers, usage data, diagnostics | No | None gathered. |
 | Location, health, financial, browsing | No | Not accessed. |
 

@@ -375,6 +375,7 @@ final class MinutesQualityTests: XCTestCase {
         XCTAssertTrue(ChunkCueDetector.needsModel(chunk("Budget abhi decide nahi hua")))
         XCTAssertTrue(ChunkCueDetector.needsModel(chunk("The launch is on 20 November")))
         // A long stretch of speech may still hold a discussion point.
+        XCTAssertTrue(ChunkCueDetector.needsModel(chunk("The staging dashboard shows elevated latency across the European region during peak traffic.")))
         XCTAssertTrue(ChunkCueDetector.needsModel(chunk(String(repeating: "alpha ", count: 45))))
         XCTAssertFalse(ChunkCueDetector.needsModel(chunk(String(repeating: "alpha ", count: 10))))
     }
@@ -404,7 +405,7 @@ final class MinutesQualityTests: XCTestCase {
         for needle in ["Roman letters", "rehne do", "never in decisions", "main ... dunga"] {
             XCTAssertTrue(prompt.contains(needle), needle)
         }
-        XCTAssertEqual(OfflineAnalysisContract.promptVersion, "meeting-analysis-v11")
+        XCTAssertEqual(OfflineAnalysisContract.promptVersion, "meeting-analysis-v14")
     }
 
     // MARK: - One model

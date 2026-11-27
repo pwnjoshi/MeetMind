@@ -34,6 +34,15 @@ public enum MeetingAnalysisStage: String, Codable, Sendable {
     case transcription, speakers, analysis, completed
 }
 
+public struct TranscriptCorrection: Codable, Sendable {
+    public let original: String
+    public let alternative: String
+    public let replacement: String?
+    public let start: Double
+    public let end: Double
+    public var contextFavorsAlternative: Bool? = nil
+}
+
 public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     public let sourceSignature: String
     public var stage: MeetingAnalysisStage
@@ -45,12 +54,24 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     /// Document-grade minutes (topics, resolutions, contextual actions, suggested attendees).
     /// Written by the reducer; absent in checkpoints saved by older versions.
     public var minutes: MinutesContent? = nil
+    public var transcriptCorrections: [TranscriptCorrection]? = nil
+    public var rankedOverviewFacts: [SupportedPoint]? = nil
     /// L2-normalised voice embedding per speaker label, from the diarization clustering. Used only to
     /// recognise known voices on this device. Absent in checkpoints saved by older versions.
     public var speakerEmbeddings: [String: [Float]]? = nil
     /// Revision of the diarization model that produced `speakerEmbeddings`. Embeddings from different
     /// revisions are not comparable.
     public var speakerEmbeddingModel: String? = nil
+
+    func excludingUnresolvedCaptions(from turns: [AnalysisTurn]) -> [AnalysisTurn] {
+        let unresolved = (transcriptCorrections ?? []).filter { $0.replacement == nil }
+        return turns.map { turn in
+            guard unresolved.contains(where: {
+                $0.start == turn.start && $0.end == turn.end && $0.original.contains(turn.text)
+            }) else { return turn }
+            return AnalysisTurn(id: turn.id, text: "", start: turn.start, end: turn.end, speaker: turn.speaker)
+        }
+    }
 
     public init(sourceSignature: String, stage: MeetingAnalysisStage, turns: [AnalysisTurn],
                 speakers: [SpeakerSpan], analysis: [LocalAnalysisResult], analyzedChunks: Int,
@@ -78,6 +99,7 @@ struct PreparedRecordingChunk: Codable, Sendable {
     let contentStartTime: TimeInterval
     let endTime: TimeInterval
     let turns: [AnalysisTurn]
+    var decodeVersion: String? = nil
 }
 
 /// Production orchestration. Downloads are an explicit setup action, never an
@@ -107,7 +129,7 @@ public actor MeetingAnalysisPipeline {
     private var preAnalyzing = false
     public static let analysisModelID = "qwen-1.7b"
     public static let requiredModelIDs = ["whisper-large", "diarization", analysisModelID]
-    public static let checkpointFormatVersion = "asr-prefill-v2"
+    public static let checkpointFormatVersion = "asr-caption-review-v8"
     private static let modelConfiguration = LocalModelConfiguration.compact
     static let analysisChunkBytes = 1800
 
@@ -205,7 +227,7 @@ public actor MeetingAnalysisPipeline {
         guard !turns.isEmpty else { return false }
         if discardedPreparationMeetingIDs.contains(meetingID) { throw CancellationError() }
         let checkpoint = PreparedRecordingChunk(sequence: sequence, contentStartTime: contentStartTime,
-                                                endTime: endTime, turns: turns)
+                                                endTime: endTime, turns: turns, decodeVersion: Self.checkpointFormatVersion)
         let url = try preparationURL(meetingID: meetingID, sequence: sequence)
         try JSONEncoder().encode(checkpoint).write(to: url,
             options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -235,7 +257,8 @@ public actor MeetingAnalysisPipeline {
         for file in files {
             // A window that cannot be decoded is simply a gap that gets retranscribed.
             if let data = try? Data(contentsOf: file),
-               let window = try? JSONDecoder().decode(PreparedRecordingChunk.self, from: data) { windows.append(window) }
+               let window = try? JSONDecoder().decode(PreparedRecordingChunk.self, from: data),
+               window.decodeVersion == Self.checkpointFormatVersion { windows.append(window) }
         }
         return windows.sorted { $0.sequence < $1.sequence }
     }
@@ -287,6 +310,93 @@ public actor MeetingAnalysisPipeline {
             reusedSeconds: max(0, duration - transcribedSeconds),
             transcribedSeconds: transcribedSeconds), for: meetingID)
         return turns
+    }
+
+    /// Match a localized edit using unchanged words from both recognition results.
+    static func isCaptionDisagreement(_ original: [String], _ alternate: [String]) -> Bool {
+        guard original != alternate, min(original.count, alternate.count) >= 3 else { return false }
+        let prefix = zip(original, alternate).prefix(while: { $0.0 == $0.1 }).count
+        let suffix = zip(original.dropFirst(prefix).reversed(), alternate.dropFirst(prefix).reversed())
+            .prefix(while: { $0.0 == $0.1 }).count
+        let shared = prefix + suffix
+        let changed = max(original.count, alternate.count) - shared
+        return shared >= 3 && changed <= 3 && shared >= changed
+    }
+
+    static func isUncoveredCaption(_ caption: AnalysisTurn, in turns: [AnalysisTurn], duration: Double) -> Bool {
+        guard caption.start >= 0, caption.end <= duration, caption.end > caption.start,
+              caption.end - caption.start <= 6 else { return false }
+        return !turns.contains { $0.end > caption.start && $0.start < caption.end }
+    }
+
+    /// Recheck a small number of tightly aligned, localized disagreements.
+    /// Only the saved audio retry can confirm the alternate wording.
+    private func retryCaptionDisagreements(
+        turns: [AnalysisTurn], live: [AnalysisTurn], audio: URL, duration: TimeInterval, profile: ModelProfile
+    ) async throws -> (turns: [AnalysisTurn], corrections: [TranscriptCorrection]) {
+        func words(_ text: String) -> [String] {
+            text.lowercased().split(whereSeparator: \.isWhitespace).map {
+                $0.trimmingCharacters(in: .punctuationCharacters)
+            }
+        }
+        var revised = turns
+        var corrections: [TranscriptCorrection] = []
+        var attempts = 0
+        func confirm(_ alternate: AnalysisTurn, start: Double, end: Double) async throws -> String? {
+            let clipStart = max(0, start - 1)
+            let clipEnd = min(duration, end + 1)
+            do {
+                let clip = try RecordingReuse.extractAudio(from: audio, start: clipStart, end: clipEnd)
+                defer { RecordingReuse.removeClip(clip) }
+                let folder = try await backend.verifiedFolder(profile)
+                let retry = try await backend.transcribe(audio: clip, folder: folder,
+                    request: SpeechRequest(languageCode: nil, vocabulary: nil, memory: nil))
+                let expected = words(alternate.text)
+                return retry.first {
+                    abs($0.start + clipStart - start) <= 0.75 && abs($0.end + clipStart - end) <= 0.75
+                        && words($0.text) == expected
+                }?.text
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+                return nil
+            }
+        }
+
+        // Reserve up to two attempts for phrases entirely absent from the saved transcript.
+        var recovered: [AnalysisTurn] = []
+        for (index, caption) in live.enumerated() where attempts < 2 {
+            try Task.checkCancellation()
+            guard Self.isUncoveredCaption(caption, in: revised + recovered, duration: duration),
+                  words(caption.text).count >= 3 else { continue }
+            attempts += 1
+            if let text = try await confirm(caption, start: caption.start, end: caption.end) {
+                recovered.append(AnalysisTurn(id: "recovered-live-caption-\(index)", text: text,
+                    start: caption.start, end: caption.end, speaker: nil))
+            }
+        }
+        for (index, turn) in turns.enumerated() where attempts < 4 {
+            try Task.checkCancellation()
+            let original = words(turn.text)
+            guard original.count >= 3, turn.end > turn.start, turn.end - turn.start <= 6 else { continue }
+            let matching = live.filter { abs($0.start - turn.start) <= 0.75 && abs($0.end - turn.end) <= 0.75 }
+            guard matching.count == 1, let alternate = matching.first else { continue }
+            guard Self.isCaptionDisagreement(original, words(alternate.text)) else { continue }
+
+            attempts += 1
+            var replacement: String?
+            defer {
+                corrections.append(TranscriptCorrection(original: turn.text, alternative: alternate.text,
+                    replacement: replacement, start: turn.start, end: turn.end))
+            }
+            if let confirmed = try await confirm(alternate, start: turn.start, end: turn.end) {
+                replacement = confirmed
+                revised[index] = AnalysisTurn(id: turn.id, text: confirmed,
+                    start: turn.start, end: turn.end, speaker: turn.speaker)
+            }
+        }
+        return (recovered.isEmpty ? revised : (revised + recovered).sorted { $0.start < $1.start }, corrections)
     }
 
     /// Analyzes finalized transcript chunks while recording continues, so the
@@ -510,6 +620,19 @@ public actor MeetingAnalysisPipeline {
                     reviewedTurns: [AnalysisTurn] = [],
                     participants: [String] = [], agenda: String? = nil,
                     progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
+        try await run(meetingID: meetingID, audio: audio, meetingDate: meetingDate, timezone: timezone,
+                      languageCode: languageCode, model: model, stopAfterSpeakers: stopAfterSpeakers,
+                      reviewedTurns: reviewedTurns, participants: participants, agenda: agenda,
+                      liveCaptionEvidence: [], progress: progress)
+    }
+
+    public func run(meetingID: UUID, audio: URL, meetingDate: Date, timezone: String, languageCode: String? = nil,
+                    model: VidurModel = .fast,
+                    stopAfterSpeakers: Bool = false,
+                    reviewedTurns: [AnalysisTurn] = [],
+                    participants: [String] = [], agenda: String? = nil,
+                    liveCaptionEvidence: [AnalysisTurn],
+                    progress: @Sendable (MeetingAnalysisStage) async -> Void) async throws -> MeetingAnalysisCheckpoint {
         guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Pause it before starting this one.") }
         running = true
         activeMeetingID = meetingID
@@ -534,6 +657,11 @@ public actor MeetingAnalysisPipeline {
             encoder.outputFormatting = .sortedKeys
             signature += "|reviewed:\(SHA256.hash(data: try encoder.encode(reviewedTurns)))"
         }
+        if !liveCaptionEvidence.isEmpty {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            signature += "|live-evidence:\(SHA256.hash(data: try encoder.encode(liveCaptionEvidence)))"
+        }
         let checkpointURL = try self.checkpointURL(meetingID)
         var checkpoint = MeetingAnalysisCheckpoint(sourceSignature: signature,
             stage: reviewedTurns.isEmpty ? .transcription : .analysis,
@@ -544,7 +672,7 @@ public actor MeetingAnalysisPipeline {
         // ASR and diarization run serially. Both engines have high transient
         // memory use, and concurrency is disabled until a separately tested
         // resource governor can admit it for a qualified device profile.
-        func save() throws {
+        func save(_ checkpoint: MeetingAnalysisCheckpoint) throws {
             if discardActiveCheckpoint { throw CancellationError() }
             try JSONEncoder().encode(checkpoint).write(to: checkpointURL,
                 options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -558,11 +686,18 @@ public actor MeetingAnalysisPipeline {
             checkpoint.turns = Self.splitTurns(try await transcribeReusingPreparedWindows(
                 meetingID: meetingID, audio: audio, duration: duration, profile: profiles[0],
                 languageCode: languageCode, participants: participants, agenda: agenda))
+            if !liveCaptionEvidence.isEmpty {
+                let checked = try await retryCaptionDisagreements(
+                    turns: checkpoint.turns, live: liveCaptionEvidence, audio: audio,
+                    duration: duration, profile: profiles[0])
+                checkpoint.turns = checked.turns
+                checkpoint.transcriptCorrections = checked.corrections
+            }
             lastStageTimings.transcriptionMs = elapsedMs(started)
             await backend.releaseSpeechEngine()
             guard !checkpoint.turns.isEmpty else { throw OfflineError.unavailable("No speech was recognized. Your recording is preserved.") }
             checkpoint.stage = .speakers
-            try save()
+            try save(checkpoint)
         }
         if checkpoint.stage == .speakers {
             try checkConditions()
@@ -574,10 +709,9 @@ public actor MeetingAnalysisPipeline {
             var voiceEmbeddings: [String: [Float]] = [:]
             do {
                 let folder = try await backend.verifiedFolder(profiles[1])
-                let named = participants.filter { !$0.lowercased().hasPrefix("speaker") && !$0.isEmpty }
-                let expectedVoices: Int? = named.count >= 2 ? named.count : nil
-                let found = try await backend.diarizeWithEmbeddings(audio: audio, folder: folder, expectedSpeakers: expectedVoices)
-                rawSpans = SpeakerClusterMerge.mergeExcess(found.spans, expected: expectedVoices)
+                // An attendee list does not tell us how many voices are audible.
+                let found = try await backend.diarizeWithEmbeddings(audio: audio, folder: folder, expectedSpeakers: nil)
+                rawSpans = found.spans
                 voiceEmbeddings = found.embeddings
             } catch is CancellationError {
                 throw CancellationError()
@@ -585,7 +719,10 @@ public actor MeetingAnalysisPipeline {
                 rawSpans = []
                 lastSpeakerWarning = "Voices could not be separated. Minutes will continue with unnamed speakers."
             }
-            checkpoint.speakers = Self.stabilizeSpeakerSpans(rawSpans)
+            checkpoint.speakers = rawSpans.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
+            if checkpoint.speakers.isEmpty {
+                lastSpeakerWarning = "Voices could not be separated. Minutes will continue with unnamed speakers."
+            }
             // Keep embeddings only for voices still present after merging and smoothing.
             let presentLabels = Set(checkpoint.speakers.map(\.speaker))
             let keptEmbeddings = voiceEmbeddings.filter { presentLabels.contains($0.key) }
@@ -593,7 +730,7 @@ public actor MeetingAnalysisPipeline {
             checkpoint.speakerEmbeddingModel = keptEmbeddings.isEmpty ? nil : profiles[1].revision
             checkpoint.turns = Self.assignSpeakers(turns: checkpoint.turns, spans: checkpoint.speakers)
             checkpoint.stage = .analysis
-            try save()
+            try save(checkpoint)
         }
         if stopAfterSpeakers {
             try Task.checkCancellation()
@@ -603,118 +740,210 @@ public actor MeetingAnalysisPipeline {
         if checkpoint.stage == .analysis {
             try checkConditions()
             await progress(.analysis)
-            let minutesStarted = Date()
-            defer { lastStageTimings.minutesMs = elapsedMs(minutesStarted) }
-            await backend.releaseSpeechEngine()
-            let folder = try await backend.verifiedFolder(profiles[2])
-            // Optional so the old model is freed before a replacement loads; two
-            // resident language models would exceed the memory budget.
-            var session: (any MeetingAnalysisSession)?
-            func currentSession() throws -> any MeetingAnalysisSession {
-                if let session, !ComputeEnvironment.needsReload(session.placement) { return session }
-                session = nil
-                let loadStarted = Date()
-                let loaded = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
-                lastStageTimings.modelLoadMs += elapsedMs(loadStarted)
-                lastStageTimings.modelLoads += 1
-                session = loaded
-                return loaded
-            }
-            func analyzeOnce(_ chunk: [AnalysisTurn], placement: inout ComputePlacement) throws -> LocalAnalysisResult {
-                let active = try currentSession()
-                placement = active.placement
-                return try active.analyze(turns: chunk, meetingDate: meetingDate, timezone: timezone,
-                    question: nil, participants: participants, agenda: agenda)
-            }
-            /// A chunk interrupted by the move to the background (iOS rejects the GPU
-            /// work) is analyzed again on the CPU instead of falling back to rules.
-            func analyzeChunk(_ chunk: [AnalysisTurn]) throws -> LocalAnalysisResult {
-                var placement = ComputePlacement.independent
-                do {
-                    let result = try analyzeOnce(chunk, placement: &placement)
-                    if placement == .cpu { lastStageTimings.cpuChunks += 1 }
-                    return result
-                } catch {
-                    guard !(error is CancellationError), placement == .gpu, !ComputeEnvironment.gpuAvailable else { throw error }
-                    lastStageTimings.backgroundRetries += 1
-                    let result = try analyzeOnce(chunk, placement: &placement)
-                    if placement == .cpu { lastStageTimings.cpuChunks += 1 }
-                    return result
-                }
-            }
-
             let preAnalysisKey = RecordingReuse.contextKey(profile: profiles[2], configuration: Self.modelConfiguration,
                 chunkBytes: Self.analysisChunkBytes, meetingDate: meetingDate, timezone: timezone)
             let preAnalyzed: [String: LocalAnalysisResult] = Dictionary(
                 (loadPreAnalysis(meetingID: meetingID, contextKey: preAnalysisKey)?.entries ?? []).map { ($0.key, $0.result) },
                 uniquingKeysWith: { first, _ in first })
-            if checkpoint.chunkTurnIDs == nil {
-                let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: try currentSession(),
-                    meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes,
-                    participants: participants, agenda: agenda)
-                var seen = Set<String>()
-                checkpoint.turns = fitted.flatMap { $0 }.filter { seen.insert($0.id).inserted }
-                checkpoint.chunkTurnIDs = fitted.map { $0.map(\.id) }
-                try save()
-            }
-            guard Set(checkpoint.turns.map(\.id)).count == checkpoint.turns.count else {
-                throw OfflineError.unavailable("Transcript checkpoint IDs are invalid. Reanalyze the saved recording.")
-            }
-            let byID = Dictionary(uniqueKeysWithValues: checkpoint.turns.map { ($0.id, $0) })
-            let chunks = try (checkpoint.chunkTurnIDs ?? []).map { ids in
-                try ids.map { id in
-                    guard let turn = byID[id] else {
-                        throw OfflineError.unavailable("Analysis checkpoint is invalid. Reanalyze the saved recording.")
-                    }
-                    return turn
-                }
-            }
-            guard checkpoint.analyzedChunks == checkpoint.analysis.count,
-                  checkpoint.analyzedChunks <= chunks.count, !chunks.isEmpty,
-                  chunks.allSatisfy({ !$0.isEmpty && Set($0.map(\.id)).count == $0.count }),
-                  Set(chunks.flatMap { $0.map(\.id) }) == Set(checkpoint.turns.map(\.id)) else {
-                throw OfflineError.unavailable("Analysis checkpoint is invalid. Preserve the recording and restart analysis.")
-            }
-            for index in checkpoint.analyzedChunks..<chunks.count {
-                try checkConditions()
-                let result: LocalAnalysisResult
-                if let cached = preAnalyzed[RecordingReuse.chunkKey(chunks[index])],
-                   (try? cached.validate(against: chunks[index])) != nil {
-                    // Identical turn IDs and texts were analyzed during recording.
-                    result = cached.sanitized(against: chunks[index])
-                    lastAnalysisReuse.reused += 1
-                } else {
-                    do {
-                        let chunkStarted = Date()
-                        let raw = try analyzeChunk(chunks[index])
-                        lastStageTimings.chunkMs.append(elapsedMs(chunkStarted))
-                        result = raw.sanitized(against: chunks[index])
-                        lastAnalysisReuse.analyzed += 1
-                    } catch is CancellationError {
-                        throw CancellationError()
-                    } catch OfflineError.memoryBudget(let required, let budget) {
-                        throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
-                    } catch {
-                        // Unparseable or over-long model output for one chunk. Keep
-                        // the meeting going: the reducer's grounded transcript rules
-                        // still extract this chunk's explicit actions and decisions.
-                        try checkConditions()
-                        result = LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
-                        lastAnalysisFallbackChunks += 1
-                        lastAnalysisFallbackReason = (error as? LocalizedError)?.errorDescription ?? "model output unusable"
-                    }
-                }
-                checkpoint.analysis.append(result)
-                checkpoint.analyzedChunks = index + 1
-                try save()
-            }
-            checkpoint.stage = .completed
-            try save()
+            checkpoint = try await analyzeTranscript(checkpoint, profile: profiles[2],
+                meetingDate: meetingDate, timezone: timezone, participants: participants,
+                agenda: agenda, preAnalyzed: preAnalyzed, save: save)
             removePreAnalysis(meetingID: meetingID)
         }
         try Task.checkCancellation()
         if discardActiveCheckpoint { throw CancellationError() }
         await progress(.completed)
+        return checkpoint
+    }
+
+    /// Generate fresh minutes from saved transcript turns without touching recording checkpoints.
+    public func reprocessTranscript(meetingID: UUID, turns: [AnalysisTurn], meetingDate: Date, timezone: String,
+                                    model: VidurModel, participants: [String], agenda: String?,
+                                    corrections: [TranscriptCorrection]? = nil) async throws -> MeetingAnalysisCheckpoint {
+        guard !running else { throw OfflineError.unavailable("Another meeting is being analyzed. Try again after it finishes.") }
+        guard !turns.isEmpty else { throw OfflineError.unavailable("A saved transcript is required to reprocess minutes.") }
+        running = true
+        activeMeetingID = meetingID
+        discardActiveCheckpoint = false
+        defer { running = false; activeMeetingID = nil; discardActiveCheckpoint = false }
+        lastAnalysisReuse = (0, 0)
+        lastAnalysisFallbackChunks = 0
+        lastAnalysisFallbackReason = nil
+        lastStageTimings = AnalysisStageTimings()
+        try checkConditions()
+        let profile = try requiredProfiles(model: model)[2]
+        var initial = MeetingAnalysisCheckpoint(sourceSignature: "saved-transcript", stage: .analysis,
+            turns: turns, speakers: [], analysis: [], analyzedChunks: 0)
+        initial.transcriptCorrections = corrections
+        let result = try await analyzeTranscript(initial, profile: profile, meetingDate: meetingDate,
+            timezone: timezone, participants: participants, agenda: agenda, preAnalyzed: [:]) { _ in }
+        try Task.checkCancellation()
+        if discardActiveCheckpoint { throw CancellationError() }
+        guard lastAnalysisFallbackChunks == 0 else {
+            throw OfflineError.unavailable("The minutes model could not analyze the whole transcript. Please try again.")
+        }
+        return result
+    }
+
+    private func analyzeTranscript(_ initial: MeetingAnalysisCheckpoint, profile: ModelProfile,
+                                   meetingDate: Date, timezone: String, participants: [String], agenda: String?,
+                                   preAnalyzed: [String: LocalAnalysisResult],
+                                   save: (MeetingAnalysisCheckpoint) throws -> Void) async throws -> MeetingAnalysisCheckpoint {
+        var checkpoint = initial
+        func elapsedMs(_ start: Date) -> Int { Int(Date().timeIntervalSince(start) * 1_000) }
+        let minutesStarted = Date()
+        defer { lastStageTimings.minutesMs = elapsedMs(minutesStarted) }
+        await backend.releaseSpeechEngine()
+        let folder = try await backend.verifiedFolder(profile)
+        // Optional so the old model is freed before a replacement loads; two
+        // resident language models would exceed the memory budget.
+        var session: (any MeetingAnalysisSession)?
+        func currentSession() throws -> any MeetingAnalysisSession {
+            if let session, !ComputeEnvironment.needsReload(session.placement) { return session }
+            session = nil
+            let loadStarted = Date()
+            let loaded = try backend.makeSession(folder: folder, configuration: Self.modelConfiguration)
+            lastStageTimings.modelLoadMs += elapsedMs(loadStarted)
+            lastStageTimings.modelLoads += 1
+            session = loaded
+            return loaded
+        }
+        func analyzeOnce(_ chunk: [AnalysisTurn], placement: inout ComputePlacement) throws -> LocalAnalysisResult {
+            let active = try currentSession()
+            placement = active.placement
+            return try active.analyze(turns: chunk, meetingDate: meetingDate, timezone: timezone,
+                question: nil, participants: participants, agenda: agenda)
+        }
+        /// A chunk interrupted by the move to the background (iOS rejects the GPU
+        /// work) is analyzed again on the CPU instead of falling back to rules.
+        func analyzeChunk(_ chunk: [AnalysisTurn]) throws -> LocalAnalysisResult {
+            var placement = ComputePlacement.independent
+            do {
+                let result = try analyzeOnce(chunk, placement: &placement)
+                if placement == .cpu { lastStageTimings.cpuChunks += 1 }
+                return result
+            } catch {
+                guard !(error is CancellationError), placement == .gpu, !ComputeEnvironment.gpuAvailable else { throw error }
+                lastStageTimings.backgroundRetries += 1
+                let result = try analyzeOnce(chunk, placement: &placement)
+                if placement == .cpu { lastStageTimings.cpuChunks += 1 }
+                return result
+            }
+        }
+
+        if checkpoint.chunkTurnIDs == nil {
+            let fitted = try Self.fittedAnalysisChunks(checkpoint.turns, model: try currentSession(),
+                meetingDate: meetingDate, timezone: timezone, maxJSONBytes: Self.analysisChunkBytes,
+                participants: participants, agenda: agenda)
+            var seen = Set<String>()
+            checkpoint.turns = fitted.flatMap { $0 }.filter { seen.insert($0.id).inserted }
+            checkpoint.chunkTurnIDs = fitted.map { $0.map(\.id) }
+            try save(checkpoint)
+        }
+        guard Set(checkpoint.turns.map(\.id)).count == checkpoint.turns.count else {
+            throw OfflineError.unavailable("Transcript checkpoint IDs are invalid. Reanalyze the saved recording.")
+        }
+        let byID = Dictionary(uniqueKeysWithValues: checkpoint.turns.map { ($0.id, $0) })
+        let chunks = try (checkpoint.chunkTurnIDs ?? []).map { ids in
+            try ids.map { id in
+                guard let turn = byID[id] else {
+                    throw OfflineError.unavailable("Analysis checkpoint is invalid. Reanalyze the saved recording.")
+                }
+                return turn
+            }
+        }
+        guard checkpoint.analyzedChunks == checkpoint.analysis.count,
+              checkpoint.analyzedChunks <= chunks.count, !chunks.isEmpty,
+              chunks.allSatisfy({ !$0.isEmpty && Set($0.map(\.id)).count == $0.count }),
+              Set(chunks.flatMap { $0.map(\.id) }) == Set(checkpoint.turns.map(\.id)) else {
+            throw OfflineError.unavailable("Analysis checkpoint is invalid. Preserve the recording and restart analysis.")
+        }
+        for index in checkpoint.analyzedChunks..<chunks.count {
+            try checkConditions()
+            if discardActiveCheckpoint { throw CancellationError() }
+            let chunk = checkpoint.excludingUnresolvedCaptions(from: chunks[index])
+            let result: LocalAnalysisResult
+            if chunk.allSatisfy({ $0.text.isEmpty }) {
+                result = LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
+            } else if let cached = preAnalyzed[RecordingReuse.chunkKey(chunk)],
+               (try? cached.validate(against: chunk)) != nil {
+                // Identical turn IDs and texts were analyzed during recording.
+                result = cached.sanitized(against: chunk)
+                lastAnalysisReuse.reused += 1
+            } else {
+                do {
+                    let chunkStarted = Date()
+                    let raw = try analyzeChunk(chunk)
+                    lastStageTimings.chunkMs.append(elapsedMs(chunkStarted))
+                    result = raw.sanitized(against: chunk)
+                    lastAnalysisReuse.analyzed += 1
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch OfflineError.memoryBudget(let required, let budget) {
+                    throw OfflineError.memoryBudget(requiredEstimate: required, budget: budget)
+                } catch {
+                    // Unparseable or over-long model output for one chunk. Keep
+                    // the meeting going: the reducer's grounded transcript rules
+                    // still extract this chunk's explicit actions and decisions.
+                    try checkConditions()
+                    result = LocalAnalysisResult(discussion: [], decisions: [], tasks: [])
+                    lastAnalysisFallbackChunks += 1
+                    lastAnalysisFallbackReason = (error as? LocalizedError)?.errorDescription ?? "model output unusable"
+                }
+            }
+            checkpoint.analysis.append(result)
+            checkpoint.analyzedChunks = index + 1
+            try save(checkpoint)
+        }
+        if let session, !ComputeEnvironment.needsReload(session.placement),
+           var comparisons = checkpoint.transcriptCorrections, !comparisons.isEmpty {
+            let contexts = comparisons.map { comparison in
+                let before = checkpoint.turns.filter { $0.end <= comparison.start }.suffix(2).map(\.text)
+                let after = checkpoint.turns.filter { $0.start >= comparison.end }.prefix(2).map(\.text)
+                return [
+                    "before": before.map { String($0.prefix(90)) }.joined(separator: " "),
+                    "original": String(comparison.original.prefix(180)),
+                    "alternative": String(comparison.alternative.prefix(180)),
+                    "audio retry": String((comparison.replacement ?? "").prefix(180)),
+                    "after": after.map { String($0.prefix(90)) }.joined(separator: " ")
+                ]
+            }
+            do {
+                if let selected = try session.reviewCaptionContext(contexts) {
+                    let valid = Set(selected.filter { comparisons.indices.contains($0) })
+                    for index in comparisons.indices {
+                        comparisons[index].contextFavorsAlternative = valid.contains(index) ? true : nil
+                    }
+                    checkpoint.transcriptCorrections = comparisons
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+            }
+        }
+        if let session, !ComputeEnvironment.needsReload(session.placement) {
+            let reduced = MeetingAnalysisReducer.reduce(checkpoint, participants: participants,
+                meetingDate: meetingDate, timeZone: TimeZone(identifier: timezone) ?? .current)
+            let facts = Array(reduced.discussion.filter {
+                MeetingAnalysisReducer.isSummaryContext($0.text) && !HindiText.looksHindi($0.text)
+                    && !$0.evidence.isEmpty && $0.text.utf8.count <= 240
+            }.prefix(10))
+            if facts.count >= 3 {
+                do {
+                    let ranked = try session.rankOverviewFacts(facts.map(\.text))
+                    var seen = Set<Int>()
+                    let selected = ranked.filter { facts.indices.contains($0) && seen.insert($0).inserted }
+                    checkpoint.rankedOverviewFacts = selected.isEmpty ? nil : selected.prefix(3).map { facts[$0] }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    try Task.checkCancellation()
+                }
+            }
+        }
+        checkpoint.stage = .completed
+        try save(checkpoint)
         return checkpoint
     }
 
@@ -771,35 +1000,6 @@ public actor MeetingAnalysisPipeline {
                 && (ranked.dropFirst().first?.value ?? 0) < duration * 0.2 ? winner?.key : nil
             return AnalysisTurn(id: turn.id, text: turn.text, start: turn.start, end: turn.end, speaker: label)
         }
-    }
-
-    /// Keep a transient clustering glitch from presenting one person as several
-    /// named speakers. We only smooth extremely short label flips and collapse a
-    /// clearly dominant voice; ambiguous multi-person recordings remain reviewable.
-    static func stabilizeSpeakerSpans(_ spans: [SpeakerSpan]) -> [SpeakerSpan] {
-        let ordered = spans.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
-        guard !ordered.isEmpty else { return [] }
-        var stabilized = ordered
-        if stabilized.count >= 3 {
-            for index in 1..<(stabilized.count - 1) {
-                let previous = stabilized[index - 1]
-                let current = stabilized[index]
-                let next = stabilized[index + 1]
-                if current.end - current.start < 1.5, previous.speaker == next.speaker,
-                   previous.end <= current.start + 0.5, current.end <= next.start + 0.5 {
-                    stabilized[index] = SpeakerSpan(speaker: previous.speaker, start: current.start, end: current.end)
-                }
-            }
-        }
-        let totals = stabilized.reduce(into: [String: Double]()) { result, span in
-            result[span.speaker, default: 0] += span.end - span.start
-        }
-        let totalSpeech = totals.values.reduce(0, +)
-        guard totalSpeech > 0, let dominant = totals.max(by: { $0.value < $1.value }) else { return stabilized }
-        // A label covering at least 88% of speech is safer to render as one voice
-        // than to expose short false-positive labels from overlap/noise.
-        guard dominant.value / totalSpeech >= 0.88 else { return stabilized }
-        return stabilized.map { SpeakerSpan(speaker: dominant.key, start: $0.start, end: $0.end) }
     }
 
     /// Bounded Unicode-safe fragments keep even a long uninterrupted speaker

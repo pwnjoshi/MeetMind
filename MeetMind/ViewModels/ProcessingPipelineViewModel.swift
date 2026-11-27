@@ -4,6 +4,80 @@ import Observation
 import AVFoundation
 import OfflineEngineKit
 
+public struct ModelDownloadProgress: Sendable, Equatable {
+    public let downloadedBytes: Int64
+    public let totalBytes: Int64
+    public let currentModelID: String
+    public let currentModelName: String
+    public let currentModelFraction: Double
+
+    public var fraction: Double {
+        guard totalBytes > 0 else { return 1 }
+        return min(1, max(0, Double(downloadedBytes) / Double(totalBytes)))
+    }
+
+    public init(downloadedBytes: Int64, totalBytes: Int64, currentModelID: String,
+                currentModelName: String, currentModelFraction: Double) {
+        self.downloadedBytes = max(0, min(downloadedBytes, max(0, totalBytes)))
+        self.totalBytes = max(0, totalBytes)
+        self.currentModelID = currentModelID
+        self.currentModelName = currentModelName
+        self.currentModelFraction = min(1, max(0, currentModelFraction))
+    }
+}
+
+/// Converts the model store's per-model fractions into one byte-weighted,
+/// monotonic transfer. The lock is needed because model-store callbacks are Sendable.
+public final class ModelDownloadProgressAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let profiles: [ModelProfile]
+    private let profileByID: [String: ModelProfile]
+    private var fractions: [String: Double] = [:]
+    private var lastDownloadedBytes: Int64 = 0
+
+    public init(profiles: [ModelProfile]) {
+        self.profiles = profiles
+        self.profileByID = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+    }
+
+    public func initialProgress() -> ModelDownloadProgress {
+        lock.lock()
+        defer { lock.unlock() }
+        return makeProgress(currentID: profiles.first?.id ?? "", currentFraction: 0)
+    }
+
+    public func update(modelID: String, fraction: Double) -> ModelDownloadProgress {
+        lock.lock()
+        defer { lock.unlock() }
+        let clamped = min(1, max(0, fraction))
+        if let index = profiles.firstIndex(where: { $0.id == modelID }), index > 0 {
+            for completed in profiles[..<index] { fractions[completed.id] = 1 }
+        }
+        fractions[modelID] = max(fractions[modelID] ?? 0, clamped)
+        return makeProgress(currentID: modelID, currentFraction: fractions[modelID] ?? clamped)
+    }
+
+    private func makeProgress(currentID: String, currentFraction: Double) -> ModelDownloadProgress {
+        let total = profiles.reduce(Int64(0)) { $0 + $1.downloadBytes }
+        let calculated = profiles.reduce(Int64(0)) { result, profile in
+            result + Int64((Double(profile.downloadBytes) * (fractions[profile.id] ?? 0)).rounded(.down))
+        }
+        lastDownloadedBytes = max(lastDownloadedBytes, min(total, calculated))
+        return ModelDownloadProgress(downloadedBytes: lastDownloadedBytes, totalBytes: total,
+            currentModelID: currentID, currentModelName: Self.friendlyName(for: currentID),
+            currentModelFraction: currentFraction)
+    }
+
+    public static func friendlyName(for id: String) -> String {
+        switch id {
+        case "whisper-large": return "Transcript model"
+        case "diarization": return "Speakers model"
+        case VidurModel.fast.rawValue: return "Minutes & Vidur model"
+        default: return "On-device model"
+        }
+    }
+}
+
 /// Status of the post-recording processing pipeline
 public enum PipelineStatus: String, Codable, Sendable {
     case idle = "idle"
@@ -86,6 +160,7 @@ public final class ProcessingPipelineViewModel {
     public var retryCount: Int = 0
     public private(set) var jobSnapshot: AnalysisJobRecord?
     public private(set) var modelStatuses: [AnalysisModelStatus] = []
+    public private(set) var modelDownloadProgress: ModelDownloadProgress?
     
     private var isAppInBackground: Bool = false
     private var isCorruptAudioSimulated: Bool = false
@@ -313,16 +388,73 @@ public final class ProcessingPipelineViewModel {
         return modelStatuses.compactMap { $0.readiness == .ready ? nil : $0.profile }
     }
 
+    public func modelStorageCapacity(speakersOnly: Bool = false) async throws -> ModelStorageCapacity {
+        _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+        let profiles = modelStatuses.compactMap { $0.readiness == .ready ? nil : $0.profile }
+        return try await OfflineModelStore.shared.storageCapacity(for: profiles)
+    }
+
+    /// Original callback shape retained for existing callers. Values remain the
+    /// independent progress fraction for the named model.
     public func downloadAndContinueModels(speakersOnly: Bool = false,
                                           progress: @Sendable @escaping (String, Double) -> Void) async throws {
-        guard let coordinator, let meetingID = meeting?.id ?? meetingId else { throw MeetingError.meetingNotFound }
-        try await coordinator.downloadAndVerify(meetingID: meetingID, model: analysisModel,
-                                                speakersOnly: speakersOnly, progress: progress) { [weak self] state in
-            guard var snapshot = self?.jobSnapshot else { return }
-            snapshot.state = state
-            self?.jobSnapshot = snapshot
+        try await downloadAndContinueModels(speakersOnly: speakersOnly) { aggregate in
+            progress(aggregate.currentModelID, aggregate.currentModelFraction)
         }
+    }
+
+    /// Preferred callback reports byte-weighted progress across every model that
+    /// was missing or damaged when this download began.
+    public func downloadAndContinueModels(speakersOnly: Bool = false,
+                                          progress: @Sendable @escaping (ModelDownloadProgress) -> Void) async throws {
+        guard let coordinator, let meetingID = meeting?.id ?? meetingId else { throw MeetingError.meetingNotFound }
         _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+        let profiles = modelStatuses.compactMap { $0.readiness == .ready ? nil : $0.profile }
+        let accumulator = ModelDownloadProgressAccumulator(profiles: profiles)
+        let initial = accumulator.initialProgress()
+        modelDownloadProgress = initial
+        progress(initial)
+        do {
+            try await coordinator.downloadAndVerify(meetingID: meetingID, model: analysisModel,
+                                                    speakersOnly: speakersOnly, progress: { [weak self] id, value in
+                let aggregate = accumulator.update(modelID: id, fraction: value)
+                progress(aggregate)
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.applyModelDownloadProgress(aggregate)
+                }
+            }) { [weak self] state in
+                guard var snapshot = self?.jobSnapshot else { return }
+                snapshot.state = state
+                self?.jobSnapshot = snapshot
+            }
+            let completedID = profiles.last?.id ?? ""
+            let completed = accumulator.update(modelID: completedID, fraction: 1)
+            applyModelDownloadProgress(completed)
+            progress(completed)
+            _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+        } catch is CancellationError {
+            markModelDownloadPaused()
+            throw CancellationError()
+        } catch let error as URLError {
+            markModelDownloadPaused()
+            throw error
+        } catch {
+            throw error
+        }
+    }
+
+    public func markModelDownloadPaused() {
+        if var snapshot = jobSnapshot {
+            snapshot.state = .paused
+            snapshot.failure = nil
+            jobSnapshot = snapshot
+        }
+    }
+
+    private func applyModelDownloadProgress(_ progress: ModelDownloadProgress) {
+        guard progress.downloadedBytes >= (modelDownloadProgress?.downloadedBytes ?? 0) else { return }
+        modelDownloadProgress = progress
     }
 
     private var analysisModel = VidurModel.selected

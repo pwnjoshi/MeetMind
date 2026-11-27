@@ -106,8 +106,8 @@ enum PromptNormalizer {
 /// discussion point. Such chunks (a greeting, "thanks, bye") skip the model call. The deterministic rules
 /// still run over every chunk in the reducer, so nothing the rules can find is lost.
 enum ChunkCueDetector {
-    /// Below this many spoken words a chunk without a cue has no minute-worthy discussion.
-    static let minimumDiscussionWords = 40
+    /// Let short factual updates reach the model even when they have no action or decision cue.
+    static let minimumDiscussionWords = 12
 
     private static let cueWords: Set<String> = Set<String>([
         // English requests, promises, decisions, deferrals

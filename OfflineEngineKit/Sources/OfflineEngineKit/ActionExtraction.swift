@@ -324,7 +324,7 @@ enum ActionExtractor {
         "respond", "sign", "cancel", "reschedule", "move", "summarize", "summarise", "gather", "track", "clean",
         "add", "remove", "verify", "validate", "prioritize", "assign", "escalate", "negotiate", "present", "demo",
         "record", "print", "dispatch", "install", "register", "apply", "renew", "notify", "inform", "tell", "ask",
-        "message", "text", "research", "own", "lead", "drive", "setup", "sync", "walk"
+        "message", "text", "research", "own", "lead", "drive", "setup", "sync", "walk", "continue"
     ])
     private static let leadingAdverbs: Set<String> = Set<String>([
         "also", "then", "just", "please", "kindly", "first", "quickly", "definitely", "personally", "still", "now",
@@ -404,6 +404,8 @@ enum ActionExtractor {
         add(["^", name, #",?\s+(?i:(?:please|kindly)\s+)(.+)$"#], .ownerAction)
         add(["^", name, #",?\s+(?i:you(?:'ll|\s+will|\s+need\s+to|\s+needs\s+to|\s+have\s+to|\s+must|\s+should)\s+)(.+)$"#], .ownerAction)
         add(["^", name, #",?\s+(?i:(?:i|we)\s+(?:need|want|would\s+like|'d\s+like)\s+you\s+to\s+)(.+)$"#], .ownerAction)
+        // A direct instruction can ask someone to continue existing work.
+        add(["^", name, #",\s+(?i:you\s+)((?:[Cc]an\s+)?[Cc]ontinue\s+.+)$"#], .ownerAction)
         // "Could you send the deck, Maya?" / "Please send the deck, Maya"
         add(["^", asks, #"(.+?),\s*"#, name, "$"], .actionOwner)
         add([#"^(?i:(?:please|kindly)\s+)(.+?),\s*"#, name, "$"], .actionOwner)
@@ -454,7 +456,9 @@ enum ActionExtractor {
             switch rule.kind {
             case .ownerAction, .actionOwner:
                 let ownerRaw = rule.kind == .ownerAction ? groups[1] : groups[2]
-                let action = rule.kind == .ownerAction ? groups[2] : groups[1]
+                let rawAction = rule.kind == .ownerAction ? groups[2] : groups[1]
+                var action = replace(#"(?i)^can\s+(?=continue\s)"#, in: rawAction)
+                action = replace(#"(?i),\s*(?:right|okay|ok)$"#, in: action)
                 guard let owner = resolveOwner(ownerRaw, context: context), startsWithVerb(action),
                       let task = makeTask(action: action, object: nil, owner: owner, evidence: evidence) else { continue }
                 return task
@@ -659,7 +663,7 @@ enum DecisionExtractor {
         "let's go with", "lets go with", "we'll go with", "we will go with", "we're going with", "we are going with",
         "i'm going with", "going with", "go ahead with", "going ahead with", "we'll go ahead", "we will go ahead",
         "we decided", "we've decided", "we have decided", "i've decided", "it's decided", "it is decided", "its decided",
-        "it's been decided", "has been decided", "is decided", "decided to", "decided on", "final decision",
+        "it's been decided", "has been decided", "is decided", "decided to", "decided on",
         "is finalized", "is finalised", "was finalized", "was finalised", "we finalized", "we finalised",
         "have finalized", "have finalised", "has been finalized", "has been finalised", "finally decided",
         "finally agreed", "it's final", "it is final", "is final", "are final",

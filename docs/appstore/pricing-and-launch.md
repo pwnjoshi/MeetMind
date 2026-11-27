@@ -19,14 +19,15 @@ If you want revenue at launch: free download plus a one-time Pro unlock. Needs a
 - [ ] In App Store Connect: My Apps > New App. Platform iOS, name, primary language, bundle id, SKU (any unique string, for example `manent-ios-1`).
 - [ ] Create an App Store Connect API key (Users and Access > Integrations > App Store Connect API, role App Manager). Save the Key ID, Issuer ID and the one-time `.p8` download.
 - [ ] Add the GitHub secrets listed in `.github/workflows/release.yml`.
-- [ ] Host `docs/privacy-policy.md` and `docs/support.md` (GitHub Pages is enough), fill in the contact email, and note both URLs.
+- [ ] Host `docs/privacy-policy.md` and `docs/support.md` (GitHub Pages is enough). Replace `<DATE>`, `<YOUR NAME OR COMPANY>` and every `<SUPPORT EMAIL>` first, then record both public URLs. Upload-mode release runs fail and name each unresolved hosted document; dry-run archives only warn.
 
 ### Build and test
 
-- [ ] Run the `Release to TestFlight` workflow (Actions tab, Run workflow). Build number is the run number.
+- [ ] Run the `Release to TestFlight` workflow (Actions tab, Run workflow). Build number is the run number. Upload mode checks the hosted-document placeholders, then gates the exact clean SHA through project verification, all Python tests, OfflineEngineKit tests, app XCTest, launch smoke, signed archive/export, privacy-manifest validation and signature verification before upload.
+- [ ] Download the `Manent-AppStore-Release` artifact and retain `release-summary.md`. It records the SHA, versions, bundle/signing/profile metadata, IPA SHA-256, test counts and privacy result without secrets. Failure artifacts also retain the XCTest result bundle, launch-smoke screenshots/diagnostics, symbols when produced, and logs.
 - [ ] Wait for "Processing" to finish in App Store Connect (5 to 30 minutes) and answer the export compliance question if it appears (the plist already answers "No").
 - [ ] Internal testing (up to 100 people on your team) needs no review. External testing needs a short Beta App Review.
-- [ ] Install on at least one older and one newer iPhone. Record a 10 minute meeting, check minutes, kill the app mid analysis and relaunch, test airplane mode after models are downloaded, test low storage.
+- [ ] Install on at least one older and one newer iPhone. Record a 10 minute meeting, check minutes, leave the app during analysis and reopen it, verify saved work resumes, confirm force-quit stops processing, test airplane mode after models are downloaded, and test low storage.
 
 ### Submission
 
@@ -42,5 +43,5 @@ If you want revenue at launch: free download plus a one-time Pro unlock. Needs a
 |---|---|
 | Apple Developer Program | 99 USD per year |
 | Hosting policy and support page (GitHub Pages) | 0 |
-| GitHub Actions macOS minutes | free tier is limited for private repositories (macOS minutes count 10x). A release build takes about 20 to 40 minutes. Public repositories are free. |
+| GitHub Actions macOS minutes | Free tier is limited for private repositories (macOS minutes use GitHub's higher macOS multiplier). The release job has a 120-minute safety timeout and app XCTest has a 22-minute timeout; billing uses actual runtime. Public repositories using standard hosted runners are generally free under GitHub's current policy. Check the repository billing page before repeated release runs. |
 | Custom domain (optional) | about 10 to 15 USD per year |

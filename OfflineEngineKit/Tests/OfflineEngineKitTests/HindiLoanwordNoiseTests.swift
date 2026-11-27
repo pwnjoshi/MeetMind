@@ -304,7 +304,7 @@ final class HindiLoanwordNoiseTests: XCTestCase {
                           deadlineText: "by Friday Friday", priority: nil, evidence: [])
         ]
         let summary = MinutesComposer.executiveSummary(names: [], topics: [], decisionPhrases: [], tasks: tasks, openSubjects: [])
-        XCTAssertEqual(summary, "Pawan will send presentation to client by Friday; Pawan will prepare the agenda by Friday; "
+        XCTAssertEqual(summary, "Pawan will send presentation to client by Friday. Pawan will prepare the agenda by Friday. "
             + "To do: send the report by Friday.")
         XCTAssertEqual(MinutesComposer.summaryDeadline("tomorrow"), "by tomorrow")
         XCTAssertEqual(MinutesComposer.summaryDeadline("कल तक"), "by tomorrow")

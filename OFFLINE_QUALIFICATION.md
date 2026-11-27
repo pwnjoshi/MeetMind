@@ -4,18 +4,18 @@ Status: **NOT QUALITY-QUALIFIED — synthetic device engine tests completed; hel
 
 The integrated trial connects saved-audio processing to compressed multilingual
 Whisper large-v3, FluidAudio offline speaker separation, and local Qwen analysis.
-Build 10 selects compact Qwen3-4B after the 1.7B candidate missed public commitments.
+The current app uses Qwen3 1.7B for meeting analysis and Vidur. Earlier 4B measurements below document a rejected diagnostics candidate; 4B is not a production model or user-selectable production option.
 This is an integrated evaluation build, not a claim that the accuracy, one-hour
 performance, memory, or full production-readiness gates below have passed.
-The original 4B/4096 configuration remains excluded; compact 4B/2048 has a separate measured trial profile.
 
 ## Integrated app flow (current source; device qualification pending)
 
 - Record/import audio, then open processing. Missing models require an explicit
   one-time public download. Settings → Offline analysis models supports download,
   repair, removal, size/status, and license review without opening the lab.
-- Audio inference has no network fallback. Keep the app foreground; backgrounding
-  cancels work. Resume reuses protected checkpoints after transcription, speaker
+- Audio inference has no network fallback. Analysis may continue in the background
+  when iOS grants processing time, but suspension is possible and force-quit stops it.
+  Reopening the app resumes protected checkpoints after transcription, speaker
   separation, and each successfully analyzed chunk. Partial downloads also resume.
 - Recordings must be local, readable, nonempty, and at most 60 minutes. Engine
   stages run sequentially; Qwen admission checks available memory before loading.
@@ -32,11 +32,12 @@ The original 4B/4096 configuration remains excluded; compact 4B/2048 has a separ
   use normalized title/owner identity. Accepted/manual tasks survive reanalysis.
   This is deterministic duplicate suppression, not qualified semantic reconciliation
   of later cancellations, contradictions, or differently worded commitments.
-- Ask AI uses the same compact Qwen3-4B profile against tokenizer-bounded transcript chunks, with validated source
+- Ask AI uses Qwen3 1.7B against tokenizer-bounded transcript chunks, with validated source
   quotes and real timestamps. Hard-coded answers/citations have been removed.
   Question accuracy and cross-chunk answer reconciliation remain unqualified.
-- Optional Apple Reminders sync targets on-device local lists only, preserving the
-  no-cloud requirement. If no local account exists, tasks stay in MeetMind and the
+- Optional Apple Reminders export targets on-device local lists only, preserving the
+  no-cloud requirement. Manent can send later completion updates to reminders it exported,
+  but does not import completion from Reminders. If no local account exists, tasks stay in Manent and the
   app explains why sync is unavailable. Unspecified priority is not invented on export.
 - New persistence fields are optional additions; existing records keep legacy data.
   Build 9 opened the existing iPhone store. The added build 10 recording locator and
@@ -105,9 +106,9 @@ and retains the 3 GB cap. Runtime load/decode footprint checks abort excessive u
 This compact candidate has not yet passed device or quality qualification and is not
 enabled for normal meetings. Build 9 device results are pending.
 
-## Build 9 comparison and build 10 trial flow
+## Historical Build 9 comparison and rejected Build 10 trial
 
-Build 9 (`3276342`, Actions `44288137991`) installed successfully. Public fixtures:
+Build 9 (`3276342`, Actions `44288137991`) installed successfully. These historical diagnostics compared the production-sized 1.7B model with a temporary 4B candidate:
 
 | Candidate / prompt v2 | Seconds | Sampled footprint | Result |
 | --- | ---: | ---: | --- |
@@ -119,9 +120,7 @@ analysis decoded successfully, but generated zero tasks. The task-review persist
 step therefore still has not passed on hardware. These are development fixtures,
 not held-out accuracy measurements.
 
-Build 10 changes the trial meeting flow and Ask AI to compact 4B, based on this
-comparison. It retains human task review and the memory cap; it is not production
-quality qualification. Prompt v3 adds explicit owner/self-identification and raw
+Build 10 temporarily trialled compact 4B based on this comparison. That experiment is no longer the app configuration: the current meeting flow and Vidur use Qwen3 1.7B only. The historical trial retained human task review and the memory cap; it did not establish production quality. Prompt v3 added explicit owner/self-identification and raw
 spoken-deadline guidance. Model-token-aware planning includes the complete prompt,
 persists the exact fitted chunk IDs for recovery, and preserves all Unicode text.
 Chat-role delimiters inside source text/questions are escaped as JSON data. Split
@@ -315,7 +314,7 @@ do not substitute cloud processing or call heuristic output qualified.
 
 ## Remaining device work before production release
 
-Build 7 is an integrated evaluation build. Whisper large-v3 and Qwen3-1.7B are
+The current integrated build uses Whisper large-v3 and Qwen3-1.7B. They are
 trial defaults selected for testing, not winners of the held-out quality gates.
 The setup, local inference, additive persistence, checkpoint recovery, source-linked
 task review, and explicit accepted-task reminder export are implemented in source.

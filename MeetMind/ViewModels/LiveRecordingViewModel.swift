@@ -273,6 +273,8 @@ public final class LiveRecordingViewModel {
     private var destinationAudioURL: URL?
     private var offlineLanguageCode: String? = "hi"
     private let updatesFromRecordingClock: Bool
+    private let recoveryStore: RecordingTakeJournalStore
+    private var lastJournalDurationCheckpoint: TimeInterval = 0
     private var dataStore: Any?
     
     public init(
@@ -285,6 +287,7 @@ public final class LiveRecordingViewModel {
         speechService: SpeechTranscriptionServiceProtocol? = nil,
         dataStore: Any? = nil,
         destinationAudioURL: URL? = nil,
+        recoveryStore: RecordingTakeJournalStore? = nil,
         updatesFromRecordingClock: Bool = true,
         chunkPreprocessor: any RecordingChunkPreprocessing = PipelineRecordingChunkPreprocessor()
     ) {
@@ -299,21 +302,26 @@ public final class LiveRecordingViewModel {
         self.transcriptionService = transcriptionService ?? speechService
         self.dataStore = dataStore
         self.destinationAudioURL = destinationAudioURL
+        if let recoveryStore {
+            self.recoveryStore = recoveryStore
+        } else if let destinationAudioURL,
+                  destinationAudioURL.standardizedFileURL.path.hasPrefix(
+                    FileManager.default.temporaryDirectory.standardizedFileURL.path + "/"
+                  ) {
+            // Explicit temporary destinations are a test seam. Keep their journals
+            // under the same isolated temporary root, never in the app's user folders.
+            self.recoveryStore = RecordingTakeJournalStore(
+                documentsRoot: FileManager.default.temporaryDirectory,
+                recoveryRoot: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("ManentRecordingRecoveryTests", isDirectory: true)
+            )
+        } else {
+            self.recoveryStore = .live()
+        }
         self.updatesFromRecordingClock = updatesFromRecordingClock
         self.chunkPreprocessor = chunkPreprocessor
     }
     
-    /// The final analysis pass resolves relative dates against this day and time
-    /// zone, so results prepared during recording are reusable only when they match.
-    /// Without a persisted meeting there is nothing to match, so pre-analysis stays off.
-    private func recordingPreAnalysisContext() -> RecordingPreAnalysisContext? {
-        guard let meeting else { return nil }
-        return RecordingPreAnalysisContext(
-            meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
-            timezone: meeting.analysisTimezone ?? TimeZone.current.identifier
-        )
-    }
-
     public func startSession() {
         guard recordingState == .idle || recordingState == .stopped || recordingState == .saved else { return }
         errorMessage = nil
@@ -321,6 +329,7 @@ public final class LiveRecordingViewModel {
         isInterrupted = false
         interruptionCanResume = false
         pendingAudioURL = nil
+        lastJournalDurationCheckpoint = 0
         metricsCollector = RecordingMetricsCollector()
         recordingMetrics = RecordingMetrics()
         guard let recordingService else {
@@ -332,14 +341,35 @@ public final class LiveRecordingViewModel {
             do {
                 let dest = destinationAudioURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                     .appendingPathComponent("Recordings", isDirectory: true)
-                    .appendingPathComponent("recording_\(meetingId.uuidString).m4a")
-                try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    .appendingPathComponent("recording_\(meetingId.uuidString)_\(UUID().uuidString).m4a")
+                try FileManager.default.createDirectory(
+                    at: dest.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                    attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+                )
+                try recoveryStore.assertDestinationAvailable(meetingID: meetingId, audioURL: dest)
+                _ = try recoveryStore.createBeforeRecording(meetingID: meetingId, audioURL: dest)
                 destinationAudioURL = dest
-                try await recordingService.startRecording(destinationURL: dest)
+                do {
+                    try await recordingService.startRecording(destinationURL: dest)
+                } catch {
+                    if let journal = try? recoveryStore.load(meetingID: meetingId),
+                       FileManager.default.fileExists(atPath: dest.path) {
+                        _ = try? recoveryStore.quarantineInvalidAudio(
+                            for: journal,
+                            validationCode: "recording_start_failed"
+                        )
+                    } else {
+                        try? recoveryStore.recordFailure(meetingID: meetingId, code: "recording_start_failed")
+                    }
+                    throw error
+                }
                 guard !Task.isCancelled else {
                     try recordingService.cancelRecording()
+                    try? recoveryStore.remove(meetingID: meetingId)
                     return
                 }
+                _ = try recoveryStore.transition(meetingID: meetingId, to: .recording)
                 recordingState = .recording
                 // Keep capture persistence transactional: the meeting is not
                 // marked as owning this take until Stop validates the file.
@@ -352,8 +382,7 @@ public final class LiveRecordingViewModel {
                         meetingID: meetingId,
                         languageCode: offlineLanguageCode,
                         preprocessor: chunkPreprocessor,
-                        metrics: metricsCollector,
-                        preAnalysis: recordingPreAnalysisContext()
+                        metrics: metricsCollector
                     )
                     chunkPump = pump
                     preprocessingWorker = worker
@@ -382,7 +411,7 @@ public final class LiveRecordingViewModel {
                             }
                         } catch {
                             guard !Task.isCancelled else { return }
-                            self?.interimTranscriptText = "Live captions couldn’t start. You can transcribe the saved recording after you finish."
+                            self?.interimTranscriptText = "Live captions couldn?t start. You can transcribe the saved recording after you finish."
                         }
                     }
                 }
@@ -402,7 +431,16 @@ public final class LiveRecordingViewModel {
                     clockTask = Task { [weak self] in
                         while !Task.isCancelled {
                             do { try await Task.sleep(for: .milliseconds(200)) } catch { break }
-                            self?.elapsedDuration = recordingService.currentDuration
+                            guard let self else { break }
+                            let duration = recordingService.currentDuration
+                            self.elapsedDuration = duration
+                            if duration - self.lastJournalDurationCheckpoint >= 5 {
+                                _ = try? self.recoveryStore.updateDurationIfNeeded(
+                                    meetingID: self.meetingId,
+                                    duration: duration
+                                )
+                                self.lastJournalDurationCheckpoint = duration
+                            }
                         }
                     }
                 }
@@ -868,6 +906,7 @@ public final class LiveRecordingViewModel {
         elapsedDuration = service.currentDuration
         metricsCollector.recordElapsed(elapsedDuration)
         recordingState = .stopping
+        _ = try recoveryStore.transition(meetingID: meetingId, to: .stopping, duration: elapsedDuration)
         preprocessingWorker?.cancel()
         preprocessingWorker = nil
 
@@ -878,6 +917,7 @@ public final class LiveRecordingViewModel {
         } catch {
             pendingAudioURL = destinationAudioURL
             recordingState = .stoppedUnsaved
+            try? recoveryStore.recordFailure(meetingID: meetingId, code: "canonical_stop_failed")
             metricsCollector.recordWriteFailure(code: "canonical_stop_failed")
             metricsCollector.recordStopLatency(Date().timeIntervalSince(stopStarted))
             syncMetrics()
@@ -902,12 +942,17 @@ public final class LiveRecordingViewModel {
         }
         preprocessedTranscriptChunkCount = metricsCollector.snapshot.preprocessedChunkCount
 
+        let info: CanonicalRecordingInfo
         do {
-            let info = try CanonicalRecordingValidator.validate(url)
+            info = try CanonicalRecordingValidator.validate(url)
+            elapsedDuration = info.duration
             metricsCollector.recordCanonicalAudio(frameCount: info.frameCount, duration: info.duration)
+            _ = try recoveryStore.transition(meetingID: meetingId, to: .validated, duration: info.duration)
         } catch {
             recordingState = .stoppedUnsaved
-            metricsCollector.recordWriteFailure(code: canonicalValidationCode(for: error))
+            let code = canonicalValidationCode(for: error)
+            try? recoveryStore.recordFailure(meetingID: meetingId, code: code)
+            metricsCollector.recordWriteFailure(code: code)
             metricsCollector.recordStopLatency(Date().timeIntervalSince(stopStarted))
             syncMetrics()
             throw error
@@ -915,7 +960,8 @@ public final class LiveRecordingViewModel {
 
         recordingState = .stoppedUnsaved
         do {
-            try persistStoppedRecording(url)
+            try persistStoppedRecording(url, duration: info.duration)
+            try markOwnershipPersistedAndClearJournal(url, duration: info.duration)
             recordingState = .saved
             metricsCollector.recordStopLatency(Date().timeIntervalSince(stopStarted))
             syncMetrics()
@@ -938,15 +984,20 @@ public final class LiveRecordingViewModel {
         recordingState = .stopping
         do {
             let info = try CanonicalRecordingValidator.validate(url)
+            elapsedDuration = info.duration
             metricsCollector.recordCanonicalAudio(frameCount: info.frameCount, duration: info.duration)
-            try persistStoppedRecording(url)
+            _ = try recoveryStore.transition(meetingID: meetingId, to: .validated, duration: info.duration)
+            try persistStoppedRecording(url, duration: info.duration)
+            try markOwnershipPersistedAndClearJournal(url, duration: info.duration)
             recordingState = .saved
             syncMetrics()
             metricsCollector.logSummary()
             return url
         } catch let error as CanonicalRecordingValidationError {
             recordingState = .stoppedUnsaved
-            metricsCollector.recordWriteFailure(code: canonicalValidationCode(for: error))
+            let code = canonicalValidationCode(for: error)
+            try? recoveryStore.recordFailure(meetingID: meetingId, code: code)
+            metricsCollector.recordWriteFailure(code: code)
             syncMetrics()
             throw error
         } catch {
@@ -955,16 +1006,52 @@ public final class LiveRecordingViewModel {
         }
     }
 
-    private func persistStoppedRecording(_ url: URL) throws {
+    private func persistStoppedRecording(_ url: URL, duration: TimeInterval) throws {
         guard let meeting else { return }
+        let evidence = liveTranscriptChunks.compactMap { chunk -> LiveTranscriptSegment? in
+            guard chunk.isFinal, let first = chunk.segments.first, let last = chunk.segments.last,
+                  first.startTime.isFinite, last.endTime.isFinite,
+                  first.startTime >= 0, last.endTime > first.startTime, last.endTime <= duration else { return nil }
+            return LiveTranscriptSegment(text: chunk.text, startTime: first.startTime,
+                                         duration: last.endTime - first.startTime)
+        }
+        meeting.liveCaptionEvidenceData = evidence.isEmpty ? nil : try? JSONEncoder().encode(evidence)
         meeting.setAudioFileURL(url)
-        meeting.duration = elapsedDuration
+        meeting.duration = duration
         meeting.status = .processing
+        meeting.analysisState = "ready"
         if let saver = dataStore as? RecordingMeetingSaving {
-            try saver.saveRecording(meeting: meeting, audioURL: url, duration: elapsedDuration)
+            try saver.saveRecording(meeting: meeting, audioURL: url, duration: duration)
         } else {
             try modelContext?.save()
         }
+    }
+
+    private func markOwnershipPersistedAndClearJournal(_ url: URL, duration: TimeInterval) throws {
+        // Some protocol-only tests intentionally have no Meeting. Production
+        // recording routes always bind one before starting and use this check.
+        guard let meeting else { return }
+        let expectedRelative = try recoveryStore.relativeAudioPath(for: url)
+        let ownsURL = meeting.audioRelativePath == expectedRelative
+            || meeting.audioFileURL?.standardizedFileURL == url.standardizedFileURL
+        guard ownsURL, meeting.duration == duration, meeting.status == .processing else {
+            throw RecordingSaveError.persistenceFailed("Saved recording ownership could not be verified.")
+        }
+        if let modelContext {
+            let id = meeting.id
+            var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            guard let saved = try modelContext.fetch(descriptor).first else {
+                throw RecordingSaveError.persistenceFailed("The saved meeting could not be verified.")
+            }
+            let savedOwnsURL = saved.audioRelativePath == expectedRelative
+                || saved.audioFileURL?.standardizedFileURL == url.standardizedFileURL
+            guard savedOwnsURL, saved.duration == duration, saved.status == .processing else {
+                throw RecordingSaveError.persistenceFailed("Saved recording ownership could not be verified.")
+            }
+        }
+        _ = try recoveryStore.transition(meetingID: meetingId, to: .persisted, duration: duration)
+        try recoveryStore.remove(meetingID: meetingId)
     }
 
     private func canonicalValidationCode(for error: Error) -> String {
@@ -1015,9 +1102,14 @@ public final class LiveRecordingViewModel {
         capturedPhotos.removeAll()
         didCompleteDismissal = true
         
-        // Deleting is permanent: remove the audio file and attached photos too.
+        // Deleting is permanent: remove the journaled take and attached photos too.
         let fileManager = FileManager.default
-        if let url = destinationAudioURL { try? fileManager.removeItem(at: url) }
+        if let journal = try? recoveryStore.load(meetingID: meetingId) {
+            try? recoveryStore.deleteAudioAndJournal(journal)
+        } else {
+            if let url = destinationAudioURL { try? fileManager.removeItem(at: url) }
+            try? recoveryStore.remove(meetingID: meetingId)
+        }
         for photoURL in whiteboardPhotos { try? fileManager.removeItem(at: photoURL) }
         if let audioURL = (targetMeeting ?? meeting)?.resolvedAudioFileURL { try? fileManager.removeItem(at: audioURL) }
         whiteboardPhotos.removeAll()

@@ -73,9 +73,16 @@ public struct UserContentInventory: Sendable {
         ]
     }
 
+    var recordingRecoveryRoot: URL {
+        applicationSupportRoot.appendingPathComponent("Manent/RecordingRecovery", isDirectory: true)
+    }
+
     func meetingFiles(_ id: UUID) -> [URL] {
-        [applicationSupportRoot.appendingPathComponent(
-            "OfflineIntelligence/MeetingCheckpoints/\(id.uuidString).json")]
+        [
+            applicationSupportRoot.appendingPathComponent(
+                "OfflineIntelligence/MeetingCheckpoints/\(id.uuidString).json"),
+            recordingRecoveryRoot.appendingPathComponent("\(id.uuidString).json")
+        ]
     }
 
     var eraseAllDirectories: [URL] {
@@ -255,6 +262,14 @@ public final class DeletionCoordinator {
                 note.imageAttachmentPath.map { URL(fileURLWithPath: $0) }
             })
             files.append(contentsOf: inventory.meetingFiles(meeting.id))
+            let recoveryStore = RecordingTakeJournalStore(
+                documentsRoot: inventory.documentsRoot,
+                recoveryRoot: inventory.recordingRecoveryRoot,
+                fileManager: fileManager
+            )
+            if let recoveryJournal = try recoveryStore.load(meetingID: meeting.id) {
+                files.append(try recoveryStore.audioURL(for: recoveryJournal))
+            }
             directories.append(contentsOf: inventory.meetingDirectories(meeting.id))
         }
         if operation == .eraseAll {

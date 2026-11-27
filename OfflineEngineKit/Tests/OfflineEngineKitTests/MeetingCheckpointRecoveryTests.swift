@@ -110,6 +110,32 @@ final class MeetingCheckpointRecoveryTests: XCTestCase {
         XCTAssertEqual(result.turns.map(\.text).joined(), backend.turns.map(\.text).joined())
     }
 
+    func testReprocessUsesSavedTurnsWithoutOverwritingRecordingCheckpoint() async throws {
+        let (root, audio) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let backend = CheckpointTestBackend(root: root)
+        let pipeline = MeetingAnalysisPipeline(backend: backend, checkpointRoot: root)
+        let id = UUID()
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        _ = try await pipeline.run(meetingID: id, audio: audio, meetingDate: date, timezone: "UTC") { _ in }
+        let url = root.appendingPathComponent(id.uuidString + ".json")
+        let previous = try Data(contentsOf: url)
+        let calls = backend.counts
+        let edited = AnalysisTurn(id: "saved", text: "Send the corrected invoice on Friday.",
+                                  start: 1, end: 5, speaker: "Maya")
+
+        let result = try await pipeline.reprocessTranscript(meetingID: id, turns: [edited], meetingDate: date,
+            timezone: "UTC", model: .fast, participants: ["Maya"], agenda: nil)
+
+        XCTAssertEqual(result.stage, .completed)
+        XCTAssertEqual(result.turns, [edited])
+        XCTAssertEqual(result.analysis.first?.discussion.first?.evidence.first?.quote, edited.text)
+        XCTAssertEqual(backend.counts.0, calls.0)
+        XCTAssertEqual(backend.counts.1, calls.1)
+        XCTAssertEqual(backend.counts.2, calls.2 + 1)
+        XCTAssertEqual(try Data(contentsOf: url), previous)
+    }
+
     func testFinalTranscriptionAndDiarizationAreSerialByDefault() async throws {
         let (root, audio) = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }

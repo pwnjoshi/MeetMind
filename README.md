@@ -18,14 +18,13 @@ repairs, verification evidence, and remaining limitations.
 
 On-device recognition depends on device/language support and installed speech
 models; unavailable local recognition fails visibly rather than using cloud speech.
-Calendar and iCloud sync are not provided. Saved meeting storage is excluded from
-device backups; sharing and Reminders export are explicit user actions.
+Calendar import/read and iCloud sync are not provided. Writing a requested Calendar follow-up, sharing,
+and exporting or updating selected actions in Apple Reminders are explicit user actions; Manent does not import completion from Reminders.
 
 Build 7 integrates offline WhisperKit transcription, FluidAudio speaker separation,
 and local Qwen analysis into saved-meeting processing, with explicit model setup,
 protected resume checkpoints, and human review before generated tasks are saved.
-Build 10 uses the compact 4B trial profile after device comparisons exposed missed
-commitments in the 1.7B candidate. Settings includes model management and a separate diagnostics lab. Real Hinglish
+The current app uses Qwen3 1.7B for meeting analysis and Vidur. The earlier 4B candidate was a diagnostics-only experiment and is not a production option. Settings includes model management and a separate diagnostics lab. Real Hinglish
 accuracy and long-meeting performance remain unqualified. See
 [OFFLINE_QUALIFICATION.md](OFFLINE_QUALIFICATION.md) for device measurements and
 outstanding Hinglish quality gates.

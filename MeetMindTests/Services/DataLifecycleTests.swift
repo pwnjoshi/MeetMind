@@ -124,6 +124,11 @@ final class DataLifecycleTests: XCTestCase {
         try write("photo", to: attachment)
         try write("chunk", to: fixture.inventory.meetingDirectories(doomed.id)[0].appendingPathComponent("chunk.caf"))
         try write("checkpoint", to: fixture.inventory.meetingFiles(doomed.id)[0])
+        let recoveryStore = RecordingTakeJournalStore(
+            documentsRoot: fixture.inventory.documentsRoot,
+            recoveryRoot: fixture.inventory.recordingRecoveryRoot
+        )
+        _ = try recoveryStore.createBeforeRecording(meetingID: doomed.id, audioURL: audio)
         try fixture.records.update(doomed.id) { $0.keptPrivate = true }
         try fixture.records.update(kept.id) { $0.keptPrivate = true }
         try fixture.responses.record(TaskResponse(kind: .confirmed), for: actionID)
@@ -142,6 +147,7 @@ final class DataLifecycleTests: XCTestCase {
         XCTAssertNil(try context.fetch(FetchDescriptor<Meeting>()).first { $0.id == doomed.id })
         XCTAssertNotNil(try context.fetch(FetchDescriptor<Meeting>()).first { $0.id == kept.id })
         XCTAssertFalse(FileManager.default.fileExists(atPath: audio.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: recoveryStore.journalURL(for: doomed.id).path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: attachment.path))
         XCTAssertNil(fixture.responses.response(for: actionID))
         XCTAssertEqual(fixture.records.record(for: doomed.id), MeetingRecordData())
@@ -251,6 +257,12 @@ final class DataLifecycleTests: XCTestCase {
         try write("diagnostic", to: roots.documentsRoot.appendingPathComponent("BenchmarkMetrics/run.json"))
         try write("export", to: roots.temporaryRoot.appendingPathComponent("Manent-old.pdf"))
         try write("cache", to: roots.temporaryRoot.appendingPathComponent("MeetMindAudioCache/cache.m4a"))
+        let recoveryStore = RecordingTakeJournalStore(
+            documentsRoot: roots.documentsRoot,
+            recoveryRoot: roots.recordingRecoveryRoot
+        )
+        let recording = roots.documentsRoot.appendingPathComponent("Recordings/private.m4a")
+        _ = try recoveryStore.createBeforeRecording(meetingID: meeting.id, audioURL: recording)
     }
 
     private func write(_ string: String, to url: URL) throws {

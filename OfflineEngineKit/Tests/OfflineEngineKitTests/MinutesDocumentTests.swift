@@ -40,19 +40,19 @@ final class MinutesDocumentTests: XCTestCase {
         // Formal resolutions with the rationale and the original quotes as evidence.
         XCTAssertEqual(minutes.resolutions.map(\.text),
                        ["That the launch be held on 20 November.",
-                        "That the Pune vendor be engaged for the launch (preferred for lower price)."],
+                        "That the Pune vendor be engaged (preferred for lower price)."],
                        debug, file: file, line: line)
         XCTAssertEqual(minutes.resolutions.last?.rationale, "lower price", debug, file: file, line: line)
         XCTAssertTrue(minutes.resolutions.allSatisfy { !$0.evidence.isEmpty }, debug, file: file, line: line)
 
-        // Actions carry context, an owner and a resolved date.
+        // Actions carry an owner and a resolved date.
         XCTAssertEqual(minutes.actions.map(\.title),
-                       ["Prepare the agenda for the next meeting", "Send the launch presentation to the client"],
+                       ["Prepare the agenda", "Send the presentation to the client"],
                        debug, file: file, line: line)
         XCTAssertEqual(minutes.actions.map { $0.owner ?? "nil" }, ["Pawan", "Neha"], debug, file: file, line: line)
         XCTAssertEqual(minutes.actions.map { $0.dueDate ?? "nil" }, ["2026-11-13", "2026-11-12"], debug, file: file, line: line)
         XCTAssertTrue(minutes.actions.allSatisfy { $0.deadlineText != nil }, debug, file: file, line: line)
-        // The checkpoint stores the same contextual tasks as review suggestions.
+        // The checkpoint stores the same tasks as review suggestions.
         let stored = reduced.checkpoint.analysis.flatMap(\.tasks)
         XCTAssertEqual(stored.map(\.title), minutes.actions.map(\.title), debug, file: file, line: line)
         XCTAssertEqual(stored.map { $0.owner ?? "nil" }, ["Pawan", "Neha"], debug, file: file, line: line)
@@ -83,7 +83,7 @@ final class MinutesDocumentTests: XCTestCase {
         let marketing = budgetSubject.lowercased()
         let expected = "Neha and Pawan discussed the launch date, vendor, budget and design change. "
             + "They decided to launch on 20 November and go with the Pune vendor. "
-            + "Pawan will prepare the agenda by Friday; Neha will send the presentation to the client by tomorrow. "
+            + "Pawan will prepare the agenda by Friday. Neha will send the presentation to the client by tomorrow. "
             + "The \(marketing) and design change remain open."
         XCTAssertEqual(reduced.executiveSummary, expected, debug, file: file, line: line)
         XCTAssertEqual(minutes.executiveSummary, expected, debug, file: file, line: line)
@@ -158,7 +158,18 @@ final class MinutesDocumentTests: XCTestCase {
         let reduced = reduce(MinutesFixtures.english, participants: ["Neha", "Pawan"], model: model)
         XCTAssertFalse(reduced.discussion.contains { $0.text.contains("works for me") })
         XCTAssertFalse(reduced.discussion.contains { HindiText.containsDevanagari($0.text) })
-        XCTAssertTrue(reduced.discussion.contains { $0.text.hasPrefix("Both agreed the launch timing") })
+        XCTAssertFalse(reduced.discussion.contains { $0.text.contains("the vendor choice follows") })
+    }
+
+    func testDecisionDoesNotBorrowAReasonFromADifferentVendor() {
+        let lines = [
+            MinutesFixtureLine(speaker: "S1", text: "The Delhi vendor has a lower price."),
+            MinutesFixtureLine(speaker: "S2", text: "We agreed to go with the Pune vendor.")
+        ]
+        let decision = reduce(lines, participants: []).minutes.resolutions.first
+        XCTAssertNotNil(decision)
+        XCTAssertNil(decision?.rationale)
+        XCTAssertEqual(decision?.evidence.count, 1)
     }
 
     // MARK: - Dates and phrases

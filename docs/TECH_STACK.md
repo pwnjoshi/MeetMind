@@ -60,7 +60,7 @@ one-time model download from Hugging Face.
 - Vidur: "hi", "what did we decide about X?", "what are my tasks?", "how did the budget discussion go?",
   "schedule a review tomorrow at 4 with Maya". Check sources and that nothing is invented.
 
-### In CI (every push)
-Release build, about 1,100 app tests, engine tests (minutes, Hindi, Vidur fixtures), launch smoke test with
-screenshots, IPA privacy and encryption checks. The synthetic-audio accuracy run (`eval.yml`) is manual only,
-because CI Macs have no Neural Engine.
+### In CI
+Pull-request and main-branch CI builds the Release app, runs app and engine tests, captures launch-smoke
+screenshots, and checks IPA privacy and encryption metadata. The full synthetic-audio accuracy workflow
+(`eval.yml`) is manual only because CI Macs have no Neural Engine; it does not run on every push.

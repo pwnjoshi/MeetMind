@@ -116,15 +116,16 @@ enum MinutesComposer {
             sentences.append(subject + " the " + list(lowered) + ".")
         }
         if !decisionPhrases.isEmpty {
-            let lead = names.count > 1 ? "They decided to " : "Decided to "
+            let lead = names.count > 1 ? "They decided to " : "The meeting resolved to "
             sentences.append(lead + list(decisionPhrases.map { HindiText.lowercaseFirst(stripPeriod($0)) }) + ".")
         }
         if !tasks.isEmpty {
             var lines: [String] = []
             for task in tasks.prefix(4) { lines.append(taskLine(task)) }
-            var text = lines.joined(separator: "; ")
-            if tasks.count > 4 { text += "; and \(tasks.count - 4) more" }
-            sentences.append(HindiText.capitalizeFirst(text) + ".")
+            sentences.append(contentsOf: lines.map {
+                HindiText.capitalizeFirst(stripPeriod($0)) + "."
+            })
+            if tasks.count > 4 { sentences.append("The action list contains \(tasks.count - 4) more items.") }
         }
         if !openSubjects.isEmpty {
             let lowered = openSubjects.map { HindiText.lowercaseFirst($0) }

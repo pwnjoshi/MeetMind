@@ -15,10 +15,10 @@ HOW TO TEST
 WHY EACH CAPABILITY IS NEEDED
 - Microphone: the core feature is recording meetings.
 - Speech Recognition: live captions during recording, using Apple's on-device recognizer (requiresOnDeviceRecognition is set; no audio is sent to Apple).
-- Background audio (UIBackgroundModes audio): a meeting recording must continue when the screen locks or the user switches apps. Recording is always started by the user and iOS shows its recording indicator.
-- Background processing (UIBackgroundModes processing, BGTaskScheduler): after a meeting, the app transcribes and writes minutes on the device, which can take several minutes. A BGProcessingTask lets iOS finish an interrupted analysis. On iOS 26 the app uses a continued processing task for analysis the user started.
-- Calendar (full access): optional. Shows upcoming meetings to record and adds a follow-up event when the user asks.
-- Reminders (full access): optional. Exports action items the user selects and keeps their completed state in sync.
+- Background audio (UIBackgroundModes audio): a meeting recording can continue when the screen locks or the user switches apps. Recording is always started by the user, iOS shows its recording indicator, and force-quitting stops recording.
+- Background processing (UIBackgroundModes processing, BGTaskScheduler): after a meeting, the app transcribes and writes minutes on the device, which can take several minutes. Analysis may continue when iOS grants background processing time; iOS can suspend it, and reopening the app resumes saved work. Force-quitting stops analysis.
+- Calendar (full access): optional. Writes a follow-up event only when the user asks. Manent does not read or show upcoming Calendar events.
+- Reminders (full access): optional. Exports selected Manent action items and can send later Manent completion updates to those exported reminders. It does not import completion from Reminders.
 - Camera and Photos: optional. Attach whiteboard or slide photos to a meeting.
 
 PRIVACY

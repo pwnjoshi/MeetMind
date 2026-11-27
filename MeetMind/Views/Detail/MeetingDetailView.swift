@@ -23,6 +23,9 @@ public struct MeetingDetailView: View {
     @State private var showAskAISheet: Bool = false
     @State private var showPhotoModal: String? = nil
     @State private var showSpeakerReassign: TranscriptSegment? = nil
+    @State private var showReprocessConfirmation = false
+    @State private var isReprocessing = false
+    @State private var showReprocessSuccess = false
     @State private var showDeleteConfirmation = false
     @State private var deletionError: String?
     @State private var showNoteSheet = false
@@ -31,7 +34,7 @@ public struct MeetingDetailView: View {
     @State private var followUpDraft: MeetingSetupViewModel?
     @State private var showFollowUp = false
     @State private var recordSection = "Minutes"
-    @State private var showsTranscriptPage = false
+    @State private var transcriptRoute: TranscriptRoute?
     @State private var showsStudio = false
     @State private var showsApproval = false
     @State private var showsSeriesComparison = false
@@ -158,8 +161,8 @@ public struct MeetingDetailView: View {
         .navigationDestination(isPresented: $showsReviewChecklist) {
             if let meeting = viewModel.meeting { MinutesReviewChecklistView(meeting: meeting) }
         }
-        .navigationDestination(isPresented: $showsTranscriptPage) {
-            if let id = viewModel.meeting?.id { MeetingTranscriptScreen(meetingId: id) }
+        .fullScreenCover(item: $transcriptRoute) { route in
+            MeetingTranscriptScreen(meetingId: route.id)
         }
         .navigationDestination(isPresented: $showsPDFPreview) {
             if let document = momDocument() {
@@ -283,6 +286,12 @@ public struct MeetingDetailView: View {
             }
         }
         .onDisappear { viewModel.stopPlayback() }
+        .modifier(ReprocessMinutesFeedback(
+            isReprocessing: isReprocessing,
+            showConfirmation: $showReprocessConfirmation,
+            showSuccess: $showReprocessSuccess,
+            onConfirm: reprocessMinutes
+        ))
         .alert("Delete meeting?", isPresented: $showDeleteConfirmation) {
             Button("Delete", role: .destructive) {
                 Task { @MainActor in
@@ -304,7 +313,13 @@ public struct MeetingDetailView: View {
     private var optionsMenu: some View {
         Menu {
             Button("Meeting Details", systemImage: "info.circle") { showDetails = true }
-            Button("Show Transcript", systemImage: "doc.text") { showsTranscriptPage = true }
+            Button("Show Transcript", systemImage: "doc.text") { openTranscript() }
+            if viewModel.meeting?.status == .completed {
+                Button("Reprocess Minutes", systemImage: "arrow.clockwise") { showReprocessConfirmation = true }
+                    .disabled(!viewModel.transcriptSegments.contains {
+                        !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    })
+            }
             if hasMinutes {
                 Button("Edit Minutes", systemImage: "pencil") { showClassicEditor = true }
                 Button("Formal Minutes (MoM)", systemImage: "doc.richtext") { showsMoM = true }
@@ -330,6 +345,30 @@ public struct MeetingDetailView: View {
             Label("More", systemImage: "ellipsis").labelStyle(.iconOnly)
         }
         .accessibilityLabel("More")
+    }
+
+    private struct TranscriptRoute: Identifiable {
+        let id: UUID
+    }
+
+    private func openTranscript() {
+        guard let id = viewModel.meeting?.id else { return }
+        viewModel.stopPlayback()
+        transcriptRoute = TranscriptRoute(id: id)
+    }
+
+    private func reprocessMinutes() {
+        guard !isReprocessing, let id = viewModel.meeting?.id else { return }
+        isReprocessing = true
+        Task { @MainActor in
+            defer { isReprocessing = false }
+            do {
+                try await AnalysisCoordinator(context: modelContext).reprocessMinutes(meetingID: id, model: VidurModel.selected)
+                showReprocessSuccess = true
+            } catch {
+                deletionError = error.localizedDescription
+            }
+        }
     }
 
     /// Every Share entry point (footer, toolbar, PDF preview, Export) opens the recipients sheet over the meeting record.
@@ -450,7 +489,7 @@ public struct MeetingDetailView: View {
                 )
                 if recordSection == "Minutes", let meeting = viewModel.meeting,
                    viewModel.summary == nil, meeting.resolvedAudioFileURL != nil || !meeting.transcriptSegments.isEmpty {
-                    Button { showsTranscriptPage = true } label: {
+                    Button { openTranscript() } label: {
                         HStack {
                             Text("Transcript and audio").font(.headline)
                             Spacer()
@@ -486,7 +525,8 @@ public struct MeetingDetailView: View {
                     })
                 default:
                     if let meeting = viewModel.meeting {
-                        MeetingMinutesView(meeting: meeting, viewModel: viewModel, onOpenPeople: { showPeople = true })
+                        MeetingMinutesView(meeting: meeting, viewModel: viewModel,
+                                           onOpenPeople: { showPeople = true }, onOpenTranscript: openTranscript)
                     }
                 }
             }
@@ -499,5 +539,35 @@ public struct MeetingDetailView: View {
             get: { viewModel.mutationError },
             set: { viewModel.mutationError = $0 }
         )
+    }
+}
+
+@MainActor
+private struct ReprocessMinutesFeedback: ViewModifier {
+    let isReprocessing: Bool
+    @Binding var showConfirmation: Bool
+    @Binding var showSuccess: Bool
+    let onConfirm: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .disabled(isReprocessing)
+            .navigationBarBackButtonHidden(isReprocessing)
+            .overlay {
+                if isReprocessing {
+                    ProgressView("Reprocessing minutes…")
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+            }
+            .alert("Reprocess minutes?", isPresented: $showConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Reprocess", action: onConfirm)
+            } message: {
+                Text("This replaces the saved summary, discussion, decisions, and suggested actions using the current transcript. Saved actions are kept.")
+            }
+            .alert("Minutes reprocessed", isPresented: $showSuccess) {
+                Button("OK", role: .cancel) {}
+            }
     }
 }

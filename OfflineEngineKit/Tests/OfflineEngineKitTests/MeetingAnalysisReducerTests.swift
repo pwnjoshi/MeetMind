@@ -49,6 +49,127 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertTrue(reduced.openIssues[0].text.contains("not decided"))
     }
 
+    func testMeetingReviewKeepsNamedFollowUpsAndDropsOpeningChatterFromOverview() {
+        let opening = "Okay, so you all have been working on the project."
+        let turns = [
+            AnalysisTurn(id: "t1", text: opening, start: 0, end: 3, speaker: nil),
+            AnalysisTurn(id: "t2", text: "Rahul, you can continue focusing on model accuracy.", start: 30, end: 34, speaker: nil),
+            AnalysisTurn(id: "t3", text: "And Maya, you continue with POC, right?", start: 35, end: 38, speaker: nil)
+        ]
+        let discussion = SupportedPoint(text: opening, evidence: [SourceEvidence(turnID: "t1", quote: opening)])
+        let result = LocalAnalysisResult(discussion: [discussion], decisions: [], tasks: [])
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: [result]),
+                                                    participants: ["Rahul", "Maya"])
+        XCTAssertEqual(reduced.tasks.compactMap(\.owner), ["Rahul", "Maya"])
+        XCTAssertFalse(reduced.executiveSummary.contains(opening))
+        XCTAssertTrue(reduced.decisions.isEmpty)
+    }
+
+    func testExplicitLaterHandoffKeepsOnlyTheNewOwner() {
+        let turns = [
+            AnalysisTurn(id: "t1", text: "Maya, please send the partner deck by Friday.", start: 0, end: 3, speaker: nil),
+            AnalysisTurn(id: "t2", text: "The launch can wait.", start: 10, end: 12, speaker: nil),
+            AnalysisTurn(id: "t3", text: "Rahul will send the partner deck instead.", start: 19, end: 22, speaker: nil)
+        ]
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []),
+                                                    participants: ["Maya", "Rahul"])
+        XCTAssertEqual(reduced.tasks.count, 1)
+        XCTAssertEqual(reduced.tasks.first?.owner, "Rahul")
+        XCTAssertEqual(reduced.tasks.first?.title, "Send the partner deck")
+        XCTAssertNil(reduced.tasks.first?.deadlineText)
+        XCTAssertEqual(Set(reduced.tasks.first?.evidence.map(\.turnID) ?? []), ["t1", "t3"])
+    }
+
+    func testOverviewRankingOnlyUsesCurrentGroundedDiscussion() {
+        let lines = ["The mobile prototype now opens offline.", "The budget report shows rising costs."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let points = turns.map { SupportedPoint(text: $0.text, evidence: [SourceEvidence(turnID: $0.id, quote: $0.text)]) }
+        var saved = checkpoint(turns: turns, analysis: [LocalAnalysisResult(discussion: points, decisions: [], tasks: [])])
+        saved.rankedOverviewFacts = [SupportedPoint(text: "The budget was approved.", evidence: points[1].evidence), points[1]]
+        let result = MeetingAnalysisReducer.reduce(saved)
+        XCTAssertTrue(result.executiveSummary.hasPrefix(lines[1]))
+        XCTAssertFalse(result.executiveSummary.contains("approved"))
+        XCTAssertEqual(result.discussion.count, 2)
+    }
+
+    func testRankedDiscussionAddsContextAlongsideStructuredDecisions() {
+        let lines = ["The prototype now opens offline.", "We agreed to retain the existing audit log."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let fact = SupportedPoint(text: lines[0], evidence: [SourceEvidence(turnID: turns[0].id, quote: lines[0])])
+        var saved = checkpoint(turns: turns, analysis: [LocalAnalysisResult(discussion: [fact], decisions: [], tasks: [])])
+        saved.rankedOverviewFacts = [fact, fact]
+        let result = MeetingAnalysisReducer.reduce(saved)
+        XCTAssertEqual(result.executiveSummary.components(separatedBy: lines[0]).count, 2)
+        XCTAssertTrue(result.executiveSummary.contains("retain the existing audit log"))
+    }
+
+    func testLaterDeadlineChangePreservesOwnerAndBothQuotes() {
+        let lines = ["Maya will send the partner deck by Friday.", "The partner deck is now due Monday."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let result = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []), participants: ["Maya"])
+        XCTAssertEqual(result.tasks.count, 1)
+        XCTAssertEqual(result.tasks.first?.owner, "Maya")
+        XCTAssertEqual(result.tasks.first?.deadlineText, "Monday")
+        XCTAssertEqual(result.tasks.first?.evidence.map(\.turnID), ["t0", "t1"])
+    }
+
+    func testLaterCompletionClosesOnlyTheMatchingAction() {
+        let lines = ["Maya will send the partner deck.", "Rahul will review the partner deck.",
+                     "The project remains on track.", "The partner deck has been sent."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let result = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []),
+                                                   participants: ["Maya", "Rahul"])
+        XCTAssertEqual(result.tasks.map(\.title), ["Review the partner deck"])
+    }
+
+    func testRescindedDecisionDoesNotAppearAsCurrent() {
+        let lines = ["We agreed to retain the old audit log.", "We rescinded our decision to retain the old audit log.",
+                     "We agreed to keep the new audit log."]
+        let turns = lines.enumerated().map { index, line in
+            AnalysisTurn(id: "t\(index)", text: line, start: Double(index), end: Double(index + 1), speaker: nil)
+        }
+        let result = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: []))
+        XCTAssertEqual(result.decisions.count, 1)
+        XCTAssertTrue(result.decisions.first?.text.contains("new audit log") == true)
+        XCTAssertFalse(result.executiveSummary.contains("old audit log"))
+    }
+
+    func testUnresolvedCaptionCannotSupplyMinutesEvidence() {
+        let original = "We agreed to publish the report today."
+        let disputed = AnalysisTurn(id: "t1", text: original, start: 0, end: 3, speaker: nil)
+        let next = AnalysisTurn(id: "t2", text: "Maya will send the spreadsheet.", start: 4, end: 7, speaker: nil)
+        let point = SupportedPoint(text: original, evidence: [SourceEvidence(turnID: disputed.id, quote: original)])
+        var saved = checkpoint(turns: [disputed, next],
+            analysis: [LocalAnalysisResult(discussion: [point], decisions: [point], tasks: [])])
+        saved.transcriptCorrections = [TranscriptCorrection(original: original,
+            alternative: "We did not agree to publish the report today.", replacement: nil, start: 0, end: 3)]
+        let input = saved.excludingUnresolvedCaptions(from: saved.turns)
+        XCTAssertEqual(input.map(\.text), ["", next.text])
+        XCTAssertEqual(input.map(\.id), saved.turns.map(\.id))
+        let result = MeetingAnalysisReducer.reduce(saved, participants: ["Maya"])
+        XCTAssertTrue(result.decisions.isEmpty)
+        XCTAssertFalse(result.executiveSummary.contains("publish"))
+        XCTAssertEqual(result.tasks.first?.owner, "Maya")
+        XCTAssertEqual(result.checkpoint.turns.first?.text, original)
+    }
+
+    func testFutureDecisionIsNotAResolution() {
+        let turn = AnalysisTurn(id: "t1", text: "He will make the final decision.", start: 0, end: 3, speaker: nil)
+        let point = SupportedPoint(text: "The decision is final.",
+                                   evidence: [SourceEvidence(turnID: turn.id, quote: turn.text)])
+        let analysis = LocalAnalysisResult(discussion: [], decisions: [point], tasks: [])
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: [turn], analysis: [analysis]))
+        XCTAssertTrue(reduced.minutes.resolutions.isEmpty)
+    }
+
     func testChunkParaphrasesAreReducedToOneMinutesPointWithCombinedEvidence() {
         let turns = [
             AnalysisTurn(id: "t1", text: "The launch budget remains pending Finance review.", start: 0, end: 2, speaker: nil),
@@ -64,6 +185,44 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(reduced.discussion.count, 1)
         XCTAssertEqual(reduced.discussion[0].evidence.count, 2)
         XCTAssertFalse(reduced.executiveSummary.isEmpty)
+    }
+
+    func testGeneratedMinutesRejectUnsupportedClaimsAndKeepTheSpokenAssignment() throws {
+        let turns = [
+            AnalysisTurn(id: "t1", text: "The team reviewed the onboarding screens.", start: 0, end: 2, speaker: nil),
+            AnalysisTurn(id: "t2", text: "We agreed to keep the workspace private.", start: 2, end: 4, speaker: nil),
+            AnalysisTurn(id: "t3", text: "Maya will send the presentation tomorrow.", start: 4, end: 6, speaker: nil),
+            AnalysisTurn(id: "t4", text: "Rahul is joining on Friday.", start: 6, end: 8, speaker: nil)
+        ]
+        let evidence = turns.map { SourceEvidence(turnID: $0.id, quote: $0.text) }
+        let analysis = LocalAnalysisResult(
+            discussion: [
+                SupportedPoint(text: "The onboarding screens cost 900 dollars.", evidence: [evidence[0]]),
+                SupportedPoint(text: "Security demanded a new database.", evidence: [evidence[0]])
+            ],
+            decisions: [
+                SupportedPoint(text: "The team approved the onboarding screens.", evidence: [evidence[0]]),
+                SupportedPoint(text: "We agreed to make the workspace public.", evidence: [evidence[1]])
+            ],
+            tasks: [
+                SuggestedTask(title: "Send the presentation", category: "Follow-up", owner: "Rahul",
+                              deadlineText: "Friday", priority: nil, evidence: [evidence[2], evidence[3]]),
+                SuggestedTask(title: "Update the onboarding screens", category: "Create/Update", owner: "Rahul",
+                              deadlineText: nil, priority: nil, evidence: [evidence[0]])
+            ]
+        )
+        let reduced = MeetingAnalysisReducer.reduce(checkpoint(turns: turns, analysis: [analysis]),
+                                                    participants: ["Maya", "Rahul"])
+        XCTAssertFalse(reduced.discussion.contains { $0.text.contains("900") || $0.text.contains("database") })
+        XCTAssertFalse(reduced.executiveSummary.contains("900"))
+        XCTAssertFalse(reduced.minutes.agendaText.lowercased().contains("approved"))
+        XCTAssertEqual(reduced.decisions.count, 1)
+        XCTAssertTrue(reduced.decisions[0].text.contains("private"))
+        XCTAssertEqual(reduced.minutes.actions.count, 1)
+        let action = try XCTUnwrap(reduced.minutes.actions.first)
+        XCTAssertEqual(action.owner, "Maya")
+        XCTAssertEqual(action.deadlineText?.lowercased(), "tomorrow")
+        XCTAssertEqual(action.title, "Send the presentation")
     }
 
     func testGreetingsAndEmptyModelOutputProduceTruthfulEmptySummary() {

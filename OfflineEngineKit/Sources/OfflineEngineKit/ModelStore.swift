@@ -43,6 +43,27 @@ public enum ModelReadiness: Codable, Sendable, Equatable {
     case incompatible(reason: String)
 }
 
+public struct ModelStorageCapacity: Sendable, Equatable {
+    public static let workingSpaceBytes: Int64 = 500_000_000
+
+    public let downloadBytes: Int64
+    public let requiredFreeBytes: Int64
+    public let availableBytes: Int64
+
+    public var shortageBytes: Int64 { Self.shortage(required: requiredFreeBytes, available: availableBytes) }
+    public var hasEnoughSpace: Bool { shortageBytes == 0 }
+
+    public init(downloadBytes: Int64, requiredFreeBytes: Int64, availableBytes: Int64) {
+        self.downloadBytes = max(0, downloadBytes)
+        self.requiredFreeBytes = max(0, requiredFreeBytes)
+        self.availableBytes = max(0, availableBytes)
+    }
+
+    public static func shortage(required: Int64, available: Int64) -> Int64 {
+        max(0, required - available)
+    }
+}
+
 public enum OfflineError: LocalizedError {
     case unavailable(String)
     case memoryBudget(requiredEstimate: UInt64, budget: UInt64)
@@ -277,6 +298,41 @@ public actor OfflineModelStore {
         }
     }
 
+    private func availableCapacity(at url: URL) throws -> Int64 {
+        try url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage ?? 0
+    }
+
+    private func remainingDownloadBytes(for profile: ModelProfile) throws -> Int64 {
+        let root = try directory(profile)
+        let staging = root.appendingPathExtension("download")
+        var pending: Int64 = 0
+        for asset in profile.files {
+            try validateAsset(asset)
+            let target = staging.appendingPathComponent(asset.path)
+            if (try? hash(target)) == asset.sha256.lowercased() { continue }
+            let partial = target.appendingPathExtension("partial")
+            let partialSize = (try? FileManager.default.attributesOfItem(atPath: partial.path)[.size] as? NSNumber)?.int64Value ?? 0
+            let resumableBytes = partialSize <= asset.bytes ? max(0, partialSize) : 0
+            pending += max(0, asset.bytes - resumableBytes)
+        }
+        return pending
+    }
+
+    /// Reports the additional capacity needed to finish these downloads. It uses
+    /// `volumeAvailableCapacityForImportantUsage`, the same API enforced by install,
+    /// and credits only resumable partial bytes or fully verified staging assets.
+    public func storageCapacity(for profiles: [ModelProfile]) throws -> ModelStorageCapacity {
+        let root = try modelsRoot()
+        let downloadBytes = profiles.reduce(Int64(0)) { $0 + $1.downloadBytes }
+        let pending = try profiles.reduce(Int64(0)) { total, profile in
+            total + (try remainingDownloadBytes(for: profile))
+        }
+        let required = profiles.isEmpty ? 0 : pending + ModelStorageCapacity.workingSpaceBytes
+        return ModelStorageCapacity(downloadBytes: downloadBytes, requiredFreeBytes: required,
+                                    availableBytes: try availableCapacity(at: root))
+    }
+
     public func install(_ profile: ModelProfile, progress: @Sendable @escaping (Double) -> Void) async throws {
         while installingModelIDs.contains(profile.id) {
             try await Task.sleep(for: .milliseconds(250))
@@ -291,21 +347,18 @@ public actor OfflineModelStore {
         let root = try directory(profile)
         let staging = root.appendingPathExtension("download")
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-        let available = try staging.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage ?? 0
-        var pending: Int64 = 0
+        let available = try availableCapacity(at: staging)
+        let pending = try remainingDownloadBytes(for: profile)
+        let required = pending + ModelStorageCapacity.workingSpaceBytes
+        guard available >= required else {
+            let shortage = ModelStorageCapacity.shortage(required: required, available: available)
+            let shortageText = ByteCountFormatter.string(fromByteCount: shortage, countStyle: .file)
+            throw OfflineError.unavailable("Not enough storage. Free exactly \(shortageText), then resume the verified download.")
+        }
         var cached: Set<String> = []
         for asset in profile.files {
-            try validateAsset(asset)
-            let partial = staging.appendingPathComponent(asset.path).appendingPathExtension("partial")
-            if (try? hash(staging.appendingPathComponent(asset.path))) == asset.sha256.lowercased() {
-                cached.insert(asset.path)
-                continue
-            }
-            let resumed = (try? FileManager.default.attributesOfItem(atPath: partial.path)[.size] as? NSNumber)?.int64Value ?? 0
-            pending += max(0, asset.bytes - min(asset.bytes, resumed))
-        }
-        guard available > pending + 500_000_000 else {
-            throw OfflineError.unavailable("Not enough storage. Free space for the model plus 500 MB of working space.")
+            let target = staging.appendingPathComponent(asset.path)
+            if (try? hash(target)) == asset.sha256.lowercased() { cached.insert(asset.path) }
         }
         var complete: Int64 = 0
         for asset in profile.files {

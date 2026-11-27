@@ -32,9 +32,6 @@ final class CaptionLanguageHub: @unchecked Sendable {
         var start: TimeInterval
         var end: TimeInterval
         let language: CaptionSpeechLanguage
-        /// Snapshot of the winning candidate when the first final froze this decision.
-        let words: [CaptionWord]
-        let switched: Bool
         let firstFinalArrival: Date
     }
 
@@ -219,8 +216,8 @@ final class CaptionLanguageHub: @unchecked Sendable {
         return unit
     }
 
-    /// The first final freezes the displayed/committed language for this audio unit. The other
-    /// recognizer's overlapping partial is valid evidence, but later results cannot flip it.
+    /// Hold the preview steady while the alternate recognizer finishes. Choose the
+    /// committed text after the grace window, using both final candidates if available.
     private func lockDecision(for unit: Unit) {
         if let pending = pendingDecision,
            rangesOverlap(pending.start, pending.end, unit.start, unit.end) {
@@ -230,11 +227,9 @@ final class CaptionLanguageHub: @unchecked Sendable {
         }
 
         let candidates = candidates(for: unit)
-        let decision = arbiter.decide(english: candidates[.english] ?? [], hindi: candidates[.hindi] ?? [])
-        let lockedWords = candidates[decision.language] ?? []
+        let language = arbiter.preview(english: candidates[.english] ?? [], hindi: candidates[.hindi] ?? [])
         let arrival = firstArrival(in: unit) ?? Date()
-        pendingDecision = PendingDecision(start: unit.start, end: unit.end, language: decision.language,
-                                          words: lockedWords, switched: decision.switched,
+        pendingDecision = PendingDecision(start: unit.start, end: unit.end, language: language,
                                           firstFinalArrival: arrival)
         // A final is pending, so its previous partial must no longer remain mutable in the UI.
         clearPublishedOpen()
@@ -289,21 +284,76 @@ final class CaptionLanguageHub: @unchecked Sendable {
         return result
     }
 
-    private func emit(_ unit: Unit) {
-        let candidates = candidates(for: unit)
-        let lock = pendingDecision
-        let preferred = lock?.language ?? .english
-        var winner = candidates[preferred] ?? []
-        if winner.isEmpty {
-            // Do not change languages after the first final. The locked snapshot is safer than
-            // committing a later alternate recognizer's rewrite.
-            winner = lock?.words ?? []
+    /// Replace a consecutive Hindi-script rendering of an English clause only
+    /// when timestamps and multiple neighboring word matches support the swap.
+    static func mixedClause(english: [CaptionWord], hindi: [CaptionWord]) -> [CaptionWord]? {
+        let boundaries = hindi.indices.filter { LiveCaptionLexicon.hindiFunctionWords.contains(hindi[$0].comparisonKey) }
+        guard boundaries.count >= 2, english.count >= 3 else { return nil }
+        var result: [CaptionWord] = []
+        var cursor = 0
+        var switched = false
+        for (left, right) in zip(boundaries, boundaries.dropFirst()) where right - left >= 4 {
+            let span = (left + 1)..<right
+            let original = Array(hindi[span])
+            guard let first = original.first, let last = original.last else { continue }
+            let replacement = english.filter {
+                let midpoint = ($0.start + $0.end) / 2
+                return midpoint >= first.start && midpoint <= last.end && $0.confidence >= 0.75
+            }
+            guard replacement.count >= 3,
+                  let englishStart = replacement.first?.start, let englishEnd = replacement.last?.end,
+                  abs(englishStart - first.start) <= 0.35, abs(englishEnd - last.end) <= 0.35 else { continue }
+            let englishKeys = replacement.map(\.comparisonKey)
+            let englishEvidence = LiveCaptionLanguageArbiter.evidence(english: replacement, hindi: [])
+            guard englishEvidence.englishProbability >= 0.65 else { continue }
+            let anchored = original.filter { word in
+                let skeleton = LiveCaptionLexicon.devanagariSkeleton(word.comparisonKey)
+                return skeleton.count >= 2 && englishKeys.contains { LiveCaptionLexicon.englishSkeleton($0) == skeleton }
+            }
+            guard anchored.count >= 2, anchored.count * 2 >= original.count else { continue }
+            result.append(contentsOf: restoreLoanwords(english: english, hindi: Array(hindi[cursor..<span.lowerBound])))
+            result.append(contentsOf: replacement)
+            cursor = span.upperBound
+            switched = true
         }
+        guard switched else { return nil }
+        result.append(contentsOf: restoreLoanwords(english: english, hindi: Array(hindi[cursor...])))
+        return result
+    }
+
+    private static func restoreLoanwords(english: [CaptionWord], hindi: [CaptionWord]) -> [CaptionWord] {
+        return hindi.map { word in
+            // Keep the Hindi syntax and use the concurrent English spelling
+            // only for the same recognized loanword at the same audio time.
+            guard LiveCaptionLexicon.englishLoanwords.contains(word.comparisonKey) else { return word }
+            let skeleton = LiveCaptionLexicon.devanagariSkeleton(word.comparisonKey)
+            guard skeleton.count >= 3 else { return word }
+            let midpoint = (word.start + word.end) / 2
+            let matches = english.filter {
+                $0.confidence >= 0.75 && $0.start <= midpoint && $0.end >= midpoint
+                    && LiveCaptionLexicon.englishSkeleton($0.comparisonKey) == skeleton
+            }
+            guard matches.count == 1, let match = matches.first else { return word }
+            var mixed = word
+            mixed.text = match.text.trimmingCharacters(in: .punctuationCharacters)
+            mixed.text.append(contentsOf: word.text.reversed().prefix(while: { $0.isPunctuation }).reversed())
+            return mixed
+        }
+    }
+
+    private func emit(_ unit: Unit) {
+        let alternatives = candidates(for: unit)
+        let english = (unit.taken[.english] ?? []).isEmpty ? [] : alternatives[.english] ?? []
+        let hindi = (unit.taken[.hindi] ?? []).isEmpty ? [] : alternatives[.hindi] ?? []
+        let decision = arbiter.decide(english: english, hindi: hindi)
+        let mixed = Self.mixedClause(english: english, hindi: hindi)
+        let winner = mixed ?? (decision.language == .english ? english : Self.restoreLoanwords(english: english, hindi: hindi))
+        let pending = pendingDecision
         if !winner.isEmpty {
             downstream.commit(winner)
             committedPhraseCount += 1
-            if lock?.switched == true { languageSwitchCount += 1 }
-            if let arrival = lock?.firstFinalArrival {
+            if decision.switched { languageSwitchCount += 1 }
+            if let arrival = pending?.firstFinalArrival {
                 totalDecisionDelay += max(0, Date().timeIntervalSince(arrival))
             }
         }

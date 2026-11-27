@@ -151,6 +151,24 @@ enum TaskGrounding {
         return result
     }
 
+    static func claimDetailsMatch(_ claim: String, cited: [String]) -> Bool {
+        let source = cited.joined(separator: " ")
+        let numbers = { (text: String) in
+            Set(text.split(whereSeparator: { !$0.isNumber }).map(String.init))
+        }
+        return numbers(claim).isSubset(of: numbers(source))
+            && timeIdentity(claim).isSubset(of: timeIdentity(source))
+    }
+
+    static func verifiedDeadline(_ deadline: String?, in sentences: [String]) -> String? {
+        guard let deadline else { return nil }
+        let wanted = timeIdentity(deadline)
+        return sentences.contains { sentence in
+            if sentence.range(of: deadline, options: .caseInsensitive) != nil { return true }
+            return !wanted.isEmpty && claimDetailsMatch(deadline, cited: [sentence])
+        } ? deadline : nil
+    }
+
     /// The deadline when the cited turns name the same day or date. A deadline that names no day (for
     /// example "ASAP") cannot be checked and is kept.
     static func groundedDeadline(_ deadline: String?, evidence: [SourceEvidence], source: Source) -> String? {

@@ -58,8 +58,13 @@ public struct MeetingProcessingView: View {
     @State private var missingModels: [ModelProfile] = []
     @State private var operation: Task<Void, Never>?
     @State private var busy = false
-    @State private var downloadProgress: Double = 0
+    @State private var downloadProgress: ModelDownloadProgress?
     @State private var downloading = false
+    @State private var downloadPaused = false
+    @State private var storageCapacity: ModelStorageCapacity?
+    @State private var connectivity = ConnectivityMonitor.shared
+    @State private var showsCellularConfirmation = false
+    @State private var pendingDownloadSpeakersOnly = false
     @State private var checkingModels = false
     /// True from arrival after a finished recording until the automatic start has been decided.
     @State private var autoStartInFlight = false
@@ -147,6 +152,14 @@ public struct MeetingProcessingView: View {
             Button("Save") { saveMeetingTitle() }
                 .disabled(meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .alert("Download \(missingModelSize) using cellular data?", isPresented: $showsCellularConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Download") {
+                start(download: true, speakersOnly: pendingDownloadSpeakersOnly)
+            }
+        } message: {
+            Text("Carrier charges may apply. The download starts only after you confirm.")
+        }
         .onAppear {
             viewModel.onNavigateToDetail = { id in
                 OfflineAnalysisBackgroundScheduler.remove(meetingID: id)
@@ -168,6 +181,11 @@ public struct MeetingProcessingView: View {
                 do {
                     try viewModel.prepareForProduction(context: modelContext, settings: settings)
                     _ = try await viewModel.refreshAnalysisState()
+                    if viewModel.jobSnapshot?.state == .downloading {
+                        downloadPaused = true
+                        viewModel.markModelDownloadPaused()
+                    }
+                    await refreshStorageCapacity()
                     processingError = viewModel.jobSnapshot?.failure?.message
                     if wantsAutoStart { startAutomaticallyIfEligible() }
                 } catch {
@@ -256,19 +274,28 @@ public struct MeetingProcessingView: View {
     }
 
     private var runningProgress: Double {
-        if downloading { return max(0, min(1, downloadProgress)) }
+        if downloading { return downloadProgress?.fraction ?? 0 }
         if busy { return max(0, min(1, viewModel.overallProgress)) }
         return Double(max(activeStep, 0)) / 5.0
     }
 
     private var runningTitle: String {
-        if downloading { return "Downloading models\u{2026}" }
+        if downloading {
+            return "Downloading \(downloadProgress?.currentModelName ?? "on-device models")\u{2026}"
+        }
         switch activeStep {
         case ..<1: return preparingSpeakers ? "Preparing speaker review\u{2026}" : "Getting ready\u{2026}"
         case 1: return "Writing the transcript\u{2026}"
         case 2: return "Finding speakers\u{2026}"
         default: return "Writing minutes\u{2026}"
         }
+    }
+
+    private var downloadDetailText: String {
+        guard downloading, let progress = downloadProgress else { return "Audio and text stay on this iPhone." }
+        let downloaded = ByteCountFormatter.string(fromByteCount: progress.downloadedBytes, countStyle: .file)
+        let total = ByteCountFormatter.string(fromByteCount: progress.totalBytes, countStyle: .file)
+        return "\(downloaded) of \(total) \u{00B7} \(Int((progress.fraction * 100).rounded()))%"
     }
 
     private func progressRing(_ value: Double) -> some View {
@@ -293,7 +320,7 @@ public struct MeetingProcessingView: View {
             }
         } else if busy {
             panel(highlight: true) {
-                runningHeader(detail: "Audio and text stay on this iPhone.")
+                runningHeader(detail: downloadDetailText)
                 if preparingSpeakers {
                     Button("Pause speaker review", systemImage: "pause.fill") { operation?.cancel() }
                 } else {
@@ -321,12 +348,17 @@ public struct MeetingProcessingView: View {
             }
         } else if modelsRequired {
             panel {
-                Text("Models Required").font(.title3.bold())
-                Text("Download or repair these on-device models before processing:")
-                    .foregroundStyle(.secondary)
+                Text(downloadPaused ? "Download Paused" : "Models Required").font(.title3.bold())
+                if connectivity.snapshot.kind == .offline {
+                    Text("Connect to the internet to download or repair the required on-device models.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Download or repair these on-device models before processing:")
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(viewModel.modelStatuses.filter { $0.readiness != .ready }) { status in
                     HStack {
-                        Text(status.profile.name)
+                        Text(ModelDownloadProgressAccumulator.friendlyName(for: status.profile.id))
                         Spacer()
                         Text(ByteCountFormatter.string(fromByteCount: status.profile.downloadBytes, countStyle: .file))
                             .foregroundStyle(.secondary)
@@ -337,8 +369,29 @@ public struct MeetingProcessingView: View {
                 }
                 Text("Total download: \(missingModelSize)")
                     .font(.subheadline.weight(.semibold))
-                Button("Download & Continue") { start(download: true) }
-                    .buttonStyle(.borderedProminent)
+                if let storageCapacity {
+                    LabeledContent("Required free space", value: formattedBytes(storageCapacity.requiredFreeBytes))
+                    LabeledContent("Available", value: formattedBytes(storageCapacity.availableBytes))
+                    if !storageCapacity.hasEnoughSpace {
+                        Text("Free exactly \(formattedBytes(storageCapacity.shortageBytes)) before downloading.")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.red)
+                        NavigationLink("Manage Models") { OfflineAnalysisModelsView() }
+                        NavigationLink("Storage and Cache") {
+                            Form { SettingsStorageAndCacheSection(viewModel: settings) }
+                                .navigationTitle("Storage and Cache")
+                        }
+                    }
+                }
+                if connectivity.snapshot.isConstrained {
+                    Text("Low Data Mode is on. iOS may pause this download; verified chunks are saved for Resume.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Button(connectivity.snapshot.kind == .offline ? "Retry" : (downloadPaused ? "Resume" : "Download & Continue")) {
+                    requestDownload()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(storageCapacity?.hasEnoughSpace == false)
             }
         } else if viewModel.jobSnapshot?.state == .paused {
             panel {
@@ -382,7 +435,8 @@ public struct MeetingProcessingView: View {
                 }
                 if meeting?.analysisState != "speakerReview" && meeting?.analysisState != "completed" {
                     Button("Detect Voices", systemImage: "waveform") {
-                        start(download: true, speakersOnly: true)
+                        if modelsRequired { requestDownload(speakersOnly: true) }
+                        else { start(speakersOnly: true) }
                     }
                 }
             }
@@ -406,9 +460,15 @@ public struct MeetingProcessingView: View {
             .tint(Theme.Colors.manentAccent)
             .accessibilityLabel("Progress")
             .accessibilityValue("\(Int((runningProgress * 100).rounded())) percent")
-        Text("You can close the app. We\u{2019}ll notify you when it\u{2019}s ready.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+        if downloading {
+            Text("You can leave this screen while MeetMind stays open. If iOS pauses the foreground download, verified chunks resume when you tap Resume.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("You can close the app. We\u{2019}ll notify you when it\u{2019}s ready.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: Progress
@@ -553,7 +613,8 @@ public struct MeetingProcessingView: View {
             if !busy && !backgroundRunning && !autoStartInFlight {
                 Button {
                     if isReadyForReview { showsMinutes = true }
-                    else { start(download: modelsRequired) }
+                    else if modelsRequired { requestDownload() }
+                    else { start() }
                 } label: {
                     Text(isReadyForReview ? "Open Minutes" :
                          (modelsRequired ? "Download & Continue" :
@@ -578,17 +639,22 @@ public struct MeetingProcessingView: View {
         viewModel.modelStatuses.contains { $0.readiness != .ready }
     }
 
-    private var missingModelSize: String {
-        let bytes = viewModel.modelStatuses.filter { $0.readiness != .ready }
+    private var missingModelBytes: Int64 {
+        viewModel.modelStatuses.filter { $0.readiness != .ready }
             .reduce(Int64(0)) { $0 + $1.profile.downloadBytes }
-        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private var missingModelSize: String { formattedBytes(missingModelBytes) }
+
+    private func formattedBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     @ViewBuilder
     private func recoveryButton(for failure: AnalysisFailure) -> some View {
         switch failure.recoveryAction {
         case .repairModels:
-            Button("Repair Models") { start(download: true) }
+            Button("Repair Models") { requestDownload() }
         case .changeLanguage:
             Button("Change Language") { processingError = "Choose the recording language in Settings, then tap Retry." }
         case .openTranscript:
@@ -673,6 +739,55 @@ public struct MeetingProcessingView: View {
         start()
     }
 
+    private func requestDownload(speakersOnly: Bool = false) {
+        guard !busy, !checkingModels else { return }
+        checkingModels = true
+        processingError = nil
+        Task { @MainActor in
+            defer { checkingModels = false }
+            do {
+                try viewModel.prepareForProduction(context: modelContext, settings: settings)
+                missingModels = try await viewModel.missingOfflineModels(speakersOnly: speakersOnly)
+                storageCapacity = try await viewModel.modelStorageCapacity(speakersOnly: speakersOnly)
+                guard !missingModels.isEmpty else {
+                    start(speakersOnly: speakersOnly)
+                    return
+                }
+                guard storageCapacity?.hasEnoughSpace == true else {
+                    let shortage = storageCapacity?.shortageBytes ?? 0
+                    processingError = "Not enough storage. Free exactly \(formattedBytes(shortage)), then tap Resume."
+                    return
+                }
+                switch DownloadAccessPolicy.decision(for: missingModelBytes, connectivity: connectivity.snapshot) {
+                case .offline:
+                    downloadPaused = true
+                    viewModel.markModelDownloadPaused()
+                    processingError = "Connect to the internet, then tap Retry. Your partial downloads are saved."
+                case .confirmCellular:
+                    pendingDownloadSpeakersOnly = speakersOnly
+                    showsCellularConfirmation = true
+                case .allow:
+                    start(download: true, speakersOnly: speakersOnly)
+                }
+            } catch {
+                if connectivity.snapshot.kind == .offline {
+                    downloadPaused = true
+                    processingError = "Connect to the internet, then tap Retry. Your partial downloads are saved."
+                } else {
+                    processingError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func isNetworkInterruption(_ error: Error) -> Bool {
+        connectivity.snapshot.kind == .offline || error is URLError || (error as NSError).domain == NSURLErrorDomain
+    }
+
+    private func refreshStorageCapacity(speakersOnly: Bool = false) async {
+        storageCapacity = try? await viewModel.modelStorageCapacity(speakersOnly: speakersOnly)
+    }
+
     private func start(download: Bool = false, speakersOnly: Bool = false) {
         guard !busy else { return }
         guard !OfflineAnalysisBackgroundScheduler.isRunning(meetingID: meetingId) else {
@@ -707,11 +822,16 @@ public struct MeetingProcessingView: View {
                 if !missingModels.isEmpty {
                     guard download else { return false }
                     downloading = true
-                    downloadProgress = 0
-                    try await viewModel.downloadAndContinueModels(speakersOnly: speakersOnly) { _, value in
-                        Task { @MainActor in downloadProgress = value }
+                    downloadPaused = false
+                    downloadProgress = nil
+                    try await viewModel.downloadAndContinueModels(speakersOnly: speakersOnly) { aggregate in
+                        Task { @MainActor in
+                            guard aggregate.downloadedBytes >= (downloadProgress?.downloadedBytes ?? 0) else { return }
+                            downloadProgress = aggregate
+                        }
                     }
                     missingModels = try await viewModel.missingOfflineModels(speakersOnly: speakersOnly)
+                    storageCapacity = try? await viewModel.modelStorageCapacity(speakersOnly: speakersOnly)
                     downloading = false
                 }
                 try Task.checkCancellation()
@@ -723,12 +843,22 @@ public struct MeetingProcessingView: View {
                 }
                 return true
             } catch is CancellationError {
+                downloadPaused = downloading
+                if downloading { viewModel.markModelDownloadPaused() }
                 processingError = "Paused. Your audio, completed steps, and partial model downloads are saved. Tap Resume when you return."
             } catch {
-                processingError = viewModel.jobSnapshot?.failure?.message
-                    ?? (error as? AnalysisCoordinatorError)?.errorDescription
-                    ?? (error as? AnalysisJobStoreError)?.errorDescription
-                    ?? AnalysisFailure.stable(.processingFailed).message
+                if downloading && isNetworkInterruption(error) {
+                    downloadPaused = true
+                    viewModel.markModelDownloadPaused()
+                    processingError = connectivity.snapshot.kind == .offline
+                        ? "Connect to the internet, then tap Retry. Your partial downloads are saved."
+                        : "The network connection was interrupted. Tap Resume; your partial downloads are saved."
+                } else {
+                    processingError = viewModel.jobSnapshot?.failure?.message
+                        ?? (error as? AnalysisCoordinatorError)?.errorDescription
+                        ?? (error as? AnalysisJobStoreError)?.errorDescription
+                        ?? error.localizedDescription
+                }
             }
             return false
         }

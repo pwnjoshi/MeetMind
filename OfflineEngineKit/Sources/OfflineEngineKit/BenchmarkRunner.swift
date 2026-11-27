@@ -29,7 +29,7 @@ public actor OfflineBenchmarkRunner {
         AnalysisTurn(id: "t4", text: "Should we research another vendor? No, not this week. No decision on that yet.", start: 12, end: 17, speaker: "Speaker 1"),
     ]
 
-    private nonisolated static func footprint() -> UInt64 {
+    public nonisolated static func currentFootprintBytes() -> UInt64 {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
         let status = withUnsafeMutablePointer(to: &info) { pointer in
@@ -56,7 +56,7 @@ public actor OfflineBenchmarkRunner {
         let sampler = Task.detached { () -> UInt64 in
             var peak: UInt64 = 0
             while !Task.isCancelled {
-                peak = max(peak, Self.footprint())
+                peak = max(peak, Self.currentFootprintBytes())
                 do { try await Task.sleep(nanoseconds: 200_000_000) } catch { break }
             }
             return peak
@@ -86,7 +86,7 @@ public actor OfflineBenchmarkRunner {
             throw OfflineError.unavailable("Unknown benchmark engine.")
         }
         sampler.cancel()
-        let peak = max(Self.footprint(), await sampler.value)
+        let peak = max(Self.currentFootprintBytes(), await sampler.value)
         return BenchmarkResult(engine: profile.id, modelRevision: profile.revision,
             promptVersion: profile.id.hasPrefix("qwen") ? OfflineAnalysisContract.promptVersion : nil,
             contextTokens: profile.id.hasPrefix("qwen") ? Int((profile.id == "qwen-4b" ? LocalModelConfiguration.compact : .standard).contextTokens) : nil,

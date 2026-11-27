@@ -1,6 +1,6 @@
 # Screenshot plan
 
-Manent is a universal app (iPhone and iPad, `TARGETED_DEVICE_FAMILY = 1,2`), so App Store Connect requires both iPhone and iPad sets. If you make the app iPhone-only, skip the iPad set.
+Manent is iPhone-only (`TARGETED_DEVICE_FAMILY = 1`). Do not upload an iPad screenshot set or describe the app as iPad-compatible.
 
 ## Sizes to capture
 
@@ -8,7 +8,6 @@ Manent is a universal app (iPhone and iPad, `TARGETED_DEVICE_FAMILY = 1,2`), so 
 |---|---|---|
 | iPhone 6.9" (iPhone 16/17 Pro Max) | 1320 x 2868 | Yes. Apple scales it down for smaller iPhones. |
 | iPhone 6.5" (iPhone 11 Pro Max / XS Max) | 1284 x 2778 | Only if you do not supply 6.9". Supplying both is fine. |
-| iPad 13" (iPad Pro M4/M5) | 2064 x 2752 | Yes while the app supports iPad. |
 
 Use the Simulator (Xcode > Window > Devices and Simulators) for exact sizes, with Status Bar set to 9:41, full battery, full signal (`xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4`). Use the in-app fixtures where they exist: they work in Simulator through launch arguments `--ui-home-populated`, `--ui-meeting-finalized`, `--ui-recording-active`, `--ui-minutes-sent`. Do not show real people's names or real meeting content. Use the sample data.
 

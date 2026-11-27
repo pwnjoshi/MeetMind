@@ -58,6 +58,7 @@ struct MeetMindApp: App {
     @State private var appState: AppState
     @State private var router: NavigationRouter
     @State private var settingsVM: SettingsViewModel
+    @State private var recordingRecovery: RecordingRecoveryCenter
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
@@ -83,6 +84,7 @@ struct MeetMindApp: App {
         _appState = State(initialValue: state)
         _router = State(initialValue: navRouter)
         _settingsVM = State(initialValue: settings)
+        _recordingRecovery = State(initialValue: RecordingRecoveryCenter())
         if ProcessInfo.processInfo.arguments.contains("--diagnose-storage") {
             // Content-free verification of the actual production store open.
             let commit = Bundle.main.object(forInfoDictionaryKey: "ManentBuildCommit") as? String ?? "unknown"
@@ -152,11 +154,19 @@ struct MeetMindApp: App {
                     await resumeDeletion(using: container)
                     if deletionRecoveryComplete {
                         OfflineAnalysisBackgroundScheduler.useApplicationContainer(container)
+                        recordingRecovery.run(modelContext: container.mainContext)
                     }
                 }
                 .environment(appState)
                 .environment(router)
                 .environment(settingsVM)
+                .environment(recordingRecovery)
+                .onReceive(NotificationCenter.default.publisher(
+                    for: UIApplication.protectedDataDidBecomeAvailableNotification
+                )) { _ in
+                    guard let container else { return }
+                    recordingRecovery.run(modelContext: container.mainContext)
+                }
                 .onOpenURL { url in
                     _ = router.handleDeepLink(url: url, appState: appState)
                 }
