@@ -4,6 +4,80 @@ import Observation
 import AVFoundation
 import OfflineEngineKit
 
+public struct ModelDownloadProgress: Sendable, Equatable {
+    public let downloadedBytes: Int64
+    public let totalBytes: Int64
+    public let currentModelID: String
+    public let currentModelName: String
+    public let currentModelFraction: Double
+
+    public var fraction: Double {
+        guard totalBytes > 0 else { return 1 }
+        return min(1, max(0, Double(downloadedBytes) / Double(totalBytes)))
+    }
+
+    public init(downloadedBytes: Int64, totalBytes: Int64, currentModelID: String,
+                currentModelName: String, currentModelFraction: Double) {
+        self.downloadedBytes = max(0, min(downloadedBytes, max(0, totalBytes)))
+        self.totalBytes = max(0, totalBytes)
+        self.currentModelID = currentModelID
+        self.currentModelName = currentModelName
+        self.currentModelFraction = min(1, max(0, currentModelFraction))
+    }
+}
+
+/// Converts the model store's per-model fractions into one byte-weighted,
+/// monotonic transfer. The lock is needed because model-store callbacks are Sendable.
+public final class ModelDownloadProgressAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let profiles: [ModelProfile]
+    private let profileByID: [String: ModelProfile]
+    private var fractions: [String: Double] = [:]
+    private var lastDownloadedBytes: Int64 = 0
+
+    public init(profiles: [ModelProfile]) {
+        self.profiles = profiles
+        self.profileByID = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+    }
+
+    public func initialProgress() -> ModelDownloadProgress {
+        lock.lock()
+        defer { lock.unlock() }
+        return makeProgress(currentID: profiles.first?.id ?? "", currentFraction: 0)
+    }
+
+    public func update(modelID: String, fraction: Double) -> ModelDownloadProgress {
+        lock.lock()
+        defer { lock.unlock() }
+        let clamped = min(1, max(0, fraction))
+        if let index = profiles.firstIndex(where: { $0.id == modelID }), index > 0 {
+            for completed in profiles[..<index] { fractions[completed.id] = 1 }
+        }
+        fractions[modelID] = max(fractions[modelID] ?? 0, clamped)
+        return makeProgress(currentID: modelID, currentFraction: fractions[modelID] ?? clamped)
+    }
+
+    private func makeProgress(currentID: String, currentFraction: Double) -> ModelDownloadProgress {
+        let total = profiles.reduce(Int64(0)) { $0 + $1.downloadBytes }
+        let calculated = profiles.reduce(Int64(0)) { result, profile in
+            result + Int64((Double(profile.downloadBytes) * (fractions[profile.id] ?? 0)).rounded(.down))
+        }
+        lastDownloadedBytes = max(lastDownloadedBytes, min(total, calculated))
+        return ModelDownloadProgress(downloadedBytes: lastDownloadedBytes, totalBytes: total,
+            currentModelID: currentID, currentModelName: Self.friendlyName(for: currentID),
+            currentModelFraction: currentFraction)
+    }
+
+    public static func friendlyName(for id: String) -> String {
+        switch id {
+        case "whisper-large": return "Transcript model"
+        case "diarization": return "Speakers model"
+        case VidurModel.fast.rawValue: return "Minutes & Vidur model"
+        default: return "On-device model"
+        }
+    }
+}
+
 /// Status of the post-recording processing pipeline
 public enum PipelineStatus: String, Codable, Sendable {
     case idle = "idle"
@@ -79,10 +153,14 @@ public final class ProcessingPipelineViewModel {
     public var currentStep: PipelineStep = .initial
     public var errorMessage: String? = nil
     public var onNavigateToDetail: ((UUID) -> Void)? = nil
+    public var onOfflineStageChanged: ((MeetingAnalysisStage) -> Void)?
     public var onProcessingNotificationPosted: (() -> Void)? = nil
     public var isUsingOfflineExtractiveFallback: Bool = false
     public var didCleanUpPartialArtifacts: Bool = false
     public var retryCount: Int = 0
+    public private(set) var jobSnapshot: AnalysisJobRecord?
+    public private(set) var modelStatuses: [AnalysisModelStatus] = []
+    public private(set) var modelDownloadProgress: ModelDownloadProgress?
     
     private var isAppInBackground: Bool = false
     private var isCorruptAudioSimulated: Bool = false
@@ -113,8 +191,9 @@ public final class ProcessingPipelineViewModel {
     private var summarizationService: SummarizationServiceProtocol?
     private var transcriptionService: SpeechTranscriptionServiceProtocol?
     private var dataStore: Any?
+    private var settings: SettingsViewModel?
     private var usesOfflinePipeline = false
-    private let offlinePipeline = MeetingAnalysisPipeline.shared
+    private var coordinator: AnalysisCoordinator?
     
     public init(
         meeting: Meeting? = nil,
@@ -132,9 +211,11 @@ public final class ProcessingPipelineViewModel {
         self.dataStore = dataStore
     }
     
+    #if DEBUG
     public func setSimulatedProgress(_ progress: Double) {
         overallProgress = max(0.0, min(1.0, progress))
     }
+    #endif
     
     private func preparePipeline() {
         if isCorruptAudioSimulated {
@@ -151,15 +232,18 @@ public final class ProcessingPipelineViewModel {
         stages[0].state = .inProgress
     }
     
+    #if DEBUG
     public func startPipeline() {
         preparePipeline()
     }
+    #endif
     
     public func startPipeline() async throws {
         if usesOfflinePipeline {
             try await runOfflinePipeline()
             return
         }
+        #if DEBUG
         preparePipeline()
         if pipelineStatus == .failed { return }
         
@@ -174,7 +258,7 @@ public final class ProcessingPipelineViewModel {
         // Stage 1: Diarization
         stages[1].state = .inProgress
         currentStep = .diarization
-        if let transcriptionService = transcriptionService, let meeting = meeting, let url = meeting.audioFileURL {
+        if let transcriptionService = transcriptionService, let meeting = meeting, let url = meeting.resolvedAudioFileURL {
             do {
                 let segments = try await transcriptionService.transcribeAudioFile(at: url)
                 guard !segments.isEmpty else {
@@ -260,42 +344,139 @@ public final class ProcessingPipelineViewModel {
         if let id = meeting?.id ?? meetingId {
             onNavigateToDetail?(id)
         }
+        #else
+        throw AnalysisCoordinatorError.failed(.stable(.processingFailed))
+        #endif
+    }
+
+    public func prepareSpeakerReview() async throws {
+        try await runOfflinePipeline(stopAfterSpeakers: true)
     }
     
     public func prepareForProduction(context: ModelContext, settings: SettingsViewModel? = nil) throws {
+        analysisModel = VidurModel.selected
         modelContext = context
+        self.settings = settings
         usesOfflinePipeline = true
         if meeting == nil, let id = meetingId {
             var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
             descriptor.fetchLimit = 1
             meeting = try context.fetch(descriptor).first
         }
-        guard let meeting, let url = meeting.audioFileURL,
-              FileManager.default.fileExists(atPath: url.path) else {
-            throw SpeechTranscriptionError.audioFileReadFailed("Saved audio is unavailable. Return to Meetings and try again.")
-        }
-        let audio = try AVAudioFile(forReading: url)
-        guard audio.fileFormat.sampleRate > 0, audio.length > 0 else {
-            throw SpeechTranscriptionError.audioFileReadFailed("This recording contains no readable audio.")
-        }
-        meeting.duration = Double(audio.length) / audio.fileFormat.sampleRate
-        meeting.status = .processing
-        meeting.analysisState = "ready"
-        if meeting.analysisTimezone == nil { meeting.analysisTimezone = TimeZone.current.identifier }
-        try context.save()
+        guard meeting != nil else { throw MeetingError.meetingNotFound }
+        coordinator = AnalysisCoordinator(context: context)
     }
 
-    public func missingOfflineModels() async throws -> [ModelProfile] {
-        try await offlinePipeline.missingModels()
+    @discardableResult
+    public func refreshAnalysisState(speakersOnly: Bool = false) async throws -> AnalysisJobRecord {
+        guard let coordinator, let meetingID = meeting?.id ?? meetingId else { throw MeetingError.meetingNotFound }
+        let record = try await coordinator.prepare(meetingID: meetingID,
+            languageCode: (settings?.savedRecordingLanguage ?? .hinglish).whisperCode,
+            model: analysisModel, speakersOnly: speakersOnly)
+        jobSnapshot = record
+        modelStatuses = try await coordinator.modelStatus(meetingID: meetingID, model: analysisModel,
+                                                           speakersOnly: speakersOnly)
+        if modelStatuses.contains(where: { $0.readiness != .ready }) {
+            try await coordinator.markModelsRequired(meetingID: meetingID)
+            jobSnapshot = try await coordinator.snapshot(meetingID: meetingID)
+        }
+        return jobSnapshot ?? record
     }
+
+    public func missingOfflineModels(speakersOnly: Bool = false) async throws -> [ModelProfile] {
+        _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+        return modelStatuses.compactMap { $0.readiness == .ready ? nil : $0.profile }
+    }
+
+    public func modelStorageCapacity(speakersOnly: Bool = false) async throws -> ModelStorageCapacity {
+        _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+        let profiles = modelStatuses.compactMap { $0.readiness == .ready ? nil : $0.profile }
+        return try await OfflineModelStore.shared.storageCapacity(for: profiles)
+    }
+
+    /// Original callback shape retained for existing callers. Values remain the
+    /// independent progress fraction for the named model.
+    public func downloadAndContinueModels(speakersOnly: Bool = false,
+                                          progress: @Sendable @escaping (String, Double) -> Void) async throws {
+        try await downloadAndContinueModels(speakersOnly: speakersOnly) { aggregate in
+            progress(aggregate.currentModelID, aggregate.currentModelFraction)
+        }
+    }
+
+    /// Preferred callback reports byte-weighted progress across every model that
+    /// was missing or damaged when this download began.
+    public func downloadAndContinueModels(speakersOnly: Bool = false,
+                                          progress: @Sendable @escaping (ModelDownloadProgress) -> Void) async throws {
+        guard let coordinator, let meetingID = meeting?.id ?? meetingId else { throw MeetingError.meetingNotFound }
+        _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+        let profiles = modelStatuses.compactMap { $0.readiness == .ready ? nil : $0.profile }
+        let accumulator = ModelDownloadProgressAccumulator(profiles: profiles)
+        let initial = accumulator.initialProgress()
+        modelDownloadProgress = initial
+        progress(initial)
+        do {
+            try await coordinator.downloadAndVerify(meetingID: meetingID, model: analysisModel,
+                                                    speakersOnly: speakersOnly, progress: { [weak self] id, value in
+                let aggregate = accumulator.update(modelID: id, fraction: value)
+                progress(aggregate)
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.applyModelDownloadProgress(aggregate)
+                }
+            }) { [weak self] state in
+                guard var snapshot = self?.jobSnapshot else { return }
+                snapshot.state = state
+                self?.jobSnapshot = snapshot
+            }
+            let completedID = profiles.last?.id ?? ""
+            let completed = accumulator.update(modelID: completedID, fraction: 1)
+            applyModelDownloadProgress(completed)
+            progress(completed)
+            _ = try await refreshAnalysisState(speakersOnly: speakersOnly)
+        } catch is CancellationError {
+            markModelDownloadPaused()
+            throw CancellationError()
+        } catch let error as URLError {
+            markModelDownloadPaused()
+            throw error
+        } catch {
+            throw error
+        }
+    }
+
+    public func markModelDownloadPaused() {
+        if var snapshot = jobSnapshot {
+            snapshot.state = .paused
+            snapshot.failure = nil
+            jobSnapshot = snapshot
+        }
+    }
+
+    private func applyModelDownloadProgress(_ progress: ModelDownloadProgress) {
+        guard progress.downloadedBytes >= (modelDownloadProgress?.downloadedBytes ?? 0) else { return }
+        modelDownloadProgress = progress
+    }
+
+    private var analysisModel = VidurModel.selected
 
     private func updateOfflineStage(_ stage: MeetingAnalysisStage) {
+        if let context = modelContext, let id = meetingId {
+            let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+            if let existing = try? context.fetch(descriptor), existing.isEmpty { return }
+        }
+        onOfflineStageChanged?(stage)
         let index: Int
         switch stage {
         case .transcription: index = 1
         case .speakers: index = 1
         case .analysis: index = 2
         case .completed: index = 3
+        }
+        switch stage {
+        case .transcription: currentStep = .audio
+        case .speakers: currentStep = .diarization
+        case .analysis: currentStep = .summarization
+        case .completed: currentStep = .actions
         }
         for i in stages.indices { stages[i].state = i < index ? .completed : (i == index ? .inProgress : .pending) }
         currentStageIndex = index
@@ -304,66 +485,68 @@ public final class ProcessingPipelineViewModel {
         try? modelContext?.save()
     }
 
-    private func runOfflinePipeline() async throws {
-        guard let meeting, let audio = meeting.audioFileURL else { throw MeetingError.meetingNotFound }
+    private func runOfflinePipeline(stopAfterSpeakers: Bool = false) async throws {
+        guard let coordinator, let meetingID = meeting?.id ?? meetingId else { throw MeetingError.meetingNotFound }
         preparePipeline()
         errorMessage = nil
         do {
-            let result = try await offlinePipeline.run(meetingID: meeting.id, audio: audio,
-                meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
-                timezone: meeting.analysisTimezone ?? TimeZone.current.identifier) { [weak self] stage in
-                    await self?.updateOfflineStage(stage)
+            let snapshot = try await coordinator.run(meetingID: meetingID,
+                languageCode: (settings?.savedRecordingLanguage ?? .hinglish).whisperCode,
+                model: analysisModel, owner: .foreground, stopAfterSpeakers: stopAfterSpeakers) { [weak self] stage in
+                    self?.updateOfflineStage(stage)
                 }
-            try Task.checkCancellation()
-            let data = try JSONEncoder().encode(result)
-            let previousSegments = meeting.transcriptSegments
-            meeting.transcriptSegments.removeAll()
-            for segment in previousSegments { modelContext?.delete(segment) }
-            var speakers: [String: Speaker] = [:]
-            for turn in result.turns {
-                var speaker: Speaker?
-                if let label = turn.speaker {
-                    if let existing = speakers[label] { speaker = existing }
-                    else {
-                        let created = Speaker(name: label)
-                        modelContext?.insert(created)
-                        meeting.addParticipant(created)
-                        speakers[label] = created
-                        speaker = created
-                    }
-                }
-                meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
-                    endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting))
+            jobSnapshot = snapshot
+            if stopAfterSpeakers {
+                pipelineStatus = .idle
+                if snapshot.warning != nil { stages[1].state = .completedWithWarning }
+                return
             }
-            let points = uniqueTexts(result.analysis.flatMap { $0.discussion.map(\.text) })
-            let decisions = uniqueTexts(result.analysis.flatMap { $0.decisions.map(\.text) })
-            if let old = meeting.summary { modelContext?.delete(old) }
-            meeting.summary = Summary(executiveSummary: points.joined(separator: "\n"),
-                keyPoints: points, keyDecisions: decisions, meeting: meeting)
-            meeting.offlineAnalysisData = data
-            // Accepted tasks are never deleted or silently regenerated.
-            meeting.status = .completed
-            meeting.analysisState = "completed"
-            try modelContext?.save()
-            for i in stages.indices { stages[i].state = .completed }
+            for index in stages.indices { stages[index].state = .completed }
             overallProgress = 1
             pipelineStatus = .completed
             currentStep = .completed
-            onNavigateToDetail?(meeting.id)
+            onNavigateToDetail?(meetingID)
+        } catch is CancellationError {
+            pipelineStatus = .cancelled
+            errorMessage = "Analysis paused. Your recording and completed steps are saved."
+            jobSnapshot = try? await coordinator.snapshot(meetingID: meetingID)
+            throw CancellationError()
         } catch {
-            if error is CancellationError {
-                pipelineStatus = .cancelled
-                meeting.analysisState = "paused"
-                errorMessage = "Analysis paused. Your recording and completed steps are saved."
-            } else {
-                pipelineStatus = .failed
-                stages[currentStageIndex].state = .failed
-                stages[currentStageIndex].errorMessage = error.localizedDescription
-                meeting.analysisState = "failed"
-                errorMessage = error.localizedDescription
-            }
-            try? modelContext?.save()
+            jobSnapshot = try? await coordinator.snapshot(meetingID: meetingID)
+            let message = jobSnapshot?.failure?.message ?? error.localizedDescription
+            pipelineStatus = .failed
+            stages[currentStageIndex].state = .failed
+            stages[currentStageIndex].errorMessage = message
+            errorMessage = message
             throw error
+        }
+    }
+
+    private func replaceTranscript(of meeting: Meeting, with turns: [AnalysisTurn]) {
+        let previousSegments = meeting.transcriptSegments
+        meeting.transcriptSegments.removeAll()
+        for segment in previousSegments { modelContext?.delete(segment) }
+        var speakers: [String: Speaker] = [:]
+        for (index, turn) in turns.enumerated() {
+            var speaker: Speaker?
+            if let label = turn.speaker {
+                if let existing = speakers[label] ?? meeting.participants.first(where: {
+                    $0.recordingVoiceLabel == label || ($0.recordingVoiceLabel == nil && $0.name == label)
+                }) {
+                    existing.recordingVoiceLabel = label
+                    speaker = existing
+                    speakers[label] = existing
+                } else {
+                    let created = Speaker(name: label)
+                    created.recordingVoiceLabel = label
+                    modelContext?.insert(created)
+                    meeting.addParticipant(created)
+                    speakers[label] = created
+                    speaker = created
+                }
+            }
+            meeting.addTranscriptSegment(TranscriptSegment(text: turn.text, startTime: turn.start,
+                endTime: turn.end, confidence: 0, speaker: speaker, meeting: meeting, sequenceIndex: index))
         }
     }
 
@@ -372,91 +555,8 @@ public final class ProcessingPipelineViewModel {
         return texts.filter { seen.insert($0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()).inserted }
     }
 
-    public func executePipeline(for targetMeeting: Meeting) async throws {
-        self.meeting = targetMeeting
-        self.meetingId = targetMeeting.id
-        currentStep = .initial
-        overallProgress = 0.0
-        pipelineStatus = .processing
-        
-        for i in 0..<stages.count {
-            stages[i].state = .pending
-            stages[i].errorMessage = nil
-        }
-        
-        // Stage 0
-        stages[0].state = .inProgress
-        currentStep = .audio
-        try? await Task.sleep(nanoseconds: 10_000_000)
-        stages[0].state = .completed
-        overallProgress = 0.25
-        
-        // Stage 1
-        stages[1].state = .inProgress
-        currentStep = .diarization
-        try? await Task.sleep(nanoseconds: 10_000_000)
-        stages[1].state = .completed
-        overallProgress = 0.50
-        
-        // Stage 2
-        stages[2].state = .inProgress
-        currentStep = .summarization
-        if let summarizationService = summarizationService {
-            do {
-                let transcript = targetMeeting.fullTranscriptText.isEmpty ? "Sample discussion" : targetMeeting.fullTranscriptText
-                let response = try await summarizationService.generateSummary(from: transcript)
-                targetMeeting.summary = Summary(
-                    executiveSummary: response.executiveSummary,
-                    keyPoints: response.keyDiscussionPoints,
-                    keyDecisions: response.keyDecisions,
-                    meeting: targetMeeting
-                )
-                stages[2].state = .completed
-                overallProgress = 0.75
-                
-                // Stage 3
-                stages[3].state = .inProgress
-                currentStep = .actions
-                for item in response.actionItems {
-                    let action = ActionItem(
-                        title: item.title,
-                        taskDescription: item.taskDescription,
-                        priority: ActionPriority(rawValue: item.priority) ?? .medium,
-                        dueDate: item.dueDate,
-                        meeting: targetMeeting
-                    )
-                    targetMeeting.addActionItem(action)
-                }
-                stages[3].state = .completed
-                overallProgress = 1.0
-                currentStep = .completed
-                pipelineStatus = .completed
-                targetMeeting.status = .completed
-                try? modelContext?.save()
-                onNavigateToDetail?(targetMeeting.id)
-            } catch {
-                stages[2].state = .failed
-                stages[2].errorMessage = error.localizedDescription
-                self.errorMessage = error.localizedDescription
-                pipelineStatus = .failed
-                throw error
-            }
-        } else {
-            stages[2].state = .completed
-            overallProgress = 0.75
-            stages[3].state = .completed
-            overallProgress = 1.0
-            currentStep = .completed
-            pipelineStatus = .completed
-            targetMeeting.status = .completed
-            try? modelContext?.save()
-            onNavigateToDetail?(targetMeeting.id)
-        }
-    }
+    #if DEBUG
     
-    public func retryPipeline(for targetMeeting: Meeting) async throws {
-        try await executePipeline(for: targetMeeting)
-    }
     
     public func simulateStageCompletion(stageIndex: Int) {
         guard stageIndex >= 0 && stageIndex < stages.count else { return }
@@ -542,15 +642,6 @@ public final class ProcessingPipelineViewModel {
         isAppInBackground = isBackground
     }
     
-    public func retryStage(at index: Int) async throws {
-        guard index >= 0 && index < stages.count else { return }
-        currentStageIndex = index
-        stages[index].state = .inProgress
-        stages[index].errorMessage = nil
-        errorMessage = nil
-        pipelineStatus = .processing
-        simulateStageCompletion(stageIndex: index)
-    }
     
     public func retryCurrentStage() {
         retryCount += 1
@@ -584,4 +675,5 @@ public final class ProcessingPipelineViewModel {
     public func cancelProcessing() {
         cancelPipeline()
     }
+    #endif
 }

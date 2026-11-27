@@ -3,8 +3,6 @@ import SwiftData
 import Observation
 import AVFoundation
 
-public typealias TemplatePreset = MeetingTemplateType
-
 /// Setup workflow options presented in the initial new meeting launcher sheet
 public enum SetupOption: String, CaseIterable, Sendable {
     case quickStart = "quickStart"
@@ -26,6 +24,12 @@ public enum SetupOption: String, CaseIterable, Sendable {
         case .importAudio: return "square.and.arrow.down"
         }
     }
+}
+
+/// Which Figma layout the schedule form uses.
+public enum MeetingPrepVariant: String, Sendable {
+    case newMeeting
+    case followUp
 }
 
 /// Active stage of the new meeting setup modal
@@ -170,6 +174,30 @@ public final class MeetingSetupViewModel {
     
     public var title: String = ""
     public var startDate: Date = Date().addingTimeInterval(3600)
+    /// User-supplied date of imported audio; nil preserves the existing default.
+    public var importedRecordingDate: Date?
+    public var importedSeriesID: UUID?
+    public var importedSeriesName: String?
+    public var scheduledSeriesID: UUID?
+    public var scheduledSeriesName: String?
+    /// The earlier recorded meeting this one follows up on. Not stored on its own: saving writes the
+    /// shared series (`scheduledSeriesID` / `scheduledSeriesName`) onto both meetings.
+    public var followsUpOn: Meeting?
+    /// "Important" in the UI. Saved in `Meeting.isFavorite`.
+    public var isImportant: Bool = false
+    // MARK: Preparation (Figma section 03)
+    public var variant: MeetingPrepVariant = .newMeeting
+    /// Repeat choice; nil means Never.
+    public var recurrence: MeetingRecurrence?
+    public var coordinatorID: UUID?
+    /// Completed meeting a follow-up is planned from.
+    public var followUpSource: Meeting?
+    public var carryOverOpenActions: Bool = true
+    /// Set when a calendar write failed after the meeting itself was saved.
+    public var calendarSyncMessage: String?
+    @ObservationIgnored public var prepStore: MeetingPrepStore = .shared
+    @ObservationIgnored public var calendarService: CalendarServicing = AppleCalendarService.shared
+    @ObservationIgnored var baselineSignature: String?
     public var endDate: Date = Date().addingTimeInterval(5400)
     public var agendaText: String = ""
     public var agenda: String {
@@ -309,11 +337,6 @@ public final class MeetingSetupViewModel {
         ]
     }
     
-    public func openScheduleForm() {
-        isSheetPresented = true
-        isFormOpen = true
-        currentWorkflow = .scheduleForm
-    }
     
     public func presentSheet() {
         isSheetPresented = true
@@ -326,6 +349,14 @@ public final class MeetingSetupViewModel {
         currentWorkflow = .launcher
         title = ""
         agendaText = ""
+        recurrence = nil
+        coordinatorID = nil
+        followUpSource = nil
+        followsUpOn = nil
+        scheduledSeriesID = nil
+        scheduledSeriesName = nil
+        isImportant = false
+        variant = .newMeeting
         participants.removeAll()
         selectedTemplate = .general
         selectedFolder = nil
@@ -337,10 +368,6 @@ public final class MeetingSetupViewModel {
         shouldSimulateCorruptFile = false
     }
     
-    public func cancelAndDismiss() {
-        dismissSheet()
-        isFormOpen = false
-    }
     
     public func selectSetupOption(_ option: SetupOption) {
         switch option {
@@ -355,17 +382,21 @@ public final class MeetingSetupViewModel {
     }
     
     // MARK: - Templates
+    /// Picks a built-in template. It names the meeting but never fills in an agenda:
+    /// agenda points are always written by the person scheduling the meeting.
     public func selectTemplate(_ templateType: MeetingTemplateType) {
         selectedTemplate = templateType
         title = templateType.name
-        agendaText = templateType.defaultAgenda
     }
     
+    /// Picks a template from the list. Built-in templates only set the title; a template the user
+    /// created themselves also brings its own sections.
     public func selectTemplate(_ template: MeetingTemplate) {
         title = template.name
-        agendaText = template.defaultAgenda
         if let match = MeetingTemplateType.allCases.first(where: { $0.name == template.name }) {
             selectedTemplate = match
+        } else {
+            agendaText = template.defaultAgenda
         }
     }
     
@@ -373,8 +404,11 @@ public final class MeetingSetupViewModel {
         selectTemplate(templateType)
     }
     
+    /// Asks first when switching would replace a title the user typed themselves.
     public func attemptTemplateSwitch(to templateType: MeetingTemplateType) {
-        if !agendaText.isEmpty && agendaText != selectedTemplate?.defaultAgenda {
+        let typedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isTemplateTitle = MeetingTemplateType.allCases.contains { $0.name == typedTitle }
+        if !typedTitle.isEmpty && !isTemplateTitle {
             pendingTemplateSwitch = templateType
             isShowingTemplateOverwriteConfirmation = true
         } else {
@@ -421,21 +455,9 @@ public final class MeetingSetupViewModel {
         }
     }
     
-    public func createCustomTemplate(name: String, sections: [String], defaultDuration: TimeInterval = 3600) {
-        let agenda = sections.joined(separator: "\n")
-        let template = MeetingTemplate(
-            name: name,
-            description: "Custom user template",
-            iconName: "doc.badge.gearshape",
-            defaultAgenda: agenda
-        )
-        availableTemplates.append(template)
-        self.endDate = self.startDate.addingTimeInterval(defaultDuration)
-    }
     
     public func resetTemplateSelection() {
         selectedTemplate = .general
-        agendaText = MeetingTemplateType.general.defaultAgenda
     }
     
     // MARK: - Participants
@@ -505,9 +527,6 @@ public final class MeetingSetupViewModel {
         selectedFolder = folder
     }
     
-    public func setFolder(_ folder: Folder?) {
-        selectedFolder = folder
-    }
     
     public func detachFolder(for meeting: Meeting) {
         meeting.folder = nil
@@ -524,13 +543,6 @@ public final class MeetingSetupViewModel {
         selectedTags.removeAll { $0.id == tag.id }
     }
     
-    public func toggleTag(_ tag: Tag) {
-        if let idx = selectedTags.firstIndex(where: { $0.id == tag.id }) {
-            selectedTags.remove(at: idx)
-        } else {
-            selectedTags.append(tag)
-        }
-    }
     
     @discardableResult
     public func createTag(name: String, colorHex: String) -> Tag {
@@ -546,6 +558,134 @@ public final class MeetingSetupViewModel {
         return tag
     }
     
+    // MARK: - Preparation (Figma section 03)
+
+    /// Stable fingerprint of everything the user can edit on the Meeting details form.
+    public var draftSignature: String {
+        let people = participants.map { $0.id.uuidString }.sorted().joined(separator: ",")
+        let parts: [String] = [
+            title,
+            agendaText,
+            String(Int(startDate.timeIntervalSince1970)),
+            String(Int(endDate.timeIntervalSince1970)),
+            scheduledSeriesID?.uuidString ?? "",
+            scheduledSeriesName ?? "",
+            followsUpOn?.id.uuidString ?? "",
+            isImportant ? "important" : "normal",
+            recurrence.map { "\($0.unit.rawValue)/\($0.interval)" } ?? "never",
+            coordinatorID?.uuidString ?? "",
+            carryOverOpenActions ? "carry" : "nocarry",
+            people
+        ]
+        return parts.joined(separator: "\u{1F}")
+    }
+
+    /// True when the form differs from the state captured by `captureDraftBaseline()`.
+    public var hasUnsavedChanges: Bool {
+        guard let baseline = baselineSignature else { return false }
+        return baseline != draftSignature
+    }
+
+    public func captureDraftBaseline() {
+        baselineSignature = draftSignature
+    }
+
+    /// Clears any legacy template agenda, links a follow-up draft to its source meeting, then records the baseline.
+    public func prepareForEditing() {
+        if baselineSignature == nil {
+            if agendaText == MeetingTemplateType.general.defaultAgenda {
+                agendaText = ""
+            }
+            if followsUpOn == nil, let source = followUpSource {
+                if scheduledSeriesID == nil {
+                    setFollowsUp(source)
+                } else {
+                    followsUpOn = source
+                }
+            }
+            captureDraftBaseline()
+        }
+    }
+
+    /// Chooses the earlier meeting this one follows up on (nil for "None").
+    /// Joins that meeting's series, or starts a new one named after it. The earlier meeting is only
+    /// changed when this meeting is saved.
+    public func setFollowsUp(_ previous: Meeting?) {
+        followsUpOn = previous
+        guard let previous else {
+            scheduledSeriesID = nil
+            scheduledSeriesName = nil
+            return
+        }
+        let series = MeetingFollowUpLink.series(joining: previous)
+        scheduledSeriesID = series.id
+        scheduledSeriesName = series.name
+    }
+
+    /// Moves the start while keeping the meeting length.
+    public func setStart(_ newStart: Date) {
+        let length = max(900, endDate.timeIntervalSince(startDate))
+        startDate = newStart
+        endDate = newStart.addingTimeInterval(length)
+    }
+
+    /// Unfinished actions of the source meeting that a follow-up can carry over.
+    public var openActionsToCarry: [ActionItem] {
+        guard let source = followUpSource else { return [] }
+        return source.actionItems.filter { !$0.isCompleted }
+    }
+
+    /// Footnote under the Carry Over toggle.
+    public var carryOverFootnote: String {
+        let open = openActionsToCarry
+        guard !open.isEmpty else { return "There are no unfinished actions to carry over." }
+        let noun = open.count == 1 ? "action" : "actions"
+        let detail = open.prefix(2).map(Self.describeAction).joined(separator: "; ")
+        return "\(open.count) unfinished \(noun) will show under Open From Last Time: \(detail)."
+    }
+
+    private static func describeAction(_ item: ActionItem) -> String {
+        var extras: [String] = []
+        if let name = item.assignee?.name, !name.isEmpty { extras.append(name) }
+        if let due = item.dueDate { extras.append("due " + due.formatted(.dateTime.day().month(.abbreviated))) }
+        return extras.isEmpty ? item.title : "\(item.title) (\(extras.joined(separator: ", ")))"
+    }
+
+    /// The agenda exactly as the person wrote it. Open actions of a followed-up meeting are shown
+    /// separately ("Open From Last Time") and are never written into the agenda text.
+    func effectiveAgendaForSave() -> String {
+        agendaText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Persists recurrence/coordinator, generates the next occurrence and writes calendar events.
+    func finalizePreparation(for meeting: Meeting) {
+        let chosenRecurrence = recurrence
+        let chosenCoordinator = coordinatorID
+        if chosenRecurrence != nil || chosenCoordinator != nil {
+            prepStore.update(meeting.id) {
+                $0.recurrence = chosenRecurrence
+                $0.coordinatorID = chosenCoordinator
+            }
+        }
+        var toSync: [Meeting] = [meeting]
+        if let chosenRecurrence, let context = modelContext {
+            if let next = try? MeetingOccurrenceScheduler.scheduleNext(after: meeting, recurrence: chosenRecurrence, context: context, store: prepStore) {
+                toSync.append(next)
+            }
+        }
+        calendarSyncMessage = nil
+        guard calendarService.isConnected else { return }
+        for item in toSync {
+            do {
+                let existing = prepStore.record(for: item.id).calendarEventID
+                let identifier = try calendarService.upsertEvent(for: item, existingIdentifier: existing)
+                prepStore.update(item.id) { $0.calendarEventID = identifier }
+            } catch {
+                calendarSyncMessage = "The meeting was saved but could not be added to Apple Calendar."
+            }
+        }
+    }
+
     // MARK: - Meeting Persistence
     public func saveScheduledMeeting() throws -> Meeting {
         guard areDatesValid else {
@@ -571,16 +711,20 @@ public final class MeetingSetupViewModel {
             duration: duration,
             status: .scheduled,
             audioQuality: defaultAudioQuality,
+            isFavorite: isImportant,
             templateName: selectedTemplate?.name,
             folder: selectedFolder
         )
+        MeetingFollowUpLink.apply(seriesID: scheduledSeriesID, seriesName: scheduledSeriesName, previous: followsUpOn, to: meeting)
         meeting.tags = selectedTags
         meeting.participants = participants
+        meeting.agendaText = effectiveAgendaForSave()
         
         if let context = modelContext {
             context.insert(meeting)
             try context.save()
         }
+        finalizePreparation(for: meeting)
         
         dismissSheet()
         return meeting
@@ -619,37 +763,7 @@ public final class MeetingSetupViewModel {
         return meeting
     }
     
-    public func quickLaunchMeeting() -> Meeting {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, h:mm a"
-        let timestamp = formatter.string(from: Date())
-        let meeting = Meeting(
-            id: UUID(),
-            title: "Meeting - \(timestamp)",
-            createdAt: Date(),
-            scheduledStartTime: Date(),
-            duration: 0,
-            status: .recording,
-            audioQuality: defaultAudioQuality,
-            templateName: selectedTemplate?.name,
-            folder: selectedFolder
-        )
-        meeting.tags = selectedTags
-        meeting.participants = participants
-        
-        if let context = modelContext {
-            context.insert(meeting)
-            try? context.save()
-        }
-        
-        onNavigateToRecording?(meeting.id)
-        dismissSheet()
-        return meeting
-    }
     
-    public func createQuickMeeting() -> Meeting {
-        quickStartMeeting()
-    }
     
     // MARK: - Audio Import
     public func isExtensionSupported(_ ext: String) -> Bool {
@@ -657,15 +771,19 @@ public final class MeetingSetupViewModel {
         return ["m4a", "mp3", "wav"].contains(clean)
     }
     
-    public func isSupportedAudioExtension(_ ext: String) -> Bool {
-        isExtensionSupported(ext)
-    }
     
     public func setSimulatedAudioDuration(_ duration: TimeInterval) {
         self.simulatedAudioDuration = duration
     }
     
     public func importAudioFile(from url: URL) throws -> Meeting {
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         let ext = url.pathExtension.lowercased()
         guard isExtensionSupported(ext) else {
             hasImportError = true
@@ -685,12 +803,6 @@ public final class MeetingSetupViewModel {
             throw AudioImportError.corruptedFile
         }
         
-        let isSecurityScoped = url.startAccessingSecurityScopedResource()
-        defer {
-            if isSecurityScoped {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
         
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
            let fileSize = attrs[.size] as? UInt64, fileSize == 0 {
@@ -734,16 +846,23 @@ public final class MeetingSetupViewModel {
         let targetURL = docs.appendingPathComponent("\(UUID().uuidString).\(ext)")
         try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: url, to: targetURL)
+        do {
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: targetURL.path)
+        } catch {
+            try? FileManager.default.removeItem(at: targetURL)
+            throw error
+        }
         let persistentAudioURL = targetURL
         
         let meetingTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? url.deletingPathExtension().lastPathComponent
             : title
+        let recordedAt = importedRecordingDate ?? Date()
         
         let meeting = Meeting(
             title: meetingTitle,
-            createdAt: Date(),
-            scheduledStartTime: Date(),
+            createdAt: recordedAt,
+            scheduledStartTime: recordedAt,
             duration: duration,
             status: .processing,
             audioFileURL: persistentAudioURL,
@@ -751,18 +870,32 @@ public final class MeetingSetupViewModel {
             templateName: selectedTemplate?.name,
             folder: selectedFolder
         )
+        meeting.seriesID = importedSeriesID
+        meeting.seriesName = importedSeriesID == nil ? nil : importedSeriesName
         meeting.tags = selectedTags
         meeting.participants = participants
         
         if let context = modelContext {
             context.insert(meeting)
-            try? context.save()
+            do { try context.save() }
+            catch {
+                context.delete(meeting)
+                try? FileManager.default.removeItem(at: persistentAudioURL)
+                throw error
+            }
         }
         
         return meeting
     }
     
     public func importAudioFile(at url: URL, title: String? = nil) async throws -> Meeting {
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         if let title = title {
             self.title = title
         }
@@ -792,12 +925,6 @@ public final class MeetingSetupViewModel {
             throw AudioImportError.invalidDuration
         }
         
-        let isSecurityScoped = url.startAccessingSecurityScopedResource()
-        defer {
-            if isSecurityScoped {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
         
         let meeting = try importAudioFile(from: url)
         

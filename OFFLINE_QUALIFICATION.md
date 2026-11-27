@@ -1,14 +1,144 @@
 # Offline intelligence qualification
 
-Status: **NOT QUALIFIED — no real-device model measurements or held-out audio collected.**
-Status: **NOT QUALITY-QUALIFIED — synthetic device smoke tests completed; held-out meeting evaluation remains outstanding.**
-The normal meeting pipeline still uses Apple Speech and heuristic extraction.
-The isolated Offline Benchmarks screen now integrates replacement inference
-engines for qualification; it does not activate them for saved meetings.
+Status: **NOT QUALITY-QUALIFIED — synthetic device engine tests completed; held-out meeting evaluation remains outstanding.**
+
+The integrated trial connects saved-audio processing to compressed multilingual
+Whisper large-v3, FluidAudio offline speaker separation, and local Qwen analysis.
+The current app uses Qwen3 1.7B for meeting analysis and Vidur. Earlier 4B measurements below document a rejected diagnostics candidate; 4B is not a production model or user-selectable production option.
+This is an integrated evaluation build, not a claim that the accuracy, one-hour
+performance, memory, or full production-readiness gates below have passed.
+
+## Integrated app flow (current source; device qualification pending)
+
+- Record/import audio, then open processing. Missing models require an explicit
+  one-time public download. Settings → Offline analysis models supports download,
+  repair, removal, size/status, and license review without opening the lab.
+- Audio inference has no network fallback. Analysis may continue in the background
+  when iOS grants processing time, but suspension is possible and force-quit stops it.
+  Reopening the app resumes protected checkpoints after transcription, speaker
+  separation, and each successfully analyzed chunk. Partial downloads also resume.
+- Recordings must be local, readable, nonempty, and at most 60 minutes. Engine
+  stages run sequentially; Qwen admission checks available memory before loading.
+  Hindi input chunks are bounded using encoded JSON bytes, not character count.
+- Anonymous speaker labels are assigned only for sufficiently clear overlap.
+  Ambiguous speech stays unassigned; voices are not matched to named attendees.
+- Successful analysis saves the original-language transcript and English discussion
+  points/decisions. Suggested tasks remain private drafts, outside Action Items and
+  Reminders, until the user reviews their exact source quotes and confirms edits.
+  Owner and due date are optional. Spoken relative deadlines require explicit date
+  confirmation; unspecified priority stays unspecified. Category is persisted and
+  available as a grouping in the cross-meeting task list.
+- Accepted/rejected suggestions persist across reopening. Chunk-overlap duplicates
+  use normalized title/owner identity. Accepted/manual tasks survive reanalysis.
+  This is deterministic duplicate suppression, not qualified semantic reconciliation
+  of later cancellations, contradictions, or differently worded commitments.
+- Ask AI uses Qwen3 1.7B against tokenizer-bounded transcript chunks, with validated source
+  quotes and real timestamps. Hard-coded answers/citations have been removed.
+  Question accuracy and cross-chunk answer reconciliation remain unqualified.
+- Optional Apple Reminders export targets on-device local lists only, preserving the
+  no-cloud requirement. Manent can send later completion updates to reminders it exported,
+  but does not import completion from Reminders. If no local account exists, tasks stay in Manent and the
+  app explains why sync is unavailable. Unspecified priority is not invented on export.
+- New persistence fields are optional additions; existing records keep legacy data.
+  Build 9 opened the existing iPhone store. The added build 10 recording locator and
+  transcript ordering fields still require update and playback validation on-device.
+
+The content-free integrated smoke command is:
+
+```powershell
+build/device-tools/Scripts/python.exe Scripts/device_benchmark.py --pipeline-check
+```
+
+It requires build 7 and downloaded models. It runs a public synthetic clip through
+normal processing into a separate in-memory database, confirms one suggested task
+and reloads it, checks duplicate confirmation, and prints only numeric/status markers.
+It never selects or exports a private meeting. This smoke test does not measure
+Hindi-English meeting accuracy. Actual results must be reviewed on the iPhone.
+
+## Integrated validation in progress
+
+The first integrated source `363c04b` passed 744 app tests, 20 engine tests, and
+onboarding plus three main-tab simulator launches in Actions run `44275309276`.
+Later source adds restart/failure checkpoint tests, explicit task-category behavior,
+grounded question answering, and synthetic end-to-end device checks. See the latest
+CI result for their final counts; the first run does not validate later changes.
+
+Build 6 opened the iPhone's existing production store and remained running. Its
+memory guard rejected both the unsafe 4B estimate and a 1.7B attempt with about
+1.91 GB available versus a 2.03 GB estimated requirement. Build 7 bounds Foundation
+FileHandle temporary buffers with a per-chunk autorelease pool during multi-GB
+model verification. The memory reserve and 3 GB cap are unchanged. Build 7 subsequently confirmed the reduced sampled footprint on-device (see below);
+the integrated task-review persistence check remained unsuccessful through build 9.
+
+## Build 7 physical integration findings
+
+Build 7 (`da893b5`, Actions `44281481468`) passed 749 app tests and 28 engine
+tests. It was installed over build 6 through the same Sideloadly account/bundle ID.
+The existing production store opened and the app remained alive. A foreground
+synthetic pipeline run completed transcription, speaker separation, and analysis,
+but failed the smoke assertion because no reviewable task was found. This is a
+failed end-to-end check, not a passing task-review/persistence result.
+
+Controlled, automatically launched public-fixture benchmarks (no private recordings
+selected) then showed:
+
+- Whisper large-v3: 3.63 seconds warm, sampled footprint 113,247,272 bytes;
+  recognized the public sample's words "send", "estimate", and "tomorrow".
+- Qwen3-1.7B: 6.18 seconds, sampled footprint 607,504,600 bytes, nominal thermal;
+  produced one suggested task involving a cancelled/rejected action in the public
+  Hinglish fixture. It failed this semantic check despite valid output structure.
+
+Only content-free aggregate diagnostics were printed; no private audio, transcript,
+or generated meeting content was copied from the phone. These measurements do not
+satisfy held-out accuracy gates. The lower footprint after bounded verification also
+means earlier 4B failures must not be treated as a clean inference-memory comparison.
+
+Build 9 introduces prompt version `meeting-analysis-v2` to distinguish concrete future
+assignments from unrelated negations, invalidates prior prompt checkpoints, and records
+prompt/context metadata in benchmarks. It also adds content-free pipeline result counts
+so ASR, model output, decoding, and review persistence failures can be distinguished.
+
+The normal pipeline remains the 1.7B trial configuration. The diagnostics-only 4B
+candidate is re-evaluated with a 2,048-token context, 1,280 input / 768 output token
+limits, 256/64 token batches, and a 500 MB working reserve. Its weights-plus-reserve
+estimate is 2,997,280,256 bytes; admission still rejects insufficient available memory
+and retains the 3 GB cap. Runtime load/decode footprint checks abort excessive usage.
+This compact candidate has not yet passed device or quality qualification and is not
+enabled for normal meetings. Build 9 device results are pending.
+
+## Historical Build 9 comparison and rejected Build 10 trial
+
+Build 9 (`3276342`, Actions `44288137991`) installed successfully. These historical diagnostics compared the production-sized 1.7B model with a temporary 4B candidate:
+
+| Candidate / prompt v2 | Seconds | Sampled footprint | Result |
+| --- | ---: | ---: | --- |
+| 1.7B / 4096 context | 5.99 | 605259968 bytes | No task; missed the valid commitment |
+| 4B / 2048 context | 19.13 | 437013464 bytes | One estimate commitment; no cancelled/rejected task; owner and spoken deadline omitted |
+
+The build-9 normal-flow smoke also failed: ASR contained the expected words,
+analysis decoded successfully, but generated zero tasks. The task-review persistence
+step therefore still has not passed on hardware. These are development fixtures,
+not held-out accuracy measurements.
+
+Build 10 temporarily trialled compact 4B based on this comparison. That experiment is no longer the app configuration: the current meeting flow and Vidur use Qwen3 1.7B only. The historical trial retained human task review and the memory cap; it did not establish production quality. Prompt v3 added explicit owner/self-identification and raw
+spoken-deadline guidance. Model-token-aware planning includes the complete prompt,
+persists the exact fitted chunk IDs for recovery, and preserves all Unicode text.
+Chat-role delimiters inside source text/questions are escaped as JSON data. Split
+transcript fragments carry persisted sequence indexes so tied timestamps cannot
+scramble their display/export order after reloading.
+
+Saved audio also gets a relative locator, with recovery for legacy sandbox URLs
+after an app update. Apple documents container relocation in TN2285; the existing
+absolute URL field is retained for additive migration compatibility. Build-10
+native/device regression results are pending.
+
+The user currently has two approximately two-minute Hindi-English recordings.
+They can support an initial private development review on the phone, but do not
+meet the 20-case / three-hour held-out corpus gate.
 
 ## Running the device lab
 
-Use Settings → Offline model benchmarks in build 4 or later. Download one candidate and
+Use Settings → On-device intelligence → Diagnostics → Offline model benchmarks. Download one candidate and
 run its benchmark. A public synthetic English audio clip (generated by macOS CI)
 and a synthetic Hinglish text fixture are available for engine smoke tests.
 Choose a local audio file to test speech/diarization; successful transcription
@@ -43,9 +173,9 @@ backup exclusion. Documents/BenchmarkMetrics contains numeric timing/memory/mode
 metadata only, with `qualified: false`; it contains no transcript or task text.
 Memory is a sampled process footprint at 200 ms intervals, not a guaranteed true
 peak. Neither short synthetic clips nor these metrics satisfy held-out quality
-or one-hour performance gates. The analysis lab emits per-chunk drafts; final
-cross-chunk reconciliation, speaker-name mapping, accepted-task review, and
-production checkpointing remain gated on qualification.
+or one-hour performance gates. The analysis lab emits per-chunk drafts. Build 7 adds task review and checkpointing
+to normal processing; semantic cross-chunk reconciliation and speaker-name
+identification remain unqualified.
 Language-model benchmarks use a 4,096-token context, at most 3,072 prompt tokens,
 and at most 1,024 generated tokens to limit KV-cache memory on the 6 GB phone.
 The tokenizer checks the actual prompt budget; an oversized chunk fails visibly
@@ -75,8 +205,7 @@ Build 5 adds bounded, resumable HTTP range downloads with retries after the 4B
 download failure. Previously installed model directories remain compatible.
 It also enforces on-device Apple Speech, removes the dormant cloud inference
 service, excludes legacy meeting storage from backups, and removes fabricated
-consensus from the legacy summary fallback. The normal meeting-analysis pipeline
-has not been replaced by the unqualified benchmark engines.
+consensus from the legacy summary fallback. Those build-5 changes preceded the integrated evaluation flow in build 7.
 
 After its download completed, the 4B configuration was terminated under memory
 pressure in two foreground attempts (`vm-pageshortage`, `proc-thrashing` in iOS
@@ -183,24 +312,38 @@ F1 for analysis; ties use lower processing time, then lower memory. Run each eng
 sequentially and unload before loading the next. If none passes, report failures;
 do not substitute cloud processing or call heuristic output qualified.
 
-## Remaining device work before production integration
+## Remaining device work before production release
 
-Compile the benchmark-enabled iOS app using Mac/Xcode (including the existing
-GitHub Actions runner), then sign/install it through Sideloadly. The connected
-iPhone executes Core ML/Metal; Windows can launch it and collect process metrics
-through pymobiledevice3's USB userspace developer tunnel. This transport was
-verified on the connected iPhone15,4 running iOS 26.5.2 with MeetMind build 3.
-App queries, DVT process listing, app launch, running-state checks, and a memory
-snapshot succeeded. This corrects the earlier assumption that Windows could not
-control target-device tests. The replacement models and benchmark entrypoint are
-not installed yet; startup measurements are not inference benchmarks.
-Simulator success is not an iPhone memory, speed, thermal, diarization, or
-Hinglish accuracy measurement.
+The current integrated build uses Whisper large-v3 and Qwen3-1.7B. They are
+trial defaults selected for testing, not winners of the held-out quality gates.
+The setup, local inference, additive persistence, checkpoint recovery, source-linked
+task review, and explicit accepted-task reminder export are implemented in source.
+Physical-device regression against the existing populated store and the complete
+pipeline must pass before distributing it as a validated update.
 
-After qualification, implement structured analysis interfaces, resumable processing,
-protected local storage/backup exclusion, additive SwiftData migrations, source-linked
-task review, and explicit accepted-task reminder export. Regression-test an existing
-populated database and interrupted processing before distributing a new IPA.
+Windows launches the iPhone's Core ML/Metal engines over pymobiledevice3's USB
+userspace developer tunnel. Short synthetic engine smoke tests and existing-store
+opening have been measured on the regular iPhone 15. Simulator success does not
+establish iPhone memory, speed, thermal, diarization, or Hinglish accuracy results.
+
+Before production qualification, collect the consented held-out corpus and reference
+annotations on the iPhone, implement content-free aggregate evaluation export, and
+measure every gate above. Semantic reconciliation of cross-chunk cancellations and
+contradictions is not implemented by deterministic title/owner deduplication.
+Generated drafts therefore still require human review. Do not describe this build
+as fully qualified or infer task accuracy from valid substring quotes alone.
 
 Synthetic scorer unit tests are only tests of scoring logic. They must never be
-included in the quality corpus or cited as model benchmarks.
+included in the quality corpus or cited as real-meeting accuracy benchmarks.
+
+## Build 10 verified integration result
+
+Source `0a397f1`, Actions run `44322096984`, passed 752 app tests,
+35 engine tests, and onboarding plus three repeated main-tab launches.
+The build 10 IPA was installed over build 9 using the same Sideloadly profile.
+The existing production store opened and remained running after five seconds.
+The public-audio pipeline completed: 2 transcript turns, 1 generated suggestion,
+0 automatically active tasks. Review saved 1 task; repeating confirmation produced
+0 duplicates, and a fresh model context reloaded the accepted task.
+Private Hindi-English accuracy and long-session gates remain outstanding.
+Subsequent UI source changes require separate validation.

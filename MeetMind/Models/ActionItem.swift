@@ -65,6 +65,7 @@ public final class ActionItem: Identifiable {
     public var category: String?
     public var sourceEvidence: String?
     public var sourceSuggestionID: String?
+    public var assignedByLocalUser: Bool?
     
     // Relationships
     public var meeting: Meeting?
@@ -76,6 +77,7 @@ public final class ActionItem: Identifiable {
         get { ActionPriority(rawValue: priorityRaw) ?? .medium }
         set { priorityRaw = newValue.rawValue }
     }
+    public var priorityDisplayName: String { priorityRaw.isEmpty ? "Unspecified" : priority.displayName }
     
     public init(
         id: UUID = UUID(),

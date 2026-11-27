@@ -32,18 +32,4 @@ final class MeetingProcessingViewTests: XCTestCase {
         XCTAssertNotNil(view)
         XCTAssertEqual(view.meetingId, meetingId)
     }
-    
-    func test_processingProgressRingView_rendering() throws {
-        let ring = ProcessingProgressRingView(progress: 0.5)
-        XCTAssertNotNil(ring)
-        XCTAssertEqual(ring.progress, 0.5)
-    }
-    
-    func test_processingStageRowView_states() throws {
-        let stage = ProcessingStage(id: 1, name: "Speech Diarization", description: "Transcribing speech", state: .inProgress)
-        let row = ProcessingStageRowView(stage: stage)
-        XCTAssertNotNil(row)
-        XCTAssertEqual(row.stage.name, "Speech Diarization")
-        XCTAssertEqual(row.stage.state, .inProgress)
-    }
 }

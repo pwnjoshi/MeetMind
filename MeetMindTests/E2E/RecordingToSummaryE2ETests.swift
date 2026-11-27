@@ -10,6 +10,9 @@ final class RecordingToSummaryE2ETests: XCTestCase {
         let meeting = Meeting(title: "Capture", status: .recording)
         store.mainContext.insert(meeting)
         let audio = MockAudioRecordingService()
+        // The saved duration comes from validating the stopped file, not from the recorder's running
+        // counter, so the mock must write a file that is actually 12 seconds long.
+        audio.canonicalFrameCount = 12 * 44_100
         let recording = LiveRecordingViewModel(meeting: meeting, modelContext: store.mainContext, recordingService: audio)
         recording.startSession()
         try await recording.waitUntilRecordingStarted()
@@ -27,5 +30,7 @@ final class RecordingToSummaryE2ETests: XCTestCase {
         recording.startSession()
         do { try await recording.waitUntilRecordingStarted(); XCTFail("Must report denied permission") }
         catch { XCTAssertFalse(recording.isRecording); XCTAssertNotNil(recording.errorMessage) }
+        // A start that never wrote audio leaves nothing to recover on the next launch.
+        XCTAssertNil(try RecordingTakeJournalStore.live().load(meetingID: recording.meetingId))
     }
 }

@@ -72,16 +72,6 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(palette.liveBlueHex, "#3B82F6")
     }
     
-    /// Tier 1: Feature 2 - Validates exact brand color hex values match Figma specification Node 8:2.
-    func test_tier1_feature2_brandColorHexValuesMatchFigma() throws {
-        XCTAssertEqual(ThemeColorTokens.slatePrimary, "#1E2E28")
-        XCTAssertEqual(ThemeColorTokens.amberAccent, "#F59E0B")
-        XCTAssertEqual(ThemeColorTokens.blueLive, "#3B82F6")
-        XCTAssertEqual(ThemeColorTokens.purpleAI, "#8B5CF6")
-        XCTAssertEqual(ThemeColorTokens.greenSuccess, "#10B981")
-        XCTAssertEqual(ThemeColorTokens.redRecording, "#EF4444")
-    }
-    
     /// Tier 1: Feature 2 - Validates typography scale point sizes match standard HIG scales.
     func test_tier1_feature2_typographyScaleMapping() throws {
         let typography = sut.typographyTokens
@@ -134,7 +124,7 @@ final class SettingsViewModelTests: XCTestCase {
     
     /// Tier 1: Feature 15 - Validates selecting transcription speech language locale.
     func test_tier1_feature15_speechLanguageSelection() throws {
-        XCTAssertEqual(sut.speechLanguageLocale, "en-US")
+        XCTAssertEqual(sut.speechLanguageLocale, "hi-IN")
         
         sut.setSpeechLanguageLocale("es-ES")
         XCTAssertEqual(sut.speechLanguageLocale, "es-ES")
@@ -274,7 +264,7 @@ final class SettingsViewModelTests: XCTestCase {
         
         XCTAssertEqual(sut.audioQuality, .high)
         XCTAssertTrue(sut.isNoiseSuppressionEnabled)
-        XCTAssertEqual(sut.speechLanguageLocale, "en-US")
+        XCTAssertEqual(sut.speechLanguageLocale, "hi-IN")
         XCTAssertEqual(sut.themeMode, .system)
         XCTAssertEqual(sut.apiKey, "")
         XCTAssertEqual(sut.summaryStyle, .executive)
@@ -327,11 +317,12 @@ final class SettingsViewModelTests: XCTestCase {
     
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 15: Locale & API Key)
     
-    /// Tier 2: Feature 15 - Validates unsupported speech locale string falls back to English (US) and persists to UserDefaults.
+    /// Tier 2: Feature 15 - Validates an unsupported speech locale returns to
+    /// the Hindi preview default used by the local Hinglish experience.
     func test_tier2_feature15_unsupportedLocaleFallbackToSystemLocale() throws {
         sut.setSpeechLanguageLocale("xx-YY")
-        XCTAssertEqual(sut.speechLanguageLocale, "en-US")
-        XCTAssertEqual(mockUserDefaults.string(forKey: "MeetMind_SpeechLocale"), "en-US")
+        XCTAssertEqual(sut.speechLanguageLocale, "hi-IN")
+        XCTAssertEqual(mockUserDefaults.string(forKey: "MeetMind_SpeechLocale"), "hi-IN")
     }
     
     /// Tier 2: Feature 15 - Validates submitting empty or whitespace-only API key clears key.

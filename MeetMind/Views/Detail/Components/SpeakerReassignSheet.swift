@@ -29,17 +29,17 @@ public struct SpeakerReassignSheet: View {
                         Circle()
                             .fill(Color(hex: speaker.colorHex))
                             .frame(width: 28, height: 28)
-                            .overlay(Text(String(speaker.name.prefix(1))).font(Typography.caption).foregroundStyle(.white))
+                            .overlay(Text(speaker.initials).font(.caption2.weight(.bold)).foregroundStyle(.white))
                         
-                        Text(speaker.name)
-                            .font(Typography.headline)
-                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(speaker.displayName)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
                         
                         Spacer()
                         
                         if speaker.id == currentSpeaker?.id {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(Theme.Colors.mintGreenDark)
+                                .foregroundStyle(Theme.Colors.manentAccent)
                         }
                     }
                 }

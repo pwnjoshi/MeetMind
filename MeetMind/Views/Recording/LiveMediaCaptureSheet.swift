@@ -3,90 +3,93 @@ import SwiftUI
 import AVFoundation
 import UIKit
 
-/// Sheet modal to capture or select whiteboard photos pinned to recording timecode
+/// "Attach Photo" sheet (Figma node 161:1234). The person chooses Take Photo (only
+/// when a camera exists) or Choose from Library; nothing opens on its own. The
+/// photo is pinned to the recording timecode and can carry a caption.
 public struct LiveMediaCaptureSheet: View {
     @Environment(\.dismiss) private var dismiss
     public let timestamp: TimeInterval
-    public var onCapturePhoto: (Data) -> Void
+    public var onAttach: (Data, String) -> Void
+    @State private var photoData: Data?
+    @State private var previewImage: UIImage?
+    @State private var caption = ""
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isCameraPresented = false
     @State private var captureError: String?
-    
+
+    public init(timestamp: TimeInterval, onAttach: @escaping (Data, String) -> Void) {
+        self.timestamp = timestamp
+        self.onAttach = onAttach
+    }
+
     public init(timestamp: TimeInterval, onCapturePhoto: @escaping (Data) -> Void) {
         self.timestamp = timestamp
-        self.onCapturePhoto = onCapturePhoto
+        self.onAttach = { data, _ in onCapturePhoto(data) }
     }
-    
+
+    private var isCameraAvailable: Bool {
+        UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
+
     public var body: some View {
         NavigationStack {
-            VStack(spacing: Spacing.md) {
-                HStack(spacing: 6) {
-                    Image(systemName: "camera.fill")
-                    Text("Timecode: \(formattedTimecode(timestamp))").font(Typography.timecode)
-                }
-                .foregroundStyle(Theme.Colors.mintGreen)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Theme.Colors.mintGreenLight)
-                .clipShape(Capsule())
-                
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Theme.Colors.cardBackground)
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.Colors.cardBorder, lineWidth: 1))
-                        .frame(height: 150)
-                    VStack(spacing: 8) {
-                        Image(systemName: "camera.viewfinder").font(.system(size: 40)).foregroundStyle(Theme.Colors.textSecondary)
-                        Text("Attach a Whiteboard or Slide Photo").font(Typography.subheadline).foregroundStyle(Theme.Colors.textSecondary)
+            Form {
+                Section {
+                    if previewImage == nil && !isCameraAvailable {
+                        Text("No camera is available on this device. Choose a photo from your library.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
-                }
-                .padding(.horizontal, Spacing.md)
-                
-                VStack(spacing: Spacing.sm) {
+                    if let previewImage {
+                        HStack(spacing: 12) {
+                            Image(uiImage: previewImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 68, height: 68)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Photo")
+                                Text("Taken at \(formattedTimecode(timestamp))")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if isCameraAvailable {
+                            Button("Retake Photo") { Task { await launchCamera() } }
+                        }
+                    } else {
+                        if isCameraAvailable {
+                            Button("Take Photo", systemImage: "camera") { Task { await launchCamera() } }
+                        }
+                    }
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        HStack {
-                            Image(systemName: "photo.on.rectangle")
-                            Text("Choose from Library")
-                        }
-                        .font(Typography.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(Theme.Colors.liveBlue)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    
-                    Button {
-                        Task {
-                            guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
-                                captureError = "A camera is not available on this device. Choose a photo from the library."
-                                return
-                            }
-                            if await AVCaptureDevice.requestAccess(for: .video) {
-                                isCameraPresented = true
-                            } else {
-                                captureError = "Enable camera access for MeetMind in Settings, or choose a photo from the library."
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "camera.fill")
-                            Text("Capture Camera Snapshot")
-                        }
-                        .font(Typography.subheadline)
-                        .foregroundStyle(Theme.Colors.liveBlue)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(Theme.Colors.liveBlueLight)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        Label("Choose from Library", systemImage: "photo.on.rectangle")
                     }
                 }
-                .padding(.horizontal, Spacing.md)
-                Spacer()
+                Section("Caption") {
+                    TextField("Caption", text: $caption)
+                }
             }
-            .padding(.top, Spacing.lg)
-            .navigationTitle("Whiteboard Capture")
+            .scrollContentBackground(.hidden)
+            .background(Color(hex: "#0B1426"))
+            .navigationTitle("Attach Photo")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel("Cancel")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        if let photoData {
+                            onAttach(photoData, caption.trimmingCharacters(in: .whitespacesAndNewlines))
+                            dismiss()
+                        }
+                    } label: { Image(systemName: "checkmark") }
+                    .disabled(photoData == nil)
+                    .accessibilityLabel("Attach photo")
+                }
             }
             .onChange(of: selectedPhotoItem) { _, newItem in
                 guard let newItem else { return }
@@ -95,20 +98,26 @@ public struct LiveMediaCaptureSheet: View {
                         guard let data = try await newItem.loadTransferable(type: Data.self),
                               let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85) else {
                             captureError = "This photo could not be read. Choose another photo."
+                            selectedPhotoItem = nil
                             return
                         }
-                        onCapturePhoto(jpeg)
-                        dismiss()
-                    } catch { captureError = error.localizedDescription }
+                        setPhoto(jpeg)
+                        selectedPhotoItem = nil
+                    } catch {
+                        captureError = error.localizedDescription
+                        selectedPhotoItem = nil
+                    }
                 }
             }
         }
-        .presentationDetents([.medium])
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Color(hex: "#0B1426"))
         .fullScreenCover(isPresented: $isCameraPresented) {
             MeetingCameraPicker(onCapture: { data in
                 isCameraPresented = false
-                onCapturePhoto(data)
-                dismiss()
+                setPhoto(data)
             }, onCancel: { isCameraPresented = false })
             .ignoresSafeArea()
         }
@@ -116,10 +125,33 @@ public struct LiveMediaCaptureSheet: View {
             Button("OK") { captureError = nil }
         } message: { Text(captureError ?? "") }
     }
-    
+
+    private func setPhoto(_ data: Data) {
+        photoData = data
+        previewImage = UIImage(data: data)
+    }
+
+    /// Opens the system camera. When there is no camera (or access is off) the
+    /// photo library row stays available as the fallback.
+    private func launchCamera() async {
+        guard isCameraAvailable else { return }
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        if status == .denied || status == .restricted {
+            captureError = "Allow camera access for Manent in Settings, or choose a photo from the library."
+            return
+        }
+        if status == .notDetermined {
+            guard await AVCaptureDevice.requestAccess(for: .video) else {
+                captureError = "Allow camera access for Manent in Settings, or choose a photo from the library."
+                return
+            }
+        }
+        isCameraPresented = true
+    }
+
     private func formattedTimecode(_ time: TimeInterval) -> String {
-        let total = Int(time)
-        return String(format: "%02d:%02d", (total % 3600) / 60, total % 60)
+        let total = max(0, Int(time.isFinite ? time : 0))
+        return String(format: "%02d:%02d", total / 60, total % 60)
     }
 }
 

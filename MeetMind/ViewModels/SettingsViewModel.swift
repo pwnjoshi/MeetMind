@@ -60,16 +60,6 @@ public struct ColorPalette: Sendable, Equatable {
     }
 }
 
-/// Brand color hex constants matching Figma Node 8:2
-public enum ThemeColorTokens {
-    public static let slatePrimary = "#1E2E28"
-    public static let amberAccent = "#F59E0B"
-    public static let blueLive = "#3B82F6"
-    public static let purpleAI = "#8B5CF6"
-    public static let greenSuccess = "#10B981"
-    public static let redRecording = "#EF4444"
-}
-
 /// Typography scale point sizes matching Apple HIG
 public struct TypographyTokens: Sendable {
     public let largeTitleSize: Double = 34.0
@@ -91,6 +81,37 @@ public struct LanguageOption: Identifiable, Sendable, Equatable {
     public init(code: String, name: String) {
         self.code = code
         self.name = name
+    }
+}
+
+/// The language passed to the saved-recording engine. This is deliberately
+/// separate from Apple's optional live-preview locale: a live preview may be
+/// English while the durable transcript needs Hindi-English decoding.
+public enum SavedRecordingLanguage: String, CaseIterable, Sendable, Identifiable {
+    case hinglish
+    case hindi
+    case english
+    case automatic
+
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .hinglish: return "Hindi + English (automatic)"
+        case .hindi: return "Hindi"
+        case .english: return "English"
+        case .automatic: return "Automatic detection"
+        }
+    }
+    /// Whisper permits one language token per decode. Hinglish keeps automatic detection (nil), and the
+    /// engine decodes again as Hindi when detection returns anything other than Hindi or English (for
+    /// example Urdu), then keeps Hindi for the remaining gaps of that meeting. Hindi is the more robust
+    /// anchor for Hinglish and still recognizes English terms in a multilingual model.
+    public var whisperCode: String? {
+        switch self {
+        case .hinglish, .automatic: return nil
+        case .hindi: return "hi"
+        case .english: return "en"
+        }
     }
 }
 
@@ -137,7 +158,13 @@ public final class SettingsViewModel {
     public var audioMimeType: String = "audio/m4a"
     public var isAudioSettingsLocked: Bool = false
     
-    public var speechLanguageLocale: String = "en-US"
+    // The app is configured around in-person Hindi-English meetings by
+    // default. This only drives Apple's live *preview* recognizer; the
+    // durable transcript uses `savedRecordingLanguage` below. Keeping both
+    // defaults aligned avoids an English-only preview misleading a user while
+    // the final Hindi-anchored decode is still pending.
+    public var speechLanguageLocale: String = "hi-IN"
+    public var savedRecordingLanguage: SavedRecordingLanguage = .hinglish
     public var isOnDeviceRecognitionOnly: Bool {
         get { true }
         set { userDefaults.set(true, forKey: "MeetMind_OnDeviceSpeechOnly") }
@@ -159,6 +186,7 @@ public final class SettingsViewModel {
     public var availableLanguages: [LanguageOption] = [
         LanguageOption(code: "en-US", name: "English (United States)"),
         LanguageOption(code: "en-GB", name: "English (United Kingdom)"),
+        LanguageOption(code: "hi-IN", name: "Hindi (India)"),
         LanguageOption(code: "es-ES", name: "Spanish (Spain)"),
         LanguageOption(code: "fr-FR", name: "French (France)"),
         LanguageOption(code: "de-DE", name: "German (Germany)"),
@@ -198,6 +226,7 @@ public final class SettingsViewModel {
             .appendingPathComponent("MeetMindAudioCache")
             
         loadSavedPreferences()
+        loadUserProfile()
         recalculateStorageUsage()
     }
     
@@ -230,6 +259,10 @@ public final class SettingsViewModel {
             if availableLanguages.contains(where: { $0.code == savedLocale }) {
                 self.speechLanguageLocale = savedLocale
             }
+        }
+        if let savedLanguage = userDefaults.string(forKey: "MeetMind_SavedRecordingLanguage"),
+           let language = SavedRecordingLanguage(rawValue: savedLanguage) {
+            savedRecordingLanguage = language
         }
         
         if let savedKey = userDefaults.string(forKey: "MeetMind_APIKey") {
@@ -275,9 +308,14 @@ public final class SettingsViewModel {
             self.speechLanguageLocale = locale
             userDefaults.set(locale, forKey: "MeetMind_SpeechLocale")
         } else {
-            self.speechLanguageLocale = "en-US"
-            userDefaults.set("en-US", forKey: "MeetMind_SpeechLocale")
+            self.speechLanguageLocale = "hi-IN"
+            userDefaults.set("hi-IN", forKey: "MeetMind_SpeechLocale")
         }
+    }
+
+    public func setSavedRecordingLanguage(_ language: SavedRecordingLanguage) {
+        savedRecordingLanguage = language
+        userDefaults.set(language.rawValue, forKey: "MeetMind_SavedRecordingLanguage")
     }
     
     public func toggleOnDeviceRecognition() {
@@ -337,7 +375,7 @@ public final class SettingsViewModel {
     public func resetToDefaults() {
         setAudioQuality(.high)
         isNoiseSuppressionEnabled = true
-        setSpeechLanguageLocale("en-US")
+        setSpeechLanguageLocale("hi-IN")
         setThemeMode(.system)
         setAPIKey("")
         setSummaryStyle(.executive)
@@ -390,18 +428,12 @@ public final class SettingsViewModel {
         return formattedCacheSize
     }
     
-    public func simulateTemporaryCache(byteCount: Int64) {
-        setSimulatedCacheSize(bytes: byteCount)
-    }
     
     public var persistentRecordingsBytes: Int64 {
         get { _persistentRecordingsBytes }
         set { _persistentRecordingsBytes = newValue }
     }
     
-    public func simulatePersistentRecordings(byteCount: Int64) {
-        self.persistentRecordingsBytes = byteCount
-    }
     
     public var resolvedColorScheme: ColorSchemePreference? {
         preferredColorScheme
@@ -419,8 +451,26 @@ public final class SettingsViewModel {
         get { _userProfile }
         set { _userProfile = newValue }
     }
-    
-    public func updateUserProfile(name: String, role: String, email: String, voiceURL: URL?) {
-        self.userProfile = UserProfile(name: name, email: email, role: role, voiceProfileURL: voiceURL)
+
+    private func loadUserProfile() {
+        guard let data = userDefaults.data(forKey: "MeetMind_UserProfile"),
+              var profile = try? JSONDecoder().decode(UserProfile.self, from: data) else {
+            _userProfile = .defaultProfile
+            return
+        }
+        if ["MeetMind User", "Manent User"].contains(profile.name) {
+            profile.name = UserProfile.defaultLocalName
+            saveUserProfile(profile)
+        } else {
+            _userProfile = profile
+        }
     }
+
+    public func saveUserProfile(_ profile: UserProfile) {
+        _userProfile = profile
+        if let data = try? JSONEncoder().encode(profile) {
+            userDefaults.set(data, forKey: "MeetMind_UserProfile")
+        }
+    }
+    
 }

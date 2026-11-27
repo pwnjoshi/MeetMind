@@ -12,10 +12,7 @@ public enum TabIdentifier: String, CaseIterable, Sendable {
     case home = "home"
     case actionItems = "actionItems"
     case search = "search"
-    case settings = "settings"
 }
-
-public typealias AppTab = TabIdentifier
 
 /// Navigation stack destination targets
 public enum NavigationDestination: Hashable, Sendable {
@@ -206,13 +203,7 @@ public final class AppNavigationViewModel {
         }
     }
     
-    public func advanceCarousel() {
-        nextOnboardingPage()
-    }
     
-    public func regressCarousel() {
-        previousOnboardingPage()
-    }
     
     public func skipOnboardingCarousel() {
         onboardingStage = .profileSetup
@@ -299,13 +290,7 @@ public final class AppNavigationViewModel {
         }
     }
     
-    public func presentModal(_ modal: AppModal) {
-        activeModal = modal
-    }
     
-    public func dismissModal() {
-        activeModal = nil
-    }
 }
 
 // MARK: - Compatibility Extensions for E2E Test Suite (OnboardingAndSettingsE2ETests)
@@ -345,7 +330,6 @@ extension AppNavigationViewModel {
             case .home: return 0
             case .actionItems: return 1
             case .search: return 2
-            case .settings: return 3
             }
         }
         set {
@@ -353,7 +337,8 @@ extension AppNavigationViewModel {
             case 0: selectedTab = .home
             case 1: selectedTab = .actionItems
             case 2: selectedTab = .search
-            case 3: selectedTab = .settings
+            // Index 3 was the removed Settings tab. Old snapshots restore safely to Meetings.
+            case 3: selectedTab = .home
             default: selectedTab = .home
             }
         }
@@ -387,9 +372,6 @@ extension AppNavigationViewModel {
         completeOnboarding()
     }
     
-    public func grantPermission(_ type: PermissionType) {
-        setPermissionStatus(type, status: .authorized)
-    }
     
     public func isPermissionGranted(_ type: PermissionType) -> Bool {
         switch type {
@@ -399,25 +381,7 @@ extension AppNavigationViewModel {
         }
     }
     
-    public func setPermissionStatus(_ type: PermissionType, status: PermissionStatus) {
-        let authorized = (status == .authorized)
-        switch type {
-        case .microphone:
-            isMicrophoneAuthorized = authorized
-            setMicrophonePermissionDeniedByUser(status == .denied)
-        case .speechRecognition:
-            isSpeechRecognitionAuthorized = authorized
-        case .calendar, .reminders, .notifications:
-            isCalendarAuthorized = authorized
-        }
-    }
     
-    public func shouldShowPermissionRecoveryAlert(for type: PermissionType) -> Bool {
-        if type == .microphone {
-            return shouldShowSettingsRedirectAlert
-        }
-        return false
-    }
     
     public func settingsDeepLinkURL() -> URL {
         systemSettingsURL ?? (URL(string: "app-settings:") ?? URL(fileURLWithPath: "/"))
@@ -440,7 +404,9 @@ extension AppNavigationViewModel {
         hasCompletedOnboarding = snapshot.hasCompletedOnboarding
         isOnboardingCompleted = snapshot.hasCompletedOnboarding
         rootRoute = snapshot.hasCompletedOnboarding ? .mainTabs : .onboarding
-        if let detailID = snapshot.presentedMeetingDetailID {
+        if snapshot.selectedTabIndex == 3 {
+            navigationPath.removeAll()
+        } else if let detailID = snapshot.presentedMeetingDetailID {
             navigateToMeetingDetail(meetingID: detailID)
         }
     }

@@ -34,57 +34,84 @@ public struct StickyAudioPlayerBar: View {
         self.onCycleRate = onCycleRate
     }
     
+    /// Speeds the page offers, in order.
+    public static let playbackRates: [Float] = [1.0, 1.5, 2.0]
+
+    /// "1×", "1.5×", "2×".
+    public static func rateLabel(_ rate: Float) -> String {
+        let rounded = rate.rounded()
+        let number = abs(rate - rounded) < 0.01 ? String(Int(rounded)) : String(format: "%g", rate)
+        return number + "\u{00D7}"
+    }
+
+    /// The speed after `rate` when the speed button is tapped. Unknown speeds return to 1×.
+    public static func nextRate(after rate: Float) -> Float {
+        guard let index = playbackRates.firstIndex(where: { abs($0 - rate) < 0.05 }) else { return 1.0 }
+        return playbackRates[(index + 1) % playbackRates.count]
+    }
+
     public var body: some View {
-        VStack(spacing: Spacing.xs) {
+        VStack(spacing: 6) {
             scrubberSection
             controlsSection
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.sm)
-        .background(Theme.Colors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.xl))
-        .overlay(RoundedRectangle(cornerRadius: Spacing.Radius.xl).stroke(Theme.Colors.cardBorder, lineWidth: 1))
-        .shadow(color: Color.black.opacity(0.08), radius: 8, y: -2)
-        .padding(.horizontal, Spacing.md)
-        .padding(.bottom, Spacing.xs)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
-    
+
     private var scrubberSection: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 0) {
             Slider(value: Binding(get: { currentTime }, set: { onSeek($0) }), in: 0...max(1.0, totalDuration))
-                .tint(Theme.Colors.primarySlate)
+                .tint(Theme.Colors.manentAccent)
+                .accessibilityLabel("Playback position")
+                .accessibilityValue("\(formatTime(currentTime)) of \(formatTime(totalDuration))")
             HStack {
-                Text(formatTime(currentTime)).font(Typography.timecode).foregroundStyle(Theme.Colors.textSecondary)
+                Text(formatTime(currentTime)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 Spacer()
-                Text(formatTime(totalDuration)).font(Typography.timecode).foregroundStyle(Theme.Colors.textTertiary)
+                Text(formatTime(totalDuration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
         }
     }
-    
+
     private var controlsSection: some View {
-        HStack(spacing: Spacing.xl) {
+        HStack(spacing: 28) {
             Button(action: onCycleRate) {
-                Text(String(format: "%.2gx", playbackRate)).font(Typography.caption).fontWeight(.bold)
-                    .foregroundStyle(Theme.Colors.textPrimary).padding(.horizontal, Spacing.xs).padding(.vertical, 2)
-                    .background(Theme.Colors.secondaryBackground).clipShape(Capsule())
+                Text(Self.rateLabel(playbackRate))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.manentAccent)
+                    .frame(width: 52, height: 32)
+                    .background(Theme.Colors.manentAccent.opacity(0.12), in: Capsule())
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
-            Spacer()
+            .accessibilityLabel("Playback speed")
+            .accessibilityValue(Self.rateLabel(playbackRate))
+            Spacer(minLength: 0)
             Button(action: onSkipBackward) {
-                Image(systemName: "gobackward.15").font(.system(size: 20)).foregroundStyle(Theme.Colors.textPrimary)
+                Image(systemName: "gobackward.15").font(.title3).foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
             }
+            .accessibilityLabel("Back 15 seconds")
             Button(action: onTogglePlayPause) {
                 Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 40)).foregroundStyle(Theme.Colors.primarySlate)
+                    .font(.system(size: 42)).foregroundStyle(Theme.Colors.manentAccent)
+                    .frame(width: 48, height: 48)
             }
+            .accessibilityLabel(isPlaying ? "Pause" : "Play")
             Button(action: onSkipForward) {
-                Image(systemName: "goforward.15").font(.system(size: 20)).foregroundStyle(Theme.Colors.textPrimary)
+                Image(systemName: "goforward.15").font(.title3).foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
             }
-            Spacer()
-            Image(systemName: "speaker.wave.2.fill").font(.system(size: 14)).foregroundStyle(Theme.Colors.textTertiary)
+            .accessibilityLabel("Forward 15 seconds")
+            Spacer(minLength: 0)
+            Color.clear.frame(width: 52, height: 1)
         }
     }
-    
+
     private func formatTime(_ interval: TimeInterval) -> String {
-        String(format: "%02d:%02d", Int(interval) / 60, Int(interval) % 60)
+        let total = max(0, Int(interval))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }

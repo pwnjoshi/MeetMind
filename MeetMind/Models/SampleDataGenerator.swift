@@ -283,21 +283,4 @@ public final class SampleDataGenerator {
         return meeting
     }
     
-    public static func createRecordingMeeting(
-        speaker: Speaker = createSampleSpeakers()[0]
-    ) -> Meeting {
-        let meeting = Meeting(
-            title: "Spontaneous Design Critique",
-            createdAt: Date(),
-            scheduledStartTime: nil,
-            duration: 125.0,
-            status: .recording,
-            audioFileURL: URL(fileURLWithPath: "/tmp/current_recording.m4a"),
-            audioQuality: .high,
-            isFavorite: false,
-            templateName: "Brainstorm"
-        )
-        meeting.addParticipant(speaker)
-        return meeting
-    }
 }

@@ -151,6 +151,9 @@ final class MeetingSetupViewModelTests: XCTestCase {
         sut.startDate = start
         sut.endDate = end
         sut.agendaText = "Figma token mapping"
+        let seriesID = UUID()
+        sut.scheduledSeriesID = seriesID
+        sut.scheduledSeriesName = "Architecture reviews"
         
         let savedMeeting = try sut.saveScheduledMeeting()
         
@@ -159,48 +162,50 @@ final class MeetingSetupViewModelTests: XCTestCase {
         XCTAssertEqual(savedMeeting.status, .scheduled)
         XCTAssertEqual(savedMeeting.scheduledStartTime, start)
         XCTAssertEqual(fetchMeeting(id: savedMeeting.id)?.title, "Design Architecture Sync")
+        let freshContext = ModelContext(modelContainer)
+        let persisted = try XCTUnwrap(freshContext.fetch(FetchDescriptor<Meeting>()).first { $0.id == savedMeeting.id })
+        XCTAssertEqual(persisted.seriesID, seriesID)
+        XCTAssertEqual(persisted.seriesName, "Architecture reviews")
     }
     
     // MARK: - Tier 1: Feature 24 (Meeting Templates Selector)
     
-    /// Tier 1: Feature 24 - Validates Standup template pre-fills default agenda items.
-    func test_tier1_feature24_templateSelectionStandupPreFillsAgenda() throws {
+    /// Tier 1: Feature 24 - A new meeting starts with no agenda points.
+    func test_newMeetingStartsWithEmptyAgenda() throws {
+        XCTAssertEqual(sut.agendaText, "")
+    }
+
+    /// Tier 1: Feature 24 - Standup template names the meeting but never injects an agenda.
+    func test_tier1_feature24_templateSelectionStandupDoesNotFillAgenda() throws {
         sut.selectTemplate(.standup)
         
         XCTAssertEqual(sut.selectedTemplate, .standup)
-        XCTAssertTrue(sut.agendaText.contains("Yesterday:"))
-        XCTAssertTrue(sut.agendaText.contains("Today:"))
-        XCTAssertTrue(sut.agendaText.contains("Blockers:"))
+        XCTAssertEqual(sut.title, "Team Standup")
+        XCTAssertEqual(sut.agendaText, "")
     }
     
-    /// Tier 1: Feature 24 - Validates 1-on-1 template pre-fills personalized discussion sections.
-    func test_tier1_feature24_templateSelectionOneOnOnePreFillsAgenda() throws {
+    /// Tier 1: Feature 24 - 1-on-1 template does not inject discussion sections.
+    func test_tier1_feature24_templateSelectionOneOnOneDoesNotFillAgenda() throws {
         sut.selectTemplate(.oneOnOne)
         
         XCTAssertEqual(sut.selectedTemplate, .oneOnOne)
-        XCTAssertTrue(sut.agendaText.contains("Wins & Progress"))
-        XCTAssertTrue(sut.agendaText.contains("Challenges & Support"))
-        XCTAssertTrue(sut.agendaText.contains("Career & Growth"))
+        XCTAssertEqual(sut.agendaText, "")
     }
     
-    /// Tier 1: Feature 24 - Validates Client Sales template pre-fills discovery and demo points.
-    func test_tier1_feature24_templateSelectionClientSalesPreFillsAgenda() throws {
+    /// Tier 1: Feature 24 - Client Sales template does not inject discovery and demo points.
+    func test_tier1_feature24_templateSelectionClientSalesDoesNotFillAgenda() throws {
         sut.selectTemplate(.clientSales)
         
         XCTAssertEqual(sut.selectedTemplate, .clientSales)
-        XCTAssertTrue(sut.agendaText.contains("Client Pain Points"))
-        XCTAssertTrue(sut.agendaText.contains("Product Demo"))
-        XCTAssertTrue(sut.agendaText.contains("Pricing & Next Steps"))
+        XCTAssertEqual(sut.agendaText, "")
     }
     
-    /// Tier 1: Feature 24 - Validates Brainstorm template pre-fills ideation framework.
-    func test_tier1_feature24_templateSelectionBrainstormPreFillsAgenda() throws {
+    /// Tier 1: Feature 24 - Brainstorm template does not inject an ideation framework.
+    func test_tier1_feature24_templateSelectionBrainstormDoesNotFillAgenda() throws {
         sut.selectTemplate(.brainstorm)
         
         XCTAssertEqual(sut.selectedTemplate, .brainstorm)
-        XCTAssertTrue(sut.agendaText.contains("Problem Statement"))
-        XCTAssertTrue(sut.agendaText.contains("Divergent Ideas"))
-        XCTAssertTrue(sut.agendaText.contains("Action Plan"))
+        XCTAssertEqual(sut.agendaText, "")
     }
     
     /// Tier 1: Feature 24 - Validates General template defaults to standard meeting format.
@@ -208,8 +213,7 @@ final class MeetingSetupViewModelTests: XCTestCase {
         sut.selectTemplate(.general)
         
         XCTAssertEqual(sut.selectedTemplate, .general)
-        XCTAssertTrue(sut.agendaText.contains("Discussion Topics"))
-        XCTAssertTrue(sut.agendaText.contains("Action Items"))
+        XCTAssertEqual(sut.agendaText, "")
     }
     
     // MARK: - Tier 1: Feature 25 (Participant Manager)
@@ -447,10 +451,10 @@ final class MeetingSetupViewModelTests: XCTestCase {
     
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 24: Template Switching & Edge Cases)
     
-    /// Tier 2: Feature 24 - Validates switching templates prompts before overwriting custom edits.
+    /// Tier 2: Feature 24 - Validates switching templates prompts before overwriting a title the user typed.
     func test_tier2_feature24_switchingTemplatesPreservesCustomUserEditsWarning() throws {
         sut.selectTemplate(.standup)
-        sut.agendaText = "Custom user customized agenda text."
+        sut.title = "Custom user customized title."
         
         sut.attemptTemplateSwitch(to: .oneOnOne)
         XCTAssertTrue(sut.isShowingTemplateOverwriteConfirmation)
@@ -627,21 +631,24 @@ final class MeetingSetupViewModelTests: XCTestCase {
         XCTAssertEqual(sut.participants.count, 50, "Participant count cannot exceed 50")
     }
     
-    /// Validates template switch agenda overwrite confirmation.
+    /// Validates the template switch confirmation protects a typed title and never touches the agenda.
     func test_remediation_templateSwitchCustomAgendaProtection() throws {
         sut.selectTemplate(.standup)
-        sut.agendaText = "Custom crafted agenda not default"
+        sut.title = "Custom crafted title"
+        sut.agendaText = "Custom crafted agenda"
         
         sut.attemptTemplateSwitch(to: .brainstorm)
         XCTAssertTrue(sut.isShowingTemplateOverwriteConfirmation)
         XCTAssertEqual(sut.pendingTemplateSwitch, .brainstorm)
-        XCTAssertEqual(sut.agendaText, "Custom crafted agenda not default")
+        XCTAssertEqual(sut.title, "Custom crafted title")
+        XCTAssertEqual(sut.agendaText, "Custom crafted agenda")
         
         sut.confirmTemplateSwitch()
         XCTAssertFalse(sut.isShowingTemplateOverwriteConfirmation)
         XCTAssertNil(sut.pendingTemplateSwitch)
         XCTAssertEqual(sut.selectedTemplate, .brainstorm)
-        XCTAssertEqual(sut.agendaText, MeetingTemplateType.brainstorm.defaultAgenda)
+        XCTAssertEqual(sut.title, "Brainstorm")
+        XCTAssertEqual(sut.agendaText, "Custom crafted agenda")
     }
     
     /// Validates audio import rejects invalid or zero duration with AudioImportError.invalidDuration.
@@ -662,6 +669,7 @@ final class MeetingSetupViewModelTests: XCTestCase {
     /// Validates template switch cancellation leaves custom agenda intact.
     func test_remediation_templateSwitchCancellation() throws {
         sut.selectTemplate(.standup)
+        sut.title = "My custom title"
         sut.agendaText = "My custom notes"
         sut.attemptTemplateSwitch(to: .brainstorm)
         XCTAssertTrue(sut.isShowingTemplateOverwriteConfirmation)
@@ -723,5 +731,38 @@ final class MeetingSetupViewModelTests: XCTestCase {
         XCTAssertEqual(meeting.transcriptSegments.count, 2)
         XCTAssertEqual(meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }.first?.text, "Hello everyone")
         XCTAssertTrue(meeting.duration > 0)
+    }
+}
+
+
+extension MeetingSetupViewModelTests {
+    func testDefaultImportPersistsIndependentAudioAndWaitsForOfflineReviewPipeline() async throws {
+        let source = tempDirectoryURL.appendingPathComponent("private-import.m4a")
+        let bytes = Data("synthetic copy fixture, not a speech-quality sample".utf8)
+        try bytes.write(to: source)
+        let importer = MeetingSetupViewModel(modelContext: context)
+        importer.setSimulatedAudioDuration(20)
+        let recordedAt = Date(timeIntervalSince1970: 1700000000)
+        importer.importedRecordingDate = recordedAt
+        let seriesID = UUID()
+        importer.importedSeriesID = seriesID
+        importer.importedSeriesName = "Synthetic planning series"
+        let meeting = try await importer.importAudioFile(at: source)
+        let savedURL = try XCTUnwrap(meeting.audioFileURL)
+        defer { try? FileManager.default.removeItem(at: savedURL) }
+        try FileManager.default.removeItem(at: source)
+        XCTAssertEqual(try Data(contentsOf: savedURL), bytes)
+        XCTAssertEqual(meeting.status, .processing)
+        XCTAssertTrue(meeting.transcriptSegments.isEmpty)
+        XCTAssertTrue(meeting.actionItems.isEmpty)
+        XCTAssertNil(meeting.summary)
+        let fresh = ModelContext(modelContainer)
+        let stored = try XCTUnwrap(fresh.fetch(FetchDescriptor<Meeting>()).first)
+        XCTAssertEqual(stored.audioFileURL, savedURL)
+        XCTAssertEqual(stored.status, .processing)
+        XCTAssertEqual(stored.createdAt, recordedAt)
+        XCTAssertEqual(stored.scheduledStartTime, recordedAt)
+        XCTAssertEqual(stored.seriesID, seriesID)
+        XCTAssertEqual(stored.seriesName, "Synthetic planning series")
     }
 }

@@ -588,3 +588,19 @@ final class ActionItemsViewModelTests: XCTestCase {
         XCTAssertEqual(sut.allActionItems.count, 3)
     }
 }
+
+
+extension ActionItemsViewModelTests {
+    func testCategoryGroupingAndUnspecifiedPriorityStayDistinct() {
+        let uncategorized = ActionItem(title: "Manual")
+        let categorized = ActionItem(title: "Research")
+        categorized.category = "Research"
+        categorized.priorityRaw = ""
+        sut.allActionItems = [uncategorized, categorized]
+        sut.setGrouping(.category)
+        XCTAssertEqual(Set(sut.groupedSections.map(\.title)), Set(["Other", "Research"]))
+        sut.setGrouping(.priority)
+        XCTAssertEqual(sut.groupedSections.first { $0.title == "Unspecified" }?.items.first?.id, categorized.id)
+        XCTAssertEqual(sut.groupedSections.first { $0.title == "Medium" }?.items.count, 1)
+    }
+}

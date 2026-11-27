@@ -2,10 +2,11 @@ import SwiftUI
 
 /// Modal sheet for exporting meeting minutes in PDF, Markdown, and plain text
 public struct MeetingExportSheet: View {
-    public let onExportPDF: () -> Data?
+    public let onExportPDF: () throws -> Data
     public let onExportMarkdown: () -> String
     public let onExportEmailDraft: () -> EmailDraft
     public let onDismiss: () -> Void
+    public var onShareFile: ((URL) -> Void)?
     
     @State private var exportFormat: ExportFormat = .pdf
     @State private var exportedText: String = ""
@@ -13,15 +14,17 @@ public struct MeetingExportSheet: View {
     @State private var exportError: String?
     
     public init(
-        onExportPDF: @escaping () -> Data?,
+        onExportPDF: @escaping () throws -> Data,
         onExportMarkdown: @escaping () -> String,
         onExportEmailDraft: @escaping () -> EmailDraft,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        onShareFile: ((URL) -> Void)? = nil
     ) {
         self.onExportPDF = onExportPDF
         self.onExportMarkdown = onExportMarkdown
         self.onExportEmailDraft = onExportEmailDraft
         self.onDismiss = onDismiss
+        self.onShareFile = onShareFile
     }
     
     public var body: some View {
@@ -40,17 +43,21 @@ public struct MeetingExportSheet: View {
                     if exportFormat == .pdf {
                         Button {
                             do {
-                                guard let data = onExportPDF(), !data.isEmpty else {
-                                    exportError = "Could not generate the PDF. Please try again."
-                                    return
+                                let data = try onExportPDF()
+                                guard data.starts(with: Data("%PDF-".utf8)) else {
+                                    throw ExportError.pdfGenerationFailed("The generated file is not a PDF document.")
                                 }
-                                let url = FileManager.default.temporaryDirectory.appendingPathComponent("MeetMind-\(UUID().uuidString).pdf")
+                                let url = FileManager.default.temporaryDirectory.appendingPathComponent("Manent-\(UUID().uuidString).pdf")
                                 try data.write(to: url, options: .atomic)
                                 exportedURL = url
                             } catch { exportError = error.localizedDescription }
                         } label: { Label("Generate & Share PDF", systemImage: "doc.richtext") }
                         if let exportedURL {
-                            ShareLink(item: exportedURL) { Label("Share PDF", systemImage: "square.and.arrow.up") }
+                            if let onShareFile {
+                                Button { onShareFile(exportedURL) } label: { Label("Share PDF", systemImage: "square.and.arrow.up") }
+                            } else {
+                                ShareLink(item: exportedURL) { Label("Share PDF", systemImage: "square.and.arrow.up") }
+                            }
                         }
                     } else {
                         Button {

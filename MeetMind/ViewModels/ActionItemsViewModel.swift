@@ -28,6 +28,7 @@ public enum ActionItemGrouping: String, CaseIterable, Sendable {
     case meeting = "meeting"
     case assignee = "assignee"
     case dueDate = "dueDate"
+    case category = "category"
 }
 
 /// Sheet presentation mode for create/edit action item
@@ -82,8 +83,45 @@ public final class ActionItemsViewModel {
     public var sheetTargetMeetingId: UUID? = nil
     public var editingActionItemId: UUID? = nil
     
+    public var selectedOwnerScope: ActionOwnerScope = .all
+    public var selectedSort: ActionSortOrder = .dueDate
+    /// Name of the local user (from the stored profile). Decides "Yours" and "Waiting on others".
+    public var localUserName: String = UserProfile.defaultLocalName
+
     public var totalTaskCount: Int {
         allActionItems.count
+    }
+
+    /// Items after the status filter and owner scope, in the chosen sort order.
+    public var visibleActionItems: [ActionItem] {
+        let scoped = ActionListLogic.apply(scope: selectedOwnerScope, to: filteredActionItems, localName: localUserName)
+        return ActionListLogic.sorted(scoped, by: selectedSort)
+    }
+
+    public var actionSections: ActionListSections {
+        ActionListLogic.sections(visibleActionItems, localName: localUserName)
+    }
+
+    public func isWaitingOnOthers(_ item: ActionItem) -> Bool {
+        ActionListLogic.isWaitingOnOthers(item, localName: localUserName)
+    }
+
+    /// Meetings that actions can be linked to, newest first.
+    public func availableMeetings() -> [Meeting] {
+        guard let context = modelContext else { return [] }
+        let descriptor = FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Saves a New Action draft as an `ActionItem` linked to its meeting and owner.
+    @discardableResult
+    public func createAction(from draft: ActionDraft) throws -> ActionItem {
+        guard let context = modelContext else { throw ActionDraftError.storeUnavailable }
+        let item = try ActionItemWriter.create(from: draft, meetings: availableMeetings(), context: context)
+        if !allActionItems.contains(where: { $0.id == item.id }) {
+            allActionItems.append(item)
+        }
+        return item
     }
     
     public var filteredActionItems: [ActionItem] {
@@ -115,12 +153,17 @@ public final class ActionItemsViewModel {
             var sections: [ActionItemGroupSection] = []
             let priorities: [ActionPriority] = [.urgent, .high, .medium, .low]
             for p in priorities {
-                let matched = currentItems.filter { $0.priority == p }
+                    let matched = currentItems.filter { !$0.priorityRaw.isEmpty && $0.priority == p }
                 if !matched.isEmpty {
                     sections.append(ActionItemGroupSection(id: p.rawValue, title: p.displayName, items: matched))
                 }
             }
+            let unspecified = currentItems.filter { $0.priorityRaw.isEmpty }
+            if !unspecified.isEmpty { sections.append(ActionItemGroupSection(id: "unspecified", title: "Unspecified", items: unspecified)) }
             return sections
+        case .category:
+            let grouped = Dictionary(grouping: currentItems) { $0.category ?? "Other" }
+            return grouped.keys.sorted().map { ActionItemGroupSection(id: $0, title: $0, items: grouped[$0] ?? []) }
         case .meeting:
             let grouped = Dictionary(grouping: currentItems) { $0.meeting?.title ?? "General" }
             return grouped.map { ActionItemGroupSection(id: $0.key, title: $0.key, items: $0.value) }
@@ -197,6 +240,9 @@ public final class ActionItemsViewModel {
                 self.modelContext = container.mainContext
             }
         }
+        // A standalone view model owns its in-memory container for tests and
+        // previews. Production tabs replace it with the app context only when
+        // that tab appears (see `MainTabView`).
         fetchActionItems()
     }
     
@@ -360,13 +406,13 @@ public final class ActionItemsViewModel {
         dueDate: Date? = nil,
         assigneeName: String? = nil
     ) -> ActionItem {
-        let speaker = assigneeName != nil && !assigneeName!.isEmpty ? Speaker(name: assigneeName!) : nil
         let item = ActionItem(
             title: title,
             assigneeName: assigneeName,
             dueDate: dueDate,
             priority: priority
         )
+        item.assignedByLocalUser = true
         if let context = modelContext {
             context.insert(item)
             try? context.save()
@@ -379,15 +425,6 @@ public final class ActionItemsViewModel {
         try await syncToAppleReminders()
     }
     
-    public func addItem(_ item: ActionItem) {
-        if !allActionItems.contains(where: { $0.id == item.id }) {
-            allActionItems.append(item)
-            if let context = modelContext {
-                context.insert(item)
-                try? context.save()
-            }
-        }
-    }
     
     public func deleteActionItem(_ item: ActionItem) {
         deleteActionItem(id: item.id)
@@ -395,6 +432,7 @@ public final class ActionItemsViewModel {
     
     public func deleteActionItem(id: UUID) {
         if let item = allActionItems.first(where: { $0.id == id }) {
+            TaskResponseStore.shared.remove(for: id)
             if let context = modelContext {
                 context.delete(item)
                 try? context.save()
@@ -405,6 +443,7 @@ public final class ActionItemsViewModel {
     
     public func setModelContext(_ context: ModelContext) {
         self.modelContext = context
+        fetchActionItems()
     }
     
     public func cancelSheet() {

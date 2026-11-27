@@ -1,4 +1,6 @@
 import SwiftUI
+import AVFoundation
+import Speech
 import UniformTypeIdentifiers
 import OfflineEngineKit
 import Darwin
@@ -9,6 +11,7 @@ import SwiftData
 struct OfflineBenchmarkView: View {
     @Query(sort: \Meeting.createdAt, order: .reverse) private var savedMeetings: [Meeting]
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppState.self) private var appState: AppState?
     @State private var profiles: [ModelProfile] = []
     @State private var installed: Set<String> = []
     @State private var operation: Task<Void, Never>?
@@ -21,6 +24,19 @@ struct OfflineBenchmarkView: View {
     @State private var turns = OfflineBenchmarkRunner.syntheticTurns
     @State private var output = ""
     @State private var lastResult: BenchmarkResult?
+    @AppStorage("NemotronCaptionLabModelPath") private var nemotronModelPath = ""
+    @AppStorage("UseNemotronLiveCaptions") private var useNemotronLiveCaptions = false
+    @State private var nemotronTranscript: String?
+    @State private var appleTranscript: String?
+    @State private var appleReplayError: String?
+    @State private var nemotronReplayError: String?
+    @State private var appleMeasurement: ReplayMeasurement?
+    @State private var nemotronMeasurement: ReplayMeasurement?
+    @State private var referenceTranscript = ""
+    @State private var appleFirstCaption: Double?
+    @State private var nemotronFirstCaption: Double?
+    @AppStorage("PinnedCaptionBenchmarkRecording") private var pinnedRecording = ""
+    @State private var selectedRecording: Meeting?
     private let runner = OfflineBenchmarkRunner()
 
     var body: some View {
@@ -63,25 +79,74 @@ struct OfflineBenchmarkView: View {
                     }.padding(.vertical, 4)
                 }
             }
+            Section("Live caption comparison") {
+                Text("Experimental. Replays the selected local recording at recording speed.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button("Download Nemotron") {
+                    begin {
+                        status = "Downloading Nemotron…"
+                        let folder = try await NemotronCaptionReplay.download { value in
+                            Task { @MainActor in progress = value }
+                        }
+                        nemotronModelPath = folder.path
+                        status = "Nemotron is ready for replay."
+                    }
+                }
+                Toggle("Use Nemotron for mixed-language recording captions", isOn: $useNemotronLiveCaptions)
+                    .disabled(nemotronModelPath.isEmpty)
+                Button("Replay with Apple Speech") {
+                    begin { try await runAppleReplay() }
+                }
+                Button("Replay with Nemotron") {
+                    begin { try await runNemotronReplay() }
+                }
+                .disabled(nemotronModelPath.isEmpty)
+                Button("Compare both engines") {
+                    begin { try await compareCaptionEngines() }
+                }
+                .disabled(nemotronModelPath.isEmpty)
+                TextField("Verified reference transcript or excerpt", text: $referenceTranscript, axis: .vertical)
+                    .lineLimit(2...5)
+                Text("Enter the verified words for the selected recording. For an excerpt, replay the matching audio clip. Scoring supports up to 1,000 words per transcript.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let appleReplayError {
+                    Text("Apple Speech: \(appleReplayError)").font(.caption)
+                }
+                if let nemotronReplayError {
+                    Text("Nemotron: \(nemotronReplayError)").font(.caption)
+                }
+                if let appleTranscript {
+                    replayResult("Apple Speech", transcript: appleTranscript, delay: appleFirstCaption, measurement: appleMeasurement)
+                }
+                if let nemotronTranscript {
+                    replayResult("Nemotron", transcript: nemotronTranscript, delay: nemotronFirstCaption, measurement: nemotronMeasurement)
+                }
+            }
+            .disabled(busy)
             Section("Local input") {
                 if !savedMeetings.filter({ $0.audioFileURL != nil }).isEmpty {
                     Menu("Use a saved MeetMind recording") {
                         ForEach(savedMeetings.filter { $0.audioFileURL != nil }) { meeting in
-                            Button(meeting.title) {
-                                guard let recording = meeting.audioFileURL,
-                                      FileManager.default.fileExists(atPath: recording.path) else {
-                                    status = "This recording file is unavailable."
-                                    return
-                                }
-                                audio = recording
-                                isSyntheticAudio = false
-                                turns = []
-                                output = ""
-                                lastResult = nil
-                                status = "Saved recording selected. Run a speech benchmark before task analysis."
-                            }
+                            Button(meeting.title) { selectRecording(meeting) }
                         }
                     }.disabled(busy)
+                }
+                if !pinnedRecording.isEmpty {
+                    Button("Use pinned recording") {
+                        if let meeting = savedMeetings.first(where: { recordingKey($0) == pinnedRecording }) {
+                            selectRecording(meeting)
+                        } else {
+                            status = "The pinned audio is unavailable. Select and pin another recording."
+                        }
+                    }
+                    .disabled(busy)
+                }
+                if let selectedRecording, let key = recordingKey(selectedRecording), key != pinnedRecording {
+                    Button("Pin \(selectedRecording.title) for replay") {
+                        pinnedRecording = key
+                        status = "Pinned \(selectedRecording.title) for future replays."
+                    }
+                    .disabled(busy)
                 }
                 Button("Choose audio file") { importAudio = true }.disabled(busy)
                 Text(isSyntheticAudio ? "Uses a short synthetic English audio clip and synthetic Hinglish text for smoke testing. This does not measure real meeting quality." : "A local recording is selected. Analysis uses its transcript after a speech benchmark.")
@@ -116,6 +181,7 @@ struct OfflineBenchmarkView: View {
                 try FileManager.default.copyItem(at: source, to: destination)
                 try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
                 audio = destination
+                selectedRecording = nil
                 isSyntheticAudio = false
                 turns = []
                 output = ""
@@ -137,10 +203,220 @@ struct OfflineBenchmarkView: View {
                 }
             } catch { status = error.localizedDescription }
         }
+        .onChange(of: audio) { _, _ in
+            appleTranscript = nil
+            nemotronTranscript = nil
+            referenceTranscript = ""
+            appleReplayError = nil
+            nemotronReplayError = nil
+        }
         .onDisappear { operation?.cancel() }
+        .onChange(of: appState?.isRecordingActive) { _, active in
+            if active == true { operation?.cancel() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && busy { operation?.cancel() }
         }
+    }
+
+    private func recordingKey(_ meeting: Meeting) -> String? {
+        guard let file = meeting.resolvedAudioFileURL else { return nil }
+        return meeting.id.uuidString + "/" + file.lastPathComponent
+    }
+
+    private func selectRecording(_ meeting: Meeting) {
+        guard let recording = meeting.resolvedAudioFileURL,
+              FileManager.default.fileExists(atPath: recording.path) else {
+            status = "This recording file is unavailable."
+            return
+        }
+        audio = recording
+        selectedRecording = meeting
+        isSyntheticAudio = false
+        turns = []
+        output = ""
+        lastResult = nil
+        status = "Selected \(meeting.title)."
+    }
+
+    private func replayResult(_ engine: String, transcript: String, delay: Double?,
+                              measurement: ReplayMeasurement?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(engine).font(.headline)
+            if let delay {
+                Text("First caption after \(delay.formatted(.number.precision(.fractionLength(2)))) seconds.")
+                    .font(.caption)
+            }
+            if let measurement {
+                Text("Total \(measurement.elapsed.formatted(.number.precision(.fractionLength(1)))) seconds · Peak \(measurement.memoryText) · Thermal \(measurement.thermal)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let score = CaptionReplayScore.compare(reference: referenceTranscript, transcript: transcript) {
+                Text("Word error rate \(score.rate.formatted(.percent.precision(.fractionLength(1))))")
+                    .font(.caption)
+                Text("\(score.substitutions) substitutions · \(score.deletions) omissions · \(score.insertions) additions")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text(transcript.isEmpty ? "No finalized speech recognized." : transcript).textSelection(.enabled)
+        }
+    }
+
+    private func compareCaptionEngines() async throws {
+        appleTranscript = nil
+        nemotronTranscript = nil
+        appleReplayError = nil
+        nemotronReplayError = nil
+        do {
+            try await runAppleReplay()
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError { throw error }
+            appleReplayError = error.localizedDescription
+        }
+        try Task.checkCancellation()
+        do {
+            try await runNemotronReplay()
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError { throw error }
+            nemotronReplayError = error.localizedDescription
+        }
+        status = appleReplayError == nil && nemotronReplayError == nil
+            ? "Both caption replays finished."
+            : "Comparison finished with an engine failure."
+    }
+
+    private func runNemotronReplay() async throws {
+        nemotronReplayError = nil
+        nemotronTranscript = nil
+        nemotronMeasurement = nil
+        nemotronMeasurement = try await measureReplay { try await replayNemotron() }
+    }
+
+    private func replayNemotron() async throws {
+        guard let audio else { throw OfflineError.unavailable("Choose a local recording for replay.") }
+        nemotronTranscript = nil
+        status = "Replaying with Nemotron…"
+        let result = try await NemotronCaptionReplay.run(
+            audio: audio, model: URL(fileURLWithPath: nemotronModelPath))
+        nemotronTranscript = result.text
+        nemotronFirstCaption = result.firstPartialSeconds
+        status = "Nemotron replay finished."
+    }
+
+    private func runAppleReplay() async throws {
+        appleReplayError = nil
+        appleTranscript = nil
+        appleMeasurement = nil
+        appleMeasurement = try await measureReplay { try await replayApple() }
+    }
+
+    private func replayApple() async throws {
+        appleTranscript = nil
+        appleFirstCaption = nil
+        status = "Replaying with Apple Speech…"
+        let service = SpeechTranscriptionService()
+        service.usesExperimentalCaptionEngine = false
+        guard await service.requestAuthorization() == .authorized else {
+            throw SpeechTranscriptionError.authorizationDenied
+        }
+        guard let input = audio else { throw OfflineError.unavailable("Choose a local recording for replay.") }
+        let clock = ContinuousClock()
+        let (stream, feed) = AsyncStream<AVAudioPCMBuffer>.makeStream(bufferingPolicy: .bufferingOldest(20))
+        let captions = service.startLiveTranscription(audioBufferStream: stream)
+        let started = clock.now
+        let producer = Task.detached {
+            defer { feed.finish() }
+            let file = try AVAudioFile(forReading: input)
+            let format = file.processingFormat
+            let frames = AVAudioFrameCount(max(1, format.sampleRate / 10))
+            while file.framePosition < file.length {
+                try Task.checkCancellation()
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
+                    throw OfflineError.unavailable("Unable to allocate a replay buffer.")
+                }
+                try file.read(into: buffer)
+                guard buffer.frameLength > 0 else { break }
+                let seconds = Double(file.framePosition) / format.sampleRate
+                try await clock.sleep(until: started.advanced(by: .seconds(seconds)))
+                switch feed.yield(buffer) {
+                case .enqueued: break
+                case .dropped: throw OfflineError.unavailable("Apple Speech fell behind the replay.")
+                case .terminated: throw CancellationError()
+                @unknown default: throw OfflineError.unavailable("Unable to feed Apple Speech.")
+                }
+            }
+        }
+        defer {
+            producer.cancel()
+            service.stopLiveTranscription()
+        }
+        var finalized: [String] = []
+        var notice: String?
+        for try await caption in captions where !caption.text.isEmpty {
+            try Task.checkCancellation()
+            // Engine notices use the same stream but carry no timed speech.
+            guard !caption.segments.isEmpty else {
+                if !caption.isFinal { notice = caption.text }
+                continue
+            }
+            if appleFirstCaption == nil {
+                let elapsed = (clock.now - started).components
+                appleFirstCaption = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+            }
+            if caption.isFinal { finalized.append(caption.text) }
+        }
+        try await producer.value
+        try Task.checkCancellation()
+        if finalized.isEmpty, let notice {
+            throw SpeechTranscriptionError.recognitionRequestFailed(notice)
+        }
+        appleTranscript = finalized.joined(separator: " ")
+        status = "Apple Speech replay finished."
+    }
+
+    private struct ReplayMeasurement {
+        let elapsed: Double
+        let peakBytes: UInt64
+        let thermal: String
+
+        var memoryText: String {
+            guard peakBytes > 0 else { return "unavailable" }
+            return ByteCountFormatter.string(fromByteCount: Int64(clamping: peakBytes), countStyle: .memory)
+        }
+    }
+
+    private func measureReplay(_ run: () async throws -> Void) async throws -> ReplayMeasurement {
+        guard appState?.isRecordingActive != true, !OfflineProcessingGate.isProcessing else {
+            throw OfflineError.unavailable("Finish recording or meeting processing before replaying audio.")
+        }
+        OfflineProcessingGate.begin()
+        defer { OfflineProcessingGate.end() }
+
+        let started = Date()
+        let sampler = Task.detached(priority: .utility) {
+            var peak = OfflineBenchmarkRunner.currentFootprintBytes()
+            while !Task.isCancelled {
+                peak = max(peak, OfflineBenchmarkRunner.currentFootprintBytes())
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            return peak
+        }
+        defer { sampler.cancel() }
+        try await run()
+        sampler.cancel()
+        let sampled = await sampler.value
+        let thermal: String
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: thermal = "nominal"
+        case .fair: thermal = "fair"
+        case .serious: thermal = "serious"
+        case .critical: thermal = "critical"
+        @unknown default: thermal = "unknown"
+        }
+        return ReplayMeasurement(elapsed: Date().timeIntervalSince(started),
+                                 peakBytes: max(sampled, OfflineBenchmarkRunner.currentFootprintBytes()),
+                                 thermal: thermal)
     }
 
     private func refresh() async {
@@ -292,5 +568,50 @@ private struct OfflineBenchmarkResultsView: View {
     private func time(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0, seconds <= 86_400 else { return "—" }
         return String(format: "%02d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+
+private struct CaptionReplayScore {
+    var substitutions = 0
+    var deletions = 0
+    var insertions = 0
+    var referenceCount = 1
+    var errors: Int { substitutions + deletions + insertions }
+    var rate: Double { Double(errors) / Double(referenceCount) }
+
+    static func compare(reference: String, transcript: String) -> Self? {
+        func words(_ text: String) -> [Substring] {
+            text.precomposedStringWithCanonicalMapping.lowercased().split { character in
+                !character.isLetter && !character.isNumber
+            }
+        }
+        let expected = words(reference)
+        let actual = words(transcript)
+        guard !expected.isEmpty, expected.count <= 1_000, actual.count <= 1_000 else { return nil }
+        var previous = (0...actual.count).map { Self(insertions: $0) }
+        var current = previous
+        for (row, word) in expected.enumerated() {
+            current[0] = Self(deletions: row + 1)
+            for (column, spoken) in actual.enumerated() {
+                if word == spoken {
+                    current[column + 1] = previous[column]
+                    continue
+                }
+                var best = previous[column]
+                best.substitutions += 1
+                var deletion = previous[column + 1]
+                deletion.deletions += 1
+                if deletion.errors < best.errors { best = deletion }
+                var insertion = current[column]
+                insertion.insertions += 1
+                if insertion.errors < best.errors { best = insertion }
+                current[column + 1] = best
+            }
+            swap(&previous, &current)
+        }
+        var result = previous[actual.count]
+        result.referenceCount = expected.count
+        return result
     }
 }

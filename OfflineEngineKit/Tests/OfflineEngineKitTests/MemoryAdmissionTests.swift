@@ -19,4 +19,14 @@ final class MemoryAdmissionTests: XCTestCase {
     func testOversizedMetadataCannotOverflowAdmissionCheck() {
         XCTAssertThrowsError(try ModelMemoryAdmission.check(modelBytes: UInt64.max, availableBytes: UInt64.max))
     }
+    func testCompactEvaluationFitsCapButStillRejectsInsufficientAvailableMemory() {
+        XCTAssertNoThrow(try ModelMemoryAdmission.check(modelBytes: 2_497_280_256,
+            availableBytes: 3_000_000_000, reserveBytes: LocalModelConfiguration.compact.reserveBytes))
+        XCTAssertThrowsError(try ModelMemoryAdmission.check(modelBytes: 2_497_280_256,
+            availableBytes: 2_900_000_000, reserveBytes: LocalModelConfiguration.compact.reserveBytes))
+    }
+    func testOwnProcessFootprintCanBeMeasuredForRuntimeGuard() {
+        XCTAssertGreaterThan(ModelMemoryAdmission.footprint(), 0)
+        XCTAssertNoThrow(try ModelMemoryAdmission.checkCurrentFootprint())
+    }
 }

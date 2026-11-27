@@ -67,47 +67,8 @@ final class MeetingSetupViewTests: XCTestCase {
         }
     }
     
-    func test_participantTokenChip_removal() throws {
-        let speaker = Speaker(name: "Alice Smith", role: "Product Manager")
-        var removed = false
-        
-        let chip = ParticipantTokenChip(speaker: speaker) {
-            removed = true
-        }
-        
-        XCTAssertNotNil(chip)
-        XCTAssertEqual(chip.speaker.name, "Alice Smith")
-        chip.onRemove()
-        XCTAssertTrue(removed)
-    }
-    
     func test_audioImportView_initialization() throws {
         let view = AudioImportView(viewModel: setupVM)
         XCTAssertNotNil(view)
-    }
-    
-    func test_meetingCardAttendeesView_initialization() throws {
-        let speakers = [Speaker(name: "Alice"), Speaker(name: "Bob")]
-        let view = MeetingCardAttendeesView(speakers: speakers)
-        XCTAssertNotNil(view)
-        XCTAssertEqual(view.speakers.count, 2)
-    }
-    
-    func test_meetingCardFooterView_initialization() throws {
-        let meeting = Meeting(title: "Architecture Review", duration: 1200)
-        let footer = MeetingCardFooterView(meeting: meeting)
-        XCTAssertNotNil(footer)
-        XCTAssertEqual(footer.meeting.title, "Architecture Review")
-    }
-    
-    func test_audioImportHeaderView_initialization() throws {
-        let header = AudioImportHeaderView()
-        XCTAssertNotNil(header)
-    }
-    
-    func test_audioImportProgressView_initialization() throws {
-        let progress = AudioImportProgressView(message: "Transcribing audio...")
-        XCTAssertNotNil(progress)
-        XCTAssertEqual(progress.message, "Transcribing audio...")
     }
 }

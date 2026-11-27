@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>MeetMind</string>
+    <string>Manent</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -20,31 +20,44 @@
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     
     <!-- Privacy Descriptions -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>MeetMind requires microphone access to record audio during meetings and live conversations.</string>
+    <string>Manent records meeting audio with the microphone, including while the screen is locked. Audio is saved and processed only on this iPhone.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>MeetMind requires speech recognition access to transcribe spoken dialogue into real-time text.</string>
+    <string>Manent uses Apple speech recognition on this iPhone to show live captions while you record. Speech is not sent to a server.</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>MeetMind accesses your calendar to import scheduled meetings and save meeting reminders.</string>
+    <string>Manent reads your calendar to show upcoming meetings you can record, and adds events to it only when you ask it to schedule a follow-up.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>MeetMind accesses your calendar to import scheduled meetings and save meeting reminders.</string>
+    <string>Manent reads your calendar to show upcoming meetings you can record, and adds events to it only when you ask it to schedule a follow-up.</string>
     <key>NSRemindersUsageDescription</key>
-    <string>MeetMind accesses reminders to export extracted meeting action items into Apple Reminders.</string>
+    <string>Manent creates and updates reminders in Apple Reminders for action items you choose to export, and reads them to keep their completed status in sync.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>MeetMind accesses reminders to export extracted meeting action items into Apple Reminders.</string>
+    <string>Manent creates and updates reminders in Apple Reminders for action items you choose to export, and reads them to keep their completed status in sync.</string>
     <key>NSCameraUsageDescription</key>
-    <string>MeetMind requires camera access to capture photos of whiteboards and presentations during meetings.</string>
+    <string>Manent uses the camera only when you tap to photograph a whiteboard or slide and attach it to a meeting. Photos stay on this iPhone.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>MeetMind allows attaching photos from your photo library to meeting notes.</string>
+    <string>Manent attaches photos you pick from your library to meeting notes and to your minutes letterhead. It does not read other photos.</string>
     
     <!-- Background Audio Mode -->
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>
+        <string>processing</string>
+    </array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>com.meetmind.app.offline-analysis</string>
+        <!-- One continued-processing task per user-started meeting analysis (iOS 26+).
+             The second pattern covers the bundle identifier the sideloaded build uses. -->
+        <string>com.meetmind.app.continued-analysis.*</string>
+        <string>com.meetmind.app.JK2M3K5ACG.continued-analysis.*</string>
     </array>
     
     <!-- Custom URL Schemes for Deep Linking -->

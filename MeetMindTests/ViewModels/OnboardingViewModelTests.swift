@@ -46,9 +46,9 @@ final class OnboardingViewModelTests: XCTestCase {
         sut.advanceSlide()
         XCTAssertEqual(sut.currentSlideIndex, 2)
         
-        // Advancing from final slide transitions to profileSetup stage
+        // The Figma-style carousel finishes at the local-only welcome screen.
         sut.advanceSlide()
-        XCTAssertEqual(sut.currentStage, .profileSetup)
+        XCTAssertEqual(sut.currentStage, .verifyEmail)
     }
     
     func test_regressSlideBoundaries() {
@@ -65,9 +65,9 @@ final class OnboardingViewModelTests: XCTestCase {
         XCTAssertEqual(sut.currentSlideIndex, 0)
     }
     
-    func test_skipCarouselTransitionsToProfileSetup() {
+    func test_skipCarouselTransitionsToLocalWelcome() {
         sut.skipCarousel()
-        XCTAssertEqual(sut.currentStage, .profileSetup)
+        XCTAssertEqual(sut.currentStage, .verifyEmail)
         XCTAssertEqual(sut.currentSlideIndex, 2)
     }
     
@@ -124,7 +124,7 @@ final class OnboardingViewModelTests: XCTestCase {
     func test_skipProfileSetupAppliesDefaults() {
         sut.skipProfileSetup()
         XCTAssertEqual(sut.currentStage, .permissionsPrimer)
-        XCTAssertEqual(sut.currentUserProfile.name, "MeetMind User")
+        XCTAssertEqual(sut.currentUserProfile.name, "Dr. Sachin Ghai")
         XCTAssertEqual(sut.currentUserProfile.role, "Team Member")
         XCTAssertNil(sut.currentUserProfile.voiceProfileURL)
     }

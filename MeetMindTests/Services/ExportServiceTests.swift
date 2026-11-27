@@ -9,6 +9,7 @@
 
 import XCTest
 import Foundation
+import PDFKit
 @testable import MeetMind
 
 @MainActor
@@ -83,6 +84,33 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertTrue(md.contains("## Attendees"))
         XCTAssertTrue(md.contains("- Alice Johnson (Product Manager)"))
     }
+
+    func testReviewedAttendanceAndAgendaAreIncludedInEveryExport() throws {
+        let absent = Speaker(name: "Sam Rivera")
+        sampleMeeting.addParticipant(absent)
+        sampleMeeting.agendaText = "Review the release checklist"
+        sampleMeeting.absentParticipantIDs = [absent.id]
+
+        let markdown = exportService.generateMarkdown(for: sampleMeeting)
+        XCTAssertTrue(markdown.contains("## Agenda\n- Review the release checklist"))
+        XCTAssertTrue(markdown.contains("## Present\n- Alice Johnson"))
+        XCTAssertTrue(markdown.contains("## Absent\n- Sam Rivera"))
+
+        let plainText = exportService.generatePlainText(for: sampleMeeting)
+        XCTAssertTrue(plainText.contains("AGENDA:\n• Review the release checklist"))
+        XCTAssertTrue(plainText.contains("PRESENT:\n• Alice Johnson"))
+        XCTAssertTrue(plainText.contains("ABSENT:\n• Sam Rivera"))
+
+        let data = try exportService.generatePDFReport(for: sampleMeeting)
+        let pdf = try XCTUnwrap(PDFDocument(data: data))
+        let pdfText = (pdf.string ?? "").components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }.joined(separator: " ")
+        XCTAssertTrue(pdfText.contains("AGENDA Review the release checklist"))
+        XCTAssertTrue(pdfText.contains("PRESENT Alice Johnson"))
+        XCTAssertTrue(pdfText.contains("ABSENT Sam Rivera"))
+        XCTAssertTrue(pdfText.contains("DISCUSSION Model migrations verified Audio pipeline hardened"))
+        XCTAssertTrue(pdfText.contains("KEY DECISIONS Approved release v1.0.0 for App Store"))
+    }
     
     /// Tier 1: Feature 7 - Validates generateMarkdown contains executive summary and decisions.
     func test_tier1_feature7_generateMarkdownContainsSummaryAndDecisions() throws {
@@ -111,10 +139,11 @@ final class ExportServiceTests: XCTestCase {
     /// Tier 1: Feature 7 - Validates generatePlainText produces clean ASCII formatted text.
     func test_tier1_feature7_generatePlainTextFormatting() throws {
         let text = exportService.generatePlainText(for: sampleMeeting)
-        XCTAssertTrue(text.contains("MEETMIND MINUTES: Sprint Review & Release"))
+        XCTAssertTrue(text.contains("MANENT MINUTES: Sprint Review & Release"))
         XCTAssertTrue(text.contains("ATTENDEES:"))
         XCTAssertTrue(text.contains("EXECUTIVE SUMMARY:"))
         XCTAssertTrue(text.contains("KEY DECISIONS:"))
+        XCTAssertTrue(text.contains("Model migrations verified"))
         XCTAssertTrue(text.contains("ACTION ITEMS:"))
         XCTAssertTrue(text.contains("[X] Publish App Store build"))
     }
@@ -173,7 +202,7 @@ final class ExportServiceTests: XCTestCase {
         let sparseMeeting = Meeting(title: "Quick Check")
         let text = exportService.generatePlainText(for: sparseMeeting)
         
-        XCTAssertTrue(text.contains("MEETMIND MINUTES: Quick Check"))
+        XCTAssertTrue(text.contains("MANENT MINUTES: Quick Check"))
         XCTAssertFalse(text.contains("ATTENDEES:"))
         XCTAssertFalse(text.contains("EXECUTIVE SUMMARY:"))
     }
@@ -270,5 +299,28 @@ final class ExportServiceTests: XCTestCase {
         mockService.mockPDFData = customData
         let data = try mockService.generatePDFReport(for: sampleMeeting)
         XCTAssertEqual(data, customData)
+    }
+
+    func testProductionPDFHasHeaderAndParsesAsNonEmptyDocument() throws {
+        let data = try exportService.generatePDFReport(for: sampleMeeting)
+        XCTAssertTrue(data.starts(with: Data("%PDF-".utf8)))
+        let document = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertGreaterThan(document.pageCount, 0)
+        XCTAssertFalse((document.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    func testRendererFailureAndFakePDFBytesAreRejected() throws {
+        let thrown = ExportService(pdfRenderer: { _ in
+            throw CocoaError(.fileWriteUnknown)
+        })
+        XCTAssertThrowsError(try thrown.generatePDFReport(for: sampleMeeting)) { error in
+            XCTAssertNotNil(error as? ExportError)
+        }
+
+        let fake = ExportService(pdfRenderer: { _ in Data("%PDF- this is plain text".utf8) })
+        XCTAssertThrowsError(try fake.generatePDFReport(for: sampleMeeting)) { error in
+            XCTAssertEqual(error as? ExportError,
+                           .pdfGenerationFailed("The renderer did not produce a valid PDF document."))
+        }
     }
 }

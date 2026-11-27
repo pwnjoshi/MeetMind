@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Observation
+import OfflineEngineKit
 
 /// Segment item displayed in the live transcript stream
 public struct LiveTranscriptSegmentItem: Identifiable, Sendable, Equatable {
@@ -82,10 +83,47 @@ public struct PhotoAttachmentItem: Identifiable, Sendable, Equatable {
     }
 }
 
+/// One note or photo captured during the current recording, shown in the live
+/// "Notes & photos" list. `id` matches the persisted `Note.id`.
+public struct LiveCaptureItem: Identifiable, Sendable, Equatable {
+    public enum Kind: Sendable, Equatable { case note, photo }
+    public let id: UUID
+    public let kind: Kind
+    public var text: String
+    public let timestamp: TimeInterval
+    public let photoURL: URL?
+
+    public init(id: UUID, kind: Kind, text: String, timestamp: TimeInterval, photoURL: URL? = nil) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.timestamp = timestamp
+        self.photoURL = photoURL
+    }
+}
+
 /// System audio interruption type
 public enum InterruptionType: Sendable, Equatable {
     case began
     case ended
+}
+
+/// Optional persistence seam used by tests and alternate local stores. The
+/// default path continues to save through the injected SwiftData context.
+@MainActor
+public protocol RecordingMeetingSaving: AnyObject {
+    func saveRecording(meeting: Meeting, audioURL: URL, duration: TimeInterval) throws
+}
+
+public enum RecordingSaveError: LocalizedError {
+    case persistenceFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .persistenceFailed(let reason):
+            return "The audio is safe on this iPhone, but the meeting could not be saved: \(reason)"
+        }
+    }
 }
 
 /// ViewModel powering the live recording console HUD, dynamic waveforms, notes, and transcription
@@ -178,6 +216,11 @@ public final class LiveRecordingViewModel {
         set { capturedPhotos = newValue }
     }
     public var photosCount: Int { capturedPhotos.count }
+
+    /// Notes and photos captured in this recording only, in capture order.
+    public private(set) var sessionCaptures: [LiveCaptureItem] = []
+    /// Newest first, for the live "Notes & photos" list.
+    public var liveCaptureFeed: [LiveCaptureItem] { Array(sessionCaptures.reversed()) }
     
     public var isShowingDiscardAlert: Bool = false
     public var showDiscardConfirmationAlert: Bool {
@@ -194,10 +237,20 @@ public final class LiveRecordingViewModel {
     
     public var wasInterruptedBySystem: Bool = false
     public var isInterrupted: Bool = false
+    public private(set) var interruptionCanResume: Bool = false
+    public private(set) var pendingAudioURL: URL?
+    public private(set) var recordingMetrics = RecordingMetrics()
     
     public var isUsingOnDeviceSpeechFallback: Bool = false
     public var hasOfflineIndicatorPill: Bool = false
+    /// Number of durable 30-second audio windows saved while recording. These
+    /// are preparation checkpoints, not a user-visible transcript.
+    public private(set) var preparedAudioChunkCount: Int = 0
+    public private(set) var preprocessedTranscriptChunkCount: Int = 0
     
+    /// True when recording could not start because microphone access is denied.
+    public var isMicrophoneUnavailable: Bool = false
+
     public var isShowingCameraPermissionAlert: Bool = false
     public var cameraAlertMessage: String = ""
     
@@ -210,8 +263,18 @@ public final class LiveRecordingViewModel {
     private var meterTask: Task<Void, Never>?
     private var clockTask: Task<Void, Never>?
     private var speechTask: Task<Void, Never>?
+    /// Audio-time boundary of the immutable live-caption prefix.
+    private var liveTranscriptCommittedEnd: TimeInterval = 0
+    private var interruptionTask: Task<Void, Never>?
+    private var chunkPump: RecordingChunkPump?
+    private var preprocessingWorker: RecordingPreprocessingWorker?
+    private var metricsCollector = RecordingMetricsCollector()
+    private let chunkPreprocessor: any RecordingChunkPreprocessing
     private var destinationAudioURL: URL?
+    private var offlineLanguageCode: String? = "hi"
     private let updatesFromRecordingClock: Bool
+    private let recoveryStore: RecordingTakeJournalStore
+    private var lastJournalDurationCheckpoint: TimeInterval = 0
     private var dataStore: Any?
     
     public init(
@@ -224,7 +287,9 @@ public final class LiveRecordingViewModel {
         speechService: SpeechTranscriptionServiceProtocol? = nil,
         dataStore: Any? = nil,
         destinationAudioURL: URL? = nil,
-        updatesFromRecordingClock: Bool = true
+        recoveryStore: RecordingTakeJournalStore? = nil,
+        updatesFromRecordingClock: Bool = true,
+        chunkPreprocessor: any RecordingChunkPreprocessing = PipelineRecordingChunkPreprocessor()
     ) {
         let actualMeetingId = meeting?.id ?? meetingId ?? UUID()
         self.meetingId = actualMeetingId
@@ -237,12 +302,36 @@ public final class LiveRecordingViewModel {
         self.transcriptionService = transcriptionService ?? speechService
         self.dataStore = dataStore
         self.destinationAudioURL = destinationAudioURL
+        if let recoveryStore {
+            self.recoveryStore = recoveryStore
+        } else if let destinationAudioURL,
+                  destinationAudioURL.standardizedFileURL.path.hasPrefix(
+                    FileManager.default.temporaryDirectory.standardizedFileURL.path + "/"
+                  ) {
+            // Explicit temporary destinations are a test seam. Keep their journals
+            // under the same isolated temporary root, never in the app's user folders.
+            self.recoveryStore = RecordingTakeJournalStore(
+                documentsRoot: FileManager.default.temporaryDirectory,
+                recoveryRoot: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("ManentRecordingRecoveryTests", isDirectory: true)
+            )
+        } else {
+            self.recoveryStore = .live()
+        }
         self.updatesFromRecordingClock = updatesFromRecordingClock
+        self.chunkPreprocessor = chunkPreprocessor
     }
     
     public func startSession() {
-        guard recordingState == .idle || recordingState == .stopped else { return }
+        guard recordingState == .idle || recordingState == .stopped || recordingState == .saved else { return }
         errorMessage = nil
+        isMicrophoneUnavailable = false
+        isInterrupted = false
+        interruptionCanResume = false
+        pendingAudioURL = nil
+        lastJournalDurationCheckpoint = 0
+        metricsCollector = RecordingMetricsCollector()
+        recordingMetrics = RecordingMetrics()
         guard let recordingService else {
             errorMessage = "Audio recording is unavailable. Please reopen this meeting."
             return
@@ -252,30 +341,80 @@ public final class LiveRecordingViewModel {
             do {
                 let dest = destinationAudioURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                     .appendingPathComponent("Recordings", isDirectory: true)
-                    .appendingPathComponent("recording_\(meetingId.uuidString).m4a")
-                try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    .appendingPathComponent("recording_\(meetingId.uuidString)_\(UUID().uuidString).m4a")
+                try FileManager.default.createDirectory(
+                    at: dest.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                    attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+                )
+                try recoveryStore.assertDestinationAvailable(meetingID: meetingId, audioURL: dest)
+                _ = try recoveryStore.createBeforeRecording(meetingID: meetingId, audioURL: dest)
                 destinationAudioURL = dest
-                try await recordingService.startRecording(destinationURL: dest)
+                do {
+                    try await recordingService.startRecording(destinationURL: dest)
+                } catch {
+                    if let journal = try? recoveryStore.load(meetingID: meetingId),
+                       FileManager.default.fileExists(atPath: dest.path) {
+                        _ = try? recoveryStore.quarantineInvalidAudio(
+                            for: journal,
+                            validationCode: "recording_start_failed"
+                        )
+                    } else {
+                        // No audio was written, so there is nothing to recover. Keeping the record
+                        // made the next launch show "An interrupted recording needs attention" with a
+                        // missing audio file, e.g. after a denied microphone permission.
+                        try? recoveryStore.remove(meetingID: meetingId)
+                    }
+                    throw error
+                }
                 guard !Task.isCancelled else {
                     try recordingService.cancelRecording()
+                    try? recoveryStore.remove(meetingID: meetingId)
                     return
                 }
+                _ = try recoveryStore.transition(meetingID: meetingId, to: .recording)
                 recordingState = .recording
-                if let meeting {
-                    meeting.audioFileURL = dest
-                    do { try modelContext?.save() }
-                    catch { errorMessage = "Audio is recording, but its meeting record could not be saved: \(error.localizedDescription)" }
+                // Keep capture persistence transactional: the meeting is not
+                // marked as owning this take until Stop validates the file.
+                do {
+                    try? await MeetingAnalysisPipeline.shared.discardCheckpoint(meetingID: meetingId)
+                    let writer = try RollingAudioChunkWriter(meetingID: meetingId)
+                    let pump = RecordingChunkPump(writer: writer, metrics: metricsCollector)
+                    let worker = RecordingPreprocessingWorker(
+                        chunks: pump.sealedChunks,
+                        meetingID: meetingId,
+                        languageCode: offlineLanguageCode,
+                        preprocessor: chunkPreprocessor,
+                        metrics: metricsCollector
+                    )
+                    chunkPump = pump
+                    preprocessingWorker = worker
+                    preparedAudioChunkCount = 0
+                    preprocessedTranscriptChunkCount = 0
+                    pump.start(draining: recordingService.audioBufferStream)
+                    worker.start()
+                } catch {
+                    // Rolling chunks accelerate later processing. Their setup
+                    // must never prevent or stop canonical capture.
+                    chunkPump = nil
+                    preprocessingWorker = nil
+                    metricsCollector.recordWriteFailure(code: "rolling_chunk_setup_failed")
                 }
                 if let transcriptionService {
                     speechTask = Task { [weak self] in
-                        guard await transcriptionService.requestAuthorization() == .authorized else { return }
+                        guard await transcriptionService.requestAuthorization() == .authorized else {
+                            guard !Task.isCancelled else { return }
+                            self?.interimTranscriptText = "Allow Speech Recognition in iPhone Settings to see a live transcript."
+                            return
+                        }
                         do {
                             for try await chunk in transcriptionService.startLiveTranscription(audioBufferStream: recordingService.audioBufferStream) {
                                 guard !Task.isCancelled else { break }
-                                self?.interimTranscriptText = chunk.text
+                                self?.receiveLiveTranscriptChunk(chunk)
                             }
                         } catch {
-                            self?.interimTranscriptText = "Live transcription unavailable. Audio is still being saved."
+                            guard !Task.isCancelled else { return }
+                            self?.interimTranscriptText = "Live captions couldn?t start. You can transcribe the saved recording after you finish."
                         }
                     }
                 }
@@ -285,16 +424,34 @@ public final class LiveRecordingViewModel {
                         self?.updateWaveformLevels(with: power)
                     }
                 }
+                interruptionTask = Task { [weak self] in
+                    for await event in recordingService.interruptionStream {
+                        guard !Task.isCancelled else { break }
+                        self?.receiveInterruption(event)
+                    }
+                }
                 if updatesFromRecordingClock {
                     clockTask = Task { [weak self] in
                         while !Task.isCancelled {
                             do { try await Task.sleep(for: .milliseconds(200)) } catch { break }
-                            self?.elapsedDuration = recordingService.currentDuration
+                            guard let self else { break }
+                            let duration = recordingService.currentDuration
+                            self.elapsedDuration = duration
+                            if duration - self.lastJournalDurationCheckpoint >= 5 {
+                                _ = try? self.recoveryStore.updateDurationIfNeeded(
+                                    meetingID: self.meetingId,
+                                    duration: duration
+                                )
+                                self.lastJournalDurationCheckpoint = duration
+                            }
                         }
                     }
                 }
             } catch {
                 recordingState = .idle
+                if let recordingError = error as? AudioRecordingError, recordingError == .permissionDenied {
+                    isMicrophoneUnavailable = true
+                }
                 errorMessage = error.localizedDescription
             }
         }
@@ -320,6 +477,7 @@ public final class LiveRecordingViewModel {
         if transcriptionService == nil {
             transcriptionService = SpeechTranscriptionService(locale: Locale(identifier: settings?.speechLanguageLocale ?? "en-US"))
         }
+        offlineLanguageCode = (settings?.savedRecordingLanguage ?? .hinglish).whisperCode
     }
 
     public func leaveSession() {
@@ -327,8 +485,9 @@ public final class LiveRecordingViewModel {
         meterTask?.cancel()
         clockTask?.cancel()
         speechTask?.cancel()
+        interruptionTask?.cancel()
         transcriptionService?.stopLiveTranscription()
-        if recordingState == .recording || recordingState == .paused {
+        if recordingState == .recording || recordingState == .paused || recordingState == .interrupted {
             // Keep captured audio when leaving; it can be processed from the meeting later.
             Task {
                 do { _ = try await finishSession() }
@@ -358,23 +517,12 @@ public final class LiveRecordingViewModel {
         try? modelContext?.save()
     }
     
-    public func startSessionSync(for targetMeeting: Meeting) {
-        self.meeting = targetMeeting
-        self.meetingId = targetMeeting.id
-        self.meetingTitle = targetMeeting.title
-        startSession()
-        targetMeeting.status = .recording
-        try? modelContext?.save()
-    }
     
     public func simulateTimerTick(seconds: Double) {
         guard recordingState == .recording else { return }
         elapsedDuration += seconds
     }
     
-    public func simulateTimeAdvance(seconds: Double) {
-        simulateTimerTick(seconds: seconds)
-    }
     
     public func simulateAudioPowerUpdate(power: Float) {
         guard recordingState == .recording else { return }
@@ -388,9 +536,6 @@ public final class LiveRecordingViewModel {
         waveformLevels.insert(clamped, at: 0)
     }
     
-    public func simulateAudioPower(level: Float) {
-        simulateAudioPowerUpdate(power: level)
-    }
     
     public func updateWaveformLevels(with level: Float) {
         simulateAudioPowerUpdate(power: level)
@@ -412,9 +557,15 @@ public final class LiveRecordingViewModel {
     }
     
     public func updateMeetingTitle(_ newTitle: String) {
+        let previousTitle = meeting?.title ?? meetingTitle
         meetingTitle = newTitle
         meeting?.title = newTitle
-        try? modelContext?.save()
+        do { try modelContext?.save() }
+        catch {
+            meetingTitle = previousTitle
+            meeting?.title = previousTitle
+            errorMessage = "The meeting title could not be saved. Your recording continues."
+        }
     }
     
     public func simulateSpeechChunk(text: String, isFinal: Bool, confidence: Float = 0.95) {
@@ -454,6 +605,57 @@ public final class LiveRecordingViewModel {
             interimTranscriptText = text
         }
     }
+
+    /// Live recognition is deliberately a preview. We retain only confirmed
+    /// phrases here, then replace them with the selected-language offline
+    /// transcript after the recording stops. This prevents a partial hypothesis
+    /// from becoming a permanent incorrect minute or task source.
+    public func receiveLiveTranscriptChunk(_ chunk: LiveTranscriptChunk) {
+        let incomingText = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // CaptionAssembler uses an empty non-final chunk as an explicit mutable-tail clear.
+        if !chunk.isFinal, incomingText.isEmpty {
+            interimTranscriptText = ""
+            return
+        }
+        guard !incomingText.isEmpty else { return }
+
+        var acceptedSegments = chunk.segments
+        if !acceptedSegments.isEmpty, liveTranscriptCommittedEnd > 0 {
+            acceptedSegments = acceptedSegments.filter {
+                ($0.startTime + $0.endTime) / 2 >= liveTranscriptCommittedEnd
+            }
+            // A delayed alternate recognizer or restarted request cannot alter the committed UI.
+            guard !acceptedSegments.isEmpty else { return }
+        }
+
+        let acceptedText: String
+        if acceptedSegments.count == chunk.segments.count || chunk.segments.isEmpty {
+            acceptedText = incomingText
+        } else {
+            acceptedText = acceptedSegments.map(\.text).joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !acceptedText.isEmpty else { return }
+
+        if !chunk.isFinal {
+            interimTranscriptText = acceptedText
+            return
+        }
+
+        let start = acceptedSegments.map(\.startTime).min() ?? max(0, elapsedDuration - 5)
+        let end = acceptedSegments.map(\.endTime).max() ?? elapsedDuration
+        let confidence = acceptedSegments.map(\.confidence).min() ?? 0
+        let speaker = activeSpeaker?.name ?? "Speaker"
+        finalTranscriptSegments.append(LiveTranscriptSegmentItem(speakerName: speaker, text: acceptedText,
+            startTime: start, endTime: max(start, end), confidence: confidence))
+        let acceptedChunk = LiveTranscriptChunk(text: acceptedText, isFinal: true, segments: acceptedSegments)
+        liveTranscriptChunks.append(acceptedChunk)
+        if !acceptedSegments.isEmpty {
+            liveTranscriptCommittedEnd = max(liveTranscriptCommittedEnd, end)
+        }
+        interimTranscriptText = ""
+    }
     
     public func openNoteDock() {
         noteCaptureTimestamp = elapsedDuration
@@ -467,11 +669,13 @@ public final class LiveRecordingViewModel {
             return
         }
         isNoteSheetPresented = false
-        let noteItem = NoteItem(text: text, timestamp: noteCaptureTimestamp, isFlagged: false)
+        let noteID = UUID()
+        let noteItem = NoteItem(id: noteID, text: text, timestamp: noteCaptureTimestamp, isFlagged: false)
         capturedNotes.append(noteItem)
+        sessionCaptures.append(LiveCaptureItem(id: noteID, kind: .note, text: trimmed, timestamp: noteCaptureTimestamp))
         
         if let meeting = meeting {
-            let note = Note(content: text, timestamp: noteCaptureTimestamp, meeting: meeting)
+            let note = Note(id: noteID, content: text, timestamp: noteCaptureTimestamp, meeting: meeting)
             meeting.addNote(note)
             try? modelContext?.save()
         }
@@ -482,10 +686,6 @@ public final class LiveRecordingViewModel {
         saveNote(text: text)
     }
     
-    public func addTextNote(content: String) {
-        noteCaptureTimestamp = elapsedDuration
-        saveNote(text: content)
-    }
     
     public func addBookmark() {
         if bookmarks.count >= 100 {
@@ -508,9 +708,6 @@ public final class LiveRecordingViewModel {
         }
     }
     
-    public func addBookmarkNote() {
-        addBookmark()
-    }
     
     public func resetBookmarkHighlight() {
         isBookmarkButtonHighlighted = false
@@ -544,19 +741,24 @@ public final class LiveRecordingViewModel {
         activeSpeaker = Speaker(name: name, avatarColorHex: colorHex)
     }
     
-    public func attachPhoto(url: URL, originalSizeBytes: Int? = nil) {
+    public func attachPhoto(url: URL, originalSizeBytes: Int? = nil, caption: String = "") {
         let isCompressed = (originalSizeBytes ?? 0) > 10 * 1024 * 1024
-        let item = PhotoAttachmentItem(url: url, timestamp: elapsedDuration, isCompressed: isCompressed)
+        let photoID = UUID()
+        let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        let item = PhotoAttachmentItem(id: photoID, url: url, timestamp: elapsedDuration, isCompressed: isCompressed)
         capturedPhotos.append(item)
         whiteboardPhotos.append(url)
+        sessionCaptures.append(LiveCaptureItem(id: photoID, kind: .photo, text: trimmedCaption,
+                                               timestamp: elapsedDuration, photoURL: url))
         if let meeting = meeting {
-            let note = Note(content: "Whiteboard photo: \(url.lastPathComponent)", timestamp: elapsedDuration, imageAttachmentPath: url.path, meeting: meeting)
+            let content = trimmedCaption.isEmpty ? "Whiteboard photo: \(url.lastPathComponent)" : trimmedCaption
+            let note = Note(id: photoID, content: content, timestamp: elapsedDuration, imageAttachmentPath: url.path, meeting: meeting)
             meeting.addNote(note)
             try? modelContext?.save()
         }
     }
     
-    public func captureWhiteboardPhoto(data: Data) {
+    public func captureWhiteboardPhoto(data: Data, caption: String = "") {
         let filename = "whiteboard_\(UUID().uuidString).jpg"
         do {
             let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -564,13 +766,48 @@ public final class LiveRecordingViewModel {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let url = directory.appendingPathComponent(filename)
             try data.write(to: url, options: .atomic)
-            attachPhoto(url: url, originalSizeBytes: data.count)
+            attachPhoto(url: url, originalSizeBytes: data.count, caption: caption)
         } catch { errorMessage = error.localizedDescription }
     }
     
-    public func snapWhiteboardPhoto(url: URL) {
-        attachPhoto(url: url)
+    /// Edits the text of a note, or the caption of a photo, captured in this recording.
+    public func updateCapture(id: UUID, text: String) {
+        guard let index = sessionCaptures.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let item = sessionCaptures[index]
+        if item.kind == .note && trimmed.isEmpty { return }
+        sessionCaptures[index].text = trimmed
+        if let noteIndex = capturedNotes.firstIndex(where: { $0.id == id }) {
+            let old = capturedNotes[noteIndex]
+            capturedNotes[noteIndex] = NoteItem(id: old.id, text: trimmed, timestamp: old.timestamp, isFlagged: old.isFlagged)
+        }
+        if let note = meeting?.notes.first(where: { $0.id == id }) {
+            if item.kind == .photo && trimmed.isEmpty, let url = item.photoURL {
+                note.content = "Whiteboard photo: \(url.lastPathComponent)"
+            } else {
+                note.content = trimmed
+            }
+            try? modelContext?.save()
+        }
     }
+
+    /// Removes a note or photo captured in this recording, including the photo file.
+    public func deleteCapture(id: UUID) {
+        guard let item = sessionCaptures.first(where: { $0.id == id }) else { return }
+        sessionCaptures.removeAll { $0.id == id }
+        capturedNotes.removeAll { $0.id == id }
+        if let url = item.photoURL {
+            capturedPhotos.removeAll { $0.id == id }
+            whiteboardPhotos.removeAll { $0 == url }
+            try? FileManager.default.removeItem(at: url)
+        }
+        if let meeting, let note = meeting.notes.first(where: { $0.id == id }) {
+            meeting.notes.removeAll { $0.id == id }
+            modelContext?.delete(note)
+            try? modelContext?.save()
+        }
+    }
+
     
     public func handleCameraPermissionDenied() {
         isShowingCameraPermissionAlert = true
@@ -578,9 +815,14 @@ public final class LiveRecordingViewModel {
     }
     
     public func pauseSession() {
-        recordingState = .paused
-        waveformLevels = Array(repeating: 0.05, count: 32)
-        try? recordingService?.pauseRecording()
+        guard recordingState == .recording, let recordingService else { return }
+        do {
+            try recordingService.pauseRecording()
+            recordingState = .paused
+            waveformLevels = Array(repeating: 0.05, count: 32)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     
     public func pause() {
@@ -592,8 +834,16 @@ public final class LiveRecordingViewModel {
     }
     
     public func resumeSession() {
-        recordingState = .recording
-        try? recordingService?.resumeRecording()
+        guard recordingState == .paused || (recordingState == .interrupted && interruptionCanResume),
+              let recordingService else { return }
+        do {
+            try recordingService.resumeRecording()
+            recordingState = .recording
+            isInterrupted = false
+            interruptionCanResume = false
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     
     public func resume() {
@@ -603,27 +853,25 @@ public final class LiveRecordingViewModel {
     public func resumeRecording() {
         resumeSession()
     }
+
+    public func receiveInterruption(_ event: RecordingInterruptionEvent) {
+        wasInterruptedBySystem = true
+        isInterrupted = true
+        recordingState = .interrupted
+        interruptionCanResume = event.hasEnded && event.canResume
+        waveformLevels = Array(repeating: 0.05, count: 32)
+        metricsCollector.recordInterruption(code: event.code.rawValue)
+        syncMetrics()
+    }
     
     public func handleAudioSessionInterruption(began: Bool) {
-        if began {
-            wasInterruptedBySystem = true
-            isInterrupted = true
-            pauseSession()
-        } else {
-            isInterrupted = false
-        }
+        receiveInterruption(RecordingInterruptionEvent(
+            code: .audioSession,
+            canResume: !began,
+            hasEnded: !began
+        ))
     }
     
-    public func handleSystemInterruption(type: InterruptionType) {
-        switch type {
-        case .began:
-            wasInterruptedBySystem = true
-            isInterrupted = true
-            pauseSession()
-        case .ended:
-            isInterrupted = false
-        }
-    }
     
     public func simulateNetworkDrop() {
         isUsingOnDeviceSpeechFallback = true
@@ -649,32 +897,180 @@ public final class LiveRecordingViewModel {
     }
     
     public func finishSession() async throws -> URL {
+        if recordingState == .saveFailed || recordingState == .stoppedUnsaved {
+            return try retrySave()
+        }
         if let sessionTask { await sessionTask.value }
-        elapsedDuration = recordingService?.currentDuration ?? elapsedDuration
-        let url: URL
-        if let service = recordingService {
-            url = try await service.stopRecording()
-        } else {
+        guard let service = recordingService else {
             throw AudioRecordingError.invalidState("No audio recorder is active.")
         }
-        recordingState = .stopped
+
+        let stopStarted = Date()
+        elapsedDuration = service.currentDuration
+        metricsCollector.recordElapsed(elapsedDuration)
+        recordingState = .stopping
+        _ = try recoveryStore.transition(meetingID: meetingId, to: .stopping, duration: elapsedDuration)
+        preprocessingWorker?.cancel()
+        preprocessingWorker = nil
+
+        let url: URL
+        do {
+            url = try await service.stopRecording()
+            pendingAudioURL = url
+        } catch {
+            pendingAudioURL = destinationAudioURL
+            recordingState = .stoppedUnsaved
+            try? recoveryStore.recordFailure(meetingID: meetingId, code: "canonical_stop_failed")
+            metricsCollector.recordWriteFailure(code: "canonical_stop_failed")
+            metricsCollector.recordStopLatency(Date().timeIntervalSince(stopStarted))
+            syncMetrics()
+            throw error
+        }
+
         meterTask?.cancel()
         clockTask?.cancel()
         speechTask?.cancel()
+        interruptionTask?.cancel()
         transcriptionService?.stopLiveTranscription()
-        
-        if let meeting = meeting {
-            meeting.audioFileURL = url
-            meeting.duration = elapsedDuration
-            meeting.status = .processing
+
+        // The pump only waits for buffer-to-disk writes. Its inference consumer
+        // was cancelled above and is deliberately not awaited.
+        if let chunkPump {
+            do {
+                let chunks = try await chunkPump.finishAfterSourceEnds()
+                preparedAudioChunkCount = chunks.count
+            } catch {
+                metricsCollector.recordWriteFailure(code: "rolling_chunk_finish_failed")
+            }
+        }
+        preprocessedTranscriptChunkCount = metricsCollector.snapshot.preprocessedChunkCount
+
+        let info: CanonicalRecordingInfo
+        do {
+            info = try CanonicalRecordingValidator.validate(url)
+            elapsedDuration = info.duration
+            metricsCollector.recordCanonicalAudio(frameCount: info.frameCount, duration: info.duration)
+            _ = try recoveryStore.transition(meetingID: meetingId, to: .validated, duration: info.duration)
+        } catch {
+            recordingState = .stoppedUnsaved
+            let code = canonicalValidationCode(for: error)
+            try? recoveryStore.recordFailure(meetingID: meetingId, code: code)
+            metricsCollector.recordWriteFailure(code: code)
+            metricsCollector.recordStopLatency(Date().timeIntervalSince(stopStarted))
+            syncMetrics()
+            throw error
+        }
+
+        recordingState = .stoppedUnsaved
+        do {
+            try persistStoppedRecording(url, duration: info.duration)
+            try markOwnershipPersistedAndClearJournal(url, duration: info.duration)
+            recordingState = .saved
+            metricsCollector.recordStopLatency(Date().timeIntervalSince(stopStarted))
+            syncMetrics()
+            metricsCollector.logSummary()
+            return url
+        } catch {
+            recordingState = .saveFailed
+            metricsCollector.recordStopLatency(Date().timeIntervalSince(stopStarted))
+            syncMetrics()
+            throw RecordingSaveError.persistenceFailed(error.localizedDescription)
+        }
+    }
+
+    /// Retries only meeting persistence. The recorder is never restarted and
+    /// the previously validated canonical URL remains intact.
+    public func retrySave() throws -> URL {
+        guard let url = pendingAudioURL else {
+            throw AudioRecordingError.invalidState("There is no stopped recording to save.")
+        }
+        recordingState = .stopping
+        do {
+            let info = try CanonicalRecordingValidator.validate(url)
+            elapsedDuration = info.duration
+            metricsCollector.recordCanonicalAudio(frameCount: info.frameCount, duration: info.duration)
+            _ = try recoveryStore.transition(meetingID: meetingId, to: .validated, duration: info.duration)
+            try persistStoppedRecording(url, duration: info.duration)
+            try markOwnershipPersistedAndClearJournal(url, duration: info.duration)
+            recordingState = .saved
+            syncMetrics()
+            metricsCollector.logSummary()
+            return url
+        } catch let error as CanonicalRecordingValidationError {
+            recordingState = .stoppedUnsaved
+            let code = canonicalValidationCode(for: error)
+            try? recoveryStore.recordFailure(meetingID: meetingId, code: code)
+            metricsCollector.recordWriteFailure(code: code)
+            syncMetrics()
+            throw error
+        } catch {
+            recordingState = .saveFailed
+            throw RecordingSaveError.persistenceFailed(error.localizedDescription)
+        }
+    }
+
+    private func persistStoppedRecording(_ url: URL, duration: TimeInterval) throws {
+        guard let meeting else { return }
+        let evidence = liveTranscriptChunks.compactMap { chunk -> LiveTranscriptSegment? in
+            guard chunk.isFinal, let first = chunk.segments.first, let last = chunk.segments.last,
+                  first.startTime.isFinite, last.endTime.isFinite,
+                  first.startTime >= 0, last.endTime > first.startTime, last.endTime <= duration else { return nil }
+            return LiveTranscriptSegment(text: chunk.text, startTime: first.startTime,
+                                         duration: last.endTime - first.startTime)
+        }
+        meeting.liveCaptionEvidenceData = evidence.isEmpty ? nil : try? JSONEncoder().encode(evidence)
+        meeting.setAudioFileURL(url)
+        meeting.duration = duration
+        meeting.status = .processing
+        meeting.analysisState = "ready"
+        if let saver = dataStore as? RecordingMeetingSaving {
+            try saver.saveRecording(meeting: meeting, audioURL: url, duration: duration)
+        } else {
             try modelContext?.save()
         }
-        return url
+    }
+
+    private func markOwnershipPersistedAndClearJournal(_ url: URL, duration: TimeInterval) throws {
+        // Some protocol-only tests intentionally have no Meeting. Production
+        // recording routes always bind one before starting and use this check.
+        guard let meeting else { return }
+        let expectedRelative = try recoveryStore.relativeAudioPath(for: url)
+        let ownsURL = meeting.audioRelativePath == expectedRelative
+            || meeting.audioFileURL?.standardizedFileURL == url.standardizedFileURL
+        guard ownsURL, meeting.duration == duration, meeting.status == .processing else {
+            throw RecordingSaveError.persistenceFailed("Saved recording ownership could not be verified.")
+        }
+        if let modelContext {
+            let id = meeting.id
+            var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            guard let saved = try modelContext.fetch(descriptor).first else {
+                throw RecordingSaveError.persistenceFailed("The saved meeting could not be verified.")
+            }
+            let savedOwnsURL = saved.audioRelativePath == expectedRelative
+                || saved.audioFileURL?.standardizedFileURL == url.standardizedFileURL
+            guard savedOwnsURL, saved.duration == duration, saved.status == .processing else {
+                throw RecordingSaveError.persistenceFailed("Saved recording ownership could not be verified.")
+            }
+        }
+        _ = try recoveryStore.transition(meetingID: meetingId, to: .persisted, duration: duration)
+        try recoveryStore.remove(meetingID: meetingId)
+    }
+
+    private func canonicalValidationCode(for error: Error) -> String {
+        switch error as? CanonicalRecordingValidationError {
+        case .fileMissing: return "canonical_file_missing"
+        case .unreadableAudio: return "canonical_file_unreadable"
+        case .emptyAudio: return "canonical_file_empty"
+        case .invalidDuration: return "canonical_duration_invalid"
+        case nil: return "canonical_validation_failed"
+        }
+    }
+
+    private func syncMetrics() {
+        recordingMetrics = metricsCollector.snapshot
     }
     
-    public func finishRecording() async throws -> URL {
-        try await finishSession()
-    }
     
     public func requestDiscard() {
         isShowingDiscardAlert = true
@@ -682,9 +1078,6 @@ public final class LiveRecordingViewModel {
     
     public func cancelDiscard() {
         isShowingDiscardAlert = false
-        if recordingState != .paused {
-            recordingState = .recording
-        }
     }
     
     public func confirmDiscard(for targetMeeting: Meeting? = nil) {
@@ -692,17 +1085,38 @@ public final class LiveRecordingViewModel {
         meterTask?.cancel()
         clockTask?.cancel()
         speechTask?.cancel()
+        interruptionTask?.cancel()
+        preprocessingWorker?.cancel()
+        chunkPump?.cancelAndDiscard()
         transcriptionService?.stopLiveTranscription()
         isShowingDiscardAlert = false
         recordingState = .idle
         try? recordingService?.cancelRecording()
+        chunkPump = nil
+        preprocessingWorker = nil
+        pendingAudioURL = nil
+        preparedAudioChunkCount = 0
+        preprocessedTranscriptChunkCount = 0
         elapsedDuration = 0
         finalTranscriptSegments.removeAll()
         capturedNotes.removeAll()
+        sessionCaptures.removeAll()
         bookmarks.removeAll()
         capturedPhotos.removeAll()
         didCompleteDismissal = true
         
+        // Deleting is permanent: remove the journaled take and attached photos too.
+        let fileManager = FileManager.default
+        if let journal = try? recoveryStore.load(meetingID: meetingId) {
+            try? recoveryStore.deleteAudioAndJournal(journal)
+        } else {
+            if let url = destinationAudioURL { try? fileManager.removeItem(at: url) }
+            try? recoveryStore.remove(meetingID: meetingId)
+        }
+        for photoURL in whiteboardPhotos { try? fileManager.removeItem(at: photoURL) }
+        if let audioURL = (targetMeeting ?? meeting)?.resolvedAudioFileURL { try? fileManager.removeItem(at: audioURL) }
+        whiteboardPhotos.removeAll()
+
         let toDelete = targetMeeting ?? meeting ?? (modelContext != nil ? try? modelContext?.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == meetingId })).first : nil)
         if let m = toDelete {
             modelContext?.delete(m)
@@ -710,11 +1124,5 @@ public final class LiveRecordingViewModel {
         }
     }
     
-    public func discardSession() {
-        confirmDiscard()
-    }
     
-    public func discardRecording() {
-        discardSession()
-    }
 }

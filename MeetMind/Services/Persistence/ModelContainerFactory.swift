@@ -25,13 +25,6 @@ public final class ModelContainerFactory {
         return try ModelContainer(for: schema, configurations: [configuration])
     }
     
-    /// In-memory container pre-populated with realistic preview data for SwiftUI Previews
-    public static func createInMemoryContainerWithSampleData() throws -> ModelContainer {
-        let container = try createInMemoryContainer()
-        SampleDataGenerator.populateSampleData(context: container.mainContext)
-        try container.mainContext.save()
-        return container
-    }
     
     /// Standard production container writing to disk Application Support
     public static func createProductionContainer() throws -> ModelContainer {

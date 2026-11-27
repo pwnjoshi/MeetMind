@@ -1,6 +1,9 @@
 import Foundation
 import SwiftData
 import Observation
+import OfflineEngineKit
+
+public typealias LocalQuestionAnswerer = @Sendable (String, [AnalysisTurn]) async throws -> [SupportedPoint]
 
 /// Segmented tabs available in the meeting detail cockpit
 public enum MeetingDetailTab: String, CaseIterable, Sendable {
@@ -75,8 +78,6 @@ public struct AIAnswerResponse: Sendable, Equatable {
     }
 }
 
-public typealias AIResponse = AIAnswerResponse
-
 /// Email draft output for executive distribution
 public struct EmailDraft: Sendable, Equatable {
     public let subject: String
@@ -92,6 +93,12 @@ public struct EmailDraft: Sendable, Equatable {
 @Observable
 @MainActor
 public final class MeetingDetailViewModel {
+    private let questionAnswerer: LocalQuestionAnswerer
+    private var questionTask: Task<Void, Never>?
+    public var isAnsweringQuestion = false
+    public var isSyncingReminders = false
+    /// Set when a record edit made through this view model could not be saved. The view shows it and clears it.
+    public var mutationError: String?
     public var meeting: Meeting?
     public var selectedTab: MeetingDetailTab = .summary
     
@@ -136,7 +143,7 @@ public final class MeetingDetailViewModel {
             if let custom = internalSegments {
                 return custom
             }
-            return meeting?.transcriptSegments.sorted { $0.startTime < $1.startTime } ?? []
+            return meeting?.orderedTranscriptSegments ?? []
         }
         set {
             internalSegments = newValue
@@ -152,6 +159,13 @@ public final class MeetingDetailViewModel {
     
     public var actionItems: [ActionItem] {
         meeting?.actionItems ?? []
+    }
+
+    /// The categorized record (summary, agenda, attendees, discussion, decisions, actions, open issues),
+    /// always derived from the live models and the decided-by sidecar.
+    public var minutesContent: MeetingMinutesContent? {
+        guard let meeting else { return nil }
+        return MeetingMinutesContent.make(from: meeting, record: MeetingRecordStore.shared.record(for: meeting.id))
     }
     
     public var notes: [Note] {
@@ -236,7 +250,7 @@ public final class MeetingDetailViewModel {
     
     public var aiChatHistory: [(prompt: String, response: AIAnswerResponse)] = []
     
-    private var originalSegmentTexts: [UUID: String] = [:]
+    private var originalSegmentTexts: [UUID: (text: String, isEdited: Bool)] = [:]
     private var modelContext: ModelContext?
     private let playbackService: AudioPlaybackServiceProtocol?
     private let summarizationService: SummarizationServiceProtocol?
@@ -252,9 +266,13 @@ public final class MeetingDetailViewModel {
         summarizationService: SummarizationServiceProtocol? = nil,
         exportService: ExportServiceProtocol? = nil,
         remindersService: RemindersSyncServiceProtocol? = nil,
+        questionAnswerer: LocalQuestionAnswerer? = nil,
         dataStore: Any? = nil
     ) {
         self.meeting = meeting
+        self.questionAnswerer = questionAnswerer ?? { question, turns in
+            try await MeetingAnalysisPipeline.shared.answer(question: question, turns: turns, model: VidurModel.selected)
+        }
         self.modelContext = modelContext
         self.playbackService = playbackService ?? AudioPlaybackService()
         self.summarizationService = summarizationService ?? NaturalLanguageSummarizationService()
@@ -270,14 +288,14 @@ public final class MeetingDetailViewModel {
             self.meeting = try? context.fetch(desc).first
         }
         
-        if let meeting = self.meeting, let audioURL = meeting.audioFileURL {
+        if let meeting = self.meeting, let audioURL = meeting.resolvedAudioFileURL {
             try? self.playbackService?.loadAudio(url: audioURL)
         }
     }
     
     public func loadMeeting() {
         if let meeting = meeting {
-            self.transcriptSegments = meeting.transcriptSegments.sorted { $0.startTime < $1.startTime }
+            self.transcriptSegments = meeting.orderedTranscriptSegments
         }
     }
     
@@ -285,21 +303,46 @@ public final class MeetingDetailViewModel {
         selectedTab = tab
     }
     
-    public func renameMeeting(newTitle: String) {
-        meeting?.title = newTitle
-        try? modelContext?.save()
+    public func renameMeeting(newTitle: String) throws {
+        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let meeting, !title.isEmpty, meeting.title != title else { return }
+        let previousTitle = meeting.title
+        meeting.title = title
+        do { try modelContext?.save() }
+        catch {
+            meeting.title = previousTitle
+            throw error
+        }
     }
     
     public func generateCopyableSummaryText() -> String {
-        guard let summary = summary else { return "No summary available." }
-        var result = "Executive Summary:\n\(summary.executiveSummary)\n\n"
-        if !summary.keyPoints.isEmpty {
-            result += "Key Points:\n" + summary.keyPoints.map { "- \($0)" }.joined(separator: "\n") + "\n\n"
+        guard summary != nil, let content = minutesContent else { return "No summary available." }
+        return Self.formattedMinutes(content)
+    }
+
+    /// Plain categorized minutes text. Suggested tasks that were not accepted are left out.
+    static func formattedMinutes(_ content: MeetingMinutesContent) -> String {
+        var blocks: [String] = []
+        func add(_ heading: String, _ lines: [String]) {
+            guard !lines.isEmpty else { return }
+            blocks.append("\(heading):\n" + lines.map { "- \($0)" }.joined(separator: "\n"))
         }
-        if !summary.keyDecisions.isEmpty {
-            result += "Key Decisions:\n" + summary.keyDecisions.map { "- \($0)" }.joined(separator: "\n")
+        if !content.summary.isEmpty { blocks.append("Executive Summary:\n\(content.summary)") }
+        add("Agenda", content.agenda)
+        add(content.hasAttendanceRecord ? "Present" : "Attendees", content.present.map(\.label))
+        add("Absent", content.absent.map(\.label))
+        add("Key Points", content.discussion)
+        add("Open Issues", content.openIssues)
+        add("Key Decisions", content.decisions.map { content.decisionLine($0) })
+        var actionLines: [String] = []
+        for action in content.actions {
+            let mark = action.isCompleted ? "x" : " "
+            var line = "[\(mark)] \(action.title) (Owner: \(action.ownerName)"
+            if let due = action.dueText { line += ", Due: \(due)" }
+            actionLines.append(line + ")")
         }
-        return result
+        add("Action Items", actionLines)
+        return blocks.joined(separator: "\n\n")
     }
     
     public func regenerateSummary(completion: @escaping (Result<Summary, Error>) -> Void) {
@@ -449,11 +492,25 @@ public final class MeetingDetailViewModel {
 
     public func stopPlayback() { playbackService?.pause() }
 
-    public func deleteMeeting() throws {
+    public func syncReviewedTasksToReminders() async throws {
+        guard !isSyncingReminders, let meeting else { return }
+        let items = meeting.actionItems.filter { !$0.isCompleted }
+        guard !items.isEmpty else { return }
+        isSyncingReminders = true
+        defer { isSyncingReminders = false }
+        let service = remindersService ?? SystemRemindersSyncService()
+        let ids = try await service.syncActionItems(items, toList: "MeetMind")
+        guard ids.count == items.count else {
+            throw OfflineError.unavailable("Some confirmed tasks could not be synced. Please retry.")
+        }
+        for (item, id) in zip(items, ids) { item.reminderIdentifier = id }
+        try modelContext?.save()
+    }
+
+    public func deleteMeeting() async throws {
         guard let meeting, let modelContext else { return }
         playbackService?.stop()
-        modelContext.delete(meeting)
-        try modelContext.save()
+        _ = try await DeletionCoordinator(modelContext: modelContext).deleteMeeting(meeting)
     }
     
     public func setPlaybackRate(_ rate: Float) {
@@ -464,20 +521,28 @@ public final class MeetingDetailViewModel {
         isEditingTranscript = true
         editingSegmentText = segment.text
         editingSegmentId = segment.id
-        originalSegmentTexts[segment.id] = segment.text
+        originalSegmentTexts[segment.id] = (segment.text, segment.isEdited)
     }
     
     @discardableResult
-    public func saveTranscriptEdit(newText: String) -> Bool {
+    public func saveTranscriptEdit(newText: String) throws -> Bool {
         let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             isEditingTranscript = false
             editingSegmentId = nil
             return false
         }
-        if let id = editingSegmentId, let segment = transcriptSegments.first(where: { $0.id == id }) {
+        guard let id = editingSegmentId, let segment = transcriptSegments.first(where: { $0.id == id }) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        if segment.text != trimmed {
+            let previous = (segment.text, segment.isEdited)
             segment.updateText(trimmed)
-            try? modelContext?.save()
+            do { try modelContext?.save() }
+            catch {
+                (segment.text, segment.isEdited) = previous
+                throw error
+            }
         }
         isEditingTranscript = false
         editingSegmentId = nil
@@ -492,18 +557,12 @@ public final class MeetingDetailViewModel {
     public func undoTranscriptEdit(segmentId: UUID) {
         if let original = originalSegmentTexts[segmentId],
            let segment = transcriptSegments.first(where: { $0.id == segmentId }) {
-            segment.text = original
-            segment.isEdited = false
+            segment.text = original.text
+            segment.isEdited = original.isEdited
             try? modelContext?.save()
         }
     }
     
-    public func saveInlineTranscriptEdit(segmentId: UUID, newText: String) {
-        if let segment = transcriptSegments.first(where: { $0.id == segmentId }) {
-            segment.updateText(newText)
-            try? modelContext?.save()
-        }
-    }
     
     public func openSpeakerReassignment(forSpeakerName: String) {
         speakerToReassign = forSpeakerName
@@ -521,6 +580,7 @@ public final class MeetingDetailViewModel {
         }
         for segment in transcriptSegments where segment.speakerName == oldName || segment.speaker?.name == oldName {
             segment.speaker = newSpeaker
+            segment.isEdited = true
         }
         try? modelContext?.save()
     }
@@ -528,13 +588,21 @@ public final class MeetingDetailViewModel {
     public func reassignSpeaker(from oldSpeaker: Speaker, to newSpeaker: Speaker) {
         for segment in transcriptSegments where segment.speaker?.id == oldSpeaker.id {
             segment.speaker = newSpeaker
+            segment.isEdited = true
         }
         try? modelContext?.save()
     }
     
-    public func reassignSpeaker(segment: TranscriptSegment, newSpeaker: Speaker) {
+    public func reassignSpeaker(segment: TranscriptSegment, newSpeaker: Speaker) throws {
+        guard segment.speaker?.id != newSpeaker.id else { return }
+        let previous = (segment.speaker, segment.isEdited)
         segment.speaker = newSpeaker
-        try? modelContext?.save()
+        segment.isEdited = true
+        do { try modelContext?.save() }
+        catch {
+            (segment.speaker, segment.isEdited) = previous
+            throw error
+        }
     }
     
     public func setTranscriptSegments(_ segments: [TranscriptSegment]) {
@@ -548,17 +616,10 @@ public final class MeetingDetailViewModel {
         try? modelContext?.save()
     }
     
-    public func toggleActionItemCompletion(_ item: ActionItem) {
-        item.toggleCompleted()
-        try? modelContext?.save()
-    }
     
     public func exportPDF() throws -> Data {
         guard let meeting = meeting else { throw ExportError.emptyMeetingData }
-        if let exportService = exportService {
-            return try exportService.generatePDFReport(for: meeting)
-        }
-        return Data("MeetMind PDF Report".utf8)
+        return try (exportService ?? ExportService()).generatePDFReport(for: meeting)
     }
     
     public func exportMarkdown() -> String {
@@ -608,68 +669,49 @@ public final class MeetingDetailViewModel {
     }
     
     public func submitAIQuery(_ query: String, completion: @escaping @MainActor (AIAnswerResponse) -> Void) {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        
-        let lower = trimmed.lowercased()
-        if lower.contains("mars") || lower.contains("weather") {
-            let resp = AIAnswerResponse(answer: "Not discussed in this meeting.", citations: [])
-            aiChatHistory.append((prompt: query, response: resp))
-            completion(resp)
-            return
-        }
-        
-        if lower.contains("offline") || lower.contains("summarization") {
-            let answerText = "The team decided to implement on-device summarization using Apple NaturalLanguage framework for offline capability."
-            let citations = [AICitation(timestamp: 12.0, segmentText: "Discussed on-device processing")]
-            let resp = AIAnswerResponse(answer: answerText, citations: citations)
-            aiChatHistory.append((prompt: query, response: resp))
-            completion(resp)
-            return
-        }
-        
-        let answerText = "Meeting summary: " + (meeting?.summary?.executiveSummary ?? "Discussed project architecture and milestones.")
-        let resp = AIAnswerResponse(answer: answerText, citations: [AICitation(timestamp: 0.0, segmentText: "General discussion")])
-        aiChatHistory.append((prompt: query, response: resp))
-        completion(resp)
-    }
-    
-    public func askAI(prompt: String) async throws -> AIAnswerResponse {
-        let lower = prompt.lowercased()
-        
-        if lower.contains("security audit") || lower.contains("friday") || lower.contains("john commit") {
-            let citation = AICitation(timestamp: 252.0, formattedTimecode: "04:12", snippet: "I commit to delivering the security audit report by Friday.")
-            let response = AIAnswerResponse(
-                answer: "John committed to delivering the security audit report [04:12].",
-                citations: [citation]
-            )
-            aiChatHistory.append((prompt: prompt, response: response))
-            return response
-        }
-        
-        if lower.contains("cake") || lower.contains("recipe") || lower.contains("weather") || lower.contains("mars") {
-            let response = AIAnswerResponse(answer: "Not discussed in meeting.", citations: [])
-            aiChatHistory.append((prompt: prompt, response: response))
-            return response
-        }
-        
-        for segment in transcriptSegments {
-            if segment.text.lowercased().contains(lower) {
-                let citation = AICitation(timestamp: segment.startTime, formattedTimecode: segment.formattedStartTime, snippet: segment.text)
-                let response = AIAnswerResponse(
-                    answer: "In the meeting, it was discussed: \(segment.text) [\(segment.formattedStartTime)].",
-                    citations: [citation]
-                )
-                aiChatHistory.append((prompt: prompt, response: response))
-                return response
+        guard !isAnsweringQuestion, canSubmitAIQuery(query) else { return }
+        isAnsweringQuestion = true
+        questionTask = Task { @MainActor in
+            defer { isAnsweringQuestion = false }
+            do { completion(try await askAI(prompt: query)) }
+            catch is CancellationError { }
+            catch {
+                let response = AIAnswerResponse(answer: error.localizedDescription, citations: [])
+                aiChatHistory.append((prompt: query, response: response))
+                completion(response)
             }
         }
-        
-        let general = AIAnswerResponse(answer: "Based on the meeting summary: \(summaryText)", citations: [])
-        aiChatHistory.append((prompt: prompt, response: general))
-        return general
     }
-    
+
+    public func cancelQuestion() {
+        questionTask?.cancel()
+    }
+
+    public func askAI(prompt: String) async throws -> AIAnswerResponse {
+        let turns = transcriptSegments.enumerated().map { index, segment in
+            AnalysisTurn(id: "t\(index + 1)", text: segment.text, start: segment.startTime,
+                         end: segment.endTime, speaker: segment.speaker?.name)
+        }
+        let points = try await questionAnswerer(prompt, turns)
+        try Task.checkCancellation()
+        var citations: [AICitation] = []
+        var seen = Set<String>()
+        for point in points {
+            guard !point.evidence.isEmpty else { throw OfflineError.unavailable("The answer lacked transcript evidence. Please retry.") }
+            for evidence in point.evidence {
+                guard !evidence.quote.isEmpty, let turn = turns.first(where: {
+                    (evidence.turnID == $0.id || evidence.turnID.hasPrefix($0.id + ".")) && $0.text.contains(evidence.quote)
+                }) else { throw OfflineError.unavailable("The answer contained invalid transcript evidence. Please retry.") }
+                if seen.insert(evidence.turnID + evidence.quote).inserted {
+                    citations.append(AICitation(timestamp: turn.start, segmentText: evidence.quote))
+                }
+            }
+        }
+        let response = AIAnswerResponse(answer: points.isEmpty ? "Not discussed in this meeting." : points.map(\.text).joined(separator: "\n"), citations: citations)
+        aiChatHistory.append((prompt: prompt, response: response))
+        return response
+    }
+
     public func seekToCitation(_ citation: AICitation) {
         seek(to: citation.timestamp)
         try? playbackService?.play()
@@ -726,17 +768,8 @@ public final class MeetingDetailViewModel {
         let title = meeting?.title ?? "Meeting"
         let subject = "[MeetMind Minutes] \(title)"
         var body = "Hi Team,\n\nHere are the minutes from \(title):\n\n"
-        if let summary = summary {
-            body += "Executive Summary:\n\(summary.executiveSummary)\n\n"
-            if !summary.keyDecisions.isEmpty {
-                body += "Key Decisions:\n" + summary.keyDecisions.map { "- \($0)" }.joined(separator: "\n") + "\n\n"
-            }
-        }
-        if !actionItems.isEmpty {
-            body += "Action Items:\n"
-            for item in actionItems {
-                body += "- \(item.title) (Assignee: \(item.assigneeName))\n"
-            }
+        if let content = minutesContent {
+            body += Self.formattedMinutes(content) + "\n"
         }
         return EmailDraft(subject: subject, body: body)
     }

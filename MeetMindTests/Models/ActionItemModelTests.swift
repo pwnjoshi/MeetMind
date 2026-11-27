@@ -466,6 +466,7 @@ extension ActionItemModelTests {
         XCTAssertEqual(item.assignee?.name, "Anika")
         XCTAssertEqual(item.category, "Review/Approve")
         XCTAssertEqual(item.priorityRaw, "")
+        XCTAssertEqual(item.priorityDisplayName, "Unspecified")
         XCTAssertEqual(item.dueDate, due)
         XCTAssertTrue(item.sourceEvidence?.contains("[00:12]") == true)
         XCTAssertTrue(meeting.pendingTaskSuggestions.isEmpty)
@@ -492,5 +493,27 @@ extension ActionItemModelTests {
             priority: "", dueDate: nil, accept: true, context: context))
         XCTAssertEqual(meeting.pendingTaskSuggestions.count, 1)
         XCTAssertTrue(meeting.actionItems.isEmpty)
+    }
+}
+
+
+extension ActionItemModelTests {
+    func testOverlappingChunkSuggestionsShareReviewIdentity() throws {
+        let meeting = try makeOfflineMeeting()
+        var payload = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(meeting.offlineAnalysisData)) as? [String: Any])
+        var analyses = try XCTUnwrap(payload["analysis"] as? [[String: Any]])
+        var tasks = try XCTUnwrap(analyses[0]["tasks"] as? [[String: Any]])
+        var duplicate = tasks[0]
+        duplicate["title"] = "  SEND THE ESTIMATE  "
+        duplicate["category"] = "Other"
+        tasks.append(duplicate)
+        analyses[0]["tasks"] = tasks
+        payload["analysis"] = analyses
+        meeting.offlineAnalysisData = try JSONSerialization.data(withJSONObject: payload)
+        XCTAssertEqual(meeting.pendingTaskSuggestions.count, 1)
+        let suggestion = try XCTUnwrap(meeting.pendingTaskSuggestions.first)
+        try meeting.reviewTask(suggestion, title: suggestion.task.title, owner: "", category: "Follow-up",
+            priority: "", dueDate: nil, accept: false, context: context)
+        XCTAssertTrue(meeting.pendingTaskSuggestions.isEmpty)
     }
 }

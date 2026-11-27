@@ -13,24 +13,34 @@ import SwiftData
 
 @MainActor
 final class MeetingModelTests: XCTestCase {
+    func testAttendanceIncludesNamedPeopleAndExcludesUnidentifiedVoices() {
+        let meeting = Meeting(title: "Planning")
+        let voice = Speaker(name: "Speaker 1")
+        voice.recordingVoiceLabel = "Speaker 1"
+        let attendee = Speaker(name: "Pawan Joshi")
+        meeting.addParticipant(voice)
+        meeting.addParticipant(attendee)
+        XCTAssertEqual(meeting.namedAttendees.map(\.id), [attendee.id])
+
+        voice.name = "Sachin Ghai"
+        XCTAssertEqual(Set(meeting.namedAttendees.map(\.id)), Set([voice.id, attendee.id]))
+    }
+
     @MainActor
     func testStandaloneViewModelsRetainTheirStoresAfterInitialization() async throws {
         // Device crash reports trapped in fetchActionItems after its local container died.
         let actions = ActionItemsViewModel()
         let home = HomeViewModel()
         let setup = MeetingSetupViewModel()
-        let folders = FolderTagViewModel()
-        let audioImport = AudioImportViewModel()
         await Task.yield()
         actions.fetchActionItems()
         home.fetchMeetings()
-        folders.fetchFoldersAndTags()
         let meeting = Meeting(title: "Owned store remains usable")
         home.addMeeting(meeting)
         home.fetchMeetings()
         XCTAssertTrue(home.meetings.contains { $0.id == meeting.id })
         XCTAssertTrue(actions.allActionItems.isEmpty)
-        withExtendedLifetime((setup, audioImport)) {}
+        withExtendedLifetime(setup) {}
     }
     @MainActor
     func testProductionSchemaPersistsAcrossContainerReopen() throws {
@@ -603,5 +613,52 @@ final class MeetingModelTests: XCTestCase {
         let tag = Tag(name: "Sprint")
         meeting.tags.append(tag)
         XCTAssertEqual(meeting.tags.count, 1)
+    }
+}
+
+
+extension MeetingModelTests {
+    func testRecordingURLRecoversAfterAppContainerRelocation() throws {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let filename = "relocation-\(UUID().uuidString).m4a"
+        let current = documents.appendingPathComponent("Recordings").appendingPathComponent(filename)
+        try FileManager.default.createDirectory(at: current.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("synthetic audio-path fixture".utf8).write(to: current)
+        defer { try? FileManager.default.removeItem(at: current) }
+        let legacy = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/OLD-CONTAINER/Documents/Recordings/" + filename)
+        let meeting = Meeting(title: "Relocated", audioFileURL: legacy)
+        XCTAssertEqual(meeting.resolvedAudioFileURL?.resolvingSymlinksInPath(), current.resolvingSymlinksInPath())
+        meeting.setAudioFileURL(current)
+        XCTAssertEqual(meeting.audioRelativePath, "Recordings/" + filename)
+        meeting.setAudioFileURL(nil)
+        XCTAssertNil(meeting.resolvedAudioFileURL)
+        XCTAssertNil(meeting.audioRelativePath)
+    }
+
+    func testStaleRelativePathCannotSelectAnUnrelatedRecording() throws {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let existing = documents.appendingPathComponent("existing-\(UUID().uuidString).m4a")
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        try Data("unrelated synthetic fixture".utf8).write(to: existing)
+        defer { try? FileManager.default.removeItem(at: existing) }
+        let meeting = Meeting(title: "Missing", audioFileURL: existing)
+        let missing = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/OLD-CONTAINER/Documents/missing-\(UUID().uuidString).m4a")
+        meeting.audioFileURL = missing
+        XCTAssertEqual(meeting.resolvedAudioFileURL, missing)
+        XCTAssertNotEqual(meeting.resolvedAudioFileURL, existing)
+    }
+}
+
+
+extension MeetingModelTests {
+    func testSplitTranscriptOrderSurvivesRelationshipReordering() throws {
+        let meeting = Meeting(title: "Split transcript")
+        let first = TranscriptSegment(text: "पहला भाग", startTime: 10, endTime: 20, meeting: meeting, sequenceIndex: 0)
+        let second = TranscriptSegment(text: "second part", startTime: 10, endTime: 20, meeting: meeting, sequenceIndex: 1)
+        meeting.transcriptSegments = [second, first]
+        XCTAssertEqual(meeting.orderedTranscriptSegments.map(\.text), ["पहला भाग", "second part"])
+        let transcript = meeting.fullTranscriptText
+        XCTAssertLessThan(try XCTUnwrap(transcript.range(of: "पहला भाग")?.lowerBound),
+                          try XCTUnwrap(transcript.range(of: "second part")?.lowerBound))
     }
 }

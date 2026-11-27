@@ -7,6 +7,7 @@ public struct WaveformBarView: View {
     public var maxHeight: CGFloat = 72
     public var minHeight: CGFloat = 6
     public var barWidth: CGFloat = 4.5
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     public init(
         level: Float,
@@ -29,22 +30,10 @@ public struct WaveformBarView: View {
         RoundedRectangle(cornerRadius: barWidth / 2)
             .fill(barFill)
             .frame(width: barWidth, height: height)
-            .animation(.easeInOut(duration: 0.1), value: height)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.1), value: height)
     }
     
-    private var barFill: LinearGradient {
-        if isRecording {
-            return LinearGradient(
-                colors: [Theme.Colors.liveBlue, Theme.Colors.mintGreen],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        } else {
-            return LinearGradient(
-                colors: [Theme.Colors.cardBorder, Theme.Colors.cardBorder],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
+    private var barFill: Color {
+        isRecording ? Color("RecordingWaveform") : Color(uiColor: .separator)
     }
 }

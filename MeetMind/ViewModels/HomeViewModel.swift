@@ -2,8 +2,6 @@ import Foundation
 import SwiftData
 import Observation
 
-public typealias QuickFilter = MeetingFilter
-
 /// Status badge configuration model
 public struct MeetingBadgeConfig: Sendable, Equatable {
     public let title: String
@@ -32,6 +30,8 @@ public final class HomeViewModel {
     
     public var isShowingDeleteConfirmationAlert: Bool = false
     public var pendingMeetingToDelete: Meeting? = nil
+    public var deletionErrorMessage: String? = nil
+    public private(set) var loadingErrorMessage: String? = nil
     public var isShowingFolderPickerSheet: Bool = false
     public var selectedMeetingForFolder: Meeting? = nil
     
@@ -136,10 +136,18 @@ public final class HomeViewModel {
     }
     
     public func fetchMeetings() {
+        loadingErrorMessage = nil
         if let context = modelContext {
             let descriptor = FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
-            if let all = try? context.fetch(descriptor) {
-                partitionMeetings(all)
+            do {
+                let fetched = try context.fetch(descriptor)
+                // The store is the source of truth. Objects kept in memory from an earlier add
+                // would otherwise outlive a delete or discard and appear as ghost meetings.
+                inMemoryMeetings.removeAll()
+                partitionMeetings(fetched)
+                return
+            } catch {
+                loadingErrorMessage = "Your saved meetings could not be loaded. Try again; no meeting data was changed."
                 return
             }
         }
@@ -167,20 +175,24 @@ public final class HomeViewModel {
         }
         
         let now = Date()
+        let isUpcoming: (Meeting) -> Bool = { meeting in
+            let targetDate = meeting.scheduledStartTime ?? meeting.createdAt
+            return meeting.status == .scheduled && targetDate > now
+        }
         upcomingMeetings = combined
-            .filter { meeting in
-                let targetDate = meeting.scheduledStartTime ?? meeting.createdAt
-                return targetDate > now && meeting.status == .scheduled
-            }
+            .filter(isUpcoming)
             .sorted { ($0.scheduledStartTime ?? $0.createdAt) < ($1.scheduledStartTime ?? $1.createdAt) }
-        
-        recentMeetings = combined
-            .filter { meeting in
-                let targetDate = meeting.scheduledStartTime ?? meeting.createdAt
-                return targetDate <= now || meeting.status != .scheduled
-            }
-            .sorted { ($0.scheduledStartTime ?? $0.createdAt) > ($1.scheduledStartTime ?? $1.createdAt) }
-        
+
+        // Every meeting that is not an upcoming plan belongs in Recent, including ones that are
+        // still recording or processing. Order by when the meeting actually happened.
+        let keyed = combined
+            .filter { !isUpcoming($0) }
+            .map { (meeting: $0, date: Self.recencyDate(for: $0, now: now)) }
+        recentMeetings = keyed.sorted { left, right in
+            if left.date != right.date { return left.date > right.date }
+            if left.meeting.createdAt != right.meeting.createdAt { return left.meeting.createdAt > right.meeting.createdAt }
+            return left.meeting.id.uuidString < right.meeting.id.uuidString
+        }.map { $0.meeting }
         featuredUpcomingMeeting = upcomingMeetings.first
     }
     
@@ -190,11 +202,35 @@ public final class HomeViewModel {
                 context.insert(meeting)
                 try? context.save()
             }
-        }
-        if !inMemoryMeetings.contains(where: { $0.id == meeting.id }) {
+        } else if !inMemoryMeetings.contains(where: { $0.id == meeting.id }) {
             inMemoryMeetings.append(meeting)
         }
         fetchMeetings()
+    }
+
+    /// The moment Recent sorts and labels a meeting by. Scheduled plans use their planned time.
+    /// A meeting that was recorded (or is recording) uses when it really happened, so a scheduled
+    /// meeting that is started early or late is not pushed down by a stale planned time, and a
+    /// recording that is still in progress is the newest entry.
+    public static func recencyDate(for meeting: Meeting, now: Date = Date()) -> Date {
+        let planned = meeting.scheduledStartTime ?? meeting.createdAt
+        switch meeting.status {
+        case .scheduled:
+            return planned
+        case .recording:
+            return now
+        case .processing, .completed, .archived:
+            if let saved = savedRecordingDate(of: meeting), saved <= now { return saved }
+            return max(meeting.createdAt, min(planned, now))
+        }
+    }
+
+    /// When the app's own recording file for this meeting was last written.
+    private static func savedRecordingDate(of meeting: Meeting) -> Date? {
+        guard let url = meeting.resolvedAudioFileURL, url.isFileURL,
+              url.lastPathComponent.hasPrefix("recording_"),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        return attributes[.modificationDate] as? Date
     }
     
     public func setFilter(_ filter: MeetingFilter) {
@@ -241,34 +277,31 @@ public final class HomeViewModel {
     }
     
     public func confirmDelete() {
-        if let meeting = pendingMeetingToDelete {
-            deleteMeeting(meeting)
-            pendingMeetingToDelete = nil
-            isShowingDeleteConfirmationAlert = false
-        }
-    }
-    
-    public func confirmDeleteMeeting(_ meeting: Meeting) {
-        deleteMeeting(meeting)
+        guard let meeting = pendingMeetingToDelete else { return }
         pendingMeetingToDelete = nil
         isShowingDeleteConfirmationAlert = false
+        Task { @MainActor in
+            do { try await deleteMeeting(meeting) }
+            catch { deletionErrorMessage = error.localizedDescription }
+        }
     }
     
-    public func deleteMeeting(id: UUID) {
+    
+    public func deleteMeeting(id: UUID) async throws {
         if let meeting = meetings.first(where: { $0.id == id }) {
-            deleteMeeting(meeting)
+            try await deleteMeeting(meeting)
         }
     }
     
-    public func deleteMeeting(_ meeting: Meeting) {
+    public func deleteMeeting(_ meeting: Meeting) async throws {
+        let id = meeting.id
         if let context = modelContext {
-            context.delete(meeting)
-            try? context.save()
+            _ = try await DeletionCoordinator(modelContext: context).deleteMeeting(meeting)
         }
-        inMemoryMeetings.removeAll { $0.id == meeting.id }
-        upcomingMeetings.removeAll { $0.id == meeting.id }
-        recentMeetings.removeAll { $0.id == meeting.id }
-        if featuredUpcomingMeeting?.id == meeting.id {
+        inMemoryMeetings.removeAll { $0.id == id }
+        upcomingMeetings.removeAll { $0.id == id }
+        recentMeetings.removeAll { $0.id == id }
+        if featuredUpcomingMeeting?.id == id {
             featuredUpcomingMeeting = upcomingMeetings.first
         }
         fetchMeetings()
@@ -324,44 +357,8 @@ public final class HomeViewModel {
         }
     }
     
-    public func deleteFolder(_ folder: Folder) {
-        for m in meetings where m.folder?.id == folder.id {
-            m.folder = nil
-        }
-        folder.meetings.removeAll()
-        if let context = modelContext {
-            context.delete(folder)
-            try? context.save()
-        }
-        fetchMeetings()
-    }
     
-    public func filterMeetings(dateRange: MeetingFilter, hasActionItems: Bool) -> [Meeting] {
-        meetings.filter { meeting in
-            let matchesDate = dateRange.matches(meeting: meeting)
-            let matchesActionItems = hasActionItems ? !meeting.actionItems.isEmpty : true
-            return matchesDate && matchesActionItems
-        }
-    }
     
-    public func countdownText(for meeting: Meeting, referenceDate: Date = Date()) -> String {
-        guard let startTime = meeting.scheduledStartTime else { return "" }
-        let diff = startTime.timeIntervalSince(referenceDate)
-        if diff <= 0 {
-            return "Happening now"
-        }
-        let minutes = Int(round(diff / 60.0))
-        if minutes < 60 {
-            return "Starts in \(minutes) mins"
-        }
-        let hours = minutes / 60
-        let remainingMins = minutes % 60
-        if remainingMins == 0 {
-            return hours == 1 ? "Starts in 1 hour" : "Starts in \(hours) hours"
-        } else {
-            return "Starts in \(hours)h \(remainingMins)m"
-        }
-    }
     
     public func transitionStatus(for meeting: Meeting, to nextStatus: MeetingStatus) {
         meeting.status = nextStatus

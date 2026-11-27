@@ -47,7 +47,6 @@ def main():
     entries.append(dict(id="diarization", name="FluidAudio offline VBx", revision=revision, files=files))
     for identifier, repo, filename in [
         ("qwen-1.7b", "bartowski/Qwen_Qwen3-1.7B-GGUF", "Qwen_Qwen3-1.7B-Q4_K_M.gguf"),
-        ("qwen-4b", "Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf"),
     ]:
         revision, files = snapshot(repo, lambda p: p == filename)
         files[0]["path"] = "model.gguf"

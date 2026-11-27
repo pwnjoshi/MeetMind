@@ -9,6 +9,7 @@ public final class Speaker: Identifiable {
     public var role: String?
     public var avatarColorHex: String
     public var voiceSampleURL: URL?
+    public var recordingVoiceLabel: String?
     
     public var colorHex: String {
         get { avatarColorHex }
@@ -78,4 +79,28 @@ public func == (lhs: Speaker?, rhs: String?) -> Bool {
 
 public func == (lhs: String?, rhs: Speaker?) -> Bool {
     return lhs == rhs?.name
+}
+
+// MARK: - Display helpers
+
+extension Speaker {
+    /// Shown only when a transcript line has no speaker at all.
+    public static let unknownDisplayName = "Unknown Speaker"
+
+    /// The one name every screen, export and Vidur source row shows for this speaker.
+    public var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? Speaker.unknownDisplayName : trimmed
+    }
+
+    /// True for a detected voice ("Speaker 2") that nobody has named yet.
+    public var isUnnamedVoice: Bool {
+        guard let label = recordingVoiceLabel else { return false }
+        return name == label
+    }
+
+    /// Name for an optional speaker. "Unknown Speaker" only when there is no speaker.
+    public static func displayName(of speaker: Speaker?) -> String {
+        speaker?.displayName ?? unknownDisplayName
+    }
 }

@@ -9,6 +9,7 @@ public final class TranscriptSegment: Identifiable {
     public var endTime: TimeInterval
     public var confidence: Float
     public var isEdited: Bool
+    public var sequenceIndex: Int?
     
     // Relationships
     public var meeting: Meeting?
@@ -24,7 +25,8 @@ public final class TranscriptSegment: Identifiable {
         confidence: Float = 1.0,
         isEdited: Bool = false,
         speaker: Speaker? = nil,
-        meeting: Meeting? = nil
+        meeting: Meeting? = nil,
+        sequenceIndex: Int? = nil
     ) {
         self.id = id
         self.text = text
@@ -32,6 +34,7 @@ public final class TranscriptSegment: Identifiable {
         self.endTime = endTime
         self.confidence = confidence
         self.isEdited = isEdited
+        self.sequenceIndex = sequenceIndex
         self.speaker = speaker
         self.meeting = meeting
     }

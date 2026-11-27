@@ -1,79 +1,61 @@
 import SwiftUI
 
-/// Single diarized transcript segment row with speaker avatar, timestamp, active highlighting, and seek action
+/// One spoken line inside a speaker turn. The line being played is highlighted, a tap seeks and plays
+/// from it, and the context menu edits the text or reassigns the speaker.
 public struct TranscriptSegmentRowView: View {
     public let segment: TranscriptSegment
     public let isActive: Bool
+    public let query: String
     public let onSeek: () -> Void
     public let onEdit: () -> Void
     public let onReassignSpeaker: () -> Void
-    
+
     public init(
         segment: TranscriptSegment,
         isActive: Bool,
+        query: String = "",
         onSeek: @escaping () -> Void,
         onEdit: @escaping () -> Void,
         onReassignSpeaker: @escaping () -> Void
     ) {
         self.segment = segment
         self.isActive = isActive
+        self.query = query
         self.onSeek = onSeek
         self.onEdit = onEdit
         self.onReassignSpeaker = onReassignSpeaker
     }
-    
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(spacing: Spacing.xs) {
-                Circle()
-                    .fill(Color(hex: segment.speaker?.colorHex ?? "#3B82F6"))
-                    .frame(width: 20, height: 20)
-                    .overlay(
-                        Text(String(segment.speaker?.name.prefix(1) ?? "S"))
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
-                    )
-                
-                Button(action: onReassignSpeaker) {
-                    Text(segment.speaker?.name ?? "Unknown Speaker")
-                        .font(Typography.caption)
-                        .fontWeight(.bold)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                }
-                
-                Button(action: onSeek) {
-                    Text(segment.formattedStartTime)
-                        .font(Typography.timecode)
-                        .foregroundStyle(Theme.Colors.liveBlue)
-                        .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 1)
-                        .background(Theme.Colors.liveBlueLight)
-                        .clipShape(Capsule())
-                }
-                
-                Spacer()
-                
-                Button(action: onEdit) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                }
-            }
-            
-            Text(segment.text)
-                .font(Typography.body)
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .padding(Spacing.xs)
-                .background(isActive ? Theme.Colors.liveBlueLight.opacity(0.8) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.sm))
-                .onTapGesture { onSeek() }
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(segment.formattedStartTime)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(isActive ? Theme.Colors.manentAccent : Color.secondary)
+                .frame(width: 42, alignment: .leading)
+            Text(TranscriptSearch.highlighted(segment.text, query: query))
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Spacing.sm)
-        .background(isActive ? Theme.Colors.cardBackground : Theme.Colors.cardBackground.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: Spacing.Radius.md))
-        .overlay(
-            RoundedRectangle(cornerRadius: Spacing.Radius.md)
-                .stroke(isActive ? Theme.Colors.liveBlue : Color.clear, lineWidth: 1.5)
-        )
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(highlightShape)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSeek)
+        .contextMenu {
+            Button("Play from Here", systemImage: "play.fill", action: onSeek)
+            Button("Edit Text", systemImage: "pencil", action: onEdit)
+            Button("Reassign Speaker", systemImage: "person.crop.circle.badge.questionmark", action: onReassignSpeaker)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Plays the recording from this line")
+        .accessibilityValue(isActive ? "Playing" : "")
+    }
+
+    private var highlightShape: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(isActive ? Theme.Colors.manentAccent.opacity(0.14) : Color.clear)
     }
 }

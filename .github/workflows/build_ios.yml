@@ -18,14 +18,22 @@ jobs:
   build:
     name: Build MeetMind iOS IPA
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
 
+      - name: Verify source and Xcode project integrity
+        run: |
+          python3 -X utf8 Scripts/verify_project.py
+          python3 Scripts/register_new_sources.py --check
+          git diff --check
+
       - name: Test offline qualification scorer (synthetic data only)
-        run: python3 -m unittest discover -s Scripts -p test_evaluate_offline.py
+        run: |
+          python3 -m unittest discover -s Scripts -p test_evaluate_offline.py
+          python3 -m unittest discover -s Scripts -p 'test_eval_*.py'
 
       - name: Identify native toolchain
         id: native-toolchain
@@ -64,25 +72,54 @@ jobs:
 
       - name: Build MeetMind iOS App
         run: |
-          xcodebuild build \
-            -project MeetMind.xcodeproj \
-            -scheme MeetMind \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath ./build/DerivedData \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_STYLE="Manual"
+          mkdir -p build
+          build_app() {
+            set -o pipefail
+            xcodebuild build \
+              -project MeetMind.xcodeproj \
+              -scheme MeetMind \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath ./build/DerivedData \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGN_STYLE="Manual" "$@" 2>&1 | tee build/xcodebuild-app.log
+          }
+          dump_crashes() {
+            for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | grep -Ei 'SWBBuildService|XCBBuildService|swift' | head -3); do
+              echo "::group::crash report $f"; head -c 60000 "$f"; echo; echo "::endgroup::"
+            done
+          }
+          if build_app; then exit 0; fi
+          dump_crashes
+          if grep -q "build system has crashed" build/xcodebuild-app.log; then
+            echo "::group::standalone driver planning for MeetMind"
+            DRIVER_CMD=$(grep -m1 -E 'builtin-SwiftDriver -- .*-module-name MeetMind ' build/xcodebuild-app.log | sed 's/.*builtin-SwiftDriver -- //')
+            echo "${DRIVER_CMD:0:3000}"
+            (eval "$DRIVER_CMD -driver-print-jobs" 2>&1 | tail -c 20000) || true
+            echo "::endgroup::"
+            echo "Build system crashed; retrying once with explicit modules disabled"
+            rm -rf build/DerivedData/Build/Intermediates.noindex/MeetMind.build \
+                   build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
+            if build_app SWIFT_ENABLE_EXPLICIT_MODULES=NO; then exit 0; fi
+            dump_crashes
+          fi
+          exit 1
 
       - name: Validate compiled app privacy keys
-        run: python3 Scripts/validate_ipa.py build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
+        run: |
+          APP_PLIST=build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app/Info.plist
+          SOURCE_COMMIT=$(git rev-parse HEAD)
+          /usr/libexec/PlistBuddy -c "Set :ManentBuildCommit $SOURCE_COMMIT" "$APP_PLIST" 2>/dev/null ||
+            /usr/libexec/PlistBuddy -c "Add :ManentBuildCommit string $SOURCE_COMMIT" "$APP_PLIST"
+          python3 Scripts/validate_ipa.py "$APP_PLIST"
 
       - name: Package into IPA
         run: |
           mkdir -p ./build/Payload
           APP_PATH=./build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app
-          if [ -z "$APP_PATH" ]; then
+          if [ ! -d "$APP_PATH" ]; then
             echo "Error: MeetMind.app was not built!"
             find ./build/DerivedData -maxdepth 5
             exit 1
@@ -93,23 +130,8 @@ jobs:
           zip -r MeetMind.ipa Payload
           ls -lh MeetMind.ipa
 
-      - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: MeetMind-iOS-Unsigned-Requires-Resigning
-          path: ./build/MeetMind.ipa
-          retention-days: 14
-
-      - name: Upload release crash symbols
-        uses: actions/upload-artifact@v6
-        with:
-          name: MeetMind-Release-Symbols
-          path: build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app.dSYM
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Run Swift XCTest suite
-        timeout-minutes: 12
+        timeout-minutes: 22
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
           echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
@@ -126,8 +148,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Smoke test onboarding and repeated main-tab launches
+        timeout-minutes: 8
         if: ${{ !cancelled() && env.DEVICE_ID != '' }}
         run: bash Scripts/smoke_launch.sh "$DEVICE_ID"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: MeetMind-iOS-Unsigned-Requires-Resigning
+          path: ./build/MeetMind.ipa
+          retention-days: 14
+
+      - name: Upload release crash symbols
+        uses: actions/upload-artifact@v6
+        with:
+          name: MeetMind-Release-Symbols
+          path: build/DerivedData/Build/Products/Release-iphoneos/MeetMind.app.dSYM
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload simulator screenshots and launch diagnostics
         if: always()

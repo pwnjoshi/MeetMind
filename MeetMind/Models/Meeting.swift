@@ -82,10 +82,13 @@ extension Meeting {
     public var pendingTaskSuggestions: [MeetingTaskSuggestion] {
         guard let result = offlineAnalysis else { return [] }
         var seen = reviewedTaskIDs
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
         return result.analysis.flatMap(\.tasks).compactMap { task in
-            guard let data = try? encoder.encode(task) else { return nil }
+            // Chunk overlap may produce the same task with a different quote.
+            // Review identity is independent of its category/priority/evidence.
+            let identity = [task.title, task.owner ?? ""].map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }.joined(separator: "\u{0}")
+            let data = Data(identity.utf8)
             let id = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             guard seen.insert(id).inserted,
                   !actionItems.contains(where: { $0.sourceSuggestionID == id }) else { return nil }
@@ -100,6 +103,10 @@ extension Meeting {
         guard pendingTaskSuggestions.contains(where: { $0.id == suggestion.id }) else { return }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !accept || !trimmed.isEmpty else { throw MeetingError.emptyTitle }
+        guard !accept || (["Follow-up", "Research", "Create/Update", "Review/Approve", "Coordination", "Other"].contains(category)
+            && (priority.isEmpty || ActionPriority(rawValue: priority) != nil)) else {
+            throw OfflineError.unavailable("Choose a valid category and priority before confirming the task.")
+        }
         let previousIDs = reviewedTaskIDsData
         var inserted: ActionItem?
         var newSpeaker: Speaker?
@@ -107,7 +114,8 @@ extension Meeting {
             let name = owner.trimmingCharacters(in: .whitespacesAndNewlines)
             let speaker: Speaker?
             if name.isEmpty { speaker = nil }
-            else if let existing = participants.first(where: { $0.name == name }) { speaker = existing }
+            else if let existing = participants.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { speaker = existing }
+            else if let known = MeetingPeopleEditor.knownSpeaker(named: name, context: context) { speaker = known }
             else {
                 let created = Speaker(name: name)
                 context.insert(created)
@@ -216,13 +224,20 @@ public final class Meeting: Identifiable {
     public var duration: TimeInterval
     public var statusRaw: String
     public var audioFileURL: URL?
+    public var audioRelativePath: String?
     public var audioQualityRaw: String
     public var isFavorite: Bool
     public var templateName: String?
+    /// Stable local series identity, independent of display titles and templates.
+    public var seriesID: UUID?
+    public var seriesName: String?
     /// Additive optional storage preserves existing installations during migration.
     public var offlineAnalysisData: Data?
     public var reviewedTaskIDsData: Data?
     public var analysisState: String?
+    public var minutesNeedFinalization: Bool?
+    public var agendaText: String?
+    public var absentParticipantIDs: [UUID]?
     public var analysisTimezone: String?
     
     // Relationships
@@ -232,6 +247,10 @@ public final class Meeting: Identifiable {
     @Relationship(deleteRule: .nullify, inverse: \Tag.meetings)
     public var tags: [Tag]
     
+    /// Finalized live recognition retained as comparison evidence for this recording.
+    /// The saved transcript and its edits are stored separately.
+    public var liveCaptionEvidenceData: Data? = nil
+
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     public var transcriptSegments: [TranscriptSegment]
     
@@ -288,6 +307,7 @@ public final class Meeting: Identifiable {
         self.duration = duration
         self.statusRaw = status.rawValue
         self.audioFileURL = audioFileURL
+        self.audioRelativePath = Self.relativeAudioPath(for: audioFileURL)
         self.audioQualityRaw = audioQuality.rawValue
         self.isFavorite = isFavorite
         self.templateName = templateName
@@ -341,12 +361,26 @@ public final class Meeting: Identifiable {
     }
     
     public var figmaBadgeText: String {
+        if status == .processing {
+            switch analysisState {
+            case "speakerReview": return "Needs speaker review"
+            case "transcription": return "Creating transcript"
+            case "speakers": return "Identifying speakers"
+            case "analysis": return "Generating minutes"
+            case "paused": return "Processing paused"
+            case "failed": return "Processing needs attention"
+            default: return "Processing"
+            }
+        }
+        if status == .completed {
+            if minutesNeedFinalization == true { return "Minutes ready for review" }
+            if summary == nil, audioFileURL != nil { return "Minutes pending" }
+            return "Finalized"
+        }
         if let templateName = templateName, !templateName.isEmpty {
             return templateName
         }
-        if status == .completed {
-            return "Finalized"
-        } else if status == .scheduled {
+        if status == .scheduled {
             return "Scheduled"
         } else {
             return status.displayName
@@ -362,13 +396,23 @@ public final class Meeting: Identifiable {
     }
     
     public var fullTranscriptText: String {
-        transcriptSegments
-            .sorted { $0.startTime < $1.startTime }
+        orderedTranscriptSegments
             .map { segment in
-                let speakerName = segment.speaker?.name ?? "Unknown"
+                let speakerName = Speaker.displayName(of: segment.speaker)
                 return "[\(segment.formattedStartTime)] \(speakerName): \(segment.text)"
             }
             .joined(separator: "\n")
+    }
+
+    public var orderedTranscriptSegments: [TranscriptSegment] {
+        transcriptSegments.enumerated().sorted { left, right in
+            if left.element.startTime != right.element.startTime {
+                return left.element.startTime < right.element.startTime
+            }
+            let lhs = left.element.sequenceIndex ?? left.offset
+            let rhs = right.element.sequenceIndex ?? right.offset
+            return lhs == rhs ? left.offset < right.offset : lhs < rhs
+        }.map(\.element)
     }
     
     public var pendingActionItemsCount: Int {
@@ -382,7 +426,49 @@ public final class Meeting: Identifiable {
     public var hasAudio: Bool {
         audioFileURL != nil
     }
+
+    /// Keep the original URL for compatibility, but locate saved recordings
+    /// relative to today's sandbox after an app update relocates its container.
+    public var resolvedAudioFileURL: URL? {
+        guard let stored = audioFileURL, stored.isFileURL else { return nil }
+        if FileManager.default.fileExists(atPath: stored.path) { return stored }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        func relocated(_ relative: String) -> URL? {
+            guard !relative.hasPrefix("/"), !relative.split(separator: "/").contains("..") else { return nil }
+            let root = documents.standardizedFileURL.resolvingSymlinksInPath()
+            let candidate = root.appendingPathComponent(relative).standardizedFileURL.resolvingSymlinksInPath()
+            guard candidate.path.hasPrefix(root.path + "/"),
+                  FileManager.default.fileExists(atPath: candidate.path) else { return nil }
+            return candidate
+        }
+        if let relative = audioRelativePath, stored.path.hasSuffix("/" + relative),
+           let current = relocated(relative) { return current }
+        // Recover legacy iOS app-container URLs, never unrelated provider URLs.
+        if stored.path.contains("/Containers/Data/Application/"),
+           let marker = stored.path.range(of: "/Documents/", options: .backwards),
+           let current = relocated(String(stored.path[marker.upperBound...])) { return current }
+        // The caller/AVFoundation still reports genuinely missing files normally.
+        return stored
+    }
+
+    public func setAudioFileURL(_ url: URL?) {
+        audioFileURL = url
+        audioRelativePath = Self.relativeAudioPath(for: url)
+    }
+
+    private static func relativeAudioPath(for url: URL?) -> String? {
+        guard let url, url.isFileURL else { return nil }
+        let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        guard path.hasPrefix(root) else { return nil }
+        return String(path.dropFirst(root.count))
+    }
     
+    public var namedAttendees: [Speaker] {
+        participants.filter { $0.name != $0.recordingVoiceLabel }
+    }
+
     public func addParticipant(_ speaker: Speaker) {
         if !participants.contains(where: { $0.id == speaker.id }) {
             participants.append(speaker)

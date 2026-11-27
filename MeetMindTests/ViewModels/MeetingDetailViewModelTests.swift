@@ -8,6 +8,7 @@
 import XCTest
 import Foundation
 import SwiftData
+import OfflineEngineKit
 @testable import MeetMind
 
 /// Comprehensive test suite covering Meeting Detail Cockpit & Tabs, Executive Summary View,
@@ -170,7 +171,8 @@ final class MeetingDetailViewModelTests: XCTestCase {
     
     /// Tier 1: Feature 40 - Validates inline title rename updates meeting record and persistence.
     func test_tier1_feature40_inlineTitleRename() throws {
-        sut.renameMeeting(newTitle: "Updated Q4 Architecture Plan")
+        try sut.renameMeeting(newTitle: "  Updated Q4 Architecture Plan  ")
+        try sut.renameMeeting(newTitle: "  ")
         
         XCTAssertEqual(sut.headerTitle, "Updated Q4 Architecture Plan")
         let updated = fetchMeeting(id: meetingId)
@@ -295,7 +297,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
         let segmentToEdit = sut.transcriptSegments[0]
         sut.beginEditingTranscript(segment: segmentToEdit)
         
-        sut.saveTranscriptEdit(newText: "Welcome to the Q4 architecture review kickoff.")
+        try sut.saveTranscriptEdit(newText: "Welcome to the Q4 architecture review kickoff.")
         
         XCTAssertFalse(sut.isEditingTranscript)
         XCTAssertEqual(sut.transcriptSegments[0].text, "Welcome to the Q4 architecture review kickoff.")
@@ -305,7 +307,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
     func test_tier1_feature44_editedTranscriptSegmentDisplaysEditedBadge() throws {
         let segment = sut.transcriptSegments[1]
         sut.beginEditingTranscript(segment: segment)
-        sut.saveTranscriptEdit(newText: "Corrected speech text.")
+        try sut.saveTranscriptEdit(newText: "Corrected speech text.")
         
         XCTAssertTrue(sut.transcriptSegments[1].isEdited)
     }
@@ -326,6 +328,8 @@ final class MeetingDetailViewModelTests: XCTestCase {
         
         XCTAssertEqual(sut.transcriptSegments[0].speakerName, "Sarah Connor")
         XCTAssertEqual(sut.transcriptSegments[2].speakerName, "Sarah Connor")
+        XCTAssertTrue(sut.transcriptSegments[0].isEdited)
+        XCTAssertTrue(sut.transcriptSegments[2].isEdited)
         // Speaker 2 should be unaffected
         XCTAssertEqual(sut.transcriptSegments[1].speakerName, "Speaker 2")
     }
@@ -440,18 +444,18 @@ final class MeetingDetailViewModelTests: XCTestCase {
     }
     
     /// Tier 1: Feature 52 - Validates submitting query returns grounded response citing timecodes.
-    func test_tier1_feature52_askAIQueryReturnsGroundedResponseWithCitations() throws {
-        let expectation = expectation(description: "Ask AI Response")
-        
-        sut.submitAIQuery("What was decided about offline summarization?") { response in
-            XCTAssertTrue(response.text.contains("on-device"))
-            XCTAssertFalse(response.citations.isEmpty)
-            expectation.fulfill()
-        }
-        
-        waitForExpectations(timeout: 2.0)
+    func test_tier1_feature52_askAIQueryReturnsGroundedResponseWithCitations() async throws {
+        let model = MeetingDetailViewModel(meeting: initialMeeting, questionAnswerer: { _, turns in
+            let source = try XCTUnwrap(turns.first { $0.start == 15 })
+            return [SupportedPoint(text: "Use variable speed playback with pitch correction.",
+                evidence: [SourceEvidence(turnID: source.id, quote: source.text)])]
+        })
+        let response = try await model.askAI(prompt: "What playback behavior was agreed?")
+        XCTAssertTrue(response.text.contains("pitch correction"))
+        XCTAssertEqual(response.citations.first?.timestamp, 15)
+        XCTAssertEqual(response.citations.first?.snippet, initialMeeting.transcriptSegments.first { $0.startTime == 15 }?.text)
     }
-    
+
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 40: Detail Tabs & Persistence)
     
     /// Tier 2: Feature 40 - Validates switching between cockpit tabs does not halt active audio playback.
@@ -584,7 +588,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
         let segment = sut.transcriptSegments[0]
         sut.beginEditingTranscript(segment: segment)
         
-        let didSave = sut.saveTranscriptEdit(newText: "   \t \n ")
+        let didSave = try sut.saveTranscriptEdit(newText: "   \t \n ")
         XCTAssertFalse(didSave)
         XCTAssertEqual(sut.transcriptSegments[0].text, "Welcome to the architecture review.")
     }
@@ -593,7 +597,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
     func test_tier2_feature44_inlineEditPreservesOriginalTimestamp() throws {
         let segment = sut.transcriptSegments[1] // startTime = 5.0
         sut.beginEditingTranscript(segment: segment)
-        sut.saveTranscriptEdit(newText: "Corrected segment text.")
+        try sut.saveTranscriptEdit(newText: "Corrected segment text.")
         
         XCTAssertEqual(sut.transcriptSegments[1].startTime, 5.0)
         XCTAssertEqual(sut.transcriptSegments[1].endTime, 15.0)
@@ -603,7 +607,7 @@ final class MeetingDetailViewModelTests: XCTestCase {
     func test_tier2_feature44_inlineEditUndoActionRevertsToOriginal() throws {
         let segment = sut.transcriptSegments[0]
         sut.beginEditingTranscript(segment: segment)
-        sut.saveTranscriptEdit(newText: "Temporary edit")
+        try sut.saveTranscriptEdit(newText: "Temporary edit")
         
         sut.undoTranscriptEdit(segmentId: segment.id)
         XCTAssertEqual(sut.transcriptSegments[0].text, "Welcome to the architecture review.")
@@ -745,17 +749,23 @@ final class MeetingDetailViewModelTests: XCTestCase {
     // MARK: - Tier 2: Boundary & Corner Cases (Feature 52: Off-topic AI Queries & Citations)
     
     /// Tier 2: Feature 52 - Validates off-topic question returns grounded "Not discussed" fallback.
-    func test_tier2_feature52_offTopicQueryReturnsNotDiscussedFallback() throws {
-        let expectation = expectation(description: "Off topic response")
-        
-        sut.submitAIQuery("What was the weather like on Mars?") { response in
-            XCTAssertTrue(response.text.contains("Not discussed") || response.text.contains("not found in meeting"))
-            expectation.fulfill()
-        }
-        
-        waitForExpectations(timeout: 2.0)
+    func test_tier2_feature52_offTopicQueryReturnsNotDiscussedFallback() async throws {
+        let model = MeetingDetailViewModel(meeting: initialMeeting, questionAnswerer: { _, _ in [] })
+        let response = try await model.askAI(prompt: "What was the weather like on Mars?")
+        XCTAssertEqual(response.text, "Not discussed in this meeting.")
+        XCTAssertTrue(response.citations.isEmpty)
     }
-    
+
+    func testQuestionRejectsInventedEvidenceInsteadOfFabricatingCitation() async throws {
+        let model = MeetingDetailViewModel(meeting: initialMeeting, questionAnswerer: { _, turns in
+            [SupportedPoint(text: "Invented commitment", evidence: [SourceEvidence(turnID: turns[0].id, quote: "John promised a security audit Friday")])]
+        })
+        do {
+            _ = try await model.askAI(prompt: "What did John promise?")
+            XCTFail("Invented evidence must be rejected")
+        } catch { XCTAssertTrue(model.aiChatHistory.isEmpty) }
+    }
+
     /// Tier 2: Feature 52 - Validates tapping citation timecode seeks player directly.
     func test_tier2_feature52_tapCitationTimecodeSeeksAudioPlayer() throws {
         let citation = AICitation(timestamp: 30.0, segmentText: "Action items sync")
@@ -769,5 +779,28 @@ final class MeetingDetailViewModelTests: XCTestCase {
         XCTAssertFalse(sut.canSubmitAIQuery(""))
         XCTAssertFalse(sut.canSubmitAIQuery("   \t  "))
         XCTAssertTrue(sut.canSubmitAIQuery("What was decided?"))
+    }
+}
+
+
+extension MeetingDetailViewModelTests {
+    func testRemindersSyncUsesOnlySavedTasksAndKeepsUnreviewedSuggestionsOut() async throws {
+        let reminders = MockRemindersSyncService()
+        let meeting = Meeting(title: "Review boundary", status: .completed)
+        context.insert(meeting)
+        meeting.addActionItem(ActionItem(title: "Confirmed task", meeting: meeting))
+        let fixture = #"""
+        {"sourceSignature":"test","stage":"completed","turns":[{"id":"t1","text":"Please send an estimate.","start":0,"end":2}],"speakers":[],"analyzedChunks":1,"analysis":[{"discussion":[],"decisions":[],"tasks":[{"title":"Send an estimate","category":"Follow-up","evidence":[{"turnID":"t1","quote":"Please send an estimate."}]}]}]}
+        """#
+        meeting.offlineAnalysisData = Data(fixture.utf8)
+        try context.save()
+        XCTAssertEqual(meeting.pendingTaskSuggestions.count, 1)
+        let model = MeetingDetailViewModel(meeting: meeting, modelContext: context, remindersService: reminders)
+        try await model.syncReviewedTasksToReminders()
+        XCTAssertEqual(reminders.dispatchedRemindersCount, 1)
+        XCTAssertEqual(meeting.actionItems.count, 1)
+        XCTAssertNotNil(meeting.actionItems.first?.reminderIdentifier)
+        XCTAssertEqual(meeting.pendingTaskSuggestions.count, 1)
+        XCTAssertFalse(model.isSyncingReminders)
     }
 }

@@ -7,7 +7,29 @@ public enum RecordingState: String, Codable, Sendable, Equatable {
     case preparing
     case recording
     case paused
+    case interrupted
+    case stopping
     case stopped
+    case stoppedUnsaved
+    case saveFailed
+    case saved
+}
+
+public enum RecordingInterruptionCode: String, Codable, Sendable, Equatable {
+    case audioSession
+    case mediaServicesReset
+}
+
+public struct RecordingInterruptionEvent: Sendable, Equatable {
+    public let code: RecordingInterruptionCode
+    public let canResume: Bool
+    public let hasEnded: Bool
+
+    public init(code: RecordingInterruptionCode, canResume: Bool, hasEnded: Bool = false) {
+        self.code = code
+        self.canResume = canResume
+        self.hasEnded = hasEnded
+    }
 }
 
 /// Errors thrown by the audio recording service
@@ -17,6 +39,7 @@ public enum AudioRecordingError: LocalizedError, Sendable, Equatable {
     case engineStartFailed(String)
     case inputNodeUnavailable
     case fileCreationFailed(String)
+    case recoveryRequired
     case invalidState(String)
     case recordingFailed(String)
     
@@ -32,6 +55,8 @@ public enum AudioRecordingError: LocalizedError, Sendable, Equatable {
             return "Audio input node is not available on this device."
         case .fileCreationFailed(let reason):
             return "Could not create destination audio file: \(reason)"
+        case .recoveryRequired:
+            return "An earlier recording is still safe on this iPhone and must be recovered before recording again."
         case .invalidState(let reason):
             return "Invalid recording state operation: \(reason)"
         case .recordingFailed(let reason):
@@ -51,6 +76,7 @@ public protocol AudioRecordingServiceProtocol: AnyObject, Sendable {
     /// Real-time 60Hz stream of normalized linear audio power levels (0.0 to 1.0)
     var audioMeterStream: AsyncStream<Float> { get }
     var audioBufferStream: AsyncStream<AVAudioPCMBuffer> { get }
+    var interruptionStream: AsyncStream<RecordingInterruptionEvent> { get }
     
     /// Starts recording and writing audio to the specified destination URL
     func startRecording(destinationURL: URL) async throws
@@ -70,6 +96,10 @@ public protocol AudioRecordingServiceProtocol: AnyObject, Sendable {
 
 public extension AudioRecordingServiceProtocol {
     var audioBufferStream: AsyncStream<AVAudioPCMBuffer> {
+        AsyncStream { $0.finish() }
+    }
+
+    var interruptionStream: AsyncStream<RecordingInterruptionEvent> {
         AsyncStream { $0.finish() }
     }
 }

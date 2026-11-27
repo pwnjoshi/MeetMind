@@ -36,7 +36,11 @@ final class LiveRecordingViewModelTests: XCTestCase {
         mockAudioService = MockAudioRecordingService()
         mockAudioService.automaticallyAdvancesDuration = false
         mockSpeechService = MockSpeechTranscriptionService()
-        testAudioURL = URL(fileURLWithPath: "/tmp/live_test_audio_\(UUID().uuidString).m4a")
+        // The recording-recovery journal only accepts destinations under Documents, or under the
+        // process's temporary directory as a test seam. On the simulator that is the app's sandbox
+        // tmp, not "/tmp", so a hard-coded "/tmp" path is rejected as an unsafe location.
+        testAudioURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("live_test_audio_\(UUID().uuidString).m4a")
         
         initialMeeting = Meeting(
             title: "Live Standup",
@@ -188,6 +192,30 @@ final class LiveRecordingViewModelTests: XCTestCase {
         sut.simulateSpeechChunk(text: "Good morning everyone. Let's begin the review.", isFinal: true)
         XCTAssertEqual(sut.finalTranscriptSegments.count, 1)
         XCTAssertEqual(sut.finalTranscriptSegments.first?.text, "Good morning everyone. Let's begin the review.")
+    }
+
+    /// A partial recognizer hypothesis must remain preview-only; only a unique
+    /// final result can enter the provisional live transcript.
+    func test_tier1_feature31_receivedFinalChunkCommitsOnce() async throws {
+        sut.startSession()
+        try await sut.waitUntilRecordingStarted()
+
+        let partial = LiveTranscriptChunk(text: "Budget approval is", isFinal: false)
+        sut.receiveLiveTranscriptChunk(partial)
+        XCTAssertEqual(sut.interimTranscriptText, "Budget approval is")
+        XCTAssertTrue(sut.finalTranscriptSegments.isEmpty)
+
+        let final = LiveTranscriptChunk(
+            text: "Budget approval is pending.",
+            isFinal: true,
+            segments: [LiveTranscriptSegment(text: "Budget approval is pending.", startTime: 2, duration: 1, confidence: 0.92)]
+        )
+        sut.receiveLiveTranscriptChunk(final)
+        sut.receiveLiveTranscriptChunk(final)
+
+        XCTAssertEqual(sut.finalTranscriptSegments.count, 1)
+        XCTAssertEqual(sut.finalTranscriptSegments.first?.text, "Budget approval is pending.")
+        XCTAssertEqual(sut.interimTranscriptText, "")
     }
     
     /// Tier 1: Feature 31 - Validates interim results display in italicized pending state.
@@ -432,7 +460,7 @@ final class LiveRecordingViewModelTests: XCTestCase {
 
         let outputURL = try await sut.stopSession()
         
-        XCTAssertEqual(sut.recordingState, .stopped)
+        XCTAssertEqual(sut.recordingState, .saved)
         XCTAssertEqual(mockAudioService.state, .stopped)
         XCTAssertEqual(outputURL, testAudioURL)
     }
@@ -483,8 +511,9 @@ final class LiveRecordingViewModelTests: XCTestCase {
         
         sut.handleAudioSessionInterruption(began: true)
         
-        XCTAssertEqual(sut.recordingState, .paused)
+        XCTAssertEqual(sut.recordingState, .interrupted)
         XCTAssertTrue(sut.wasInterruptedBySystem)
+        XCTAssertTrue(sut.isInterrupted)
     }
     
     /// Tier 2: Feature 29 - Validates bluetooth route disconnection falls back seamlessly to built-in mic.
@@ -743,7 +772,7 @@ final class LiveRecordingViewModelTests: XCTestCase {
         mockAudioService.currentDuration = sut.elapsedDuration
 
         let url = try await sut.stopSession()
-        XCTAssertEqual(sut.recordingState, .stopped)
+        XCTAssertEqual(sut.recordingState, .saved)
         XCTAssertEqual(url, testAudioURL)
     }
     
@@ -780,8 +809,119 @@ final class LiveRecordingViewModelTests: XCTestCase {
         sut.startSession()
         try await sut.waitUntilRecordingStarted()
         mockAudioService.simulateFileAlreadyDeleted = true
-        
+
         sut.confirmDiscard()
         XCTAssertEqual(sut.recordingState, .idle)
+    }
+
+    /// A failed pause call must leave the UI recording state unchanged.
+    func test_stageD_pauseFailureDoesNotOptimisticallyPauseUI() async throws {
+        sut.startSession()
+        try await sut.waitUntilRecordingStarted()
+        mockAudioService.pauseError = .invalidState("Injected pause failure")
+
+        sut.pauseSession()
+
+        XCTAssertEqual(sut.recordingState, .recording)
+        XCTAssertEqual(mockAudioService.state, .recording)
+        XCTAssertNotNil(sut.errorMessage)
+    }
+
+    /// A failed resume call must leave the UI paused.
+    func test_stageD_resumeFailureDoesNotOptimisticallyResumeUI() async throws {
+        sut.startSession()
+        try await sut.waitUntilRecordingStarted()
+        sut.pauseSession()
+        mockAudioService.resumeError = .invalidState("Injected resume failure")
+
+        sut.resumeSession()
+
+        XCTAssertEqual(sut.recordingState, .paused)
+        XCTAssertEqual(mockAudioService.state, .paused)
+        XCTAssertNotNil(sut.errorMessage)
+    }
+
+    /// Persistence retry uses the already-stopped file instead of recording a
+    /// second take.
+    func test_stageD_saveFailureRetainsURLAndRetrySavesWithoutRerecording() async throws {
+        let saver = ControllableRecordingSaver()
+        saver.error = TestPersistenceError.injected
+        sut = LiveRecordingViewModel(
+            meeting: initialMeeting,
+            modelContext: context,
+            recordingService: mockAudioService,
+            transcriptionService: mockSpeechService,
+            dataStore: saver,
+            destinationAudioURL: testAudioURL,
+            updatesFromRecordingClock: false
+        )
+        sut.startSession()
+        try await sut.waitUntilRecordingStarted()
+
+        do {
+            _ = try await sut.finishSession()
+            XCTFail("Expected persistence failure")
+        } catch {
+            XCTAssertEqual(sut.recordingState, .saveFailed)
+            XCTAssertEqual(sut.pendingAudioURL, testAudioURL)
+            XCTAssertEqual(mockAudioService.state, .stopped)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: testAudioURL.path))
+        }
+
+        saver.error = nil
+        let recoveredURL = try sut.retrySave()
+        XCTAssertEqual(recoveredURL, testAudioURL)
+        XCTAssertEqual(sut.recordingState, .saved)
+        XCTAssertEqual(mockAudioService.state, .stopped)
+        XCTAssertEqual(saver.saveCallCount, 2)
+    }
+
+    /// Media-service reset is a deterministic interrupted state with Finish as
+    /// the safe recovery when resume is unavailable.
+    func test_stageD_mediaResetExposesInterruptedFinishRecovery() async throws {
+        sut.startSession()
+        try await sut.waitUntilRecordingStarted()
+
+        sut.receiveInterruption(RecordingInterruptionEvent(
+            code: .mediaServicesReset,
+            canResume: false,
+            hasEnded: true
+        ))
+
+        XCTAssertEqual(sut.recordingState, .interrupted)
+        XCTAssertTrue(sut.isInterrupted)
+        XCTAssertFalse(sut.interruptionCanResume)
+        XCTAssertEqual(sut.recordingMetrics.interruptionCode, "mediaServicesReset")
+    }
+
+    func test_stageD_missingCanonicalFileStopsUnsavedAndPreservesRecoveryURL() async throws {
+        mockAudioService.createsCanonicalFileOnStop = false
+        try? FileManager.default.removeItem(at: testAudioURL)
+        sut.startSession()
+        try await sut.waitUntilRecordingStarted()
+
+        do {
+            _ = try await sut.finishSession()
+            XCTFail("Expected canonical validation failure")
+        } catch {
+            XCTAssertEqual(error as? CanonicalRecordingValidationError, .fileMissing)
+            XCTAssertEqual(sut.recordingState, .stoppedUnsaved)
+            XCTAssertEqual(sut.pendingAudioURL, testAudioURL)
+            XCTAssertEqual(mockAudioService.state, .stopped)
+            XCTAssertEqual(sut.recordingMetrics.writeFailureCode, "canonical_file_missing")
+        }
+    }
+
+    private enum TestPersistenceError: Error { case injected }
+
+    @MainActor
+    private final class ControllableRecordingSaver: RecordingMeetingSaving {
+        var error: Error?
+        var saveCallCount = 0
+
+        func saveRecording(meeting: Meeting, audioURL: URL, duration: TimeInterval) throws {
+            saveCallCount += 1
+            if let error { throw error }
+        }
     }
 }
