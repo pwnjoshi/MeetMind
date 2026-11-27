@@ -347,6 +347,7 @@ enum LocalSpeech {
             }
         var recovered: [AnalysisTurn] = []
         var retried: [SpeechRegion] = []
+        var unclear: [AnalysisTurn] = []
         for gap in candidates {
             if retried.count == 4 { break }
             guard !retried.contains(where: { min($0.end, gap.end) > max($0.start, gap.start) }) else { continue }
@@ -383,6 +384,14 @@ enum LocalSpeech {
                     if error is CancellationError { throw error }
                 }
             }
+            for hole in remaining {
+                guard let samples = try? AudioProcessor.loadAudioAsFloatArray(
+                    fromPath: path, startTime: hole.start, endTime: hole.end) else { continue }
+                let energies = SpeechRegionPlanner.frameEnergies(samples, frameLength: 320)
+                guard SpeechRegionPlanner.speechMask(energies: energies).filter({ $0 }).count >= 25 else { continue }
+                unclear.append(AnalysisTurn(id: "", text: AnalysisTurn.unclearSpeech,
+                    start: hole.start, end: hole.end, speaker: nil))
+            }
         }
 
         var lastLanguage: String?
@@ -399,7 +408,7 @@ enum LocalSpeech {
                                           start: moved.start, end: moved.end, speaker: nil))
             }
         }
-        return (turns + recovered).sorted { $0.start < $1.start }.enumerated().map { index, turn in
+        return (turns + recovered + unclear).sorted { $0.start < $1.start }.enumerated().map { index, turn in
             AnalysisTurn(id: "t\(index + 1)", text: turn.text, start: turn.start, end: turn.end, speaker: nil)
         }
     }

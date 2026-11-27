@@ -48,7 +48,8 @@ struct MeetingMinutesView: View {
                         && abs($0.endTime - correction.end) < 0.01 && $0.text == correction.original
                 }
             }
-            if needsMinutesReview || !disputed.isEmpty {
+            let speechGaps = meeting.orderedTranscriptSegments.filter { $0.text == AnalysisTurn.unclearSpeech }
+            if needsMinutesReview || !disputed.isEmpty || !speechGaps.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(needsMinutesReview ? "Review these minutes" : "Some wording needs review", systemImage: "text.bubble")
                         .font(.subheadline.weight(.semibold))
@@ -56,10 +57,17 @@ struct MeetingMinutesView: View {
                          ? "MeetMind retried unclear actions. Check the transcript before sharing."
                          : "Disputed lines were left out of these minutes.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    if disputed.isEmpty {
+                    if disputed.isEmpty && speechGaps.isEmpty {
                         Button("Review transcript") { onOpenTranscript(nil) }
                             .font(.subheadline)
                             .frame(minHeight: 44)
+                    }
+                    ForEach(speechGaps) { segment in
+                        Button("Listen to unclear speech at \(MeetingEvidence.clock(segment.startTime))") {
+                            onOpenTranscript(segment.startTime)
+                        }
+                        .font(.subheadline)
+                        .frame(minHeight: 44)
                     }
                     ForEach(Array(disputed.enumerated()), id: \.offset) { _, correction in
                         let seconds = Int(correction.start)

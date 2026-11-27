@@ -5,6 +5,7 @@ public enum OfflineAnalysisContract {
 }
 
 public struct AnalysisTurn: Codable, Sendable, Identifiable, Equatable {
+    public static let unclearSpeech = "[Unclear speech]"
     public let id: String
     public let text: String
     public let start: Double

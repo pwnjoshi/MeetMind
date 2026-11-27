@@ -78,7 +78,7 @@ public struct MeetingAnalysisCheckpoint: Codable, Sendable {
     func excludingUnresolvedCaptions(from turns: [AnalysisTurn]) -> [AnalysisTurn] {
         let unresolved = (transcriptCorrections ?? []).filter { $0.replacement == nil }
         return turns.map { turn in
-            guard unresolved.contains(where: {
+            guard turn.text == AnalysisTurn.unclearSpeech || unresolved.contains(where: {
                 $0.start == turn.start && $0.end == turn.end && $0.original.contains(turn.text)
             }) else { return turn }
             return AnalysisTurn(id: turn.id, text: "", start: turn.start, end: turn.end, speaker: turn.speaker)
