@@ -167,12 +167,19 @@ public struct MeetingDetailView: View {
         .sheet(item: $minutesDraft) { draft in
             NavigationStack {
                 List {
-                    draftSection("Current minutes", overview: draft.currentOverview, decisions: draft.currentDecisions)
-                    draftSection("Regenerated draft", overview: draft.overview, decisions: draft.decisions)
+                    draftSection("Current minutes", overview: draft.currentOverview, agenda: draft.currentAgenda, decisions: draft.currentDecisions)
+                    draftSection("Regenerated draft", overview: draft.overview, agenda: draft.agenda, decisions: draft.decisions)
                     Section("Draft action suggestions") {
                         if draft.suggestedActions.isEmpty { Text("No suggested actions").foregroundStyle(.secondary) }
                         ForEach(draft.suggestedActions.indices, id: \.self) { index in
-                            Text(draft.suggestedActions[index])
+                            let action = draft.suggestedActions[index]
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(action.title)
+                                Text(action.owner ?? "Owner unverified").font(.subheadline).foregroundStyle(.secondary)
+                                if let deadline = action.deadlineText {
+                                    Text(deadline).font(.subheadline).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
                 }
@@ -397,9 +404,11 @@ public struct MeetingDetailView: View {
         }
     }
 
-    private func draftSection(_ title: String, overview: String, decisions: [String]) -> some View {
+    private func draftSection(_ title: String, overview: String, agenda: String?, decisions: [String]) -> some View {
         Section(title) {
             Text(overview.isEmpty ? "No overview" : overview)
+            Text("Agenda").font(.subheadline.weight(.semibold))
+            Text(agenda?.isEmpty == false ? agenda ?? "" : "No agenda")
             Text("Decisions").font(.subheadline.weight(.semibold))
             if decisions.isEmpty { Text("No decisions").foregroundStyle(.secondary) }
             ForEach(decisions.indices, id: \.self) { index in Text(decisions[index]) }

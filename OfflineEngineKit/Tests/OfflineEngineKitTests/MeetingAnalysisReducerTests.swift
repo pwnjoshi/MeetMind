@@ -252,6 +252,24 @@ final class MeetingAnalysisReducerTests: XCTestCase {
         XCTAssertEqual(ambiguous.count, 2)
     }
 
+    func testReprocessedDraftRejectsVagueTopicsAndUnsettledInstructions() {
+        for topic in ["Code part", "Discuss the code part", "The task stuff", "If we"] {
+            XCTAssertFalse(MinutesBuilder.isUsefulGeneratedTopic(topic), topic)
+        }
+        XCTAssertTrue(MinutesBuilder.isUsefulGeneratedTopic("Python query optimization"))
+        XCTAssertTrue(MeetingAnalysisReducer.isIncompleteActionTitle("Proceed with the code part"))
+        XCTAssertFalse(MeetingAnalysisReducer.isIncompleteActionTitle("Benchmark Python query optimization"))
+        XCTAssertFalse(DecisionExtractor.isDecision("We need to finalize the decision on Python optimization."))
+
+        let source = AnalysisTurn(id: "source", text: "We could benchmark the query before adopting it.",
+                                  start: 0, end: 4, speaker: "S1")
+        let names = MinutesBuilder.overviewNames(turns: [source], participants: [], speakerNames: [:], tasks: [])
+        for line in ["We are discussing the code part.", "We will proceed with the code part.",
+                     "We need to finalize the decision on Python optimization.", "The if we remains open."] {
+            XCTAssertFalse(MinutesBuilder.isUsableOverviewSentence(line, turns: [source], names: names), line)
+        }
+    }
+
     func testOverviewRankingOnlyUsesCurrentGroundedDiscussion() {
         let lines = ["The mobile prototype now opens offline.", "The budget report shows rising costs."]
         let turns = lines.enumerated().map { index, line in

@@ -411,14 +411,14 @@ public final class AnalysisCoordinator {
         return planned
     }
 
-    private func minutesFields(_ result: MeetingAnalysisCheckpoint, for meeting: Meeting)
+    private func minutesFields(_ result: MeetingAnalysisCheckpoint, for meeting: Meeting, includeWrittenAgenda: Bool = true)
         -> (reduced: ReducedMeetingAnalysis, overview: String, points: [String], decisions: [String], topicAgenda: String) {
         let speakerNames = MeetingSpeakerNames(meeting: meeting, store: MeetingRecordStore.shared).assignedLabels
         let zone = TimeZone(identifier: meeting.analysisTimezone ?? "") ?? TimeZone.current
         let reduced = MeetingAnalysisReducer.reduce(result, participants: meeting.namedAttendees.map(\.name),
                                                     speakerNames: speakerNames,
                                                     meetingDate: meeting.scheduledStartTime ?? meeting.createdAt,
-                                                    timeZone: zone, agenda: writtenAgenda(for: meeting))
+                                                    timeZone: zone, agenda: includeWrittenAgenda ? writtenAgenda(for: meeting) : nil)
         let minutes = reduced.minutes
         var pointSource: [String] = []
         for topic in minutes.topics { pointSource.append(contentsOf: topic.discussion) }
@@ -432,7 +432,7 @@ public final class AnalysisCoordinator {
         if decisionSource.isEmpty { decisionSource = reduced.decisions.map(\.text) }
         let overview = minutes.topics.isEmpty || minutes.executiveSummary.isEmpty
             ? reduced.executiveSummary : minutes.executiveSummary
-        let topicAgenda = minutes.topics.isEmpty ? reduced.agendaTopics.joined(separator: "\n") : minutes.agendaText
+        let topicAgenda = minutes.agendaText
         return (reduced, overview, uniqueTexts(pointSource), uniqueTexts(decisionSource), topicAgenda)
     }
 
@@ -443,7 +443,9 @@ public final class AnalysisCoordinator {
         let currentDecisions: [String]
         let overview: String
         let decisions: [String]
-        let suggestedActions: [String]
+        let suggestedActions: [SuggestedTask]
+        var currentAgenda: String? { previousAgenda }
+        var agenda: String? { replaceAgenda ? replacementAgenda : previousAgenda }
         fileprivate let points: [String]
         fileprivate let analysisData: Data
         fileprivate let previousAnalysis: Data?
@@ -460,13 +462,8 @@ public final class AnalysisCoordinator {
         let previousAnalysis = meeting.offlineAnalysisData
         let previousSummaryDate = meeting.summary?.generatedAt
         let previousAgenda = meeting.agendaText
-        let previousGeneratedAgenda = previousAnalysis.flatMap {
-            try? JSONDecoder().decode(MeetingAnalysisCheckpoint.self, from: $0)
-        }?.minutes?.agendaText
-        let hasGeneratedAgenda = previousGeneratedAgenda?.isEmpty == false
-            && previousGeneratedAgenda == previousAgenda
         let agendaText = (previousAgenda ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let replaceAgenda = hasGeneratedAgenda || agendaText.isEmpty || isPlaceholderAgenda(agendaText)
+        let replaceAgenda = PlannedAgenda.planned(meeting) == nil || isPlaceholderAgenda(agendaText)
         guard meeting.status == .completed, !turns.isEmpty else {
             throw OfflineError.unavailable("A saved transcript is required to reprocess minutes.")
         }
@@ -488,7 +485,7 @@ public final class AnalysisCoordinator {
               current.agendaText == previousAgenda, savedTurns(for: current) == turns else {
             throw OfflineError.unavailable("The meeting changed while reprocessing. Open it again to retry.")
         }
-        let fields = minutesFields(result, for: current)
+        let fields = minutesFields(result, for: current, includeWrittenAgenda: !replaceAgenda)
         guard current.summary?.generatedAt == previousSummaryDate else {
             throw OfflineError.unavailable("The saved minutes changed while reprocessing.")
         }
@@ -498,7 +495,7 @@ public final class AnalysisCoordinator {
         return MinutesDraft(
             meetingID: meetingID, currentOverview: current.summary?.executiveSummary ?? "",
             currentDecisions: currentDecisions, overview: fields.overview,
-            decisions: decisions, suggestedActions: fields.reduced.tasks.map(\.title),
+            decisions: decisions, suggestedActions: fields.reduced.tasks,
             points: fields.points, analysisData: try JSONEncoder().encode(fields.reduced.checkpoint),
             previousAnalysis: previousAnalysis, previousAgenda: previousAgenda,
             previousSummaryDate: previousSummaryDate, turns: turns,

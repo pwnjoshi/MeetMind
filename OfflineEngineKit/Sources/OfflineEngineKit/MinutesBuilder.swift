@@ -84,6 +84,7 @@ enum MinutesBuilder {
         let connective = #"(?i)^\W*(?:and|so|but|also|then|okay|ok|basically|however|right|yeah)\b"#
         guard MinutesRegex.firstMatch(connective, in: cleaned) == nil,
               MeetingAnalysisReducer.isSummaryContext(cleaned),
+              !MinutesRegex.matches(#"(?i)^\W*(?:we (?:are discussing|need to|will proceed)|agenda to discuss|the ['"“]?if\b)"#, in: cleaned),
               !MeetingAnalysisReducer.isTranscriptCopy(text: cleaned, turns: turns) else { return false }
         for word in cleaned.split(whereSeparator: { !$0.isLetter }) {
             let lower = word.lowercased()
@@ -93,6 +94,13 @@ enum MinutesBuilder {
             if named && !names.owners.contains(lower) { return false }
         }
         return true
+    }
+
+    /// Generated headings need a concrete subject. Written agendas use their own path.
+    static func isUsefulGeneratedTopic(_ title: String) -> Bool {
+        let generic = #"(?i)^\W*(?:(?:agenda to|we are|we need to|whether|if)\b|(?:(?:discuss|review|work on|proceed with)\s+)?(?:the\s+)?(?:code|ui|backend|technical|development|model|work|task)\s+(?:part|stuff|things?)\W*$)"#
+        return MinutesComposer.words(title).subtracting(["if", "we", "it", "they", "that", "this"]).count >= 2
+            && !MinutesRegex.matches(generic, in: title)
     }
 
     /// "Agenda: a; b; c." from the written agenda: at most three items of at most 60 characters.
@@ -615,7 +623,7 @@ enum MinutesBuilder {
                 return lhs.firstSeen < rhs.firstSeen
             }
             var topics: [MinutesTopic] = []
-            for draft in ordered {
+            for draft in ordered where MinutesBuilder.isUsefulGeneratedTopic(draft.title) {
                 var bullets: [String] = []
                 var seen = Set<String>()
                 for bullet in draft.preferenceBullets + draft.agreedBullets + draft.issueBullets where seen.insert(bullet.lowercased()).inserted {
@@ -691,7 +699,10 @@ enum MinutesBuilder {
             let decisions = input.decisions.filter { !HindiText.looksHindi($0.text) && hasTranscriptEvidence($0.evidence) }
             let tasks = input.tasks.filter { hasTranscriptEvidence($0.evidence) }
             let namedIssues = issues.filter {
-                $0.topic != nil && !HindiText.looksHindi($0.subject) && $0.subject.count <= 60 && hasTranscriptEvidence($0.evidence)
+                $0.topic != nil && !HindiText.looksHindi($0.subject) && $0.subject.count <= 60
+                    && !MinutesRegex.matches(#"(?i)^\W*(?:if|whether)\b"#, in: $0.subject)
+                    && !MinutesComposer.words($0.subject).subtracting(["we", "it", "they", "this", "that"]).isEmpty
+                    && hasTranscriptEvidence($0.evidence)
             }
 
             var statements: [MinutesSummaryStatement] = []

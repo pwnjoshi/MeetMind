@@ -988,6 +988,9 @@ public enum MeetingAnalysisReducer {
         MinutesRegex.firstMatch(
             #"(?i)^(?:tell|inform|buy|get|send|share|do|handle)\s+(?:you|me|us|him|her|them|it|this|that|some|something|anything)$"#,
             in: normalize(text)) != nil
+            || MinutesRegex.matches(
+                #"(?i)^(?:discuss|proceed with|work on|handle|do|finalize) (?:the )?(?:(?:code|backend|technical|development|task|work) (?:part|stuff|things?)|(?:task|work|stuff|things?))$"#,
+                in: normalize(text))
     }
 
     static func isSubstantive(_ text: String) -> Bool {
