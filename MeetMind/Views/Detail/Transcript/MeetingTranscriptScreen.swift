@@ -14,6 +14,8 @@ public struct MeetingTranscriptScreen: View {
 
     @State private var audio = TranscriptAudioController()
     @State private var cards: [TranscriptCard] = []
+    /// Speakers offered by "Change speaker". Rebuilt with the cards; row rendering must not touch SwiftData.
+    @State private var speakerChoices: [Speaker] = []
     @State private var activeCardID: UUID?
     @State private var audioAvailable = false
     @State private var isProcessing = false
@@ -78,7 +80,7 @@ public struct MeetingTranscriptScreen: View {
         }
         .sheet(item: $reassigningCard) { card in
             SpeakerReassignSheet(
-                availableSpeakers: availableSpeakers(),
+                availableSpeakers: speakerChoices,
                 currentSpeaker: speaker(for: card),
                 onSelect: { speaker in
                     reassign(card, to: speaker)
@@ -242,7 +244,7 @@ public struct MeetingTranscriptScreen: View {
             Button { editingCard = card } label: { Label("Edit text", systemImage: "pencil") }
                 .disabled(isProcessing)
             Button { reassigningCard = card } label: { Label("Change speaker", systemImage: "person.2") }
-                .disabled(isProcessing || availableSpeakers().isEmpty)
+                .disabled(isProcessing || speakerChoices.isEmpty)
         }
     }
 
@@ -316,6 +318,7 @@ public struct MeetingTranscriptScreen: View {
     private func rebuildCards() {
         guard let meeting else {
             cards = []
+            speakerChoices = []
             return
         }
         let ordered = meeting.orderedTranscriptSegments
@@ -324,6 +327,10 @@ public struct MeetingTranscriptScreen: View {
         }
         let used = TranscriptUsage.usedSegmentIDs(checkpointData: meeting.offlineAnalysisData, segments: refs)
         cards = TranscriptCardBuilder.build(segments: ordered, used: used)
+        // Resolved once here, never while rows render: walking SwiftData speaker relationships inside each
+        // row's context menu faulted and re-observed every speaker on every pass, and the resulting
+        // invalidations kept the list re-rendering until the 10 s watchdog killed the app (0x8BADF00D).
+        speakerChoices = availableSpeakers()
         activeCardID = TranscriptCardBuilder.activeCardID(at: audio.currentTime, in: cards)
     }
 
